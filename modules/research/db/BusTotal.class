@@ -1,0 +1,243 @@
+<?php
+
+/**
+ *
+ * This file handles the connection and actions for research action
+ *
+ * @author Daniel Afonso Heisler [daniel.heisler@gmail.com]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 01/10/2007
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to manipulate the basCountry table
+ **/
+class BusinessResearchBusTotal extends Business
+{
+
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic', 'sagu');
+        $module = is_null($module) ? 'research' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+    
+    /**
+     * Return a specific question from the database
+     *
+     * @param $formId (integer): Foreign key of the record to be retrieved
+     *
+     * @return (object): Return an object of the type handled by the class
+     *
+     **/
+    public function listQuestion($formId)
+    {
+        $sql = 'SELECT A.formId,
+                       B.questionId,
+                       B.description
+                  FROM rshForm A
+            INNER JOIN rshQuestion B 
+                    ON ( A.formId = B.formId )
+                 WHERE A.formId = ?';
+
+        $db     = $this->getDatabase();
+        $result = $db->query(SAGU::prepare($sql, $formId));
+
+        return $result;
+    }
+
+    /**
+     * Return thetotal of specific question from the database
+     *
+     * @param $questionId (integer): Foreign key of the record to be retrieved
+     *
+     * @return (object): Return an object of the type handled by the class
+     *
+     **/
+    public function listTotalQuestion($questionId, $selectiveProcessId=null)
+    {
+        $sql = 'SELECT A.isIdentified
+                  FROM rshQuestion B
+            INNER JOIN rshForm A
+                 USING ( formid )
+                 WHERE B.questionId = ?';
+        $db  = $this->getDatabase();
+        $res = $db->query(SAGU::prepare($sql, $questionId));
+
+        if ( $res[0][0] == DB_TRUE )
+        {
+            $sql = 'SELECT count(*), 
+                           A.description 
+                      FROM rshOption A 
+                INNER JOIN rshAnswer B 
+                        ON ( A.optionid = B.optionid ) 
+                     WHERE A.questionid = ?
+                  GROUP BY A.description
+                  ORDER BY A.description';
+        }
+        else
+        {
+            $sql = 'SELECT count(*), 
+                           A.description 
+                      FROM rshOption A 
+                INNER JOIN rshAnswer_noLogin B 
+                        ON ( A.optionid = B.optionid ) 
+                     WHERE A.questionid = ?
+                  GROUP BY A.description
+                  ORDER BY A.description';
+        }
+
+        $args = array ( $questionId );
+
+        if ( strlen((string)$selectiveProcessId) > 0 )
+        {
+            if ( $res[0][0] == DB_TRUE )
+            {
+                $sql = 'SELECT count(*), 
+                               A.description 
+                          FROM rshOption A 
+                    INNER JOIN rshAnswer B 
+                            ON ( A.optionid = B.optionid ) 
+                    INNER JOIN sprInscription C 
+                            ON ( B.personId = C.personId ) 
+                         WHERE A.questionid         = ?
+                           AND C.selectiveProcessId = ?
+                      GROUP BY A.description
+                      ORDER BY A.description';
+            }
+            else
+            {
+                $sql = 'SELECT count(*), 
+                               A.description 
+                          FROM rshOption A 
+                    INNER JOIN rshAnswer_noLogin B 
+                            ON ( A.optionid = B.optionid ) 
+                    INNER JOIN sprInscription C 
+                            ON ( B.personId = C.personId ) 
+                         WHERE A.questionid         = ?
+                           AND C.selectiveProcessId = ?
+                      GROUP BY A.description
+                      ORDER BY A.description';
+            }
+
+            $args = array ( $questionId, $selectiveProcessId );
+        }
+
+        $result = $db->query(SAGU::prepare($sql, $args));
+
+        return $result;
+    }
+
+    /**
+     * Return thetotal of specific question from the database
+     *
+     * @param $questionId (integer): Foreign key of the record to be retrieved
+     *
+     * @return (object): Return an object of the type handled by the class
+     *
+     **/
+    public function listQuestionComments($questionId, $selectiveProcessId=null)
+    {
+        $sql = 'SELECT A.isIdentified
+                  FROM rshQuestion B
+            INNER JOIN rshForm A
+                 USING ( formid )
+                 WHERE B.questionId = ?';
+        $db  = $this->getDatabase();
+        $res = $db->query(SAGU::prepare($sql, $questionId));
+
+        if ( $res[0][0] == DB_TRUE )
+        {
+            $sql = 'SELECT B.optionComment
+                      FROM rshOption A 
+                INNER JOIN rshAnswer B 
+                        ON ( A.optionid = B.optionid ) 
+                     WHERE A.questionid = ?
+                       AND ( length(B.optionComment)>0 OR B.optionComment IS NOT NULL )
+                  ORDER BY B.optionComment';
+        }
+        else
+        {
+            $sql = 'SELECT B.optionComment
+                      FROM rshOption A 
+                INNER JOIN rshAnswer_noLogin B 
+                        ON ( A.optionid = B.optionid ) 
+                     WHERE A.questionid = ?
+                       AND ( length(B.optionComment)>0 OR B.optionComment IS NOT NULL )
+                  ORDER BY B.optionComment';
+        }
+
+        $args = array ( $questionId );
+
+        if ( strlen((string)$selectiveProcessId) > 0 )
+        {
+            if ( $res[0][0] == DB_TRUE )
+            {
+                $sql = 'SELECT B.optionComment
+                          FROM rshOption A 
+                    INNER JOIN rshAnswer B 
+                            ON ( A.optionid = B.optionid ) 
+                    INNER JOIN sprInscription C 
+                            ON ( B.personId = C.personId ) 
+                         WHERE A.questionid         = ?
+                           AND ( length(B.optionComment)>0 OR B.optionComment IS NOT NULL )
+                           AND C.selectiveProcessId = ?
+                      ORDER BY B.optionComment';
+            }
+            else
+            {
+                $sql = 'SELECT B.optionComment
+                          FROM rshOption A 
+                    INNER JOIN rshAnswer_noLogin B 
+                            ON ( A.optionid = B.optionid ) 
+                    INNER JOIN sprInscription C 
+                            ON ( B.personId = C.personId ) 
+                         WHERE A.questionid         = ?
+                           AND ( length(B.optionComment)>0 OR B.optionComment IS NOT NULL )
+                           AND C.selectiveProcessId = ?
+                      ORDER BY B.optionComment';
+            }
+
+            $args = array ( $questionId, $selectiveProcessId );
+        }
+
+        $result = $db->query(SAGU::prepare($sql, $args));
+
+        return $result;
+    }
+
+}
+
+?>

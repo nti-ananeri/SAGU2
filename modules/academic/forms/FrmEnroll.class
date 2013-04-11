@@ -1,0 +1,752 @@
+<?php
+
+/**
+ * Enroll form
+ *
+ * @author Jamiel Spezia [jamiel@solis.coop.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ *
+ * @since
+ * Class created on 25/08/2005
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2005 SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+
+/**
+ * Form to manipulate a enroll
+ **/
+class FrmEnroll extends MForm
+{
+    private $home;
+
+    /**
+     * Class constructor
+     **/
+    function __construct($data)
+    {
+        $module = MIOLO::getCurrentModule();
+        if ( MIOLO::_request('function') == 'insert' )
+        {
+        $this->home   = $data->home;
+
+            parent::__construct(_M('Insert', $module));
+        }
+        else
+        {
+        $this->home   = $data->home;
+
+            parent::__construct(_M('Update', $module));
+        }
+
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+        $enrollId = MIOLO::_request('enrollId');
+        $personId = MIOLO::_request('personId');
+        $periodId = MIOLO::_request('periodId');
+        $returnTo = MIOLO::_request('returnTo');
+
+        $toolBar = new MToolBar('toolBar', $MIOLO->getActionURL($module, $action));
+        $toolBar->disableButton('tbBtnDelete');
+        $toolBar->disableButton('tbBtnPrint');
+        $toolBar->disableButton('tbBtnNew');
+        $toolBar->disableButton('tbBtnSearch');
+
+        $fields[] = $toolBar;
+
+        //obtenção de dados
+        if (strlen((string)$enrollId) > 0)
+        {
+            try
+            {
+                $business = $MIOLO->getBusiness($module, 'BusEnroll');
+                $data     = $business->getEnroll($enrollId);
+                $businessContract = $MIOLO->getBusiness($module, 'BusContract');
+                $contract         = $businessContract->getContract($data->contractId);
+
+                $busCurriculum  = $MIOLO->getBusiness($module, 'BusCurriculum');
+                $dataCurriculum = $busCurriculum->getCurriculum($data->curriculumId);
+                
+                $busSchedule    = $MIOLO->getBusiness($module, 'BusSchedule');
+                $data->schedules = $busSchedule->searchSchedule($data);
+
+                $busScheduleProfessor = $MIOLO->getBusiness($module, 'BusScheduleProfessor');
+
+                if ( count($data->schedules) > 0 )
+                {
+                    foreach ( $data->schedules as $schedule )
+                    {
+                        $scheduleX->scheduleId = $schedule[0];
+                        $scheduleProfessors = $busScheduleProfessor->searchScheduleProfessor($scheduleX);
+                        if ( count($scheduleProfessors) > 0 )
+                        {
+                            foreach ( $scheduleProfessors as $scheduleProfessor )
+                            {
+                                $professorId = $scheduleProfessor[1];
+                            }
+                        }
+                    }
+                }
+                
+                $busCurricularComponent  = $MIOLO->getBusiness($module, 'BusCurricularComponent');
+                $dataCurricularComponent = $busCurricularComponent->getCurricularComponent($dataCurriculum->curricularComponentId, $dataCurriculum->curricularComponentVersion);
+                
+                $busUnit  = $MIOLO->getBusiness('basic','BusUnit');
+                $dataUnit = $busUnit->getUnit($dataCurriculum->unitId);
+                
+                $busTurn  = $MIOLO->getBusiness('basic', 'BusTurn');
+                $dataTurn = $busTurn->getTurn($dataCurriculum->turnId);
+                
+                $busLearningPeriod   = $MIOLO->getBusiness($module, 'BusLearningPeriod');
+                
+                if ($data->isExploitation == DB_FALSE)
+                {
+                    $busGroup            = $MIOLO->getBusiness($module, 'BusGroup');
+                    $dataGroup           = $busGroup->getGroup($data->groupId);
+                    $dataCurriculumGroup = $busCurriculum->getCurriculum($dataGroup->curriculumId);
+                    
+                    $dataLearningPeriod  = $busLearningPeriod->getLearningPeriod($dataGroup->learningPeriodId);
+                }
+                else
+                {
+                    $dataLearningPeriod  = $busLearningPeriod->getLearningPeriod($data->learningPeriodId); 
+                    
+                    $busEnrollStatus  = $MIOLO->getBusiness($module, 'BusEnrollStatus');
+                    $dataEnrollStatus = $busEnrollStatus->getEnrollStatus($data->statusId);
+                    
+                    $busExploitation  = $MIOLO->getBusiness($module, 'BusExploitation');
+                    $dataExploitation = $busExploitation->getEnrollExploitationData($enrollId);
+                    
+                    $dataExploitationSummary = $busExploitation->getEnrollExploitationSummary($enrollId);
+                }
+                
+                if ($dataCurriculum->curriculumTypeId == CURRICULUM_TYPE_COMPLEMENTARY_ACTIVITY_ID)
+                {
+                    $busComplActivities  = $MIOLO->getBusiness($module,  'BusComplementaryActivities');
+                    $dataComplActivities = $busComplActivities->searchComplementaryActivities($data);
+                }
+            }
+            catch (Exception $e)
+            {
+                $msg = _M('Error getting form data. ', $module) . $e.getMessage();
+                $this->addError($msg);
+            }
+        }
+        else
+        {
+            $msg = _M('No enroll id got. Did you use the right procedure to access this form?', $module);
+            $this->addError($msg);
+        }
+
+        //Construção do formulário
+        $varReturnTo['contractPersonId'] = $contract->personId;
+        $varReturnTo['periodId'] = $periodId;
+        $varReturnTo['contractId'] = $data->contractId;
+        $varReturnTo['event'] = 'btnSearch:click';
+        $fields[] = new MHiddenField('urlReturnTo', $this->getFormValue('urlReturnTo', $MIOLO->getActionURL($module, $returnTo, null, $varReturnTo)));
+        $fields[] = new MHiddenField('enrollId', $enrollId);
+        $fields[] = new MTextLabel('personId', (strlen((string)$this->getFormValue('personId', $contract->personId)) > 0 ? $this->getFormValue('personId', $contract->personId) :$contract->personId).   ' - ' . $contract->personName, _M('Pupil', $module));
+
+        $fields[] = new MHiddenField('contractId', $data->contractId);
+        $fields[] = new MTextLabel('contract', $this->getFormValue('contract', $data->contractId) . ' (' . $contract->courseId . ' - ' . $contract->courseName . ')', _M('Contract', $module));
+        $fields[] = new MTextLabel('unit', $dataUnit->description, _M('Unit', $module));
+
+        $fields[] = new MTextLabel('turn', $dataTurn->description, _M('Turn', $module));
+
+        $fields[] = new MTextLabel('curricularComponent', $dataCurriculum->curricularComponentId . ' - ' . $dataCurriculum->curricularComponentName, _M('Curriculum curricular component', $module));
+        
+        $fields[] = new MTextLabel('dateEnroll', $this->getFormValue('dateEnroll', $data->dateEnroll . ' ' . $data->hourEnroll), _M('Enroll date', $module));
+        
+        $fields[] = new MTextLabel('periodId', $dataLearningPeriod->periodId, _M('Period', $module));
+        
+        $fields[] = new MSeparator();
+        
+        if ($data->isExploitation == DB_FALSE)
+        {
+            $fields[] = new MTextLabel('groupId', $data->groupId, _M('Group id', $module));
+            $fields[] = new MHiddenField('groupId', $this->getFormValue('groupId', $data->groupId));
+
+            $fields[] = new MTextLabel('groupCurricularComponent', $dataCurriculumGroup->curricularComponentId . ' - ' . $dataCurriculumGroup->curricularComponentName, _M('Coursed curricular component', $module));
+            $fields[] = new MTextLabel('course', $dataCurriculumGroup->courseId . ' - ' . $dataCurriculumGroup->courseName, _M('Coursed curricular component course', $module));
+
+            $fields[] = new MSeparator();
+
+            $note         = new MTextField('note', $this->getFormValue('note', $data->note), _M('Grade', $module), 8);
+            $note->setJsHint(_M('Enter here the grade', $module));
+            $note->addAttribute('onChange', 'noteChanged()');
+            $note->setReadOnly(TRUE);
+            $fields[]     = $note;
+            $degrees = $business->getDegreesEnroll( $enrollId );
+            if ( count($degrees) > 0 )
+            {
+                foreach ( $degrees as $item => $values )
+                {
+                    $note         = new MTextField('degreeNote['. $values[1].']', $values[4], $values[2], 8);
+                    $note->addAttribute('onBlur', 'degreeNoteChanged(this)');
+                    $note->addAttribute('weight', $values[5]);
+                    $note->addAttribute('maxNote', $values[6]);
+//                    $note->setReadOnly(TRUE);
+                    $fields[]     = $note;
+                }
+            }
+
+            $examNote     = new MTextField('examNote', $this->getFormValue('examNote', $data->examNote), _M('Exam grade', $module), 8);
+            $examNote->setJsHint(_M('Enter here the exam grade', $module));
+            $examNote->addAttribute('onChange', 'examNoteChanged(' . $dataLearningPeriod->finalAverage . ')');
+            $fields[]     = $examNote;
+
+            $finalNote    = new MTextField('finalNote', $this->getFormValue('finalNote', $data->finalNote), _M('Final grade', $module), 8);
+            $finalNote->setJsHint(_M('Enter here the final grade', $module));
+            $finalNote->addAttribute('onChange', 'finalNoteChanged(' . $dataLearningPeriod->finalAverage . ')');
+            $finalNote->setReadOnly(TRUE);
+            $fields[]     = $finalNote;
+
+            $businessConcept = $MIOLO->getBusiness('basic', 'BusConcept');
+            $concept         = new MSelection('concept', $this->getFormValue('concept', $data->concept), _M('Concept', $module), $businessConcept->listConcept() );
+            $concept->setJsHint(_M('Enter here the concept', $module));
+            $fields[]        = $concept;
+
+            $textEvaluation = new MMultiLineField('textEvaluation', $this->getFormValue('textEvaluation', $data->textEvaluation), _M('Text evaluation', $module), null, 5, 30);
+            $textEvaluation->setJsHint(_M('Enter here the text evaluation', $module));
+            $fields[]     = $textEvaluation;
+
+            $frequencyLabel = new MText('absenceLabel', _M('Absences', $module));
+            $frequencyLabel->setWidth(FIELD_CONTAINER_SIZE);
+
+            $frequency = new MTextField('absence', $this->getFormValue('absence', $data->absence), '', 8);
+            $frequency->setReadOnly(true);
+            $frequencyDescription = _M('H/L', 'services');
+
+            $path  = $MIOLO->getActionUrl($module, 'html:images:frequency.png');
+            $image = new MImage('imgFreq' . $enrollId, _M('Frequence and notes', $module), $path);
+            if ( strlen((string)$professorId) > 0 )
+            {
+                $url   = $MIOLO->getActionUrl('academic', "main:frequencyPupils&groupId=$data->groupId&enrollId=$enrollId&periodId=$dataLearningPeriod->periodId&personId=$contract->personId&professorId=$professorId");
+                $image->addAttribute('onClick', "window.open('$url')");
+            }     
+            $fields[]     = new MHContainer( 'hctFrequency', array ( $frequencyLabel, $frequency, $image ) ) ;
+            
+            $frequencyAlertData = array('0'=>_M('Was not informed', $module),
+                                        '1'=>_M('Was informed that he is nearly to the limit to lacks', $module),
+                                        '2'=>_M('Was informed about the limit of lacks', $module));
+
+            $frequencyAlertEmail = new MSelection('frequencyAlertEmail', $this->getFormValue('frequencyAlertEmail', $data->frequencyAlertEmail), _M('Frequency alert e-mail', $module), $frequencyAlertData);
+            $frequencyAlertEmail->setJsHint(_M('Enter here the frequency alert e-mail', $module));
+            $fields[]     = $frequencyAlertEmail;
+            
+            $statusId = new MSelection('statusId', $this->getFormValue('statusId', $data->statusId), _M('Status id', $module), $business->listEnrollStatus() );
+            $statusId->setJsHint(_M('Enter here the status', $module));
+            $statusId->setAutoSubmit(true);
+            $fields[] = $statusId;
+
+            if ( $data->isDependence == DB_TRUE )
+            {
+                $additionStatus = 'D';
+            }
+            else if ( $data->isAdaptation == DB_TRUE )
+            {
+                $additionStatus = 'A';
+            }
+            else
+            {
+                $additionStatus = 'R';
+            }
+            
+            $additionStatusOpts = array ( 'R' => _M('Regular curricular component', $module),
+                                          'A' => _M('Adaptation', $module),
+                                          'D' => _M('Dependence', $module)
+                                        );
+
+            $additionStatus = new MSelection('additionStatus', $this->getFormValue('additionStatus', $additionStatus), _M('Addition status', $module), $additionStatusOpts);
+            $fields[]       = $additionStatus;
+            $validators[]   = new MRequiredValidator('additionStatus');
+
+            if ( $this->getFormValue('statusId', $data->statusId) == ENROLL_STATUS_CANCELLED )
+            {
+                $business            = $MIOLO->getBusiness($module, 'BusReasonCancellation');
+                $reasonCancellations = $business->listReasonCancellation();
+
+                $reasonCancellation  = new MComboBox('reasonCancellationId', $this->getFormValue('reasonCancellationId', $data->reasonCancellationId), _M('Cancellation reason id', $module), $reasonCancellations, true);
+                $fields[]            = $reasonCancellation;
+                $validators[]        = new MRequiredValidator('reasonCancellationId');
+            }
+
+        }
+        else
+        {
+            $fields[] = new MHiddenField('statusId', $data->statusId);
+            
+            $fields[] = new MTextLabel('status', $dataEnrollStatus->description, _M('Status', $module));
+            
+            $fields[] = new MTextLabel('totalNumberHours', $dataExploitationSummary->totalNumberHours, _M('Total number hours', $module));
+            
+            if ($dataExploitationSummary->remainingNumberHours > 0)
+            {
+                $fields[] = new MTextLabel('remainingNumberHours', $dataExploitationSummary->remainingNumberHours, _M('Remaining number hours', $module), 'green');
+            }
+
+            $fields[] = new MSeparator();
+            
+            $gridFilters->home     = $action;
+            $gridFilters->readOnly = false;
+            
+            $gridExploitations = $MIOLO->getUI()->getGrid($module, 'GrdExploitationSearch', $gridFilters);
+            $gridExploitations->setData($dataExploitation);
+            $gridExploitations->setFooter(_M('Exploited number hours', $module) . ': <b>' . $dataExploitationSummary->exploitedNumberHours . '</b>');
+            
+            $fields[] = $gridExploitations;
+            
+            $fields[] = new MSeparator();
+        }
+        
+        $complement = new MMultiLineField('complement', $this->getFormValue('complement', $data->complement), _M('Complement', $module), null, 5, 30);
+        $complement->setJsHint(_M('Enter here the complement', $module));
+        $fields[]     = $complement;
+
+        $radiosOptions = SAGU::listYesNo('1');
+        
+        $isShowDocumentEndCourseLabel = new MText('isShowDocumentEndCourseLabel', _M('Is it shown in course end document', $module) . '?');
+        $isShowDocumentEndCourseLabel->setClass('m-caption m-caption-required');
+        $isShowDocumentEndCourseLabel->setWidth(FIELD_CONTAINER_SIZE);
+        
+        $isShowDocumentEndCourse = $this->GetFormValue('isShowDocumentEndCourse',$data->isShowDocumentEndCourse) ? $this->GetFormValue('isShowDocumentEndCourse',$data->isShowDocumentEndCourse) : DB_TRUE;
+        $isShowDocumentEndCourse = new MRadioButtonGroup('isShowDocumentEndCourse', '', $radiosOptions , $isShowDocumentEndCourse, null, 'horizontal');
+        $isShowDocumentEndCourse->SetShowLabel(false);
+        
+        $hctIsShowDocumentEndCourse = new MHContainer('hctIsShowDocumentEndCourse', array($isShowDocumentEndCourseLabel, $isShowDocumentEndCourse));
+        $fields[]                   = $hctIsShowDocumentEndCourse;
+
+        if ($data->isExploitation == DB_FALSE)
+        {
+            $isInternetLabel = new MText('isInternetLabel', _M('Is it from internet', $module) . '?');
+            $isInternetLabel->setClass('m-caption m-caption-required');
+            $isInternetLabel->setWidth(FIELD_CONTAINER_SIZE);
+            
+            $isInternet = $this->GetFormValue('isInternet',$data->isInternet) ? $this->GetFormValue('isInternet',$data->isInternet) : DB_FALSE;
+            $isInternet = new MRadioButtonGroup('isInternet', '', $radiosOptions , $isInternet, null, 'horizontal');
+            $isInternet->SetShowLabel(false);
+            
+            $hctIsInternet = new MHContainer('hctIsInternet', array($isInternetLabel, $isInternet));
+            $fields[]      = $hctIsInternet;
+            
+            $isConfirmLabel = new MText('isConfirmLabel', _M('Is it confirmed', $module) . '?');
+            $isConfirmLabel->setClass('m-caption m-caption-required');
+            $isConfirmLabel->setWidth(FIELD_CONTAINER_SIZE);
+            
+            $isConfirm = $this->GetFormValue('isConfirm',$data->isConfirm) ? $this->GetFormValue('isConfirm',$data->isConfirm) : DB_FALSE;
+            $isConfirm = new MRadioButtonGroup('isConfirm', '', $radiosOptions , $isConfirm, null, 'horizontal');
+            $isConfirm->SetShowLabel(false);
+            
+            $hctIsConfirm = new MHContainer('hctIsConfirm', array($isConfirmLabel, $isConfirm));
+            $fields[]      = $hctIsConfirm;
+
+            $isSetFreeLabel = new MText('isSetFreeLabel', _M('Is it free', $module) . '?');
+            $isSetFreeLabel->setClass('m-caption m-caption-required');
+            $isSetFreeLabel->setWidth(FIELD_CONTAINER_SIZE);
+            
+            $isSetFree = $this->GetFormValue('isSetFree',$data->isSetFree) ? $this->GetFormValue('isSetFree',$data->isSetFree) : DB_FALSE;
+            $isSetFree = new MRadioButtonGroup('isSetFree', '', $radiosOptions , $isSetFree, null, 'horizontal');
+            $isSetFree->SetShowLabel(false);
+            
+            $hctIsSetFree = new MHContainer('hctIsSetFree', array($isSetFreeLabel, $isSetFree));
+            $fields[]      = $hctIsSetFree;
+        }
+        
+        if ( $function == 'update' )
+        {
+            $fields[] = new MTextLabel('lastModification', '[' . $data->userName . ' - ' . $data->dateTime . ']', _M('Last modification', $module));
+
+        }
+        
+        $fields[] = new Separator('');
+
+        $this->setFields($fields);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+        $this->setClose($MIOLO->getActionURL($module, substr($action, 0, strrpos($action, ':'))));
+        
+        if ( $function == 'insert' )
+        {
+            $this->page->onLoad('document.' . $this->name . '.enrollId.focus();');
+        }
+        else
+        {
+            $this->page->onLoad('document.' . $this->name . '.note.focus();');
+        }
+        
+        $msg = _M('Enter a numeric value and use "." (dot) as a decimal separator.', $module);
+        
+        $statusIdApproved           = ENROLL_STATUS_APPROVED;
+        $statusIdApprovedInExam     = ENROLL_STATUS_APPROVED_INEXAM;
+        $statusIdDisapproved        = ENROLL_STATUS_DISAPPROVED;
+        $statusIdDisapprovedInExam  = ENROLL_STATUS_DISAPPROVED_INEXAM;
+        $statusIdFrqDisapproved     = ENROLL_STATUS_DISAPPROVED_FOR_LACKS;
+        if ( !$data->totalHoursOffered )
+        {
+            $data->totalHoursOffered = 0 ;
+        }
+        $jsCode = 
+<<< HERE
+        var minFreq       = {$dataLearningPeriod->minimumFrequency};
+        var totalHoursOffered = {$data->totalHoursOffered};
+        var totalAbsences   = {$data->absence};
+        var average = {$dataLearningPeriod->average};
+        var finalAverage = {$dataLearningPeriod->finalAverage};
+        var examWeight = {$dataLearningPeriod->examWeight};
+        var averageWeight = {$dataLearningPeriod->averageWeight};
+        var maxAbsences = parseFloat(parseFloat(totalHoursOffered)*(parseFloat(minFreq)/100));
+
+        function isNumeric(control)
+        {
+            return (!isNaN(parseFloat(control.value))) && (parseFloat(control.value) == control.value);
+        }
+
+        function isNumericValue(controlValue)
+        {
+            return (!isNaN(parseFloat(controlValue))) && (parseFloat(controlValue) == controlValue);
+        }
+       
+        function degreeNoteChanged ( obj )
+        {
+            calcNote();
+            return ;
+        }
+
+        function calcNote()
+        {
+            var inputs = document.getElementsByTagName('INPUT');
+            var note = document.getElementById('note');
+            var weightDivision = 0;
+            var totalNotes = 0;
+            var newNote;
+            var maxNote;
+
+            for ( x=0; x < inputs.length; x++)
+            {
+                if ( inputs[x].id.substring(0,10) == 'degreeNote' )
+                {
+                    maxNote = parseFloat(inputs[x].getAttribute("maxNote"));
+                    weightDivision += parseFloat(inputs[x].getAttribute("weight"));        
+                    inputs[x].value = inputs[x].value.toString().replace(',','.').trim();
+                    newNote = parseFloat(  inputs[x].value == '--' || !isNumeric(inputs[x]) ? 0.00 : inputs[x].value );
+                    newNote = ( newNote > maxNote ? maxNote : newNote );
+                    inputs[x].value = ( inputs[x].value == '--' ? inputs[x].value = '--' : newNote );
+                    totalNotes += ( parseFloat(newNote) * parseFloat(inputs[x].getAttribute("weight")) );
+                }
+            }
+            
+            if ( totalNotes.toString().length > 0 && weightDivision.toString().length > 0 )
+            {
+                note.value = Math.round((totalNotes/(weightDivision/2))*100)/100;
+                if ( parseFloat(note.value) >= average )
+                {
+                    document.getElementById('examNote').value = '';
+                    document.getElementById('examNote').readOnly = true;
+                }
+                else
+                {
+                    document.getElementById('examNote').readOnly = false;
+                }
+            }
+            calcFinalNote();
+        }
+        
+
+        function noteChanged()
+        {
+            calcNote();
+            checkStatusAndChangeIt();
+        }
+
+        function examNoteChanged()
+        {
+            calcFinalNote();   
+            checkStatusAndChangeIt();
+        }
+        
+        function finalNoteChanged()
+        {
+            checkStatusAndChangeIt();    
+        }
+
+        function calcFinalNote()
+        {
+            var examNoteField  = document.getElementById('examNote');
+            var finalNoteField = document.getElementById('finalNote');
+            var noteField      = document.getElementById('note');
+
+            var examValue      = examNoteField.value.toString().replace(',', '.').trim();
+            var noteValue      = noteField.value.toString().replace(',','.').trim();
+            var finalNoteValue = finalNoteField.value.toString().replace(',','.').trim();
+
+            var valueExamNote  = 0;
+            var valueFinalNote;
+            var valueNote      = 0;
+
+            var weightDivision = 0;
+            
+            if ( examValue.length > 0 && examValue != '--' && isNumericValue(examValue) && parseFloat(examValue) > 0 )
+            {
+                valueExamNote = parseFloat(examValue) * parseFloat(examWeight);
+                weightDivision += parseFloat(examWeight);
+            }
+            else
+            {
+                valueExamNote = 0;
+            }
+            
+            if ( noteValue.length > 0 && noteValue != '--' && isNumericValue(noteValue) && parseFloat(noteValue) > 0 )
+            {
+                valueNote = parseFloat(noteValue) * parseFloat(averageWeight);
+                weightDivision += parseFloat(averageWeight);
+            }
+            valueFinalNote = Math.round(((valueNote+valueExamNote) / weightDivision)*100)/100;
+            finalNoteField.value = valueFinalNote;
+            checkStatusAndChangeIt();
+        }
+
+        function checkStatusAndChangeIt()
+        {
+            var statusIdField = document.getElementById('statusId');
+            var statusIdSel   = document.getElementById('statusId_sel');
+
+            var examNoteField  = document.getElementById('examNote');
+            var finalNoteField = document.getElementById('finalNote');
+            var noteField      = document.getElementById('note');
+
+            var examValue      = examNoteField.value.toString().replace(',','.').trim();
+            var noteValue      = noteField.value.toString().replace(',','.').trim();
+            var finalNoteValue = finalNoteField.value.toString().replace(',','.').trim();
+
+            var valueExamNote  = 0;
+            var valueFinalNote = 0;
+            var valueNote      = 0;
+
+            if ( examValue.length > 0 && examValue != '--' && isNumericValue(examValue) && parseFloat(examValue) > 0 )
+            {
+                valueExamNote = parseFloat(examValue);
+            }
+
+            if ( noteValue.length > 0 && noteValue != '--' && isNumericValue(noteValue) && parseFloat(noteValue) > 0 )
+            {
+                valueNote = parseFloat(noteValue);
+            }
+
+            if ( finalNoteValue.length > 0  )
+            {
+                valueFinalNote = parseFloat(finalNoteValue);
+            }
+
+            if (  parseFloat(totalAbsences) >= parseFloat(maxAbsences) )
+            {
+                statusIdField.value = '{$statusIdFrqDisapproved}';
+            }
+            else if ( valueExamNote > 0 && valueNote < average )
+            {
+                //Significa que a pessoa fez prova final e calcula usando a prova final, sendo que será aprovado ou reprovado em final
+                if ( valueFinalNote >= finalAverage )
+                {
+                    statusIdField.value = '{$statusIdApprovedInExam}';
+                }
+                else
+                {
+                    statusIdField.value = '{$statusIdDisapprovedInExam}';
+                }
+            }
+            else if ( valueNote >= average )
+            {
+                statusIdField.value = '{$statusIdApproved}';
+            }
+            else
+            {
+                statusIdField.value = '{$statusIdDisapproved}';
+            }
+            statusIdSel.value   = statusIdField.value;
+        }
+        
+HERE;
+        $this->page->addJSCode($jsCode);
+    }
+
+    /**
+     * Event triggered when user chooses New from the toolbar
+     **/
+    public function tbBtnNew_click($sender = null)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $data = $this->getTypesData();
+        $vars = get_object_vars($data);
+        foreach ( $vars as $var => $value )
+        {
+            if ( $this->$var && $var != 'name' )
+            {
+                $this->$var->value = $this->getFormValue($var . 'S', '');
+            }
+        }
+    }
+
+    /**
+     * Event triggered when user chooses Delete from the toolbar
+     **/
+    public function tbBtnDelete_click($sender = null)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $data   = $this->getTypesData();
+        $opts   = array('event'=>'tbBtnDelete_confirm',
+                        'function'=>'delete',
+                        'enrollId'=>MIOLO::_request('enrollId'));
+
+        $gotoYes = $MIOLO->getActionURL( $module, $action, null, $opts );
+        $goto    = SAGU::getStackBackUrl();
+        $gotoNo  = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+        $msg     = MSG_CONFIRM_RECORD_DELETE;
+        $caption = _M('Question', $module);
+        $MIOLO->question($msg, $gotoYes, $gotoNo);
+    }
+
+    /**
+     * Event triggered when user chooses Yes from the Delete prompt dialog
+     **/
+    public function tbBtnDelete_confirm($sender = null)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        try
+        {    
+            $business = $MIOLO->getBusiness($module, 'BusEnroll');
+            $business->deleteEnroll($this->enrollId->value);
+
+            $msg  = MSG_RECORD_DELETED;
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Information', $module);
+            $MIOLO->information($msg, $goto);
+        }
+        catch (Exception $e)
+        {
+            $msg  = _M('Error executing requested operation. ', $module) . $e->getMessage();
+            $this->addError( $msg );
+        }
+    }
+
+    /**
+     * Event triggered when user chooses Save from the toolbar
+     **/
+    public function tbBtnSave_click($sender = null)
+    {
+        $MIOLO              = MIOLO::getInstance();
+        $module             = MIOLO::getCurrentModule();
+        $action             = MIOLO::getCurrentAction();
+        $function           = MIOLO::_request('function');
+
+        $data = $this->getTypesData();
+        $goto = $this->getFormValue('urlReturnTo');
+        try
+        {
+            $business = $MIOLO->getBusiness($module, 'BusEnroll');
+
+            $opts = array('enrollIdS'=>$data->enrollId);
+            $goto = strlen((string)$goto)>0 ? $goto : SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL( $module, $action, null, $opts);
+            if ( $function == 'update' )
+            {
+                $business->updateEnroll($data);
+                $msg     = MSG_RECORD_UPDATED;
+                $caption = _M('Information', $module);
+                $MIOLO->information($msg, $goto);
+            }
+            else
+            {
+                $business->insertEnroll($data);
+                $msg     = MSG_RECORD_INSERTED;
+                $opts    = array('event'=>'tbBtnNew_click',
+                                 'function'=>'insert');
+
+                $gotoYes = $MIOLO->getActionURL($module, $action, null, $opts);
+                $caption = _M('Question', $module);
+                $MIOLO->question($msg, $gotoYes, $goto);
+            }
+        }
+        catch (Exception $e)
+        {
+            $msg  = _M('Error executing requested operation. ', $module) . $e->getMessage();
+            $this->addError( $msg );
+        }
+    }
+
+    /**
+     * Method to gather all information from the form fields
+     * and put them on a database compatible object
+     **/
+    public function getTypesData()
+    {
+        $data = new acdEnroll();
+        $vars = get_object_vars($data);
+        foreach ( $vars as $var => $value )
+        {
+            if ( $this->$var && $var != 'name' )
+            {
+                $data->$var = $this->$var->value;
+            }
+        }
+
+        if ( $this->additionStatus->value == 'D' )
+        {
+            $data->isDependence = DB_TRUE;
+            $data->isAdaptation = DB_FALSE;
+        }
+        elseif ( $this->additionStatus->value == 'A' )
+        {
+            $data->isDependence = DB_FALSE;
+            $data->isAdaptation = DB_TRUE;
+        }
+        else
+        {
+            $data->isDependence = DB_FALSE;
+            $data->isAdaptation = DB_FALSE;
+        }
+        $data->degreeNote = MIOLO::_request('degreeNote');
+        return $data;
+    }
+
+}
+
+?>

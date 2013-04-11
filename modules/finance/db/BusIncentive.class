@@ -1,0 +1,477 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for finIncentive table
+ *
+ * @author Daniel Afonso Heisler [daniel@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Eduardo Beal Miglioransa [eduardo@solis.coop.br]   
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 02/12/2005
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to manipulate the finIncentive table
+ **/
+class BusinessFinanceBusIncentive extends MBusiness
+{
+
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic', 'sagu');
+        $module = is_null($module) ? 'academic' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+    
+    /**
+     * Return a specific record from the database
+     *
+     * @param $incentiveId (integer): Primary key of the record to be retrieved
+     *
+     * @return (object): Return an object of the type handled by the class
+     *
+     **/
+    public function getIncentive($incentiveId)
+    {
+        $sql = 'SELECT A.incentiveId,
+                       A.contractId,
+                       TO_CHAR(A.startDate,\'' . MASK_DATE . '\'),
+                       TO_CHAR(A.endDate,\'' . MASK_DATE . '\'),
+                       A.incentiveTypeId,
+                       A.valueIsPercent,
+                       A.value,
+                       A.supporterId,
+                       A.agglutinate,
+                       A.costCenterId,
+                       TO_CHAR(A.cancellationDate,\''.MASK_DATE.'\'),
+                       A.userName,
+                       TO_CHAR(A.dateTime,\'' . MASK_DATE . '\'),
+                       A.ipAddress
+                  FROM finIncentive A
+                 WHERE incentiveId = ? ';
+
+        $db     = $this->getDatabase();
+        $result = $db->query(SAGU::prepare($sql, $incentiveId));
+
+        $incentive = new finIncentive();
+        list ( $incentive->incentiveId,
+               $incentive->contractId,
+               $incentive->startDate,
+               $incentive->endDate,
+               $incentive->incentiveTypeId,
+               $incentive->valueIsPercent,
+               $incentive->value,
+               $incentive->supporterId,
+               $incentive->agglutinate,
+               $incentive->costCenterId,
+               $incentive->cancellationDate,
+               $incentive->userName,
+               $incentive->dateTime,
+               $incentive->ipAddress ) = $result[0];
+
+        return $incentive; 
+    }
+    
+    /**
+     * Do a search on the database table handled by the class
+     *
+     * @param $filters (object): Search filters
+     *
+     * @return (array): An array containing the search results
+     **/
+    public function searchIncentive($filters)
+    {
+        $sql = 'SELECT C.incentiveId,
+                       A.personId,
+                       A.name,
+                       C.supporterId,
+                       D.name,
+                       C.incentiveTypeId,
+                       E.description,
+                       TO_CHAR(C.startDate,\'' . MASK_DATE . '\'),
+                       TO_CHAR(C.endDate,\'' . MASK_DATE . '\'),
+                       C.valueIsPercent,
+                       ROUND(C.value, \''. REAL_ROUND_VALUE .'\'),
+                       C.agglutinate,
+                       C.costCenterId,
+                       F.description,
+                       TO_CHAR(C.cancellationDate, \''.MASK_DATE.'\'),
+                       E.operationId,
+                       CASE WHEN NOT C.cancellationDate IS NULL THEN true ELSE false END as isCancelled,
+                       extract( day from C.startDate ) as startDay,
+                       extract( month from C.startDate ) as startMonth,
+                       extract( year from C.startDate ) as startYear,
+                       extract( day from C.endDate ) as endDay,
+                       extract( month from C.endDate ) as endMonth,
+                       extract( year from C.endDate ) as endYear,
+                       extract( day from C.cancellationDate ) as cancellationDay,
+                       extract( month from C.cancellationDate ) as cancellationMonth,
+                       extract( year from C.cancellationDate ) as cancellationYear
+                FROM ONLY basPerson A
+                INNER JOIN acdContract B
+                        ON (A.personId = B.personId)
+                INNER JOIN finIncentive C
+                        ON (B.contractId = C.contractId)
+                LEFT JOIN ONLY basPerson D
+                        ON (C.supporterId = D.personId)
+                INNER JOIN ONLY finIncentiveType E
+                        ON (C.incentiveTypeId = E.incentiveTypeId)
+                LEFT JOIN accCostCenter F
+                        ON (C.costCenterId = F.costCenterId)';
+
+        if ( strlen((string)$filters->personId) > 0 )
+        {
+            $where .= ' AND A.personId = ? ';
+            $args[] = $filters->personId;
+        }
+
+        
+        if ( strlen((string)$filters->contractId) > 0 )
+        {
+            $where .= ' AND B.contractId = ? ';
+            $args[] = $filters->contractId;
+        }
+        if ( strlen((string)$filters->supporterId) > 0 )
+        {
+            $where .= ' AND C.supporterId = ? ';
+            $args[] = $filters->supporterId;
+        }
+        
+        if ( strlen((string)$filters->startDate)>0 && strlen((string)$filters->maturityDate) == 0 )
+        {
+            $where .= ' AND C.startDate >= TO_DATE(?, \''.MASK_DATE.'\') ';
+            $args[] = $filters->startDate;
+        }
+        if ( strlen((string)$filters->endDate)>0 && strlen((string)$filters->maturityDate) == 0 )
+        {
+            $where .= ' AND C.endDate <= TO_DATE(?, \''.MASK_DATE.'\') ';
+            $args[] = $filters->endDate;
+        }
+
+        if ( strlen((string)$filters->maturityDate) > 0 )
+        {
+            $where .= ' AND C.startDate <= TO_DATE(?, \''.MASK_DATE.'\') ';
+            $args[] = $filters->maturityDate;
+            $where .= ' AND C.endDate >= TO_DATE(?, \''.MASK_DATE.'\') ';
+            $args[] = $filters->maturityDate;
+
+        }
+        if ( strlen((string)$filters->incentiveTypeId) > 0 )
+        {
+            $where .= ' AND C.incentiveTypeId = ? ';
+            $args[] = $filters->incentiveTypeId;
+        }
+        if ( strlen((string)$filters->valueIsPercent) > 0 )
+        {
+            $where .= ' AND C.valueIsPercent = ? ';
+            $args[] = $filters->valueIsPercent;
+        }
+        if ( strlen((string)$filters->value) > 0 )
+        {
+            $where .= ' AND C.value = ? ';
+            $args[] = $filters->value;
+        }
+        if ( strlen((string)$filters->agglutinate) > 0 )
+        {
+            $where .= ' AND C.agglutinate = ? ';
+            $args[] = $filters->agglutinate;
+        }
+        if ( strlen((string)$filters->costCenterId) > 0 )
+        {
+            $where .= ' AND C.costCenterId = ? ';
+            $args[] = $filters->costCenterId;
+        }
+        if ( strlen((string)$filters->cancellationDate) > 0 )
+        {
+            $where .= ' AND C.cancellationDate = TO_DATE(?, \''.MASK_DATE.'\') ';
+            $args[] = $filters->cancellationDate;
+        }
+
+        unset($result);
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql.= ' WHERE ' . substr($where, 4) . '
+                  ORDER BY C.startDate ';
+            $db     = $this->getDatabase();
+            $result = $db->query(SAGU::prepare($sql, $args));
+        }
+
+        return $result;
+    }
+
+    /**
+     * Insert a new record
+     *
+     * @param $data (object): An object of the type handled by the class
+     *
+     * @return True if succed, otherwise False
+     *
+     **/
+    public function insertIncentive($data)
+    {
+        $sql = 'SELECT NEXTVAL(\'seq_incentiveid\')';
+        $db  = $this->getDatabase();
+        $ret = $db->query($sql);
+        $data->incentiveId = $ret[0][0];
+
+        $sql = 'INSERT INTO finIncentive
+                            (incentiveId,
+                             contractId,
+                             startDate,
+                             endDate,
+                             incentiveTypeId,
+                             valueIsPercent,
+                             value,
+                             supporterId,
+                             agglutinate,
+                             costCenterId,
+                             cancellationDate)
+                     VALUES (?,?,TO_DATE(?,\'' . MASK_DATE . '\'),
+                             TO_DATE(?,\'' . MASK_DATE . '\'),
+                             ?,?,?,?,?,?, TO_DATE(?, \''.MASK_DATE.'\'))';
+
+        $args = array( $data->incentiveId,
+                       $data->contractId,
+                       $data->startDate,
+                       $data->endDate,
+                       $data->incentiveTypeId,
+                       $data->valueIsPercent,
+                       $data->value,
+                       $data->supporterId,
+                       $data->agglutinate,
+                       $data->costCenterId,
+                       $data->cancellationDate );
+
+        $db     = $this->getDatabase();
+        $result = $db->execute(SAGU::prepare($sql, $args));
+
+        return $result;
+    }
+
+    /**
+     * Update data from a specific record
+     *
+     * @param $data (object): Data which will replace the old record data
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+    public function updateIncentive($data)
+    {
+        $sql = 'UPDATE finIncentive
+                   SET contractId       = ?,
+                       startDate        = TO_DATE(?,\'' . MASK_DATE . '\'),
+                       endDate          = TO_DATE(?,\'' . MASK_DATE . '\'),
+                       incentiveTypeId  = ?,
+                       valueIsPercent   = ?,
+                       value            = ?,
+                       supporterId      = ?,
+                       agglutinate      = ?,
+                       costCenterId     = ?,
+                       cancellationDate = TO_DATE(?,\'' . MASK_DATE . '\')
+                 WHERE incentiveId      = ?';
+
+        $args = array( $data->contractId,
+                       $data->startDate,
+                       $data->endDate,
+                       $data->incentiveTypeId,
+                       $data->valueIsPercent,
+                       $data->value,
+                       $data->supporterId,
+                       $data->agglutinate,
+                       $data->costCenterId,
+                       $data->cancellationDate,
+                       $data->incentiveId );
+
+        $db   = $this->getDatabase();
+        $sqls = SAGU::prepare($sql, $args);
+
+        for ( $i=0; $i<count($sqls); $i++ )
+        {
+            $result = $db->execute($sqls[$i]);
+        }
+ 
+        return $result;
+    }
+
+    /**
+     * Delete a record
+     *
+     * @param $incentiveId (string): Primary key for deletion
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+    public function deleteIncentive($incentiveId)
+    {
+        $sql = 'DELETE FROM finIncentive
+                      WHERE incentiveId = ? ';
+
+        $db     = $this->getDatabase();
+        $result = $db->execute(SAGU::prepare($sql, $incentiveId));
+
+        return $result;
+    }
+
+   /**
+    *
+    * Get the information for special incentives to show on diverse consultation
+    * 
+    * @param $personId (int): Primary key for person to search
+    *
+    * @return (array): Array containing special incentive information
+    *
+    */
+    public function getSpecialIncentive($personId)
+    {
+        $module = MIOLO::getCurrentModule();
+
+        if (defined('SPECIAL_INCENTIVE_ID_TO_SHOW_ON_DIVERSE_CONSULTATION'))
+        {
+            $sql = '          SELECT C.description,
+                                     EXTRACT(month FROM A.startDate) as monthStartDate,
+                                     EXTRACT(year FROM A.startDate) as yearStartDate,
+                                     COALESCE(EXTRACT(month FROM A.cancellationDate), EXTRACT(month FROM A.endDate)) as monthEndDate,
+                                     COALESCE(EXTRACT(year FROM A.cancellationDate), EXTRACT(year FROM A.endDate)) as YearEndDate,
+                                     CASE WHEN COALESCE (A.cancellationDate, A.endDate) IS NULL
+                                          THEN true
+                                          ELSE false
+                                      END as isActive
+                                FROM finIncentive A
+                          INNER JOIN acdContract B
+                               USING (contractId)
+                     INNER JOIN ONLY finIncentiveType C
+                               USING (incentiveTypeId)
+                               WHERE B.personId = ? 
+                                 AND A.incentiveTypeId IN (?) ';
+
+            $args[] = $personId;
+            $args[] = SPECIAL_INCENTIVE_ID_TO_SHOW_ON_DIVERSE_CONSULTATION;
+
+            $db     = $this->getDatabase();
+            $result = $db->query(SAGU::prepare($sql, $args));
+            
+            if (is_array($result[0]))
+            {
+                foreach ($result as $key => $res)
+                {
+                    $res2[$key][0] = $res[0];
+                    while (($res[1]<=$res[3]) && ($res[2]<=$res[4]))
+                    {
+                        if ($res[1] == 13)
+                        {
+                            $res[1] = 1;
+                            $res[2]++;
+                        }
+                        $str[] = $res[1].'-'.$res[2];
+                        $res[1]++;
+                    }
+                    if (count($str)>0)
+                    {
+                        $res2[$key][1] = implode(',', $str);
+                    }
+                    else
+                    {
+                        $res2[$key][1] = $res[1].'-'.$res[2];
+                    }
+                    $res2[$key][2] = ($res[5] == DB_TRUE ? _M('Active', $module) : _M('Inactive', $module));
+                    unset($str);
+                }
+                return $res2;
+            }
+            else
+            {
+                return null;
+            }
+        }
+        else
+        {
+            return null;
+        }
+    }
+
+   /**
+    *
+    * Get all contract incentives from a pupil
+    * 
+    * @param $contractId (int): Primary key for person to search
+    *
+    * @return (array): Array containing all incentive information
+    *
+    */
+    public function getContractIncentives($contractId)
+    {
+        $module = MIOLO::getCurrentModule();
+
+        $sql = 'SELECT A.valueIsPercent,
+                       A.value,
+                       A.supporterId,
+                       A.agglutinate,
+                       C.operationId,
+                       C.needAdjustAuthorization,
+                       C.sendInvoices,
+                       C.generateCredits,
+                       CASE WHEN A.incentiveTypeId IN (SELECT incentiveTypeId FROM finFinancialAid) 
+                            THEN 1
+                            ELSE 2 END as financialAid,
+                       A.costCenterId,
+                       CASE WHEN A.incentiveTypeId IN (SELECT incentiveTypeId FROM finSupport) 
+                            THEN ( SELECT collectionoperationid FROM finSupport where incentivetypeId = C.incentivetypeId )
+                            WHEN A.incentiveTypeId IN (SELECT incentiveTypeId FROM finLoan) 
+                            THEN ( SELECT collectionoperationid FROM finLoan where incentivetypeId = C.incentivetypeId )
+                            ELSE NULL END AS collectionOperationId,
+                       CASE WHEN A.incentiveTypeId IN (SELECT incentiveTypeId FROM finSupport) 
+                            THEN ( SELECT accountSchemeId FROM finSupport where incentivetypeId = C.incentivetypeId )
+                            WHEN A.incentiveTypeId IN (SELECT incentiveTypeId FROM finLoan) 
+                            THEN ( SELECT accountSchemeId FROM finLoan where incentivetypeId = C.incentivetypeId )
+                            ELSE NULL END AS accountSchemeId
+                  FROM finIncentive A
+            INNER JOIN ONLY finIncentiveType C
+                    ON ( A.incentiveTypeId = C.incentiveTypeId )
+            INNER JOIN finOperation B
+                    ON ( B.operationId     = C.operationId )
+                 WHERE ((A.endDate = null AND 
+                         A.cancellationDate = null) OR A.endDate > date(now()))
+                   AND now() BETWEEN A.startDate AND A.endDate
+                   AND C.generateCredits   = TRUE
+                   AND A.contractId        = ?';
+
+        $db     = $this->getDatabase();
+        $result = $db->query(SAGU::prepare($sql, $contractId));
+        return $result;
+
+    }
+
+}
+?>

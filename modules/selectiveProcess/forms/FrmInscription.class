@@ -1,0 +1,815 @@
+<?php
+
+/**
+ * Inscription form
+ *
+ * @author Jamiel Spezia [jamiel@solis.coop.br]
+ *
+ * @version: $Id$
+ * 
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * Rafael Lu�s Spengler [rafael@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ *
+ * @since
+ * Class created on 28/11/2005
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Solu��es Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2005 SOLIS - Cooperativa de Solu��es Livres \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+
+/**
+ * Form to manipulate a selectiveProcessOccurrence
+ **/
+class FrmInscription extends MForm
+{
+    var $inscriptionData;
+    var $optionsNumber;
+    var $othersSelectiveProcessNumbers;
+    /**
+     * Class constructor
+     **/
+    function __construct()
+    {
+        $module = MIOLO::getCurrentModule();
+
+        $this->inscriptionData = unserialize(urldecode(stripslashes(MIOLO::_request('inscriptionData'))));
+
+        if ( MIOLO::_request('function') == 'insert' )
+        {
+            parent::__construct(_M('Insert', $module));
+        }
+        else
+        {
+            parent::__construct(_M('Update', $module));
+        }
+
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+
+        $toolBar = new MToolBar('toolBar',$MIOLO->getActionURL($module,$action));
+
+        $businessCourseOccurence = $MIOLO->getBusiness($module,'BusCourseOccurrence');
+
+        if ( $function == 'insert' )
+        {
+            $toolBar->disableButton('tbBtnDelete');
+            $toolBar->disableButton('tbBtnSave');
+            $toolBar->disableButton('tbBtnPrint');
+        }
+        elseif ( $function == 'delete' )
+        {
+            $toolBar->disableButton('tbBtnSave');
+        }
+        elseif ( $function == 'update')
+        {
+            $toolBar->disableButton('tbBtnSave');
+            $toolBar->disableButton('tbBtnPrint');
+        }
+        $fields[] = $toolBar;
+        $fields[] = new MHiddenField('limbo', $limbo);
+
+        if ( in_array($function, array('update','delete')) )
+        {
+            $inscriptionId    = MIOLO::_request('inscriptionId');
+            $flds[]           = new MHiddenField('inscriptionId', $inscriptionId);
+
+            $business = $MIOLO->getBusiness($module,'BusInscription');
+            $this->inscriptionData     = $business->getInscription($inscriptionId);
+            
+            //echo '<pre>'; print_r($this->inscriptionData);
+
+            if( is_array($this->inscriptionData->options) )
+            {
+                foreach ($this->inscriptionData->options as $key => $option)
+                {
+                    $courseOccurrenceIdAux = $businessCourseOccurence->getCourseOccurrence($option->courseOccurrenceId);
+
+                    $this->inscriptionData->options[$key]->courseOccurrenceId = $courseOccurrenceIdAux->courseId . '/' . $courseOccurrenceIdAux->courseVersion . '/' . $courseOccurrenceIdAux->turnId . '/' . $courseOccurrenceIdAux->unitId;
+                }
+            }
+        }
+
+        $selectiveProcessId   = $this->getFormValue('selectiveProcessId', $this->inscriptionData->selectiveProcessId);
+
+        if ( strlen((string)$selectiveProcessId) > 0 )
+        {
+            //OPTIONS
+            $businessSelectiveProcess    = $MIOLO->getBusiness($module, 'BusSelectiveProcess');
+            $filters->selectiveProcessId = $selectiveProcessId;
+            $selectiveProcess            = $businessSelectiveProcess->searchSelectiveProcess($filters);
+            $this->optionsNumber = $selectiveProcess[0][7];
+
+            for ($x = 0; $x < $this->optionsNumber; $x++)
+            {
+                $flds2[]   = new Separator('');
+                $flds2[]   = new MLabel( _M('Option', $module) . ' ' . ($x+1), 'red');
+
+                if ( in_array($function,array('update','delete')) )
+                {
+                    $flds[]          = new MHiddenField('inscriptionOptionId' . $x, $this->inscriptionData->options[$x]->inscriptionOptionId);
+                }
+
+//                 $courseOccurrenceId  = new MLookupTextField('courseOccurrenceId' . $x, $this->getFormValue('courseOccurrenceId' . $x, $this->inscriptionData->options[$x]->courseOccurrenceId), _M('Curso',$module), FIELD_LOOKUPFIELD_SIZE, null, null, ('limbo, limbo, limbo, courseName' . $x) , $module, 'CourseOccurrence', null, array('selectiveProcessId' => 'selectiveProcessId'), true);
+//                 $courseOccurrenceId->setJsHint(_M('Enter the selective process code',$module));
+
+                if ( in_array($function, array('update')) )
+                {
+                    $businessInscriptionOption = $MIOLO->getBusiness($module,'BusInscriptionOption');
+
+                    $filtersInscriptionOption->selectiveProcessId  = $selectiveProcessId;
+                    $filtersInscriptionOption->optionNumber        = $x+1;
+                    $filtersInscriptionOption->inscriptionId       = $inscriptionId;
+
+                    $searchIncriptionOption = $businessInscriptionOption->searchInscriptionOption($filtersInscriptionOption);
+                }
+                //MIOLO::vd($this->inscriptionData->options);   
+                $courseOccurrenceId = new MSelection('courseOccurrenceId' . $x, $this->getFormValue('courseOccurrenceId' . $x, $this->inscriptionData->options[$x]->courseOccurrenceId), _M('Course',$module).':', $businessCourseOccurence->listCourseOccurenceToInscription($selectiveProcessId, DB_TRUE));
+
+                $courseOccurrenceId->setJsHint(_M('Enter the course code',$module));
+                $flds2[]             = $courseOccurrenceId;
+                $validators[]       = new MRequiredValidator('courseOccurrenceId'.$x);
+                //$validators[] = new MIntegerValidator('courseOccurrenceId', '', 'optional');
+
+//                 $courseName          = new MTextField('courseName' . $x, $this->courseName->value, _M('Course name', $module), FIELD_DESCRIPTION_SIZE);
+//                 $courseName->setReadOnly(true);
+//                 $flds2[]             = $courseName;
+
+                if ( in_array($function,array('update')) )
+                {
+                    $coursePosition            = new MTextField('coursePosition' . $x, $this->getFormValue('coursePosition' . $x, $this->inscriptionData->options[$x]->coursePosition), _M('Position', $module), 8);
+                    $coursePosition->setReadOnly(true);
+                    $flds2[]             = $coursePosition;
+                    //$validators[] = new MIntegerValidator('coursePosition', '', 'optional');
+                }
+            }
+            $bsg1            = new BaseGroup('bsg1', _M('Options',$module), $flds2, 'vertical');
+            $bsg1->showLabel = true;
+            $bsg1->width     = '49%';
+
+            //bg2
+            $flds[]        = new Separator('');
+            $selectiveProcessId  = new MTextField('selectiveProcessId', $this->getFormValue('selectiveProcessId', $this->inscriptionData->selectiveProcessId), _M('Selective process id',$module).':', FIELD_ID_SIZE);
+            $selectiveProcessId->setReadOnly(true);
+            $flds[]             = $selectiveProcessId;
+
+            $flds[]        = new Separator('');
+            $personId  = new MLookupTextField('personId', $this->getFormValue('personId', $this->inscriptionData->personId), _M('Person id',$module), FIELD_LOOKUPFIELD_SIZE, null, null, ('personName') , 'basic', 'PhysicalPerson', null, null, true);
+            $personId->setJsHint(_M('Enter the person code',$module));
+            $flds[]             = $personId;
+            $validators[] = new MIntegerValidator('personId', '', 'required');
+    
+            $personName  = new MTextField('personName', $this->getFormValue('personName', $this->inscriptionData->personName), _M('Person name', $module), FIELD_DESCRIPTION_SIZE);
+            $personName->setReadOnly(true);
+            $flds[]             = $personName;
+
+            $flds[]        = new Separator('');
+            $businessPlace = $MIOLO->getBusiness($module,'BusPlaceOccurrence');
+
+            $cityExam = new MComboBox('cityExam', $this->getFormValue('cityExam', $this->inscriptionData->cityExam), _M('City exam',$module), $businessPlace->listCityExamOccurrence($selectiveProcessId->value));
+            $flds[] = $cityExam;
+            $validators[] = new MRequiredValidator('cityExam');
+
+            $dataSelectiveProcess = $businessSelectiveProcess->getSelectiveProcess($filters->selectiveProcessId);
+            if ($dataSelectiveProcess->isLanguage == DB_TRUE)
+            {
+                    $flds[]        = new Separator('');
+                    $businessLanguageOccurrence = $MIOLO->getBusiness($module,'BusLanguageOccurrence');
+                    $languageId = new MComboBox('languageId', $this->getFormValue('languageId', $this->inscriptionData->languageId), _M('Language description',$module), $businessLanguageOccurrence->listLanguageOccurrence($selectiveProcessId->value));
+                    $validators[] = new MRequiredValidator('languageId');
+                    $flds[] = $languageId;
+            }
+
+            if ( $dataSelectiveProcess->isHighSchool == DB_TRUE )
+            {
+                $flds[]        = new Separator('');
+                $isHighSchoolLabel = new MText('isHighSchoolLabel', _M('Is high school or will be high school even enrol date',$module) . ':');
+//                 $isHighSchoolLabel->setWidth(FIELD_CONTAINER_SIZE);
+                $isHighSchoolLabel->setClass('m-caption m-caption-required');
+                $flds[] = $isHighSchoolLabel;
+
+                if (! isset($isHighSchool) )
+                {
+                    $this->inscriptionData->isHighSchool= 't';
+                }
+
+                $isHighSchool = new MRadioButtonGroup('isHighSchool', '', SAGU::listYesNo(1), $this->getFormValue('isHighSchool', $this->inscriptionData->isHighSchool), null, 'horizontal');
+                $isHighSchool->setShowLabel(false);
+                $flds[] = $isHighSchool;
+            }
+
+            //OTHERS SELECTIVE PROCESS
+            $businessInscription              = $MIOLO->getBusiness('selectiveProcess', 'BusInscription');
+            $businessNote                     = $MIOLO->getBusiness('selectiveProcess', 'BusNote');
+            $businessSelectiveProcessTypeData = $MIOLO->getBusiness('selectiveProcess', 'BusSelectiveProcessTypeData');
+            $othersSelectiveProcess = $businessInscription->getOthersSelectiveProcess($selectiveProcessId->value);
+            $this->othersSelectiveProcessNumbers = count($othersSelectiveProcess);
+
+            if( is_array($othersSelectiveProcess) )
+            {
+                $flds[]        = new Separator('');
+                $isENEMLabel = new MText('isENEMLabel', _M('Is ENEM',$module).'?');
+                $isENEMLabel->setWidth(FIELD_LABEL_SIZE); 
+                $data->isENEM = $this->GetFormValue('isENEMLabel',$data->isENEMLabel);
+
+                $isENEM = new MRadioButtonGroup('isENEM', '', SAGU::listYesNo('1'),     $this->getFormValue('isENEM', $data->isENEM), null, 'horizontal');
+                $isENEM->SetShowLabel(false);
+                $isENEM->setAutoPostBack(true);
+
+                $hctIsENEM = new MHContainer('hctIsENEM', array($isENEMLabel, $isENEM));
+
+                $flds[] = $hctIsENEM;
+            }
+            else
+            {
+                $isENEM = DB_FALSE;
+            }
+
+            if ( (is_array($othersSelectiveProcess) && ($isENEM->value == DB_TRUE)) /*|| ($function == 'update')*/ )
+            {
+                foreach ( $othersSelectiveProcess as $key=>$oSP )
+                {
+                    if ( $function == 'update')
+                    {
+                        $filter->inscriptionId    = $inscriptionId;
+                        $filter->examOccurrenceId = $oSP[0];
+
+                        $dataNote = $businessNote->searchNote($filter);
+                    }
+
+                    $flds3[]            = new MHiddenField('selectiveProcessTypeId' . $key, $oSP[1]);
+
+                    if ( $tmpSelectiveProcessTypeId != $oSP[1] )
+                    {
+                        if ( $function == 'update' )
+                        {
+                            $dataSPTD = $businessSelectiveProcessTypeData->getSelectiveProcessTypeData($this->inscriptionData->inscriptionId, $oSP[1]);
+                        }
+                        $flds3[]        = new MTextField('numberInscription' . $key, $this->GetFormValue('numberInscription' . $key, $dataSPTD->numberInscription), _M('Number inscription', $module).' '.$oSP[4] );
+                        $tmpSelectiveProcessTypeId = $oSP[1];
+                        $validators[] = new MRequiredValidator('numberInscription'.$key);
+                    }
+                    $flds3[]           = new MHiddenField('examOccurrenceId' . $key, $this->GetFormValue('examOccurrenceId' . $key, $oSP[0]) );
+                            //for notes
+                    $flds4[]           = new MTextField('note' . $key, $this->GetFormValue('note' . $key, $dataNote[0][6]), $oSP[3], 10 );
+                            //$validators[] = new MIntegerValidator('note', '', 'optional');
+                }
+
+                $bsg3            = new BaseGroup('bsg3', _M('Others selective process',$module), $flds3, 'vertical');
+                $bsg3->showLabel = true;
+                $bsg3->width     = '100%';
+                        //for notes
+                $bsg4            = new BaseGroup('bsg4', _M('Notes',$module), $flds4, 'vertical');
+                $bsg4->showLabel = true;
+                $bsg4->width     = '100%';
+            }
+
+            if ( in_array($function,array('update')))
+            {
+                $placeRoomId  = new MTextField('placeRoomId', $this->getFormValue('placeRoomId', $this->inscriptionData->placeRoomId), _M('Place room id',$module), 10);
+                $placeRoomId->setReadOnly(true);
+                $flds[]             = $placeRoomId;
+                $validators[] = new MIntegerValidator('placeRoomId', '', 'optional');
+
+                $totalPoints = new MTextField('totalPoints', $this->getFormValue('totalPoints', $this->inscriptionData->totalPoints), _M('Total points', $module), 10);
+                $totalPoints->setReadOnly(true);
+                $flds[]               = $totalPoints;
+
+                $validators[] =  new MFloatValidator('totalPoints', '', FLOAT_SEPARATOR, REAL_ROUND_VALUE, 'optional');
+
+                $isClassified = new MTextField('isClassified', SAGU::getYesNo($this->inscriptionData->isClassified), _M('Is classified',$module), 10);
+                $isClassified->setReadOnly(true);
+                $flds[]                = $isClassified;
+                
+                //Cancelamento de Inscrição
+                $flds[]        = new Separator('');
+                $isCanceledLabel = new MText('isCanceledLabel', _M('Is canceled','academic').'?');
+                $isCanceledLabel->setWidth(FIELD_LABEL_SIZE); 
+                //$data->isCanceled = $this->GetFormValue('isCanceledLabel',$data->isCanceledLabel);
+                //echo '<pre>'; print_r($data); die();  
+                $isCanceled = new MRadioButtonGroup('isCanceled', '', SAGU::listYesNo('1'),  $this->getFormValue('isCanceled', $this->inscriptionData->isCanceled), null, 'horizontal');
+                $isCanceled->SetShowLabel(false);
+
+                $hctIsCanceled = new MHContainer('hctIsCanceled', array($isCanceledLabel, $isCanceled));
+
+                $flds[] = $hctIsCanceled;
+            }
+        }
+        else
+        {
+            $business           = $MIOLO->getBusiness($module,'BusSelectiveProcess');
+            $selectiveProcessId = new MSelection('selectiveProcessId', $this->getFormValue('selectiveProcessId', $data->selectiveProcessId), _M('Selective process id',$module).':', $business->listSelectiveProcess());
+            $selectiveProcessId->setJsHint(_M('Enter the selective process code',$module));
+            $selectiveProcessId->addAttribute('onChange','document.' . $this->getName() . '.submit()' );
+            $flds[]             = $selectiveProcessId;
+            $validators[]       = new MRequiredValidator('selectiveProcessId');
+
+
+            $this->page->onLoad('document.' . $this->name . '.selectiveProcessId.focus();');
+        }
+
+        $bsg2            = new BaseGroup('bsg2', _M('Inscription', $module), $flds, 'vertical');
+        $bsg2->showLabel = true;
+        $bsg2->width     = '100%';
+
+
+        if(($isENEM->value == "t") || ($function == 'update'))
+        {
+            $vct2            = new MVContainer('vct2',array($bsg2,$bsg3, $bsg4));
+
+        }
+        else
+        {
+            $vct2            = new MVContainer('vct2',array($bsg2));
+        }
+        $hct1            = new MHContainer('hct1',array($vct2,$bsg1));
+        $vct2->showLabel = true;
+        $hct1->showLabel = true;
+
+        $fields[] = $hct1;
+
+        $fields[]        = new Separator('');
+        //Error container
+        $divError        = new MDiv('divError', $lblMsg, null, 'align=center');
+        $fields[]        = $divError;
+
+        //buttons
+//         $btn1[]     = new MButton('btnPrev', '<< ' . _M('Previous', $module));
+
+        $btn1[]     = new MButton('btnNext', _M('Save inscription', $module));
+
+        $div1       = new MDiv('div1', $btn1, null, 'align=center');
+        //$div1->addStyle('text-align', 'center');
+        $fields[] = $div1;
+
+        $fields[] = new Separator('');
+
+        /*if ( $function == 'update' )
+        {
+            $fields[] = new MTextLabel('lastModification', '[' . $data->userName . ' - ' . $data->dateTime . ']', _M('Last modification',$module));
+        }*/
+//         $isClassified = new MHiddenField('isClassified', SAGU::getYesNo($this->inscriptionData->isClassified));
+//         $fields[]                = $isClassified;
+
+        $fields[] = new Separator('');
+
+        $this->setFields($fields);
+        if ( isset($validators) )
+        {
+            $this->setValidators($validators);
+        }
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+        $this->setClose($MIOLO->getActionURL($module,substr($action,0,strrpos($action,':'))));
+    }
+
+    /**
+     * Event triggered when user chooses New from the toolbar
+     **/
+    public function tbBtnNew_click($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+    }
+
+    /**
+     * Event triggered when user chooses Delete from the toolbar
+     **/
+    public function tbBtnDelete_click($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $data   = $this->getTypesData();
+        $opts   = array('event'            => 'tbBtnDelete_confirm',
+                        'function'         => 'delete',
+                        'inscriptionId' => MIOLO::_request('inscriptionId') );
+
+        $gotoYes = $MIOLO->getActionURL( $module, $action, null, $opts );
+        $goto    = SAGU::getStackBackUrl();
+        $gotoNo  = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+        $msg     = _M(MSG_CONFIRM_RECORD_DELETE,$module);
+        $caption = _M('Question',$module);
+        $MIOLO->question($msg, $gotoYes, $gotoNo);
+    }
+
+    /**
+     * Event triggered when user chooses Yes from the Delete prompt dialog
+     **/
+    public function tbBtnDelete_confirm($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $business                         = $MIOLO->getBusiness($module, 'BusInscription');
+        $businessNote                     = $MIOLO->getBusiness($module, 'BusNote');
+        $businessSelectiveProcessTypeData = $MIOLO->getBusiness($module, 'BusSelectiveProcessTypeData');
+        $ok           = $businessSelectiveProcessTypeData->deleteSelectiveProcessTypeData($this->inscriptionId->value);
+        $ok           = $businessNote->deleteNote($this->inscriptionId->value);
+        $ok           = $business->deleteInscription($this->inscriptionId->value);
+
+        if ( $ok )
+        {
+            $msg  = _M(MSG_RECORD_DELETED,$module);
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Information',$module);
+            $MIOLO->information($msg, $goto);
+        }
+        else
+        {
+            $msg  = _M('Error executing requested operation.',$module);
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Error',$module);
+            $MIOLO->error( $msg, $goto, $caption );
+        }
+    }
+
+    /**
+     * Method to gather all information from the form fields
+     * and put them on a database compatible object
+     **/
+    public function getTypesData()
+    {
+        $data = new SprInscription();
+        $vars = get_object_vars($data);
+
+        foreach ( $vars as $var => $value )
+        {
+            if ( $this->$var && $var != 'name' )
+            {
+                eval('$data->' . $var . ' = $this->' . $var . '->value;');
+            }
+        }
+
+
+        //$data->inscriptionDateTime = $this->date->value . ' ' . $this->time->value;
+        $data->isInternet = 'f';
+        $data->isClassified = 'f';
+
+        if (isset($this->optionsNumber) )
+        {
+            for ( $x = 0; $x < $this->optionsNumber; $x++ )
+            {
+                $data->options[$x]->optionNumber = $x+1;
+                eval('$data->options['.$x.']->inscriptionOptionId = $this->inscriptionOptionId'.$x.'->value;');
+                eval('$data->options['.$x.']->courseOccurrenceId  = $this->courseOccurrenceId'.$x.'->value;');
+                eval('$data->options['.$x.']->coursePosition            = $this->coursePosition'.$x.'->value;');
+            }
+        }
+
+        if ( isset($this->othersSelectiveProcessNumbers) )
+        {
+            for ( $x = 0; $x < $this->othersSelectiveProcessNumbers; $x++ )
+            {
+                eval('$selectiveProcessTypeId = $this->selectiveProcessTypeId'.$x.'->value;');
+                if ( $tmpSelectiveProcessTypeId != $selectiveProcessTypeId )
+                {
+                    eval('$data->selectiveProcessType['.$x.']->numberInscription = $this->numberInscription'.$x.'->value;');
+                    $tmpSelectiveProcessTypeId = $selectiveProcessTypeId;
+                    $data->selectiveProcessType[$x]->selectiveProcessTypeId = $selectiveProcessTypeId;
+                }
+                $data->options[$x]->optionNumber = $x+1;
+                eval('$data->notes['.$x.']->examOccurrenceId = $this->examOccurrenceId'.$x.'->value;');
+                eval('$data->notes['.$x.']->note             = $this->note'.$x.'->value;');
+            }
+        }
+
+        return $data;
+    }
+
+    /**
+     * Event triggered when user click previous
+     **/
+    public function btnPrev_click($sender = null)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $postAction = substr($action,0,strrpos($action,':')) . ':inscription';
+        $this->page->mGoto($MIOLO->getActionURL($module, $postAction,null,$vars));
+    }
+
+    /**
+     * Event triggered when user click next
+     **/
+    public function btnNext_click($sender = null)
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+
+        $isENEM       = MIOLO::_request('isENEM');
+        $isCanceled   = MIOLO::_request('isCanceled');
+
+        $data = $this->getTypesData();
+
+        $businessCourseOccurence  = $MIOLO->getBusiness($module,'BusCourseOccurrence');
+        $businessSelectiveProcess = $MIOLO->getBusiness($module,'BusSelectiveProcess');
+
+        $dataSelectiveProcess = $businessSelectiveProcess->getSelectiveProcess($data->selectiveProcessId);
+
+        foreach ( $data->options as $key => $courseOccurrenceOptions)
+        {
+            $courseOccurrenceIdAux = explode('/', $courseOccurrenceOptions->courseOccurrenceId);
+
+            $filters->selectiveProcessId = $data->selectiveProcessId;
+			$filters->courseId           = $courseOccurrenceIdAux[0];
+            $filters->courseVersion      = $courseOccurrenceIdAux[1];
+            $filters->turnId             = $courseOccurrenceIdAux[2];
+            $filters->unitId             = $courseOccurrenceIdAux[3];
+
+            $courseOccurrenceIdAux = $businessCourseOccurence->searchCourseOccurrence($filters);
+
+            $data->options[$key]->courseOccurrenceId = $courseOccurrenceIdAux[0][0];
+        }
+
+        foreach ( $data as $k => $v )
+        {
+            $this->inscriptionData->$k = $v;
+        }
+
+        if ( $data->selectiveProcessId == '' )
+        {
+            $msg = _M('Select the respective selective process',$module);
+            $lblMsg = new MText('lblMsg',$msg);
+            $lblMsg->color = 'red';
+
+            $flds[] = $lblMsg;
+            $flds[] = new Separator('');
+
+            $this->divError->addControl($flds);
+        } 
+        elseif ( $data->personId == '')
+        {
+            $msg = _M('Select the person id',$module);
+            $lblMsg = new MText('lblMsg',$msg);
+            $lblMsg->color = 'red';
+
+            $flds[] = $lblMsg;
+            $flds[] = new Separator('');
+
+            $this->divError->addControl($flds);
+        }
+        elseif ($data->cityExam == '')
+        {
+            $msg = _M('Select the respective city exam',$module);
+            $lblMsg = new MText('lblMsg',$msg);
+            $lblMsg->color = 'red';
+
+            $flds[] = $lblMsg;
+            $flds[] = new Separator('');
+
+            $this->divError->addControl($flds);
+        }
+        elseif ( ($data->languageId == '') && ($dataSelectiveProcess->isLanguage == 't'))
+        {
+            $msg = _M('Select the respective language',$module);
+            $lblMsg = new MText('lblMsg',$msg);
+            $lblMsg->color = 'red';
+
+            $flds[] = $lblMsg;
+            $flds[] = new Separator('');
+
+            $this->divError->addControl($flds);
+        }
+        else
+        {
+            if ( is_array($data->options) )
+            {
+                $warning = false;
+                foreach ( $data->options as $key => $option )
+                {
+                    if ( $option->courseOccurrenceId == '' )
+                    {
+                        $msg = _M('Select the respective option',$module) . ' '.($key+1);
+                        $lblMsg = new MText('lblMsg',$msg);
+                        $lblMsg->color = 'red';
+
+                        $fldsE[] = $lblMsg;
+                        $fldsE[] = new Separator('');
+
+                        $this->divError->addControl($fldsE);
+                        unset($fldsE);
+                        $warning = true;
+                    }
+                }
+            }
+
+            if ( !$warning )
+            {
+                $business = $MIOLO->getBusiness($module, 'BusInscription');
+                $businessNote = $MIOLO->getBusiness('selectiveProcess', 'BusNote');
+                $businessSelectiveProcessTypeData = $MIOLO->getBusiness('selectiveProcess', 'BusSelectiveProcessTypeData');
+                $businessInscriptionOption = $MIOLO->getBusiness('selectiveProcess', 'BusInscriptionOption');
+
+                if ( $function == 'update' )
+                {
+                    $ok  = $business->updateInscription($data);
+
+                    if ( $data->inscriptionId && $isENEM == DB_TRUE)
+                    {
+                        foreach ( $data->notes as $notes )
+                        {
+                            unset($filtersNote);
+                            $filtersNote->inscriptionId      = $data->inscriptionId;
+                            $filtersNote->examOccurrenceId   = $notes->examOccurrenceId;
+                            $filtersNote->selectiveProcessId = $data->selectiveProcessId;
+
+                            $searchNote = $businessNote->searchNote($filtersNote);
+                            $filtersNote->note               = $notes->note;
+
+                            if ( is_array($searchNote) )
+                            {
+                                //Update note
+                                $dataNotes->notes->notes         = $notes;
+                                $dataNotes->inscriptionId = $data->inscriptionId;
+
+                                $ok1 = $businessNote->updateNote($dataNotes);
+                            }
+                            else
+                            {
+                                //Insert new note
+
+                                $ok1 = $businessNote->insertNote($filtersNote);
+                            }
+
+                            if ( $ok1 )
+                            {
+                                //Update or insert success
+                            }
+                            else
+                            {
+                                //Update or insert insuccess
+                            }
+                        }
+                    }
+                    if ( is_array($data->selectiveProcessType) )
+                    {
+                        foreach ( $data->selectiveProcessType as $key => $sPT )
+                        {
+                            unset($filterTypeData);
+                            $filterTypeData->selectiveProcessTypeId = $sPT->selectiveProcessTypeId;
+                            $filterTypeData->inscriptionId          = $data->inscriptionId;
+
+                            $searchTypeData = $businessSelectiveProcessTypeData->searchSelectiveProcessTypeData($filterTypeData);
+
+                            $filterTypeData->numberInscription = $sPT->numberInscription;
+
+                            if ( is_array($searchTypeData) )
+                            {
+                                //Update
+                                $ok1 = $businessSelectiveProcessTypeData->updateSelectiveProcessTypeData($filterTypeData);
+                            }
+                            else
+                            {
+                                //Insert
+                                $ok1 = $businessSelectiveProcessTypeData->insertSelectiveProcessTypeData($filterTypeData);
+                            }
+
+                            if ( $ok1 )
+                            {
+                                //Update or insert success
+                            }
+                            else
+                            {
+                                //Update or insert insuccess
+                            }
+                        }
+                    }
+
+                    foreach ( $data->options as $key => $option )
+                    {
+                        $dataInscriptionOption->courseOccurrenceId = $option->courseOccurrenceId;
+                        $dataInscriptionOption->coursePosition     = NULL;
+                        $dataInscriptionOption->inscriptionId      = $data->inscriptionId;
+                        $dataInscriptionOption->optionNumber       = $key+1;
+
+                        $ok = $businessInscriptionOption->updateInscriptionOption($dataInscriptionOption);
+                    }
+
+                    $msg = MSG_RECORD_UPDATED;
+                }
+                else
+                {
+                    $businessPhysicalPersonStudent = $MIOLO->getBusiness('basic', 'BusPhysicalPersonStudent');
+
+                    $ok1 = $businessPhysicalPersonStudent->searchPhysicalPersonStudent($data);
+
+                    if ( is_array($ok1) )
+                    {
+                        //Pessoa est� cadastrada como estudante
+                    }
+                    else
+                    {
+                        //Cadastrar estudante
+                        $ok1 = $businessPhysicalPersonStudent->insertPhysicalPersonStudent($data);
+
+                        if ( $ok1 )
+                        {
+                            //Pessoa cadastrada
+                        }
+                        else
+                        {
+                            //Erro no cadastro
+                        }
+                    }
+
+                    $ok  = $business->insertInscription($data);
+
+                    if ( $ok->inscriptionId && $isENEM == DB_TRUE)
+                    {
+                        foreach ( $data->notes as $key=>$note )
+                        {
+                            $note->inscriptionId = $ok->inscriptionId;
+                            $businessNote->insertNote($note);
+                        }
+                        foreach ( $data->selectiveProcessType as $key=>$sPT )
+                        {
+                            $sPT->inscriptionId = $ok->inscriptionId;
+                            $businessSelectiveProcessTypeData->insertSelectiveProcessTypeData($sPT);
+                        }
+                    }
+
+//                     foreach ( $data->options as $key => $option )
+//                     {
+//                         $dataInscriptionOption->courseOccurrenceId = $option->courseOccurrenceId;
+//                         $dataInscriptionOption->coursePosition     = NULL;
+//                         $dataInscriptionOption->inscriptionId      = $data->inscriptionId;
+//                         $dataInscriptionOption->optionNumber       = $key+1;
+// 
+//                         $ok = $businessInscriptionOption->insertInscriptionOption($dataInscriptionOption);
+//                     }
+
+                    $msg = MSG_RECORD_INSERTED;
+                }
+
+                if ( $ok )
+                {
+                    $opts = array('selectiveProcessIdS'=>$this->inscriptionData->selectiveProcessId,
+                                  'personIdS'=>$this->inscriptionData->personId );
+
+                    if ( $function == 'update' )
+                    {
+                        $caption = _M('Information', $module);
+                        $MIOLO->information($msg, $MIOLO->getActionURL( $module, $action, null, $opts));
+                    }
+                    else
+                    {
+                        unset($opts);
+                        $goto = SAGU::getStackBackUrl();
+                        $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL( $module, $action, null, $opts);
+                        $opts = array('function'=>'insert',
+                                      'selectiveProcessId'=>$this->inscriptionData->selectiveProcessId);
+
+                        $gotoYes = $MIOLO->getActionURL($module, $action, null, $opts);
+                        $caption = _M('Question',$module);
+                        $MIOLO->question($msg, $gotoYes, $goto);
+                    }
+                }
+                else
+                {
+                    $msg  = _M('Error executing requested operation.',$module);
+                    $goto = SAGU::getStackBackUrl();
+                    $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action, null, $opts);
+                    $caption = _M('Error',$module);
+                    $MIOLO->error( $msg, $goto, $caption );
+                }
+            }
+        }
+    }
+}
+
+?>

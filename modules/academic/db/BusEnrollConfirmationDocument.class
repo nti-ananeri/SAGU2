@@ -1,0 +1,164 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for acdGroup table
+ *
+ * @author Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 22/09/2005
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to manipulate the acdGroup table
+ **/
+class BusinessAcademicBusEnrollConfirmationDocument extends Business
+{
+    public $db;
+    
+    //Class constructor
+    public function __construct()
+    {
+        $this->db = $this->getDatabase();
+    }
+    
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module = is_null($module) ? 'academic' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+
+    public function getPupilEnroll ( $filters )
+    {
+        $sql = 
+        'SELECT
+            DISTINCT
+            G.shortDescription as weekDay,
+            H.shortDescription as turnDescription,
+            COALESCE(I.room::varchar,\'\') || \'/\' || COALESCE(I.building::varchar, \'\') as roomBuilding,
+            TO_CHAR(E.beginDate, \'' . MASK_DATE . '\') as beginDate,
+            K.shortname as curricularComponent,
+            COALESCE(M.shortname, M.name) as professorName,
+            K.curricularComponentId as curricularComponentId,
+            A.contractId,
+            C.name,
+            C.personId,
+            A.enrollId,
+            TO_CHAR(A.dateEnroll, \''. MASK_DATE . '\'),
+            N.name as courseName
+        FROM
+            ONLY acdEnroll A INNER JOIN
+            ONLY acdContract B ON ( A.contractId = B.contractId ) INNER JOIN
+            ONLY basPhysicalPerson C ON ( C.personId = B.personId ) INNER JOIN
+            ONLY acdGroup D ON ( D.groupId = A.groupId ) INNER JOIN
+            ONLY acdLearningPeriod E ON ( E.learningPeriodId = D.learningPeriodId ) LEFT JOIN
+            acdSchedule F ON ( F.groupId = D.groupId ) LEFT JOIN
+            basWeekDay G ON ( G.weekDayId = F.weekDayId ) INNER JOIN
+            basTurn H ON ( H.turnId = E.turnId ) LEFT JOIN
+            insPhysicalResource I ON ( I.physicalResourceId = F.physicalResourceId AND I.physicalResourceVersion = F.physicalResourceVersion ) INNER JOIN
+            acdCurriculum J ON ( J.curriculumId = D.curriculumId ) INNER JOIN
+            acdCurricularComponent K ON ( K.curricularComponentId = J.curricularComponentId AND K.curricularComponentVersion = J.curricularComponentVersion ) LEFT JOIN
+            acdScheduleProfessor L ON ( L.scheduleId = F.scheduleId ) LEFT JOIN
+            ONLY basPhysicalPerson M ON ( M.personId = L.professorId ) INNER JOIN
+            ONLY acdCourse N ON ( N.courseId = B.courseId )
+        WHERE
+            A.statusId = ' . ENROLL_STATUS_ENROLLED . '
+        AND E.periodId = ? ';
+
+        $args[] = $filters->periodId;
+        
+        $where = '';
+        
+        if ( strlen((string)$filters->courseId) > 0 ) 
+        {
+            $where .= ' AND B.courseId = ? ';
+            $args[] = $filters->courseId;
+        }
+
+        if ( strlen((string)$filters->courseVersion) > 0 ) 
+        {
+            $where .= ' AND B.courseVersion = ?::integer ';
+            $args[] = $filters->courseVersion;
+        }
+
+        if ( strlen((string)$filters->unitId) > 0 ) 
+        {
+            $where .= ' AND B.unitId = ?::integer ';
+            $args[] = $filters->unitId;
+        }
+
+        if ( strlen((string)$filters->turnId) > 0 ) 
+        {
+            $where .= ' AND B.turnId = ?::integer ';
+            $args[] = $filters->turnId;
+        }
+
+        if ( strlen((string)$filters->classId) > 0 ) 
+        {
+            $where .= ' AND ( B.contractId IN ( SELECT contractId FROM acdClassPupil WHERE classId = ? AND beginDate >= A.dateEnroll AND ( endDate <= A.dateEnroll OR endDate IS NULL )  UNION SELECT contractId FROM acdEnroll INNER JOIN acdGroup USING ( groupId ) INNER JOIN acdLearningPeriod ON ( acdLearningPeriod.learningPeriodId = acdGroup.learningPeriodId ) WHERE classId = ? AND periodId = E.periodId ) ) AND D.classId = ? ';
+            $args[] = $filters->classId;
+            $args[] = $filters->classId;
+            $args[] = $filters->classId;
+        }
+        
+        if ( strlen((string)$filters->contractId) > 0 )
+        {
+            $where .= ' AND B.contractId = ?::integer ';
+            $args[] = $filters->contractId;
+        }
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= $where;
+            $sql .= ' ORDER BY 9, 5';
+            unset($result);
+            $result = $this->db->query(SAGU::prepare($sql, $args));
+            /*if ( count($result) > 0 )
+            {
+                $result2 = $result;
+                unset($result);
+                foreach ( $result2 as $ln => $array )
+                {
+                    list($obj->weekDay, $obj->turn, $obj->room, $obj->beginDate, $obj->curricularComponent, $obj->professor, $obj->curricularComponentId, $obj->contractId, $obj->personName, $obj->personId, $obj->enrollId, $obj->emissionDate ) = $array;
+                }
+            }*/
+        }
+        return $result;
+
+    }
+
+}
+
+?>

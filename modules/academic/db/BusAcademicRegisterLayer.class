@@ -1,0 +1,420 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for acdStateContract table
+ *
+ * @author Hélio Henrique Rodrigues Guimarães [helio@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 29/08/2006
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to manipulate the acdMovementContract table
+ **/
+class BusinessAcademicBusAcademicRegisterLayer extends Business
+{
+
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic', 'sagu');
+        $module = is_null($module) ? 'academic' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+    /**
+     * List all records from the table handled by the class
+     *
+     * @param: None
+     *
+     * @returns (array): Return an array with the entire table
+     *
+     **/
+    public function getPupilsToAcademicRegisterLayer($filters)
+    {
+        $sql = 'SELECT DISTINCT A.personId,
+                            A.name as personName,
+                            B.name as fatherName,
+                            C.name as motherName,
+                            TO_CHAR(A.dateBirth, \''.MASK_DATE.'\' ),
+                            D.name as cityIdBirth,
+                            D.stateId as stateIdBirth,
+                            E.name as institutionIdHs,
+                            F.name as cityInstitutionId,
+                            F.stateId as stateIdInstitution,
+                            A.yearhs,
+                            H.courseId,
+                            H.name as courseName,
+                            J.description as stateContractDescription,
+                            K.value as institutionContractDescrition,
+                            I.stateContractId as stateContractBegin,
+                            M.stateContractId as stateContractCurrent,
+                            N.description
+                      FROM acdContract G
+                INNER JOIN acdCourse H
+                        ON (G.courseId = H.courseId)
+                INNER JOIN acdMovementContract I
+                        ON (I.contractId = G.contractId)
+                INNER JOIN acdStateContract J
+                        ON (J.stateContractId = I.stateContractId AND
+                            j.inOutTransition = \'I\')
+                LEFT JOIN acdMovementContractComplement K
+                        ON (G.contractId = K.contractId AND
+                            K.stateContractId = J.stateContractId)
+            INNER JOIN ONLY basPhysicalPersonStudent A
+                        ON (A.personId = G.personId)
+            INNER JOIN ONLY basPhysicalPerson B
+                        ON (B.personId = A.fatherId)
+            INNER JOIN ONLY basPhysicalPerson C
+                        ON (C.personId = A.motherId)
+                INNER JOIN basCity D
+                        ON (D.cityId = A.cityIdBirth)
+            INNER JOIN ONLY basLegalPerson E
+                        ON (E.personId = A.institutionIdHs)
+                INNER JOIN basCity F
+                        ON (F.cityId = A.cityIdHs)
+                INNER JOIN acdLearningPeriod L
+                        ON (L.courseId      = ? AND
+                            L.courseVersion = ? AND
+                            L.unitId        = ? AND
+                            L.periodId      = ?)
+                 LEFT JOIN acdMovementContract M
+                        ON (G.contractId = M.contractId AND
+                            M.learningPeriodId = L.learningPeriodId AND
+                            M.stateTime = (SELECT max(A1.stateTime)
+                                             FROM acdMovementContract A1
+                                       INNER JOIN acdLearningPeriod A2
+                                               ON (A2.courseId         = ? AND
+                                                   A2.courseVersion    = ? AND
+                                                   A2.unitId           = ? AND
+                                                   A2.periodId         = ? AND
+                                                   A1.learningPeriodId = A2.learningPeriodId)
+                                             WHERE A1.contractId = (SELECT contractId 
+                                                                      FROM acdContract
+                                                                     WHERE courseId      = ? AND
+									   courseVersion = ? AND
+                                                                           unitId        = ? AND
+                                                                           personId      = ?)))
+                INNER JOIN acdStateContract N
+                        ON (N.stateContractId = M.stateContractId)
+                     WHERE G.courseId      = ? AND
+                           G.courseVersion = ? AND
+                           G.unitId        = ? AND
+                           G.personId      = ?';
+
+        if ( strlen((string)$filters->personId) > 0 )
+        {
+            $personId = $filters->personId;
+
+            $args = array($filters->courseId,
+                            $filters->courseVersion,
+                            $filters->unitId,
+                            $filters->periodId,
+                            $filters->courseId,
+                            $filters->courseVersion,
+                            $filters->unitId,
+                            $filters->periodId,
+                            $filters->courseId,
+                            $filters->courseVersion,
+                            $filters->unitId,
+                            $personId,
+                            $filters->courseId,
+                            $filters->courseVersion,
+                            $filters->unitId,
+                            $personId);
+
+            if ( strlen((string)$filters->radOption) > 0 )
+            {
+                $sql .= 'AND H.formationLevelId = ?';
+
+                if ( $filters->radOption == 'G')
+                {
+                    $args[] = GRADUATION_FORMATION_LEVEL_ID;
+                }
+                elseif ( $filters->radOption == 'T')
+                {
+                    $args[] = TECHNICAL_FORMATION_LEVEL_ID;
+                }
+            }
+
+            if ($filters->radFileSituation == 'enrolled')
+            {
+                $sql .= ' AND M.stateContractId = ?';
+                $args[] = STATE_CONTRACT_ID_ENROLLED;
+            }
+            elseif ($filters->radFileSituation == 'freshmen')
+            {
+                $sql .= ' AND M.stateContractId = ?';
+                $args[] = WRITING_STATE_CONTRACT;
+            }
+            elseif ($filters->radFileSituation == 'locked')
+            {
+                $sql .= ' AND M.stateContractId = ?';
+                $args[] = STATE_CONTRACT_ID_ENROLLED;
+            }
+            elseif ($filters->radFileSituation == 'other')
+            {
+                            //AND C.stateContractId <> ? 
+                $sql    .= ' AND M.stateContractId <> ? 
+                             AND M.stateContractId <> ? 
+                             AND M.stateContractId <> ?';
+                $args[] = STATE_CONTRACT_ID_ENROLLED;
+                $args[] = WRITING_STATE_CONTRACT;
+                $args[] = STATE_CONTRACT_ID_ENROLLED;
+            }
+
+            $sql .= '  ORDER BY A.name ASC';
+
+            $db      = $this->getDatabase();
+            $result1 = $db->query(SAGU::prepare($sql, $args));
+        }
+        else
+        {
+            $sql1 = 'SELECT personId 
+                       FROM acdContract
+                      WHERE courseId      = ? AND
+                            courseVersion = ? AND
+                            unitId        = ?';
+
+            $args1 = array($filters->courseId,
+                           $filters->courseVersion,
+                           $filters->unitId);
+
+            $db      = $this->getDatabase();
+
+            $resultPersons = $db->query(SAGU::prepare($sql1, $args1));;
+
+            if ( is_array($resultPersons) && (count($resultPersons) > 0) )
+            {
+                foreach($resultPersons as $key=>$resultPerson1)
+                {
+                    $persons[$key] = $resultPerson1[0];
+                }
+            }
+
+            $result1 = array();
+
+            if ( is_array($persons) && (count($persons) > 0) )
+            {
+                foreach ($persons as $personId)
+                {
+                    unset($sql2);
+                    $sql2 = $sql;
+                    unset($args);
+                    $args = array(  $filters->courseId,
+                                    $filters->courseVersion,
+                                    $filters->unitId,
+                                    $filters->periodId,
+                                    $filters->courseId,
+                                    $filters->courseVersion,
+                                    $filters->unitId,
+                                    $filters->periodId,
+                                    $filters->courseId,
+                                    $filters->courseVersion,
+                                    $filters->unitId,
+                                    $personId,
+                                    $filters->courseId,
+                                    $filters->courseVersion,
+                                    $filters->unitId,
+                                    $personId);
+    
+                    if ( strlen((string)$filters->radOption) > 0 )
+                    {
+                        $sql2 .= 'AND H.formationLevelId = ?';
+    
+                        if ( $filters->radOption == 'G')
+                        {
+                            $args[] = GRADUATION_FORMATION_LEVEL_ID;
+                        }
+                        elseif ( $filters->radOption == 'T')
+                        {
+                            $args[] = TECHNICAL_FORMATION_LEVEL_ID;
+                        }
+                    }
+    
+                    if ($filters->radFileSituation == 'enrolled')
+                    {
+                        $sql2 .= ' AND M.stateContractId = ?';
+                        $args[] = STATE_CONTRACT_ID_ENROLLED;
+                    }
+                    elseif ($filters->radFileSituation == 'freshmen')
+                    {
+                        $sql2 .= ' AND M.stateContractId = ?';
+                        $args[] = WRITING_STATE_CONTRACT;
+                    }
+                    elseif ($filters->radFileSituation == 'locked')
+                    {
+                        $sql2 .= ' AND M.stateContractId = ?';
+                        $args[] = STATE_CONTRACT_ID_LOCKED;
+                    }
+                    elseif ($filters->radFileSituation == 'other')
+                    {
+                                    //AND C.stateContractId <> ? 
+                        $sql2    .= ' AND M.stateContractId <> ? 
+                                    AND M.stateContractId <> ? 
+                                    AND M.stateContractId <> ?';
+                        $args[] = STATE_CONTRACT_ID_ENROLLED;
+                        $args[] = WRITING_STATE_CONTRACT;
+                        $args[] = STATE_CONTRACT_ID_LOCKED;
+                    }
+    
+                    $sql2 .= '  ORDER BY A.name ASC';
+    
+                    $db        = $this->getDatabase();
+                    $result1[] = $db->query(SAGU::prepare($sql2, $args));
+                }
+            }
+
+            $auxKeyIndex = 0;
+
+            if ( is_array($result1) && (count($result1) > 0) )
+            {
+                foreach($result1 as $keyAux => $resultAux1)
+                {
+                    if ( is_array($resultAux1) )
+                    {
+                        $personAux[$auxKeyIndex] = $resultAux1[0];
+                        $auxKeyIndex++;
+                    }
+                }
+            }
+
+            unset($result1);
+            $result1 = $personAux;
+        }
+
+        return $result1;
+    }
+
+    /**
+     * List all records from the table handled by the class
+     *
+     * @param: None
+     *
+     * @returns (array): Return an array with the entire table
+     *
+     **/
+    public function getExamsNotesFromSelectiveProcess($filters)
+    {
+        $sql = ' SELECT B.inscriptionId,
+                        F.description as examDescription,
+                        (SUM(D.note * H.weight)/ (SELECT maximumPoints 
+                                                       FROM sprSelectiveProcess
+                                                      WHERE selectiveProcessId = B.selectiveProcessId)), 
+                        TO_CHAR(G.beginDate, \''.MASK_DATE.'\'),
+                        B.selectiveProcessId
+                   FROM sprInscription B
+             INNER JOIN sprInscriptionOption C
+                     ON (B.inscriptionId = C.inscriptionId AND 
+                         C.optionNumber = 1)
+             INNER JOIN sprCourseOccurrence C1
+                     ON (C1.courseOccurrenceId = C.courseOccurrenceId)
+             INNER JOIN sprExamOccurrence E
+                     ON (E.selectiveProcessId = B.selectiveProcessId AND
+                         E.selectiveProcessTypeId = 1)
+             INNER JOIN sprNote D
+                     ON (B.inscriptionId = D.inscriptionId AND
+                         D.examOccurrenceId = E.examOccurrenceId)
+             INNER JOIN sprExam F
+                     ON (F.examId = E.examId)
+             INNER JOIN sprSelectiveProcess G
+                     ON (G.selectiveProcessId = B.selectiveProcessId)
+             INNER JOIN sprCourseExamBalance H
+                     ON (H.examOccurrenceId = E.examOccurrenceId AND
+                         H.courseVacantId = C1.courseVacantId)
+                  WHERE B.inscriptionId = (SELECT max(A.inscriptionId) 
+                                             FROM sprInscription A
+                                            WHERE A.personId = ?)
+	       GROUP BY 1, 2, G.beginDate, 5, G.maximumPoints
+               ORDER BY F.description, G.beginDate DESC';
+
+        $args = array( $filters->personId );
+
+        $db     = $this->getDatabase();
+        $result = $db->query(SAGU::prepare($sql, $args));
+
+        return $result;
+    }
+
+    public function getSelectiveProcessFromAprovePupil($filters)
+    {
+        $sql = ' SELECT X.inscriptionId,
+                        SUM(X.totalNote),
+                        X.selectiveProcessTypeId,
+                        X.selectiveProcessTypeDescription
+                   FROM (
+                         SELECT B.inscriptionId,
+                                F.description as examDescription,
+                                (SUM(D.note * H.weight)/ (SELECT maximumPoints
+                                                            FROM sprSelectiveProcess
+                                                           WHERE selectiveProcessId = B.selectiveProcessId)) as totalNote,
+                                TO_CHAR(G.beginDate, \''.MASK_DATE.'\'),
+                                E.selectiveProcessTypeId,
+                                I.description as selectiveProcessTypeDescription
+                           FROM sprInscription B
+                     INNER JOIN sprInscriptionOption C
+                             ON (B.inscriptionId = C.inscriptionId AND
+                                 C.optionNumber = 1)
+                     INNER JOIN sprCourseOccurrence C1
+                             ON (C1.courseOccurrenceId = C.courseOccurrenceId)
+                     INNER JOIN sprExamOccurrence E
+                             ON (E.selectiveProcessId = B.selectiveProcessId)
+                     INNER JOIN sprNote D
+                             ON (B.inscriptionId = D.inscriptionId AND
+                                 D.examOccurrenceId = E.examOccurrenceId)
+                     INNER JOIN sprExam F
+                             ON (F.examId = E.examId)
+                     INNER JOIN sprSelectiveProcess G
+                             ON (G.selectiveProcessId = B.selectiveProcessId)
+                     INNER JOIN sprCourseExamBalance H
+                             ON (H.examOccurrenceId = E.examOccurrenceId AND
+                                 H.courseVacantId = C1.courseVacantId)
+                      INNER JOIN sprSelectiveProcessType I
+                              ON (I.selectiveProcessTypeID = E.selectiveProcessTypeID)
+                           WHERE B.inscriptionId = (SELECT max(A.inscriptionId)
+                                                      FROM sprInscription A
+                                                     WHERE A.personId = '.$filters->personId.')
+                        GROUP BY 1, 2, G.beginDate, G.maximumPoints, E.selectiveProcessTypeId, B.selectiveProcessId, I.description
+                        ORDER BY F.description, G.beginDate DESC ) AS X
+            GROUP BY 1, 3, 4';
+
+        $db     = $this->getDatabase();
+        $result = $db->query($sql);
+
+        return $result; 
+    }
+
+}
+
+?>

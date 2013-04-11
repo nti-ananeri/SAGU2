@@ -1,0 +1,163 @@
+<?php
+
+/**
+ *
+ * This file handles the connection and actions for finReceivableInvoice table
+ *
+ * @author Giovani Murilo Dantas Corrêa [gmurilo@isolution.inf.br] 
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Daniel Afonso Heisler [daniel@isolution.inf.br]
+ *
+ * @since
+ * Class created on 28/01/2008
+ *
+ * \b @organization \n
+ * iSolution - Soluções em TI \n
+ * The iSolution Development Team
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to manipulate the Invoice table
+ **/
+$MIOLO = MIOLO::getInstance();
+
+class BusinessFinanceBusCustomizableEntryReport  extends MBusiness
+{
+    private $db;
+    public function __construct()
+    {
+        $MIOLO = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $this->db = $MIOLO->getDatabase($module, 'finance');
+    }
+
+    public function getReport($data)
+    {
+        $sql = '
+            SELECT 
+                finentry.username as "Usuário", 
+                TO_CHAR(finentry.datetime, \''. MASK_DATE_TIME . '\') as "Horário", 
+                finentry.ipaddress as "Computador (IP)", 
+                invoiceid as "Título", 
+                ROUND(finentry.value, '. REAL_ROUND_VALUE . ' ) as "Valor", 
+                finoperation.operationid,
+                finOperation.description as "Operação", 
+                finReceivableInvoice.personid as "Código da Pessoa",
+                getpersonname(finReceivableInvoice.personid) as "Nome",
+                finoperation.operationtypeid as "Tipo de Operação",
+                finentry.creationtype as "Criação",
+                CASE WHEN NOT finCounterMovement.entryId IS NULL THEN \'' . _M('Yes', 'basic') . '\' ELSE \'' . _M('No', 'basic') . '\' END as "É Movimento de Caixa",
+                CASE WHEN NOT finReceivableInvoice.returnFileId IS NULL THEN \'' . _M('Yes', 'basic') . '\' ELSE \''. _M('No', 'basic') . '\' END as "É Retrno Bancário"
+            FROM 
+                finentry inner join only 
+                finReceivableInvoice using ( invoiceid ) inner join 
+                finoperation using ( operationid ) left join
+                acdContract USING ( contractId ) LEFT JOIN
+                acdCourse ON ( acdCourse.courseId = acdContract.courseId ) LEFT JOIN
+                finCounterMovement ON ( finCounterMovement.entryId = finEntry.entryId )
+            where 
+                1 = 1 ';
+
+        if ( strlen((string)$data->userName) > 0 )
+        {
+            $sql .= ' AND to_ascii(trim(finentry.username)) ilike to_ascii(trim(?)) ';
+            $args[] = $data->userName . '%';
+        }
+
+        if ( strlen((string)$data->initialIpAddress) > 0 && strlen((string)$data->finalIpAddress) )
+        {
+            $sql .= ' AND finEntry.ipaddress::inet between ?::inet AND ?::inet ';
+            $args[] = $data->initialIpAddress;
+            $args[] = $data->finalIpAddress;
+        }
+
+        if ( strlen((string)$data->beginDate) > 0 )
+        {
+            $sql .= ' AND finEntry.datetime::date >= TO_DATE(?, \''. MASK_DATE . '\') ';
+            $args[] = $data->beginDate;
+        }
+
+        if ( strlen((string)$data->endDate) > 0 )
+        {
+            $sql .= ' AND finEntry.datetime::date <= TO_DATE(?, \''. MASK_DATE . '\') ';
+            $args[] = $data->endDate;
+        }
+
+        if ( strlen((string)$data->creationTypeId) > 0 )
+        {
+            $sql .= ' AND finEntry.creationType = ? ';
+            $args[] = $data->creationTypeId;
+        }
+
+        if ( strlen((string)$data->operationTypeId) > 0 )
+        {
+            $sql .= ' AND finOperation.operationTypeId = ? ';
+            $args[] = $data->operationTypeId;
+        }
+        
+        if ( count($data->operationId) > 0 && is_array($data->operationId)  )
+        {
+            $sql .= ' AND finEntry.operationId IN ( ' . implode(',', $data->operationId ) . ' ) ';
+        }
+
+        if ( count($data->incomeSourceId) > 0 && is_array($data->incomeSourceId)  )
+        {
+            $sql .= ' AND finReceivableInvoice.incomeSourceId IN ( ' . implode(',', $data->incomeSourceId ) . ' ) ';
+        }
+
+        if ( strlen((string)$data->periodId) > 0  )
+        {
+            $sql .= ' AND finReceivableInvoice.periodId = ? ';
+            $args[] = $data->periodId;
+        }
+         
+        if ( strlen((string)$data->courseName) > 0 )
+        {
+            $sql .= ' AND TO_ASCII(TRIM(acdCourse.name)) ILIKE TO_ASCII(TRIM(?)) ';
+            $args[] = $data->courseName . '%';
+        }
+        
+        if ( strlen((string)$data->courseId) > 0 )
+        {
+            $sql .= ' AND acdContract.courseId = ?';
+            $args[] = $data->courseId;
+        }
+
+        if ( $data->isCounterMovement == DB_TRUE )
+        {
+            $sql .= ' AND (NOT finCounterMovement.entryId IS NULL)  ';
+        }
+        else if ( $data->isCounterMovement == DB_FALSE ) 
+        {
+            $sql .= ' AND (finCounterMovement.entryId IS NULL)  ';
+        }
+
+        if ( $data->isBankReturn == DB_TRUE )
+        {
+            $sql .= ' AND (NOT finReceivableInvoice.returnFileId IS NULL)  ';
+        }
+        else if ( $data->isBankReturn == DB_FALSE ) 
+        {
+            $sql .= ' AND (finReceivableInvoice.returnFileId IS NULL)  ';
+        }
+
+        if ( count($data) > 0 )
+        {
+            $sql = SAGU::prepare($sql, $args);
+            $sql .= ' ORDER BY finEntry.dateTime ';
+            $return = $this->db->query($sql);
+            return $return;
+        }
+    }
+}
+?>

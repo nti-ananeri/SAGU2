@@ -1,0 +1,583 @@
+<?php
+
+/**
+ * Answer sheet form
+ *
+ * @author Hélio H. R. Guimarães [helio@solis.coop.br]
+ *
+ * @version: $Id$
+ * 
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * Rafael Luís Spengler [rafael@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * Armando Taffarel Neto [taffarel@solis.coop.br]
+ *
+ * @since
+ * Class created on 28/11/2005
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2005 SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+
+/**
+ * Form to manipulate a examnswerSheet
+ **/
+class FrmAnswerSheet extends MForm
+{
+    var $inscriptionData;
+    var $optionsNumber;
+    private $optionAux;
+    /**
+     * Class constructor
+     **/
+    function __construct()
+    {
+        $module = MIOLO::getCurrentModule();
+
+        $this->inscriptionData = unserialize(urldecode(stripslashes(MIOLO::_request('inscriptionData'))));
+
+        if ( MIOLO::_request('function') == 'insert' )
+        {
+            parent::__construct(_M('Insert', $module));
+        }
+        else
+        {
+            parent::__construct(_M('Update', $module));
+        }
+
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+
+        $toolBar = new MToolBar('toolBar',$MIOLO->getActionURL($module,$action));
+
+        if ( $function == 'insert' )
+        {
+            $toolBar->disableButton('tbBtnDelete');
+            $toolBar->disableButton('tbBtnSave');
+            $toolBar->disableButton('tbBtnPrint');
+        }
+        elseif ( $function == 'delete' )
+        {
+            $toolBar->disableButton('tbBtnSave');
+        }
+        elseif ( $function == 'update')
+        {
+            $toolBar->disableButton('tbBtnSave');
+            $toolBar->disableButton('tbBtnPrint');
+        }
+        $fields[] = $toolBar;
+
+        $divError        = new MDiv('divError', $lblMsg, null, 'align=center');
+
+        if ( in_array($function,array('update','delete')) )
+        {
+            $selectiveProcessId    = MIOLO::_request('selectiveProcessId');
+            $flds[]                = new MHiddenField('selectiveProcessId', $selectiveProcessId);
+
+            $business               = $MIOLO->getBusiness($module,'BusAnswerSheet');
+
+            $this->inscriptionData  = $business->getAnswerSheet($selectiveProcessId);
+        }
+
+        $btn1[]     = new MButton('btnNext', _M('Save', $module));
+
+        if ( strlen((string)$selectiveProcessId->value) > 0 ) //in update or delete
+        {
+            $selectiveProcessId     = new MTextField('selectiveProcessId', $this->getFormValue('selectiveProcessId', $selectiveProcessId->values), _M('Selective process', $module).':', 30);
+            $selectiveProcessId->setReadOnly(true);
+            $flds[]                 = $selectiveProcessId;
+
+            $business               = $MIOLO->getBusiness($module,'BusAnswerSheet');
+            $data->numberQuestions  = $business->getNumberQuestions($selectiveProcessId->value);
+
+            $examDescription[]      = $business->getExams($selectiveProcessId->value);
+
+            $this->optionsNumber    = $data->numberQuestions;
+
+            $table                  = new MSimpleTable('', '', (int)($this->optionsNumber / 4), 8);
+
+            //Code to print in the screen the questions and the respectives exams names
+            $numberQuestionX = 1;
+            $n=0;
+            $count=0;
+
+            for($x = 0; $x < count($examDescription[0]); $x++)
+            {
+                for ($xx = 0 ; $xx < $examDescription[0][$x][1]; $xx++)
+                {
+                    $optionLabel = new MText('optionLabel', _M('Q',$module) . ' ' . ($numberQuestionX) . ' - ' . ($examDescription[0][$x][0]), 'black');
+                    $optionLabel->setWidth('85');
+
+                    $auxTeste1 = ($auxXx*$x)+$xx;
+ 
+                    eval('$option'.$auxTeste1.' = new MTextField(\'option'.$auxTeste1.'\', $this->getFormValue(\'option'.$auxTeste1.'\', $this->inscriptionData['.$auxTeste1.']->option), null, 5);');
+
+                    eval('$this->optionAux['.$auxTeste1.'] = $option'.$auxTeste1.';');
+
+                    $table->setCell( $n, $count++, $optionLabel);
+                    $table->setCell( $n, $count++, $option);
+
+                    $numberQuestionX++;
+
+                    if ( ($xx+1) % 4 == 0 )
+                    {
+                        $count = 0;
+                        $n++;
+                    }
+                }
+            }
+            $bsg1 = $table;
+        }
+        else //in insert
+        {
+            $business           = $MIOLO->getBusiness($module,'BusSelectiveProcess');
+
+            $selectiveProcessId = new MComboBox('selectiveProcessId', $this->getFormValue('selectiveProcessId', $data->selectiveProcessId), _M('Selective process id',$module).':', $business->listSelectiveProcess());
+            $selectiveProcessId->setJsHint(_M('Enter the selective process code',$module));
+            $selectiveProcessId->setAutoPostBack(true);
+
+            $flds[]           = $selectiveProcessId;
+            $validators[] = new MRequiredValidator('selectiveProcessId');
+
+            $business              = $MIOLO->getBusiness($module,'BusAnswerSheet');
+            $data->numberQuestions = $business->getNumberQuestions($selectiveProcessId->value);
+
+            $filters1->selectiveProcessId = $selectiveProcessId->value;
+            $dataAnwerSheet        = $business->countAnswerSheet($filters1);
+
+            if ( $data->numberQuestions == $dataAnwerSheet[0][0] )
+            {
+                //todas as provas possuem opções de resposta
+                $allExamsRegister = true;
+            }
+            else
+            {
+                //Existem provas que não foram cadastradas opções ainda
+                $allExamsRegister = false;
+            }
+
+            if ( ((count($dataAnwerSheet) > 0) && $allExamsRegister ) && ($function == 'insert') )
+            {
+                //Já existe gabarito cadastrado, mostrar mensagem
+                $msg = _M('Just exist answer sheet to this selecitve process',$module);
+                $lblMsg = new MText('lblMsg',$msg);
+                $lblMsg->color = 'red';
+
+                $fldsE[] = $lblMsg;
+                $fldsE[] = new Separator('');
+
+                $divError->addControl($fldsE);
+
+                unset($btn1);
+            }
+            else
+            {
+                if ( strlen((string)$selectiveProcessId->value) > 0 )
+                {
+                    if ( ! $allExamsRegister )
+                    {
+                        $this->inscriptionData  = $business->getAnswerSheet($selectiveProcessId->value);
+                    }
+
+                    $examDescription[] = $business->getExams($selectiveProcessId->value);
+
+                    $this->optionsNumber = $data->numberQuestions;
+
+                    $table = new MSimpleTable('', '', (int)($this->optionsNumber / 4), 8);
+
+                    //Code to print in the screen the questions and the respectives exams names
+                    $numberQuestionX = 1;
+                    $n=0;
+                    $count=0;
+
+                    $xxAux = 0;
+
+                    for($x = 0; $x < count($examDescription[0]); $x++)
+                    {
+                        //$examDescription[0] => numbers of exams that have answer sheet
+
+                        $auxXx = $examDescription[0][$x][1]; //Number of question from exam
+
+                        for ($xx = 0 ; $xx < $examDescription[0][$x][1]; $xx++)
+                        {
+                            $optionLabel = new MText('optionLabel', _M('Q',$module) . ' ' . ($numberQuestionX) . ' - ' . ($examDescription[0][$x][0]), 'black');
+                            $optionLabel->setWidth('85');
+
+                            //$auxTeste1 = ($auxXx*$x)+$xx;
+                            $auxTeste1 = $numberQuestionX-1;
+
+                            unset($auxValue1);
+                            eval('$auxValue1 = $this->inscriptionData['.$auxTeste1.']->option;');
+
+                            eval('$option'.$auxTeste1.' = new MTextField(\'option'.$auxTeste1.'\', $this->getFormValue(\'option'.$auxTeste1.'\', $auxValue1), null, 5);');
+
+                            if ( (! $allExamsRegister) && ($function != 'update' ) ) 
+                            {
+                                if ( strlen((string)$auxValue1) > 0 )
+                                {
+                                    eval('$option'.$auxTeste1.'->setReadOnly(true);');
+                                }
+                            }
+
+                            eval('$this->optionAux['.$auxTeste1.'] = $option'.$auxTeste1.';');
+
+                            $table->setCell( $n, $count++, $optionLabel);
+                            eval('$table->setCell( $n, $count++, $option'.$auxTeste1.');');
+
+                            $numberQuestionX++;
+
+                            if ( ($xxAux+1) % 4 == 0 )
+                            {
+                                $count = 0;
+                                $n++;
+                            }
+                            $xxAux++;
+                        }
+                    }
+                    $bsg1 = $table;
+                }
+            }
+        }
+
+        if ( $function == 'update' )
+        {
+            $flds[] = new MTextLabel('lastModification', '[' . $this->inscriptionData[0]->userName . ' - ' . $this->inscriptionData[0]->dateTime . ']', _M('Last modification',$module));
+        }
+
+        $bsg2            = new BaseGroup('bsg2', _M('Answer sheet', $module), $flds, 'vertical');
+        $bsg2->showLabel = true;
+        $bsg2->width     = '50%';
+        //$fields[] = $bsg2;
+
+
+        //HorizontalContainer 1: BaseGroup 2 + BaseGroup 1
+        $hct1            = new MHContainer('hct1', array($bsg2));
+        $hct1->showLabel = true;
+
+        $fields[] = $hct1;
+
+        $fields[] = new Separator('');
+
+        $hct2 = new MHContainer('hct2', array($bsg1));
+        $hct2->showLabel = true;
+
+        $fields[] = $hct2;
+
+        $fields[]        = new Separator('');
+        //Error container
+
+        $fields[] = new Separator('');
+
+        $fields[]        = $divError;
+
+        //buttons
+        //$btn1[]     = new MButton('btnPrev', '<< ' . _M('Previous', $module));
+
+        $div1       = new MDiv('div1', $btn1, null, 'align=center');
+        $fields[] = $div1;
+
+        $fields[] = new Separator('');
+
+        $this->setFields($fields);
+        if ( isset($validators) )
+        {
+            $this->setValidators($validators);
+        }
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+        $this->setClose($MIOLO->getActionURL($module,substr($action,0,strrpos($action,':'))));
+
+    }
+
+    /**
+     * Event triggered when user chooses New from the toolbar
+     **/
+    public function tbBtnNew_click($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+    }
+
+    /**
+     * Event triggered when user chooses Delete from the toolbar
+     **/
+    public function tbBtnDelete_click($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $data   = $this->getTypesData();
+        $opts   = array('event'            => 'tbBtnDelete_confirm',
+                        'function'         => 'delete',
+                        'selectiveProcessId' => MIOLO::_request('selectiveProcessId') );
+
+        $gotoYes = $MIOLO->getActionURL( $module, $action, null, $opts );
+        $goto    = SAGU::getStackBackUrl();
+        $gotoNo  = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+        $msg     = _M(MSG_CONFIRM_RECORD_DELETE,$module);
+        $caption = _M('Question',$module);
+        $MIOLO->question($msg, $gotoYes, $gotoNo);
+    }
+
+    /**
+     * Event triggered when user chooses Yes from the Delete prompt dialog
+     **/
+    public function tbBtnDelete_confirm($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $business = $MIOLO->getBusiness($module, 'BusAnswerSheet');
+        $ok       = $business->deleteAnswerSheet(MIOLO::_request('selectiveProcessId'));
+
+        if ( $ok )
+        {
+            $msg  = _M(MSG_RECORD_DELETED,$module);
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Information',$module);
+            $MIOLO->information($msg, $goto);
+        }
+        else
+        {
+            $msg  = _M('Error executing requested operation.',$module);
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Error',$module);
+            $MIOLO->error( $msg, $goto, $caption );
+        }
+    }
+
+    /**
+     * Method to gather all information from the form fields
+     * and put them on a database compatible object
+     **/
+    public function getTypesData()
+    {
+        $MIOLO              = MIOLO::getInstance();
+        $module             = MIOLO::getCurrentModule();
+        $selectiveProcessId = MIOLO::_request('selectiveProcessId');
+
+        $data = new SprAnswerSheet();
+        $vars = get_object_vars($data);
+        foreach ( $vars as $var => $value )
+        {
+            if ( $this->$var && $var != 'name' )
+            {
+                eval('$data->' . $var . ' = $this->' . $var . '->value;');
+            }
+        }
+
+        if ( isset($this->optionsNumber) )
+        {
+            for ( $x = 0; $x < $this->optionsNumber; $x++ )
+            {
+                $data->numberQuestion[$x]->numberQuestion = $x+1;
+                $data->numberQuestion[$x]->option  = $this->getFormValue('option' . $x);
+            }
+        }
+
+        $business = $MIOLO->getBusiness($module,'BusAnswerSheet');
+        $data->numberQuestions     = $business->getNumberQuestions($selectiveProcessId);
+
+        return $data;
+    }
+
+    /**
+     * Event triggered when user click previous
+     **/
+    public function btnPrev_click($sender = null)
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+
+        $postAction = substr($action,0,strrpos($action,':')) . ':answerSheet';
+        if ( strlen((string)$this->selectiveProcessId->value) > 0 && $function == 'insert' )
+        {
+            $vars = array ( 'event'    => 'tbBtnNew_click',
+                            'function' => 'insert');
+        }
+        $this->page->mGoto($MIOLO->getActionURL($module, $postAction,null,$vars));
+    }
+
+    /**
+     * Event triggered when user click next
+     **/
+    public function btnNext_click($sender = null)
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+
+        $data = $this->getTypesData();
+
+        if ( $data->selectiveProcessId == '' )
+        {
+            $msg = _M('Select the respective selective process',$module);
+            $lblMsg = new MText('lblMsg',$msg);
+            $lblMsg->color = 'red';
+
+            $flds[] = $lblMsg;
+            $flds[] = new Separator('');
+
+            $this->divError->addControl($flds);
+        }
+        elseif ( $data->numberQuestions == '' && ($function != 'update'))
+        {
+            $msg = _M('The exam occurrences from this selective process haven\'t answer sheet',$module);
+            $lblMsg = new MText('lblMsg',$msg);
+            $lblMsg->color = 'red';
+
+            $flds[] = $lblMsg;
+            $flds[] = new Separator('');
+
+            $this->divError->addControl($flds);
+        }
+        else //Se não ha problemas (está selecionando o processo seletivo e o número de questões) vai adiante
+        {
+            if ( is_array($data->numberQuestion) )
+            {
+                $warning = false;
+                foreach ( $data->numberQuestion as $key => $question )
+                {
+                    if ( $question->option == NULL)
+                    {
+                        $msg = _M('Select the respective option',$module) . ' '.($key+1);
+                        $lblMsg = new MText('lblMsg',$msg);
+                        $lblMsg->color = 'red';
+
+                        $fldsE[] = $lblMsg;
+                        $fldsE[] = new Separator('');
+
+                        $this->divError->addControl($fldsE);
+                        unset($fldsE);
+                        $warning = true;
+                        break;
+                    }
+                }
+            }
+
+            if ( !$warning )
+            {
+                $business = $MIOLO->getBusiness($module, 'BusAnswerSheet');
+
+                if ( $function == 'update' )
+                {
+                    $business->beginTransaction();
+
+                    for($x=0; $x < $data->numberQuestions; $x++)
+                    {
+                        unset($question);
+                        $question->selectiveProcessId = $data->selectiveProcessId;
+                        $question->numberQuestion     = $x+1;
+                        eval('$question->option       = $this->optionAux['.$x.']->value;');
+
+                        $filter2->selectiveProcessId  = $question->selectiveProcessId;
+                        $filter2->numberQuestion      = $question->numberQuestion;
+
+                        $dataAnswerSheet              = $business->searchAnswerSheet($filter2);
+
+                        if ( is_array($dataAnswerSheet) )
+                        {
+                            //Update
+                            $ok  = $business->updateAnswerSheet($question);
+                        }
+                        else
+                        {
+                            //Insert new answer to sheet
+                            $ok  = $business->insertAnswerSheet($question);
+                        }
+                    }
+                    $msg = MSG_RECORD_UPDATED;
+
+                    $business->commit();
+                }
+                else
+                {
+                    $business->beginTransaction();
+
+                    for ( $x=0; $x < $data->numberQuestions; $x++ )
+                    {
+                        $question->selectiveProcessId = $data->selectiveProcessId;
+                        $question->numberQuestion     = $x+1;
+                        eval('$question->option       = $this->optionAux['.$x.']->value;');
+
+                        if ( ! (strlen((string)$business->searchAnswerSheet($question)) > 0) )
+                        {
+                            $ok  = $business->insertAnswerSheet($question);
+                        }
+                    }
+
+                    $business->commit();
+
+                    $msg = MSG_RECORD_INSERTED;
+                }
+
+                if ( $ok )
+                {
+                    $opts = array ('selectiveProcessIdS' => $data->selectiveProcessId, 
+                                   'numberQuestionS' => $data->numberQuestion);
+
+                    if ( $function == 'update' )
+                    {
+                        $caption = _M('Information', $module);
+                        $MIOLO->information($msg, $MIOLO->getActionURL( $module, $action, null, $opts));
+                    }
+                    else
+                    {
+                        unset($opts);
+                        $goto = SAGU::getStackBackUrl();
+                        $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL( $module, $action, null, $opts);
+                        $opts = array('function'=>'insert');
+
+                        $gotoYes = $MIOLO->getActionURL($module, $action, null, $opts);
+                        $caption = _M('Question',$module);
+                        $MIOLO->question($msg, $gotoYes, $goto);
+                    }
+                }
+                else
+                {
+                    $msg  = _M('Error executing requested operation.',$module);
+                    $goto = SAGU::getStackBackUrl();
+                    $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action, null, $opts);
+                    $caption = _M('Error',$module);
+                    $MIOLO->error( $msg, $goto, $caption );
+                }
+            }
+        }
+    }
+}
+
+?>

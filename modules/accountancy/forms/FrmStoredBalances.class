@@ -1,0 +1,226 @@
+<?php
+
+/**
+ *
+ * This file handles the connection and actions for stored balances table
+ 
+ *
+ * @author Daniel Afonso Heisler [daniel@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Armando Taffarel Neto [taffarel@solis.coop.br]
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 25/09/2006
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Form to search the accAccountancyBalance table
+ */
+class FrmStoredBalances extends MForm
+{
+    private $home;
+    private $module;
+
+    /**
+     * Class constructor
+     */
+    function __construct($data)
+    {
+        $module     = MIOLO::getCurrentModule();
+        $this->home = $data->home;
+        parent::__construct(_M('Stored balances', $module));
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+    }
+
+    /**
+     *  Default method to define fields
+     */
+    public function createFields()
+    {
+        $MIOLO         = MIOLO::getInstance();
+        $module        = MIOLO::getCurrentModule();
+        $action        = MIOLO::getCurrentAction();
+        $balanceDate   = MIOLO::_request('balanceDate');
+        $type          = MIOLO::_request('type');
+        $dateType      = MIOLO::_request('dateType');
+        $personBalance = MIOLO::_request('personBalance');
+
+        $business  = $MIOLO->getBusiness('basic', 'BusConfig');
+        $constants = $business->getModuleValues('basic');
+        foreach ( $constants as $cnt )
+        {
+            define($cnt[0],$cnt[1]);
+        }
+
+        //inclui todas as grids
+        $business = $MIOLO->getBusiness($module, 'BusAccountBalance');
+        if ( strtoupper($dateType) == 'ALL' )
+        {
+            $storedBalance = $business->getAllStoredBalance($balanceDate, $type);
+        }
+        else
+        {
+            $storedBalance = $business->getStoredBalance($balanceDate, $type);
+        }
+
+        //$columns[] = "<div style=\"text-align: center;\">" . _M('Course id', $module) . "</div>";
+        //$columns[] = "<div style=\"text-align: center;\">" . _M('Course name', $module) . "</div>";
+        //$columns[] = "<div style=\"text-align: center;\">" . _M('Value', $module) . "</div>";
+
+        if ( count($storedBalance) > 0 )
+        {
+            $accountSchemeIdOld          = $storedBalance[0][0];
+            $accountSchemeDescriptionOld = $storedBalance[0][5];
+            foreach ( $storedBalance as $row )
+            {
+                list (
+                        $accountSchemeId,
+                        $courseId,
+                        $courseName,
+                        $unitId,
+                        $source,
+                        $accountSchemeDescription,
+                        $value
+                     ) = $row;
+
+                 if ( $accountSchemeId != $accountSchemeIdOld )
+                 {
+                     if ( strtoupper($dateType) == 'ALL' )
+                     {
+//                         $valueTotal = $business->getAllAccountStoredBalance($balanceDate, $accountSchemeIdOld, $type);
+                     }
+                     else
+                     {
+//                         $valueTotal = $business->getAccountStoredBalance($balanceDate, $accountSchemeIdOld, $type);
+                     }
+                     $matrix[]   = array('<b>' . _M('Total', $module) . ': </b><i>' . FINANCE::formatFinanceReportNumber(str_replace(',', '.', $valueTotal)) . '</i>');
+                     $title = new MDiv('div1', FINANCE::formatAccountSchemeId($accountSchemeIdOld) . ' - ' . $accountSchemeDescriptionOld, null, 'align=left');
+                     $title->addStyle('width', '100%');
+
+                     $tableRaw = new MTableRaw($title, $matrix, $columns);
+                     $tableRaw->setAlternate(true);
+                     $tableRaw->addStyle('width', '100%');
+
+                     $tableRaw->setCellAttribute(0, 0, 'width', '20%');
+                     $tableRaw->setCellAttribute(0, 1, 'width', '60%');
+                     $tableRaw->setCellAttribute(0, 2, 'width', '20%');
+
+                     $fields[] = $tableRaw;
+
+                     unset($valueTotal, $matrix);
+                     $accountSchemeIdOld          = $accountSchemeId;
+                     $accountSchemeDescriptionOld = $accountSchemeDescription;
+                 }
+
+                 if ( $personBalance == true )
+                 {
+                     $opts     = array('accountSchemeId' => $accountSchemeId,
+                                       'balanceDate'     => $balanceDate,
+                                       'source'          => $source,
+                                       'dateType'        => $dateType,
+                                       'type'            => $type,
+                                       'courseId'        => $courseId,
+                                       'courseVersion'   => $courseVersion,
+                                       'unitId'          => $unitId,
+                                       'personBalance'   => $personBalance);
+
+                     $linkPath = $MIOLO->getActionUrl($module, 'main:report:personBalances', null, $opts);
+                     $courseId = new MLink(null, $courseId, $linkPath);
+                 }
+                 $valueTotal += $value;
+                 $matrix[] = array($courseId, $source . ' : ' . $courseName, FINANCE::formatFinanceReportNumber($value));
+            }
+
+        }
+
+        if ( strtoupper($dateType) == 'ALL' )
+        {
+            $valueTotal = $business->getAllAccountStoredBalance($balanceDate, $accountSchemeId, $type);
+        }
+        else
+        {
+            $valueTotal = $business->getAccountStoredBalance($balanceDate, $accountSchemeId, $type);
+        }
+        $matrix[]   = array('<b>' . _M('Total', $module) . ': </b><i>' . FINANCE::formatFinanceReportNumber($valueTotal) . '</i>');
+        $title = new MDiv('div1', FINANCE::formatAccountSchemeId($accountSchemeIdOld) . ' - ' . $accountSchemeDescriptionOld, null, 'align=left');
+        $title->addStyle('width', '100%');
+
+        $tableRaw = new MTableRaw($title, $matrix, $columns);
+        $tableRaw->setAlternate(true);
+        $tableRaw->addStyle('width', '100%');
+
+        $tableRaw->setCellAttribute(0, 0, 'width', '20%');
+        $tableRaw->setCellAttribute(0, 1, 'width', '60%');
+        $tableRaw->setCellAttribute(0, 2, 'width', '20%');
+
+        $fields[] = $tableRaw;
+
+        if ( strtoupper($dateType) == 'ALL' )
+        {
+            $valueTotal = $business->getAllAccountStoredBalance($balanceDate, null, $type);
+        }
+        else
+        {
+            $valueTotal = $business->getAccountStoredBalance($balanceDate, null, $type);
+        }
+        $fields[]   = new Separator();
+        $title      = new MDiv('div1', '<b>' . _M('Balance: ', $module) . '<i>' . FINANCE::formatFinanceReportNumber($valueTotal) . '</i></b>', null, 'align=left');
+        $title->addStyle('width', '100%');
+        $tableRaw   = new MTableRaw($title, null, array(array()));
+        $fields[]   = $tableRaw;
+
+        $fields[]   = new Separator();
+        $btnBack    = new MButton('btnBack', _M('Back', $module));
+        $divButtons = new MDiv('divButtons', $btnBack, null, 'align=center');
+        $divButtons->addStyle('text-align', 'center');
+        $fields[]   = $divButtons;
+        $fields[]   = new Separator();
+
+        if ( count($fields) > 0 )
+        {
+            $this->setFields($fields);
+        }
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+        $this->setClose($MIOLO->getActionURL($module, substr($action, 0, strrpos($action, ':'))));
+
+    }
+
+    /**
+     * Event triggered when user chooses button Back
+     **/
+    public function btnBack_click($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $this->page->mGoto($MIOLO->getActionURL($module, 'main:process:accountancyBalance'));
+    }
+
+}
+
+?>

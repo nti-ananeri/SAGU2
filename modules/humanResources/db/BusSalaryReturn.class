@@ -1,0 +1,135 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for basEmployee table
+ *
+ * @author Eduardo Beal Miglioransa
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Eduardo Beal Miglioransa
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * Armando Taffarel Neto [taffarel@solis.coop.br]
+ * 
+ * @since
+ * Class created on 04/01/2007
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU Development Team
+ *
+ * \b Copyright \n
+ * Copyright (c) 2005-2007 SOLIS - Cooperativa de Soluções Livres \n
+ * Copyright (c) 2005-2007 UNIVATES - Centro Universitario \n
+ *
+ * \b License \n
+ * Licensed under GPLv2 (for further details read the COPYING file or http://www.gnu.org/licenses/gpl.html )
+ *
+ * \b History \n
+ * See: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to manipulate the basEmployee table
+ **/
+class BusinessHumanResourcesBusSalaryReturn extends Business
+{
+
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module = is_null($module) ? 'basic' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+    /**
+     * Get data about default company
+     *
+     * @param $filters (object): Search filters
+     *
+     * @return (array): An array containing the search results
+     **/
+    public function getCompanyData()
+    {
+              $sql = 'SELECT B.cnpj,
+                      B.currentName,
+                      B.location,
+                      B.number,
+                      B.complement,
+                      C.name,
+                      C.zipcode,
+                      C.stateId
+                  FROM basCompanyConf A
+                INNER JOIN ONLY basLegalPerson B
+                      USING(personId)
+                LEFT JOIN basCity C
+                      USING(cityId)';
+
+       $sql   .= ' WHERE  A.companyId = ?';
+
+       $args[] = DEFAULT_COMPANY_CONF;
+
+       $db     = $this->getDatabase();
+       $result = $db->query(SAGU::prepare($sql, $args));
+
+       return $result[0];
+    }
+
+    /**
+     * Do a search of employess
+     *
+     * @param $filters (object): Search filters
+     *
+     * @return (array): An array containing the search results
+     **/
+    public function getEmployeeSalay($personId)
+    {
+
+        $sql = 'SELECT A.personId,
+                       B.name,
+                       CASE A.valueHour
+                            WHEN \''. DB_FALSE . '\' 
+                            THEN sum(round(round(A.salary,2)*100,0)) 
+                            ELSE round((round( sum ( A.salary * A.weeklyhours * 4 ) ::numeric , 2) * 100 ),0)
+                       END as salary
+                  FROM basEmployee A
+        LEFT JOIN ONLY basPhysicalPersonEmployee B
+                 USING (personid) 
+                 WHERE A.isActiveAccount = TRUE ';
+
+        if( strlen((string)$personId) > 0 )
+        {
+            $sql   .= 'AND A.personId = ' . $personId
+                     .' GROUP BY A.clearinghouse, A.bankId, A.branchNumber, A.branchNumberDigit, B.name,
+                        A.personId, A.valueHour, A.salary, A.weeklyHours, A.accountNumber, A.accountNumberDigit
+                        ORDER BY B.name ';
+            $db     = $this->getDatabase();
+            $result = $db->query($sql);
+
+            $data->personId = $result[0][0];
+            $data->name     = $result[0][1];
+            $data->salary   = $result[0][2];
+
+            return $data;
+        }
+
+        return false; 
+    }
+
+}
+
+?>

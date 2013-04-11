@@ -1,0 +1,274 @@
+<?
+/**
+*
+* @author Giovani Murilo Dantas Correa [gmurilo@isolution.inf.br]
+*
+* $version: $Id$
+*
+* \b Maintainers \n
+* Daniel Afonso Heisler [daniel@isolution.inf.br]
+* Marcos de Jesus Costa Serra
+* Walter Gonçalves [jwaltergsj@gmail.com]
+*
+* @since
+* Class created on 24/09/2008
+*
+* \b Organization: \n
+* iSolution - Soluções de Internet \n
+* The iSolution TEAM
+*
+* \b CopyLeft: \n
+* CopyLeft (L) 2007 iSolution - Soluções de Internet \n
+*
+* \b License \n
+* Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+*
+* \b History \n
+* See history in CVS repository: http://isolution.inf.br   
+*
+**/
+set_time_limit(0);        
+$MIOLO = MIOLO::getInstance();
+$module = 'academic';
+
+define('FPDF_FONTPATH', $MIOLO->getModulePath('basic', '/classes/fpdf/font/'));
+define('REPORT_ID', strtoupper(_M('Report card',$module)));
+$MIOLO->Uses('classes/fpdf/pdf.php', 'basic');
+class RptSchoolYield extends PDF
+{
+    var $module = 'academic';
+    public function __construct($data = NULL)
+    {
+        $MIOLO = MIOLO::getInstance();
+
+        $this->title = strtoupper(_M('Report card', $this->module));
+        parent::__construct($data);
+        foreach($data as $item => $value)
+        {
+            $this->data->{$item} = $value;
+        }
+        $this->useUserInfo = false;
+        $this->addPage('P', 'mm', 'A4');
+        $this->aliasNbPages();
+        
+        //Enrolled curricular components
+        $businessStamp 	    = $MIOLO->getBusiness('basic', 'BusStamp'); 
+        $stamp = $businessStamp->getStamp($this->data->stampId);
+        $this->data->stamp = $stamp;
+
+        $this->businessBoletim 	= $MIOLO->getBusiness('academic', 'BusBoletim'); 
+        $this->data->groups     = $this->businessBoletim->getGroupsByPeriod($this->data->contractId, $this->data->periodId);
+
+        //Degrees
+
+        if( count($this->data->groups) > 0)
+        {
+            foreach ($this->data->groups as $groups )
+            {
+                $groupIds[] = $groups[1];
+            }
+            $groupId = implode(',',$groupIds);
+            $this->data->degrees    = $this->businessBoletim->getDegreesByGroups($groupId);
+            foreach ($this->data->degrees as $item => $value)
+            {
+                $this->data->degreesDescription[$this->data->degrees[$item][2]] =$this->data->degrees[$item][1];  
+            }
+        }
+        else
+        {
+            $this->data->degrees = null;
+        }
+               
+        $this->lsize = $this->lsize+2;
+        $this->putInfos();
+        $this->putBoletimNotes();
+        $this->outPut(str_replace(' ', '_', strtolower(_M('School yield', 'academic')) . $this->data->personId . $this->data->periodId).date('dmYhis') . '.pdf','D');
+    } 
+    public function putInfos()
+    {
+        $this->fontSizeBody = $this->fontSizeBody;
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->fontSizeBody);
+        $this->cell(($this->psize/12)*0.7,$this->lsize,  _M('Pupil','academic'). ':', 'LT', null, 'R');
+        $this->setFont(DEFAULT_REPORT_FONT, '', $this->fontSizeBody);
+        $this->cell(($this->psize/12)*6.5, $this->lsize, $this->data->personName, 'T');
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->fontSizeBody);
+        $this->cell(($this->psize/12)*1.0,$this->lsize,  _M('Serie','academic'). ':', 'T', null, 'R');
+        $this->setFont(DEFAULT_REPORT_FONT, '', $this->fontSizeBody);
+        if ( strlen((string)$this->data->periodId) == 0 )
+        {
+            $periodIds = _M('All', 'academic');
+        }
+        else
+        {
+            $periodIds = $this->data->periodId;
+        }
+        $this->cell(($this->psize/12)*1.2, $this->lsize, $periodIds, 'T', null, 'L');
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->fontSizeBody);
+        $this->cell(($this->psize/12)*1.6, $this->lsize, _M('Person id', 'basic') .':', 'T', null, 'R');
+        $this->setFont(DEFAULT_REPORT_FONT, '', $this->fontSizeBody);
+        $this->cell(($this->psize/12)*1, $this->lsize,   $this->data->personId, 'RT', null, 'R');
+        $this->ln();
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->fontSizeBody);
+        $this->cell(($this->psize/12)*0.7,$this->lsize,  _M('Course','academic'). ':', 'LB',null,  'R');
+        if(strlen((string)$this->data->courseName) > 25 )
+        {
+            $this->setFont(DEFAULT_REPORT_FONT, '', $this->fontSizeBody-1);
+        }
+        else
+        {
+            $this->setFont(DEFAULT_REPORT_FONT, '', $this->fontSizeBody);
+        }
+        
+        $courseName = explode(" - ", $this->data->courseName);
+        $this->cell(($this->psize/12)*3.5, $this->lsize, $courseName[0] , 'B');
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->fontSizeBody);
+        $this->cell(($this->psize/12)*0.7, $this->lsize, _M('Class', 'academic') .':', 'B');
+        $this->setFont(DEFAULT_REPORT_FONT, '', $this->fontSizeBody);
+        $this->cell(($this->psize/12)*1.4, $this->lsize,   $this->data->classId, 'B');
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->fontSizeBody);
+        $this->cell(($this->psize/12)*1, $this->lsize, _M('Period', 'academic') .':', 'B');
+        $this->setFont(DEFAULT_REPORT_FONT, '', $this->fontSizeBody);
+        $this->cell(($this->psize/12)*0.1, $this->lsize,   $this->data->serie, 'B', null, 'R');
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->fontSizeBody);
+        $this->cell(($this->psize/12)*0.7, $this->lsize, _M('Turn', 'basic') .':', 'B');
+        $this->setFont(DEFAULT_REPORT_FONT, '', $this->fontSizeBody);
+        $this->cell(($this->psize/12)*1.9, $this->lsize,   $this->data->turnDescription, 'B');
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->fontSizeBody);
+        $this->cell(($this->psize/12)*1, $this->lsize, _M('Emission date', 'academic') .':', 'B', null, 'R');
+        $this->setFont(DEFAULT_REPORT_FONT, '', $this->fontSizeBody);
+        $this->cell(($this->psize/12)*1, $this->lsize,   date('d/m/Y'), 'RB', null, 'R');
+        $this->ln();
+        $this->fontSizeBody = $this->fontSizeBody-1;
+        //        $this->putBoletimNotes();
+        //        $this->putHeaderBoletim();
+    }
+    
+    public function putHeaderBoletim()
+    {
+        $this->ln($this->lsize/2);
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->fontSizeBody);
+        $this->cell(($this->psize/12)*3.6,$this->lsize,  _M('Curricular component','academic'), 'TBLR');
+        if ( count($this->data->degreesDescription)>0 )
+        {
+            $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->fontSizeBody-2);
+            $size = (2/count($this->data->degreesDescription));
+            $this->FontSize;
+            foreach ($this->data->degreesDescription as $degreeId => $degreeDescription)
+            {
+                $this->cell(($this->psize/12)*$size,$this->lsize,  substr($degreeDescription,0,ceil(($size*($this->psize/12)/$this->FontSize))), 'TBR',null,  'C');
+            }
+        }
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->fontSizeBody);
+        $this->cell(($this->psize/12)*1.2,$this->lsize,  _M('Total Semestral','academic'), 'TBR',null,  'C');
+        $this->cell(($this->psize/12)*0.9,$this->lsize,  _M('Prova final','academic'), 'TBR',null,  'C');
+        $this->cell(($this->psize/12)*1.2,$this->lsize,  _m('Resultado final','academic'), 'TBR',null,  'C');
+        $this->cell(($this->psize/12)*1.2,$this->lsize,  _M('Total de faltas','academic'), 'TBR',null,  'C');
+        $this->cell(($this->psize/12)*1.9,$this->lsize,  _M('Enroll situation','academic'), 'TBR',null,  'C');
+        $this->ln();
+
+    }
+    public function putBoletimNotes()
+    {
+        $this->lsize = $this->lsize-1;
+        $this->setFont(DEFAULT_REPORT_FONT, '', $this->fontSizeBody-1);
+        $this->finalNoteX = 0;
+        $this->putHeaderBoletim();
+        if(count($this->data->groups) > 0 )
+        {
+        foreach ( $this->data->groups as $group )
+        {
+            list ( $enrollId,
+                    $groupId,
+                    $curriculumId,
+                    $curricularComponentId,
+                    $curricularComponentVersion,
+                    $curricularComponentName,
+                    $semester,
+                    $statusId,
+                    $statusDescription,
+                    $note,
+                    $examNote,
+                    $finalNote,
+                    $frequency,
+                    $lessonNumberHours,
+                    $faltas) = $group;
+            
+            if ( $this->y+$this->lsize > $this->PageBreakTrigger )
+            {
+                $this->putInfos();        
+                $this->putHeaderBoletim();
+            }
+
+            if ( strlen((string)$this->data->periodId) == 0 && $semesterX != $semester)
+            {
+                $semesterX = $semester;
+                $this->SetFillColor(180,180,180);        
+                $this->setFont(DEFAULT_REPORT_FONT, 'BI', $this->fontSizeBody-1);
+                $this->cell($this->psize, $this->lsize, _M('Period', 'academic'). ': '. $semester, 1, null, 'C', 1);
+                $this->ln();
+            }
+
+            $this->setFont(DEFAULT_REPORT_FONT, '', (strlen((string)$curricularComponentName)/0.5) <= ceil(($this->psize/12)*3.6) ? ($this->fontSizeBody-1) : ceil((($this->psize/12)*3.6)/(strlen((string)$curricularComponentName)/3.6)) );
+            $this->cell(($this->psize/12)*3.6,$this->lsize, $curricularComponentName, 'RTBL');
+            $this->setFont(DEFAULT_REPORT_FONT, '', $this->fontSizeBody-1);
+            if ( count($this->data->degreesDescription)>0 )
+            {
+                //echo '<pre>'; print_r($this->data);
+                $size = (2/count($this->data->degreesDescription));
+                foreach ( $this->data->degreesDescription as $degreeNumber => $degreeDescription )
+                {
+                    $noteX = null;
+                    foreach($this->data->degrees as $degree)
+                    {
+                        if ( $degree[2] == $degreeNumber  && !$noteX)
+                        {
+                            $noteX = $this->businessBoletim->getDegreeEnroll($enrollId, $degree[0]);
+                        }
+                    }
+                    $this->SetFillColor(240,240,240);
+                    $this->cell(($this->psize/12)*$size,$this->lsize,  is_null($noteX) ? '  ' : $noteX, 'TBR',null,  'C',0);
+                }
+            }
+            $faltas = ( $statusId == ENROLL_STATUS_ENROLLED ? '-':$faltas );
+            $this->cell(($this->psize/12)*1.2,$this->lsize,  is_null($note) ? SAGU::formatNumber('0') : $note, 'TBR',null,  'C');
+            $this->cell(($this->psize/12)*0.9,$this->lsize,  is_null($examNote) ? SAGU::formatNumber('0') : $examNote, 'TBR',null,  'C');
+            $this->cell(($this->psize/12)*1.2,$this->lsize,  is_null($finalNote) ? SAGU::formatNumber('0') : $finalNote, 'TBR',null,  'C');
+            $this->cell(($this->psize/12)*1.2,$this->lsize,  $faltas, 'TBR',null,  'C');
+            $this->cell(($this->psize/12)*1.9,$this->lsize,  $statusDescription, 'TBR',null,  'C');
+            $this->ln();
+            $this->finalNoteX += $finalNote;
+       }
+        }
+        if($this->finalNoteX > 0 && count($this->data->groups) > 0 )
+        {
+            $this->finalNoteX = ROUND($this->finalNoteX/count($this->data->groups),3);
+        }
+        $this->putFooter();
+    }
+    
+    public function Footer()
+    {
+        parent::Footer();
+    }
+
+    public function putFooter()
+    {
+        $this->ln($this->lsize/2);
+        $this->cell(($this->psize/6)*2, $this->lsize, 'MENSAGEM:', 'TLR');
+        $this->cell(($this->psize/6), $this->lsize, 'Coeficiente:  '.SAGU::formatNumber($this->finalNoteX), null, null, 'C');
+        $this->ln();
+        $y = $this->y;
+        $this->MultiCell(($this->psize/6)*2, $this->lsize, $this->data->observations, 'LRB');
+        $this->setY($y);
+        $this->cell(($this->psize/6)*3, $this->lsize, null);
+        $this->Line($this->x+(($this->psize/6)*0.5), $this->y+$this->lsize, $this->x+($this->psize/6)*2.5, $this->y+$this->lsize);
+        $this->ln();
+        $this->cell(($this->psize/6)*3, $this->lsize, null);
+        $this->cell(($this->psize/6)*3, $this->lsize-2, $this->data->stamp->personName , null, null, 'C');
+        $this->ln();
+        $this->cell(($this->psize/6)*3, $this->lsize-2, null);
+        $this->cell(($this->psize/6)*3, $this->lsize-2, $this->data->stamp->functionDescription , null, null, 'C');
+        $this->ln();
+    }
+}
+?>

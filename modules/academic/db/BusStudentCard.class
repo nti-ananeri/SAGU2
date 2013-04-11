@@ -1,0 +1,276 @@
+<?php
+class BusinessAcademicBusStudentCard extends Business
+{
+
+    public $db;
+
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module = is_null($module) ? 'academic' : $module;
+        return $MIOLO->getDatabase($module);
+    }
+
+    public function listStudentCardList()
+    {
+        $sql = 'SELECT  DISTINCT periodId || \'|\' || listagemId,
+                       periodId || \' - \' || listagem || \' ( \' ||count(listagem) || \' )\'
+                  FROM acdSemturList   
+              GROUP BY periodId, listagemId, listagem';
+        $ret = $this->db->query($sql);
+        return $ret;
+    }
+
+    public function __construct()
+    {
+        $this->db = $this->getDatabase();
+    }
+    public function getPupilsFromList($data)
+    {
+        $sql = 'SELECT 
+                    A.contractId,
+                    B.name, 
+                    TO_CHAR(B.dateBirth, ?),
+                    C.degree as shortname,
+                    D.charId
+                FROM
+                    acdContract A INNER JOIN
+                    ONLY basPhysicalPerson B ON (A.personId = B.personId) INNER JOIN
+                    acdCourse C ON (C.courseId = A.courseId) INNER JOIN
+                    basTurn D ON ( A.turnId = D.turnId )
+                WHERE
+                    A.contractId IN ( SELECT contractId FROM acdSemturList WHERE periodId = ? AND listagemId = ?::integer )
+                ORDER BY    
+                    B.name, 
+                    C.name,
+                    D.charId';
+        $args[] = MASK_DATE;
+        $args[] = $data->periodId;
+        $args[] = $data->listagemId;
+        $result = $this->db->query(SAGU::prepare($sql, $args));
+        if ( count($result) > 0 )
+        {
+            foreach ( $result as $resultado )
+            {
+                $obj->contractId    = $resultado[0];
+                $obj->name          = $resultado[1];
+                $obj->birthDate     = $resultado[2];
+                $obj->courseName    = $resultado[3];
+                $obj->charId        = $resultado[4];
+                $result2[] = $obj;
+                unset($obj);
+            }
+        }
+        if(count($result2) > 0 )
+        {
+            return $result2;
+        }
+        else
+        {
+            return $result;
+        }
+    }
+    public function addPupils($data, $listagem, $parameters)
+    {
+        $this->db->execute('BEGIN');
+        $parameters->periodId = strlen((string)$parameters->periodId) > 0 ? $parameters->periodId : CURRENT_PERIOD_ID;
+        $result = $this->db->query('SELECT CASE WHEN max(listagemid) IS NULL THEN 1 ELSE max(listagemid)+1 END from acdSemturList WHERE periodId = \'' .$parameters->periodId. '\'');
+        for($x=0; $x < count($data);$x++)
+        {
+            $sqlx = 'INSERT INTO acdSemturList (contractId, periodId, listagem, listagemid) VALUES (?, ?, ?, ?) ';
+            $args[] = $data[$x];
+            $args[] = $parameters->periodId;
+            $args[] = $listagem.str_pad($result[0][0],2,'0', STR_PAD_LEFT).'.txt';
+            $args[] = $result[0][0];
+            $sql = SAGU::prepare($sqlx,$args);
+            unset($args);
+            $ok = $this->db->execute($sql);
+        }
+        if($ok)
+        {
+            $this->db->execute('COMMIT');
+        }
+        else
+        {
+            $this->db->execute('ROLLBACK');
+        }
+        return $listagem.str_pad($result[0][0],2,'0', STR_PAD_LEFT).'.txt';
+    }
+
+    /**
+     * Do a search on the database table handled by the class
+     *
+     * @param $filters (object): Search filters
+     *
+     * @return (array): An array containing the search results
+     **/
+    public function getPupils($data)
+    {
+        $sql = "    SELECT DISTINCT 
+                                rpad(getSchoolStudentCardIdFromUnit(C.unitId),4, '0') as escola, 
+                                rpad(substr(to_ascii(trim(E.name)),0,50),50,' ') as nome, 
+                                rpad(substr(TO_ASCII(M.name),0,50),50,' ') as mae, 
+                                rpad(substr(TO_ASCII(P.name),0,50),50,' ') as pai, 
+                                E.sex, 
+                                rpad(substr(UPPER(TO_ASCII(CC.degree)),0,25),25,' ') as curso, 
+                                CASE 
+                                        WHEN CC.formationLevelId IN (1,3,4,8) THEN 3
+                                        ELSE 2 
+                                END 
+                                as GRAU
+                                ,
+                                CASE 
+                                    WHEN (select max(semester) FROM acdenroll inner join acdcurriculum using (curriculumid) where contractid = C.contractid) IS NULL THEN 1 
+                                    ELSE (select max(semester) FROM acdenroll inner join acdcurriculum using (curriculumid) where contractid = C.contractid) 
+                                END as serie,
+                                ( CASE WHEN T.charId not IN ('N','M','V','I') THEN 'I' ELSE T.charid END ) as turno,
+                                rpad(NULL, 5, ' ') as turma,
+                                rpad(E.personid::varchar, 12, ' ') as matricula,
+                                TO_CHAR(datebirth, 'ddmmyyyy') as dt_nascimento,
+                                rpad(substr(TO_ASCII(E.location||' N.'||E.number),1,50),50,' ') as endereco,
+                                rpad(substr(TO_ASCII(E.neighborhood),1,30),30,' ') as bairro,
+                                rpad(substr(TO_ASCII(CT.name),1,20),20,' ') as cidade,
+                                rpad(substr(trim(E.zipcode),1,8),8,' ') as zipcode,
+                                rpad(substr(E.residentialphone,1,10),10,' ')::varchar as fone,
+                                rpad(substr(returntextasinteger(DU1.content),1,20),20,' ') as rg,
+                                rpad(substr(DU1.organ,1,10),10,' ') as organ,
+                                TO_CHAR(DU1.dateexpedition, 'ddmmyyyy') as dataExpedicao,
+                                returntextasinteger(DU2.content) as CPF,
+                                C.contractId
+                            FROM ONLY basPhysicalPersonStudent E 
+                            LEFT JOIN ONLY basPerson M ON M.personid = E.motherid 
+                            LEFT JOIN ONLY basperson P ON P.personid = E.fatherid
+                            INNER JOIN acdContract C ON ( C.personid = E.personid )
+                            INNER JOIN acdCourse CC using (courseid)
+                            INNER JOIN basTurn T ON T.turnid = C.turnid
+                            INNER JOIN basCity CT ON CT.cityid = E.cityid
+                            LEFT JOIN basDocument DU1 ON ( DU1.personId = E.personId AND DU1.documentTypeId = ".DEFAULT_DOCUMENT_TYPE_ID_RG." )
+                            LEFT JOIN basDocument DU2 ON ( DU2.personId = E.personId AND DU2.documentTypeId = ".DEFAULT_DOCUMENT_TYPE_ID_CPF." )
+                            WHERE  
+                            LENGTH(E.name) > 0
+                            AND LENGTH(M.name) > 0
+                            AND LENGTH(E.sex) > 0
+                            AND LENGTH(C.courseId) > 0
+                            AND LENGTH(E.datebirth::varchar) > 0
+                            AND LENGTH(E.location) > 0
+                            AND LENGTH(E.neighborhood) > 0
+                            AND LENGTH(returntextasinteger(DU2.content)) = 11
+                            AND NOT E.cityid IS NULL ";
+
+        if ( strlen((string)$data->personName) > 0 )
+        {
+            $sql .= ' AND TO_ASCII(E.name) ilike TO_ASCII(?)';
+            $args[] = $data->personName.'%';  
+        }
+
+        if ( strlen((string)$data->courseId) > 0 )
+        {
+            $sql .= ' AND C.courseId ilike (?)';
+            $args[] = $data->courseId.'%';  
+        }
+
+        if ( strlen((string)$data->courseVersion) > 0 )
+        {
+            $sql .= ' AND C.courseVersion = '.$data->courseVersion.'::integer';
+        }
+        
+        if ( strlen((string)$data->personId) > 0 )
+        {
+            $sql .= ' AND E.personId = '.$data->personId.'::integer';
+        }
+        
+        if ( strlen((string)$data->turnId) > 0 )
+        {
+            $sql .= ' AND T.turnId = '.$data->turnId.'::integer';
+        }
+
+        if ( count($data->formationLevelId) > 0 )
+        {
+            $sql .= " AND CC.formationLevelId IN ( " . implode(',', $data->formationLevelId) ." ) ";
+        }
+
+
+        $periodId = strlen((string)$data->periodId) > 0 ? $data->periodId : CURRENT_PERIOD_ID;
+        $sql .= ' AND NOT isContractOut(contractId)';
+        $sql .= ' AND contractId IN (SELECT contractId FROM acdmovementcontract INNER JOIN acdLearningPeriod USING ( learningPeriodId ) WHERE periodId = ?  AND stateContractId = ?::integer )';
+        $sql .= ' AND NOT contractId in ( SELECT contractId FROM acdSemturList WHERE periodId in (?) )';
+        $sql .= ' ORDER BY 2, 6, 9';
+        $args[] = $periodId;
+        $args[] = STATE_CONTRACT_ID_ENROLLED;
+        $args[] = $periodId;
+        $sql = SAGU::prepare($sql, $args);
+        $result = $this->db->query($sql);
+        return $result;
+    }
+
+    /**
+     * Do a search on the database table handled by the class
+     *
+     * @param $filters (object): Search filters
+     *
+     * @return (array): An array containing the search results
+     **/
+    public function getPupils2($data)
+    {
+        $sql = "    SELECT DISTINCT 
+                                rpad(getSchoolStudentCardIdFromUnit(C.unitId),4, '0') as escola, 
+                                rpad(substr(to_ascii(trim(E.name)),0,50),50,' ') as nome, 
+                                rpad(substr(TO_ASCII(M.name),0,50),50,' ') as mae, 
+                                rpad(substr(TO_ASCII(P.name),0,50),50,' ') as pai, 
+                                E.sex, 
+                                rpad(substr(UPPER(TO_ASCII(CC.degree)),0,25),25,' ') as curso, 
+                                CASE 
+                                        WHEN CC.formationLevelId IN (1,3,4,8) THEN 3
+                                        ELSE 2 
+                                END 
+                                as GRAU
+                                ,
+                                CASE 
+                                    WHEN (select max(semester) FROM acdenroll inner join acdcurriculum using (curriculumid) where contractid = C.contractid) IS NULL THEN 1 
+                                    ELSE (select max(semester) FROM acdenroll inner join acdcurriculum using (curriculumid) where contractid = C.contractid) 
+                                END as serie,
+                                ( CASE WHEN T.charId not IN ('N','M','V','I') THEN 'I' ELSE T.charid END ) as turno,
+                                rpad(NULL, 5, ' ') as turma,
+                                rpad(E.personid::varchar, 12, ' ') as matricula,
+                                TO_CHAR(datebirth, 'ddmmyyyy') as dt_nascimento,
+                                rpad(substr(TO_ASCII(E.location||' N.'||E.number),1,50),50,' ') as endereco,
+                                rpad(substr(TO_ASCII(E.neighborhood),1,30),30,' ') as bairro,
+                                rpad(substr(TO_ASCII(CT.name),1,20),20,' ') as cidade,
+                                rpad(substr(trim(E.zipcode),1,8),8,' ') as zipcode,
+                                rpad(substr(E.residentialphone,1,10),10,' ')::varchar as fone,
+                                rpad(substr(returntextasinteger(DU1.content),1,20),20,' ') as rg,
+                                rpad(substr(DU1.organ,1,10),10,' ') as organ,
+                                TO_CHAR(DU1.dateexpedition, 'ddmmyyyy') as dataExpedicao,
+                                returntextasinteger(DU2.content) as CPF,
+                                C.contractId
+                            FROM ONLY basPhysicalPersonStudent E 
+                            LEFT JOIN ONLY basPerson M ON M.personid = E.motherid 
+                            LEFT JOIN ONLY basperson P ON P.personid = E.fatherid
+                            INNER JOIN acdContract C ON ( C.personid = E.personid )
+                            INNER JOIN acdCourse CC using (courseid)
+                            INNER JOIN basTurn T ON T.turnid = C.turnid
+                            INNER JOIN basCity CT ON CT.cityid = E.cityid
+                            LEFT JOIN basDocument DU1 ON ( DU1.personId = E.personId AND DU1.documentTypeId = ".DEFAULT_DOCUMENT_TYPE_ID_RG." )
+                            LEFT JOIN basDocument DU2 ON ( DU2.personId = E.personId AND DU2.documentTypeId = ".DEFAULT_DOCUMENT_TYPE_ID_CPF." )
+                            WHERE  
+                            ";
+
+        $sql .= ' contractId in ( SELECT contractId FROM acdSemturList WHERE periodId = ? AND listagemId = ?::integer )';
+        $sql .= ' ORDER BY 2 ';
+        $args[] = $data->periodId;
+        $args[] = $data->listagemId;
+        $sql = SAGU::prepare($sql, $args);
+        $result = $this->db->query($sql);
+        return $result;
+    }
+}
+
+?>

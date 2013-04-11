@@ -1,0 +1,338 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for sprOtherListings
+ *
+ * @author Jamiel Spezia [jamiel@solis.coop.br]
+ *
+ * @version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * Rafael Lu�s Spengler [rafael@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ *
+ * @since
+ * Class created on 26/12/2005
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Solu��es Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Solu��es Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br
+ *
+ **/
+
+/**
+ * Class to manipulate the sprOtherListings table
+ **/
+class BusinessSelectiveProcessBusSelectiveProcessResults extends Business
+{
+
+    /**
+     * Make a connection to the database
+     *
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module = is_null($module) ? 'selectiveProcess' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+    public function greaterGreaterMinorNote ($selectiveProcessId)
+    {
+        $args = array($selectiveProcessId);
+
+        $sql = ' SELECT C.courseId,
+                        D.shortName || \' / \' || getturncharid(C.turnid),
+                        C.unitId,
+                        E.description,
+                        count(A.inscriptionId),
+                        max(A.totalPoints),
+                        min(A.totalPoints),
+                        round(avg(A.totalPoints)::numeric, '.ROUND_VALUE_CLASSIFICATION.')
+                   FROM sprInscription A
+             INNER JOIN sprInscriptionOption B
+                     ON ( A.inscriptionId = B.inscriptionId )
+             INNER JOIN sprCourseOccurrence C
+                     ON ( B.courseOccurrenceId = C.courseOccurrenceId )
+              LEFT JOIN acdCourse D
+                     ON ( C.courseId = D.courseId )
+          LEFT JOIN basUnit E
+                     ON (C.unitId = E.unitId)
+                  WHERE A.selectiveProcessId = ?
+                    AND B.optionNumber = 1
+                    AND not (A.isCanceled)
+               GROUP BY 1,2,3,4
+               ORDER BY 2';
+
+
+//         $sql = ' SELECT C.courseId,
+//                         G.shortName,
+//                         A.cityExam,
+//                         H.name,
+//                         count(A.inscriptionId),
+//                         max(A.totalPoints),
+//                         min(A.totalPoints),
+//                         round(avg(A.totalPoints)::numeric, 3)
+//                    FROM sprInscription A
+//              INNER JOIN sprInscriptionOption B
+//                      ON ( A.inscriptionId = B.inscriptionId )
+//              INNER JOIN sprCourseOccurrence C
+//                      ON ( B.courseOccurrenceId = C.courseOccurrenceId )
+//              INNER JOIN sprCourseVacant D
+//                      ON ( C.courseVacantId = D.courseVacantId )
+//               LEFT JOIN sprCourseOccurrence F
+//                      ON ( B.courseOccurrenceId = F.courseOccurrenceId )
+//               LEFT JOIN acdCourse G
+//                      ON ( F.courseId = G.courseId )
+//               LEFT JOIN basCity H
+//                      ON ( A.cityExam = H.cityId )
+//                   WHERE A.selectiveProcessId = ?
+//                     AND B.optionNumber = 1
+//                     AND A.isHighSchool = ?
+//                     AND A.totalPoints > 0
+//                     AND A.isClassified = ?
+//                GROUP BY C.courseId, G.shortName, A.cityExam, H.name
+//                ORDER BY G.shortName ';
+
+        $db = $this->getDatabase();
+
+        $result = $db->query(SAGU::prepare($sql, $args));
+
+        return $result;
+    }
+
+
+    public function classificationSummary ($selectiveProcessId)
+    {
+        $args = array($selectiveProcessId);
+
+        $sql = ' SELECT C.courseId,
+                        G.shortName  || \' / \' || getturncharid(C.turnid),
+                        C.unitId,
+                        I.description,
+                        count (A.inscriptionId),
+                        CASE WHEN A.isClassified = \'f\'
+                             THEN 1
+                             ELSE CASE WHEN B.coursePosition <= D.vacant
+                                       THEN 2
+                                       ELSE 3
+                                  END
+                        END AS classified
+                   FROM sprInscription A
+             INNER JOIN sprInscriptionOption B
+                     ON ( A.inscriptionId = B.inscriptionId )
+             INNER JOIN sprCourseOccurrence C
+                     ON ( B.courseOccurrenceId = C.courseOccurrenceId )
+             INNER JOIN sprCourseVacant D
+                     ON ( C.courseVacantId = D.courseVacantId )
+             INNER JOIN basPhysicalPersonStudent E
+                     ON ( E.personId = A.personId )
+              LEFT JOIN acdCourse G
+                     ON ( C.courseId = G.courseId )
+             INNER JOIN basUnit I
+                     ON (I.unitId = C.unitId)
+                  WHERE A.selectiveProcessId = ?
+                    AND B.optionNumber = 1
+                    AND not (A.isCanceled)
+                --    AND A.isHighSchool = \'t\'
+               GROUP BY 1,2,3,4,6
+               ORDER BY 2 ' ;
+
+        $db = $this->getDatabase();
+        $result = $db->query(SAGU::prepare($sql, $args));
+
+        return $result;
+    }
+
+    /**
+     * Report of inscriptions for general location
+     *
+     * @param $selectiveProcessId (int): Selective process id
+     *
+     * @return (array): An array containing the search results
+     **/
+    public function inscriptionForGeneralLocation($selectiveProcessId)
+    {
+       $args = array($selectiveProcessId);
+
+       $sql = 'SELECT DISTINCT A.cityExam,
+                               B.name
+                          FROM sprInscription A
+                     LEFT JOIN basCity B
+                            ON (A.cityExam = B.cityId)
+                         WHERE A.selectiveProcessId = ?
+                         AND not (A.isCanceled)
+                      ORDER BY B.name ';
+
+        $db = $this->getDatabase();
+
+        $result = $db->query(SAGU::prepare($sql, $args));
+
+        return $result;
+    }
+
+    /**
+     * Report of inscriptions for exams average per course
+     *
+     * @param $selectiveProcessId (int): Selective process id
+     *
+     * @return (array): An array containing the search results
+     **/
+    public function inscriptionForExamsAveragePerCourse($selectiveProcessId)
+    {
+       $args = array($selectiveProcessId, DEFAULT_SELECTIVE_PROCESS_TYPE);
+
+       $sql = 'SELECT C.courseId,
+                      D.shortName  || \' / \' || getturncharid(C.turnid),
+                      E.examId,
+                      F.description,
+                      round(avg(B.note)::numeric, '.ROUND_VALUE_CLASSIFICATION.')
+                 FROM sprInscriptionOption A
+            LEFT JOIN sprNote B
+                   ON (A.inscriptionId = B.inscriptionId)
+           INNER JOIN sprInscription C1
+                   ON (C1.inscriptionId = A.inscriptionId)
+           INNER JOIN sprCourseOccurrence C
+                   ON (C.courseOccurrenceId = A.courseOccurrenceId)
+           INNER JOIN acdCourse D
+                   ON (D.courseId = C.courseId)
+           INNER JOIN sprExamOccurrence E
+                   ON (E.examOccurrenceId = B.examOccurrenceId)
+           INNER JOIN sprExam F
+                   ON (F.examId = E.examId)
+           INNER JOIN sprCourseVacant G
+                   ON (G.courseVacantId = C.courseVacantId)
+           INNER JOIN sprCourseExamBalance H
+                   ON (H.examOccurrenceId = E.examOccurrenceId AND
+                       H.courseVacantId = G.courseVacantId)
+                WHERE A.optionNumber = 1 AND not (C1.isCanceled)
+                  AND C1.selectiveProcessId = ?
+                  AND E.selectiveProcessTypeId = ?
+                  AND C1.totalPoints > 0
+             GROUP BY 1, 2, 3, 4
+             ORDER BY 2,
+                      F.description ';
+
+        $db = $this->getDatabase();
+
+        $result = $db->query(SAGU::prepare($sql, $args));
+
+        return $result;
+    }
+
+    /**
+     * Report of inscriptions for general exams average
+     *
+     * @param $selectiveProcessId (int): Selective process id
+     *
+     * @return (array): An array containing the search results
+     **/
+    public function inscriptionForGeneralExamsAverage($selectiveProcessId)
+    {
+       $args = array($selectiveProcessId, 't', DEFAULT_SELECTIVE_PROCESS_TYPE);
+
+       $sql = ' SELECT D.examId,
+                       E.description,
+                       round(avg(B.note)::numeric, '.ROUND_VALUE_CLASSIFICATION.')
+                  FROM sprInscription A
+             LEFT JOIN sprNote B
+                    ON (A.inscriptionId = B.inscriptionId)
+            INNER JOIN sprExamOccurrence D
+                    ON (D.examOccurrenceId = B.examOccurrenceId)
+            INNER JOIN sprExam E
+                    ON (E.examId = D.examId)
+            INNER JOIN sprInscriptionOption F
+                    ON (F.inscriptionId = A.inscriptionId AND
+                        F.optionNumber = 1)
+            INNER JOIN sprCourseOccurrence G
+                    ON (G.courseOccurrenceId = F.courseOccurrenceId)
+           INNER JOIN sprCourseVacant H
+                   ON (H.courseVacantId = G.courseVacantId)
+           INNER JOIN sprCourseExamBalance I
+                   ON (I.examOccurrenceId = D.examOccurrenceId AND
+                       I.courseVacantId = H.courseVacantId)
+                 WHERE A.selectiveProcessId = ?
+                   AND A.isClassified = ?
+                   AND D.selectiveProcessTypeId = ?
+                   AND A.totalPoints > 0
+                   AND not (A.isCanceled)
+              GROUP BY D.examId,
+                       E.description
+              ORDER BY E.description ';
+
+        $db = $this->getDatabase();
+
+        $result = $db->query(SAGU::prepare($sql, $args));
+
+        return $result;
+    }
+
+    /**
+     * Report of inscriptions for conference list
+     *
+     * @param $selectiveProcessId (int): Selective process id
+     *
+     * @return (array): An array containing the search results
+     **/
+    public function inscriptionForConferenceList($selectiveProcessId)
+    {
+       $args = array($selectiveProcessId, 't', DEFAULT_SELECTIVE_PROCESS_TYPE);
+
+       $sql = ' SELECT A.personId,
+                       C.name,
+                       D.examId,
+                       E.shortDescription,
+                       round(SUM(B.note) ::numeric, '.ROUND_VALUE_CLASSIFICATION.')
+                  FROM sprInscription A
+             LEFT JOIN sprNote B
+                    ON (A.inscriptionId = B.inscriptionId)
+       INNER JOIN ONLY basPhysicalPerson C
+                    ON (C.personId = A.personId)
+            INNER JOIN sprExamOccurrence D
+                    ON (D.examOccurrenceId = B.examOccurrenceId)
+            INNER JOIN sprExam E
+                    ON (E.examId = D.examId)
+            INNER JOIN sprInscriptionOption F
+                    ON (F.inscriptionId = A.inscriptionId AND
+                        F.optionNumber = 1)
+            INNER JOIN sprCourseOccurrence G
+                    ON (G.courseOccurrenceId = F.courseOccurrenceId)
+           INNER JOIN sprCourseVacant H
+                   ON (H.courseVacantId = G.courseVacantId)
+           INNER JOIN sprCourseExamBalance I
+                   ON (I.examOccurrenceId = D.examOccurrenceId AND
+                       I.courseVacantId = H.courseVacantId)
+                 WHERE A.selectiveProcessId = ?
+                   AND A.isClassified = ?
+                   AND D.selectiveProcessTypeId = ?
+                   AND not (A.isCanceled)
+              GROUP BY A.personId, C.name, D.examId, E.shortDescription,
+                       E.description
+              ORDER BY C.name, A.personId, D.examId';
+
+        $db = $this->getDatabase();
+
+        $result = $db->query(SAGU::prepare($sql, $args));
+
+        return $result;
+    }
+}
+
+?>

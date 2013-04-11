@@ -1,0 +1,314 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for Pupils and schools' performance bulletin table
+ *
+ * @author Hélio H. R. Guimaras [helio@solis.coop.br] 
+ *
+ * @version: $Id$
+ * 
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * Rafael Luís Spengler [rafael@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 08/06/2006
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to manipulate the sprPupilsAndSchoolsPerformanceBulletinPupilsData table
+ **/
+class BusinessSelectiveProcessBusInscriptionSheet extends Business
+{
+
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module = is_null($module) ? 'selectiveProcess' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+    /**
+     * Get the inscriptions conform the filters
+     * 
+     * @param $filters dates to filters in select
+     *
+     * @return (array): Array of inscriptions
+     **/
+
+    public function pupilsData($filters)
+    {
+        $sql = ' SELECT DISTINCT A.inscriptionId,
+                                 E.personId,
+                                 EE.name AS personName,
+                                 TO_CHAR(E.datebirth, \'' . MASK_DATE . '\') ,
+                                 K.content,
+                                 K.organ,
+                                 M.name AS organCityName,
+                                 N.content AS cpf,
+                                 O.name AS cityNaturalidade,
+                                 P.name AS countryNaturalidade,
+                                 EE.location,
+                                 EE.number,
+                                 EE.complement,
+                                 EE.neighborhood,
+                                 EE.zipcode,
+                                 L.name AS cityResidence,
+                                 EE.residentialphone,
+                                 EE.workphone,
+                                 EE.cellphone,
+                                 EE.messagecontact,
+                                 EE.specialNecessityId,
+                                 Q.description,
+                                 EE.sex,
+                                 EE.maritalstatusid,
+                                 R.name AS motherName,
+                                 S.name AS fatherName,
+                                 A.isHighSchool,
+                                 T.name,
+                                 U.name AS cityNameHighSchool,
+                                 U.stateid,
+                                 V.name AS cityExamName,
+                                 X.description AS languageDescription
+                            FROM sprInscription A
+                      INNER JOIN sprInscriptionOption B
+                              ON ( A.inscriptionId = B.inscriptionId )
+                       LEFT JOIN sprCourseOccurrence C
+                              ON (B.courseOccurrenceId = C.courseOccurrenceId)
+                      INNER JOIN basUnit D
+                              ON ( C.unitId = D.unitId )
+                  LEFT JOIN ONLY basPhysicalPersonStudent E
+                              ON ( A.personId = E.personId )
+                  LEFT JOIN ONLY basPhysicalPerson EE
+                              ON (EE.personId = E.personId)
+                      INNER JOIN sprCourseVacant G
+                              ON ( C.courseVacantId = G.courseVacantId )
+                      INNER JOIN acdCourse I
+                              ON ( C.courseId = I.courseId)
+                      INNER JOIN acdCourseVersion J
+                              ON ( I.courseId = J.courseId )
+                       LEFT JOIN basDocument K
+                              ON (K.personId = A.personId AND
+                                  K.documenttypeid = ' . RG_CODE . ')
+                       LEFT JOIN basCity L
+                              ON (L.cityId = E.cityId)
+                       LEFT JOIN basCity M
+                              ON (M.cityId = K.cityId)
+                       LEFT JOIN basDocument N
+                              ON (N.personId = A.personId AND
+                                  N.documentTypeId = ' . CPF_CODE . ')
+                       LEFT JOIN basCity O
+                              ON (O.cityId = E.cityidbirth)
+                       LEFT JOIN basCountry P
+                              ON (P.countryId = E.countryidbirth)
+                       LEFT JOIN basSpecialNecessity Q
+                              ON (Q.specialnecessityid = E.specialnecessityid)
+                       LEFT JOIN basPerson R
+                              ON (R.personId = E.motherId)
+                       LEFT JOIN basPerson S
+                              ON (S.personId = E.fatherid)
+                       LEFT JOIN basLegalPerson T
+                              ON (T.personId = E.institutionidhs)
+                       LEFT JOIN basCity U
+                              ON (U.cityId = E.cityidhs)
+                       LEFT JOIN basCity V
+                              ON (V.cityId = A.cityexam)
+                       LEFT JOIN sprLanguage X
+                              ON (X.languageid = A.languageid)';
+
+        $where = 'WHERE A.selectiveProcessId = ?
+                    AND B.optionNumber = 1';
+
+        $args[] = $filters->selectiveProcessId;
+
+        if ( strlen((string)$filters->inscriptionId) > 0 )
+        {
+            $where .= ' AND A.inscriptionId = ? ';
+            $args[] = $filters->inscriptionId;
+        }
+
+        if ( strlen((string)$filters->cityExamId) > 0 )
+        {
+            $where .= ' AND A.cityExam = ? ';
+            $args[] = $filters->cityExamId;
+        }
+
+        if($filters->typeSheet1 == 1)
+        {
+            $sql .= 'INNER JOIN sprSelectiveProcessTypeData Z
+                             ON (A.inscriptionId = Z.inscriptionId AND
+                                 Z.selectiveProcessTypeId = 2)';
+        }
+
+        if($filters->typeSheet1 == 2)
+        {
+            $where .= ' AND NOT A.inscriptionId IN ( SELECT Z.inscriptionId
+                        FROM sprSelectiveProcessTypeData Z
+                        WHERE Z.selectiveProcessTypeId = 2)';
+        }
+
+        if ( $filters->typeSheet2 == 1)
+        {
+            //Código para somente os inscritos manualmente
+            $where .= ' AND A.isInternet = \'' . DB_FALSE . '\'';
+        }
+        if ( $filters->typeSheet2 == 2)
+        {
+            //Código para somente os inscritos pela Internet
+            $where .= ' AND A.isInternet = \'' . DB_TRUE . '\'';
+        }
+
+
+        unset($result);
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= $where . ' ORDER BY EE.name ';
+        }
+
+        $db = $this->getDatabase();
+        $result = $db->query(SAGU::prepare($sql, $args));
+
+        return $result;
+    }
+
+
+    /**
+    *   Function to get courses of options in selective process
+    **/
+    public function getCourseOfOptions($inscriptionId)
+    {
+        $sql1 = '   SELECT D.courseId,
+                           D.shortName,
+                           C.unitId,
+                           getturnDescription(C.turnId) as Turn,
+                           E.fee,
+                           F.BeginDate,
+                           G.name as Unidade,
+                           G.Location,
+                           G.number,
+                           G.neighborhood,
+                           TO_CHAR(E.EndDate, \'' . MASK_DATE . '\')
+                      FROM sprInscription A
+                INNER JOIN sprInscriptionOption B
+                        ON ( A.inscriptionId = B.inscriptionId )
+                LEFT JOIN sprCourseOccurrence C
+                        ON (B.courseOccurrenceId = C.courseOccurrenceId)
+                INNER JOIN acdCourse D
+                        ON (C.courseId = D.courseId)
+                INNER JOIN sprInscriptionSetting E
+                        ON (A.SelectiveProcessId = E. SelectiveProcessId)
+                INNER JOIN sprSelectiveProcess F
+                        ON (A.SelectiveProcessId = F.SelectiveProcessId)
+                INNER JOIN basLegalPerson G
+                		ON (F.InstitutionId = G.PersonId)                
+                     WHERE A.inscriptionId = ?
+                  ORDER BY B.optionnumber  ';
+
+        $db1 = $this->getDatabase();
+        $result1 = $db1->query(SAGU::prepare($sql1, $inscriptionId));
+        return $result1;
+    }
+
+
+    /**
+    *   Function to get exams notes 
+    **/
+    public function getExamNote($inscriptionId)
+    {
+        $sql1 = 'SELECT  TO_CHAR(A.examDateTime, \'' . MASK_DATE . '\'),
+                         B.description AS examDescription,
+                         C.note
+                    FROM sprExamOccurrence A
+              INNER JOIN sprExam B
+                      ON (A.examId = B.examId)
+              INNER JOIN sprNote C
+                      ON (C.examOccurrenceId = A.examOccurrenceId)
+                   WHERE C.inscriptionId = ? ';
+
+        $db1 = $this->getDatabase();
+        $result1 = $db1->query(SAGU::prepare($sql1, $inscriptionId));
+
+        return $result1;
+    }
+
+    public function getNumberOptionsSelectiveProcess($selectiveProcess)
+    {
+        $sql = ' SELECT A.optionsNumber
+                   FROM sprSelectiveProcess A
+                  WHERE A.selectiveProcessId = ?';
+
+        $db = $this->getDatabase();
+        $result = $db->query(SAGU::prepare($sql, $selectiveProcess));
+
+        return $result[0][0];
+    }
+
+    public function getNumberInscriptionOtherSelectiveProcess($inscriptionId)
+    {
+        $sql = ' SELECT A.numberInscription
+                   FROM sprSelectiveProcessTypeData A
+                  WHERE A.inscriptionId = ? AND
+                        A.selectiveProcessTypeId = 2';
+
+        $db = $this->getDatabase();
+        $result = $db->query(SAGU::prepare($sql, $inscriptionId));
+
+        return $result[0][0];
+
+    }
+
+    public function getNotesOtherSelectiveProcess($selectiveProcessId, $inscriptionId)
+    {
+        $sql = ' SELECT B.note, 
+                        C.examId, 
+                        C.description
+                   FROM sprExamOccurrence A
+             INNER JOIN sprNote B
+                     ON (B.examOccurrenceId = A.examOccurrenceId AND
+                         B.inscriptionId = ?)
+             INNER JOIN sprExam C
+                     ON (C.examId = A.examId)
+                  WHERE A.selectiveProcessTypeId = 2 AND
+                        A.selectiveProcessId = ?';
+
+        $args = array($inscriptionId, 
+                      $selectiveProcessId);
+
+        $db = $this->getDatabase();
+        $result = $db->query(SAGU::prepare($sql, $args));
+
+        return $result;
+
+    }
+
+
+
+
+}
+
+?>

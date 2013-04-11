@@ -1,0 +1,2188 @@
+<?php
+/**
+ *
+ * This file manipulate the lookups for the academic module
+ *
+ * @author Alexandre Heitor Schmidt [alexsmith] [alexsmith@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith] [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [dah] [daniel@solis.coop.br]
+ * Eduardo Beal Miglioransa [edmigli] [eduardo@solis.coop.br]
+ * William Prigol Lopes [william] [william@solis.coop.br]
+ * Armando Taffarel Neto [taffarel@solis.coop.br]
+ * 
+ * @since
+ * Class created on 12/09/2005
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Solu��es Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Solu��es Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+$MIOLO = MIOLO::getInstance();
+$MIOLO->getClass('basic', 'lookupFields');
+
+/**
+ * Load global defines for the basic module
+ */
+$business  = $MIOLO->getBusiness('basic','BusConfig');
+$constants = $business->getModuleValues('basic');
+foreach ( $constants as $cnt )
+{
+    define($cnt[0],$cnt[1]);
+}
+
+$constants = $business->getModuleValues('finance');
+foreach ( $constants as $cnt )
+{
+    define($cnt[0],$cnt[1]);
+}
+
+/**
+ * Class to manipulate the Lookups
+ **/
+class BusinessFinanceLookup
+{
+ 
+    /**
+     * Auto complete for operation voucher message
+     *
+     * @param $context (object): MIOLO Context object
+     *
+     * @return (object): MIOLO Gives the action evaluating the code by setContext call
+     *
+     **/
+    public function autoCompleteOperationVoucher(&$context)
+    {
+        $sql = 'SELECT A.description,
+                       A.operationTypeId,
+                       B.title,
+                       B.message
+                  FROM finOperation A,
+                       finVoucherMessages B
+                 WHERE A.operationId = B.operationId
+                   AND A.operationId = ?';
+
+        $context->setContext('finance', $sql);
+    }
+
+    /**
+     * Lookup for operation mensage
+     *
+     * @param $lookup: Lookup Object used by MIOLO
+     *
+     * @return MIOLO Lookup function as actions evaluated by MIOLO
+     *
+     **/
+    public function lookupOperationVoucher(&$lookup)
+    {
+        global $MIOLO;
+        $module = MIOLO::_request('lmodule');
+
+        $operationId     = $lookup->getFilterValue('operationId');
+        $description     = $lookup->getFilterValue('description');
+        $operationTypeId = $lookup->getFilterValue('operationTypeId');
+        $titleDocument   = $lookup->getFilterValue('titleDocument');
+        $message         = $lookup->getFilterValue('message');
+
+        $lookup->addFilterField( new MTextField('operationId', $operationId, _M('Operation id', $module), FIELD_ID_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('description', $description, _M('Operation', $module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+        $opts = array ( 'D' => _M('Debit',$module),
+                        'C' => _M('Credit',$module) );
+        $lookup->addFilterField( new MComboBox('operationTypeId', $operationTypeId, _M('Operation type', $module), $opts) );
+
+        $lookup->addFilterField( new MTextField('titleDocument', $titleDocument, _M('Title document', $module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+
+        $lookup->addFilterField( new MTextField('message', $message, _M('Message', $module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+
+        $columns = array(
+           new DataGridColumn('operationId',     _M('Operation id', $module), 'right', true, null, true),
+           new DataGridColumn('description',     _M('Operation', $module), 'left', true, null, true),
+           new DataGridColumn('operationTypeId', _M('Operation type', $module), 'left', true, null, true),
+           new DataGridColumn('titleDocument',   _M('Title document', $module), 'left', true, null, true),
+           new DataGridColumn('message',         _M('Message', $module), 'left', true, null, true)
+        );
+
+        $sql = 'SELECT A.operationId,
+                       A.description,
+                       A.operationTypeId,
+                       B.title as titleDocument,
+                       B.message
+                  FROM finOperation A,
+                       finVoucherMessages B
+                 WHERE A.operationId = B.operationId ';
+
+        if ( strlen((string)$operationId) > 0 )
+        {
+            $where .= ' AND A.operationId = ?';
+            $args[] = $operationId;
+        }
+
+        if ( strlen((string)$description) > 0 )
+        {
+            $where .= ' AND A.description ILIKE ?';
+            $args[] = $description . '%';
+        }
+
+        if ( strlen((string)$operationTypeId) > 0 )
+        {
+            $where .= ' AND A.operationTypeId = ?';
+            $args[] = $operationTypeId;
+        }
+
+        if ( strlen((string)$titleDocument) > 0 )
+        {
+            $where .= ' AND B.title ILIKE ?';
+            $args[] = '%' . $titleDocument . '%';
+        }
+
+        if ( strlen((string)$message) > 0 )
+        {
+            $where .= ' AND B.message ILIKE ?';
+            $args[] = '%' . $message . '%';
+        }
+
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= $where ;
+        }
+
+        $sql .= ' ORDER BY A.operationId';
+
+        $sqlObject = new sql();
+        if ( strlen((string)$where) == 0 )
+        {
+            $sql .= ' LIMIT 0';
+        }
+
+        $sqlObject->createFrom(SAGU::prepare($sql,$args));
+        $lookup->setFilterColumns(LOOKUP_FILTER_COLUMNS);
+        $lookup->setLookupGrid($module, $sqlObject, $columns, _M('Voucher message search',$module), 15, 0);
+        $lookup->grid->setIsScrollable();
+    }
+
+
+   /**
+     * Auto complete for operation
+     *
+     * @param $context (object): MIOLO Context object
+     *
+     * @return (object): MIOLO Gives the action evaluating the code by setContext call
+     *
+     **/
+    public function autoCompleteOperation(&$context)
+    {
+        $sql = 'SELECT A.description,
+                       A.operationTypeId
+                  FROM finOperation A
+                 WHERE A.isExtinct = \'' . DB_FALSE . '\'
+                   AND A.operationId = ?';
+
+        $context->setContext('finance', $sql);
+    }
+
+    /**
+     * Lookup for operation
+     *
+     * @param $lookup: Lookup Object used by MIOLO
+     *
+     * @return MIOLO Lookup function as actions evaluated by MIOLO
+     *
+     **/
+    public function lookupOperation(&$lookup)
+    {
+        global $MIOLO;
+        $module = MIOLO::_request('lmodule');
+
+        $operationId         = $lookup->getFilterValue('operationId');
+        $description         = $lookup->getFilterValue('description');
+        $operationTypeId     = $lookup->getFilterValue('operationTypeId');
+        $operationGroupId    = $lookup->getFilterValue('operationGroupId');
+        $receivableOrPayable = $lookup->getFilterValue('receivableOrPayable');
+
+        $lookup->addFilterField( new MTextField('operationId',      $operationId,     _M('Code', $module), FIELD_ID_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('description',      $description,     _M('Operation', $module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+        $opts = array ( 'D' => _M('Debit',$module),
+                        'C' => _M('Credit',$module) );
+        $lookup->addFilterField( new MComboBox('operationTypeId',   $operationTypeId, _M('Type', $module), $opts) );
+        $business = $MIOLO->getBusiness('finance', 'BusOperationGroup');
+        $lookup->addFilterField( new MSelection('operationGroupId', $operationGroupId, _M('Operation group',$module), $business->listOperationGroup()) );
+        $lookup->addFilterField( new MSelection('receivableOrPayable', $receivableOrPayable, _M('Operation category',$module), array('R'=>_M('Receivable invoice', $module), 'P'=>_M('Payable invoice', $module))) );
+
+        $columns = array(
+           new DataGridColumn('operationId',      _M('Code', $module), 'left', true, null, true),
+           new DataGridColumn('description',      _M('Operation', $module), 'left', true, null, true),
+           new DataGridColumn('operationTypeId',  _M('Type', $module), 'left', true, null, true),
+           new DataGridColumn('operationGroupId', _M('Operation group id', $module), 'right', true, null, false),
+           new DataGridColumn('operationGroup', _M('Operation group', $module), 'left', true, null, true),
+           new DataGridColumn('receivableOrPayable', _M('Operation category', $module), 'left', true, null, true, array('R' => _M('Receivable invoice', $module), 'P' => _M('Payable invoice', $module) ), true )
+        );
+
+        $sql = 'SELECT A.operationId,
+                       A.description,
+                       A.operationTypeId,
+                       A.isExtinct,
+                       A.operationGroupId,
+                       B.Description as operationGroup,
+                       A.receivableOrPayable
+                  FROM finOperation A
+             LEFT JOIN finOperationGroup B
+                    ON ( A.operationGroupId = B.operationGroupId) ';
+
+        if ( strlen((string)$operationId) > 0 )
+        {
+            $where .= ' AND A.operationId = ?';
+            $args[] = $operationId;
+        }
+
+        if ( strlen((string)$receivableOrPayable) > 0 )
+        {
+            $where .= ' AND A.receivableOrPayable = ?';
+            $args[] = $receivableOrPayable;
+        }
+
+        if ( strlen((string)$description) > 0 )
+        {
+            $where .= ' AND A.description ILIKE ?';
+            $args[] = $description . '%';
+        }
+
+        if ( strlen((string)$operationTypeId) > 0 )
+        {
+            $where .= ' AND A.operationTypeId = ?';
+            $args[] = $operationTypeId;
+        }
+
+        if ( strlen((string)$operationGroupId) > 0 )
+        {
+            $where .= ' AND A.operationGroupId = ?';
+            $args[] = $operationGroupId;
+        }
+
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE A.isExtinct = \''. DB_FALSE . '\'' . $where ;
+        }
+
+        $sql .= ' ORDER BY A.operationId';
+
+        $sqlObject = new sql();
+        if ( strlen((string)$where) == 0 )
+        {
+            $sql .= ' LIMIT 0';
+        }
+
+        $sqlObject->createFrom(SAGU::prepare($sql,$args));
+        $lookup->setFilterColumns(LOOKUP_FILTER_COLUMNS);
+        $lookup->setLookupGrid($module, $sqlObject, $columns, _M('Operation search',$module), 15, 0);
+        $lookup->grid->setIsScrollable();
+
+    }
+
+
+   /**
+     * Auto complete for operation
+     *
+     * @param $context (object): MIOLO Context object
+     *
+     * @return (object): MIOLO Gives the action evaluating the code by setContext call
+     *
+     **/
+    public function autoCompleteOperationForIncomeForecast(&$context)
+    {
+        $MIOLO = MIOLO::getInstance();
+        if (!defined('PAYMENT_OPERATION_GROUP_ID'))
+        {
+            $MIOLO->Error(_M('Configuration not defined for @1 parameter', 'finance', 'PAYMENT_OPERATION_GROUP_ID'));
+        }
+        $sql = 'SELECT A.description,
+                       A.operationTypeId
+                  FROM finOperation A
+                 WHERE A.isExtinct = \'' . DB_FALSE . '\'
+                   AND A.operationId = ?
+                   AND A.operationGroupId <> \''.PAYMENT_OPERATION_GROUP_ID.'\'';
+
+        $context->setContext('finance', $sql);
+    }
+
+    /**
+     * Lookup for operation
+     *
+     * @param $lookup: Lookup Object used by MIOLO
+     *
+     * @return MIOLO Lookup function as actions evaluated by MIOLO
+     *
+     **/
+    public function lookupOperationForIncomeForecast(&$lookup)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::_request('lmodule');
+    
+        if (!defined('PAYMENT_OPERATION_GROUP_ID'))
+        {
+            $MIOLO->Error(_M('Configuration not defined for @1 parameter', 'finance', 'PAYMENT_OPERATION_GROUP_ID'));
+        }
+
+        $operationId      = $lookup->getFilterValue('operationId');
+        $description      = $lookup->getFilterValue('description');
+        $operationTypeId  = $lookup->getFilterValue('operationTypeId');
+        $operationGroupId = $lookup->getFilterValue('operationGroupId');
+
+        $lookup->addFilterField( new MTextField('operationId',      $operationId,     _M('Code', $module), FIELD_ID_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('description',      $description,     _M('Operation', $module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+        $opts = array ( 'D' => _M('Debit',$module),
+                        'C' => _M('Credit',$module) );
+        $lookup->addFilterField( new MComboBox('operationTypeId',   $operationTypeId, _M('Type', $module), $opts) );
+        $business = $MIOLO->getBusiness('finance', 'BusOperationGroup');
+        $lookup->addFilterField( new MSelection('operationGroupId', $operationGroupId, _M('Operation group',$module), $business->listOperationGroupForEntries()) );
+
+        $columns = array(
+           new DataGridColumn('operationId',      _M('Code', $module), 'left', true, null, true),
+           new DataGridColumn('description',      _M('Operation', $module), 'left', true, null, true),
+           new DataGridColumn('operationTypeId',  _M('Type', $module), 'left', true, null, true),
+           new DataGridColumn('operationGroupId', _M('Operation group id', $module), 'right', true, null, false),
+           new DataGridColumn('operationGroup',  _M('Operation group', $module), 'left', true, null, true)
+        );
+
+        $sql = 'SELECT A.operationId,
+                       A.description,
+                       A.operationTypeId,
+                       A.isExtinct,
+                       A.operationGroupId,
+                       B.Description as operationGroup
+                  FROM finOperation A
+             LEFT JOIN finOperationGroup B
+                    ON ( A.operationGroupId = B.operationGroupId
+                     AND A.operationGroupId <> \''.PAYMENT_OPERATION_GROUP_ID.'\') ';
+
+        if ( strlen((string)$operationId) > 0 )
+        {
+            $where .= ' AND A.operationId = ?';
+            $args[] = $operationId;
+        }
+
+        if ( strlen((string)$description) > 0 )
+        {
+            $where .= ' AND A.description ILIKE ?';
+            $args[] = $description . '%';
+        }
+
+        if ( strlen((string)$operationTypeId) > 0 )
+        {
+            $where .= ' AND A.operationTypeId = ?';
+            $args[] = $operationTypeId;
+        }
+
+        if ( strlen((string)$operationGroupId) > 0 )
+        {
+            $where .= ' AND A.operationGroupId = ?';
+            $args[] = $operationGroupId;
+        }
+
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE A.isExtinct = \''. DB_FALSE . '\'' . $where ;
+        }
+
+        $sql .= ' ORDER BY A.operationId';
+
+        $sqlObject = new sql();
+        if ( strlen((string)$where) == 0 )
+        {
+            $sql .= ' LIMIT 0';
+        }
+
+        $sqlObject->createFrom(SAGU::prepare($sql,$args));
+        $lookup->setFilterColumns(LOOKUP_FILTER_COLUMNS);
+        $lookup->setLookupGrid($module, $sqlObject, $columns, _M('Operation search',$module), 15, 0);
+        $lookup->grid->setIsScrollable();
+
+    }
+
+
+
+    /**
+     * Auto complete for payment place
+     *
+     * @param $context (object): MIOLO Context object
+     *
+     * @return (object): MIOLO Gives the action evaluating the code by setContext call
+     *
+     **/
+    public function autoCompletePaymentPlace(&$context)
+    {
+        $sql = 'SELECT A.description,
+                       A.bank 
+                  FROM finPaymentPlace A
+                 WHERE A.paymentPlaceId = ?';
+
+        $context->setContext('finance', $sql);
+    }
+
+    /**
+     * Auto complete for collection type
+     *
+     * @param $context (object): MIOLO Context object
+     *
+     * @return (object): MIOLO Gives the action evaluating the code by setContext call
+     *
+     **/
+    public function autoCompleteCollectionType(&$context)
+    {
+        $sql = 'SELECT A.description
+                  FROM finCollectionType A
+                 WHERE A.collectionTypeId = ?';
+
+        $context->setContext('finance', $sql);
+    }
+
+    /**
+     * Lookup for collection type
+     *
+     * @param $lookup: Lookup Object used by MIOLO
+     *
+     * @return MIOLO Lookup function as actions evaluated by MIOLO
+     *
+     **/
+    public function lookupCollectionType(&$lookup)
+    {
+        global $MIOLO;
+        $module = MIOLO::_request('lmodule');
+
+        $MIOLO->uses('classes/sagu.class','basic');
+        $MIOLO->conf->loadConf($module);
+
+        $collectionTypeId = $lookup->getFilterValue('collectionTypeId');
+        $description      = $lookup->getFilterValue('description');
+
+        $lookup->addFilterField( new MTextField('collectionTypeId', $collectionTypeId, _M('Code', $module), FIELD_ID_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('description',      $description,      _M('Collection type', $module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+
+        $columns = array(
+           new DataGridColumn('collectionTypeId', _M('Code', $module), 'left', true, null, true),
+           new DataGridColumn('description',      _M('Collection type', $module),        'left', true, null, true)
+        );
+
+        $sql = 'SELECT A.collectionTypeId,
+                       A.description
+                  FROM finCollectionType A';
+
+        if ( strlen((string)$collectionTypeId) > 0 )
+        {
+            $where .= ' AND A.collectionTypeId = ?';
+            $args[] = $collectionTypeId;
+        }
+
+        if ( strlen((string)$description) > 0 )
+        {
+            $where .= ' AND A.description ILIKE ?';
+            $args[] = $description . '%';
+        }
+
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE ' . substr($where, 5);
+        }
+
+        $sql .= ' ORDER BY A.description';
+
+        $sqlObject = new sql();
+        if ( strlen((string)$where) == 0 )
+        {
+            $sql .= ' LIMIT 0';
+        }
+
+        $sqlObject->createFrom(SAGU::prepare($sql,$args));
+        $lookup->setFilterColumns(LOOKUP_FILTER_COLUMNS);
+        $lookup->setLookupGrid($module, $sqlObject, $columns, _M('Collection type search',$module), 15, 0);
+        $lookup->grid->setIsScrollable();
+    }
+
+    /**
+     * Auto complete for Police
+     *
+     * @param $context (object): MIOLO Context object
+     *
+     * @return (object): MIOLO Gives the action evaluating the code by setContext call
+     *
+     **/
+    public function autoCompletePolicy(&$context)
+    {
+        $sql = 'SELECT A.description,
+                       A.bankOperationTypeCode,
+                       A.operationId,
+                       A.collectionTypeId,
+                       A.monthlyInterest,
+                       A.fine,
+                       A.daysToInterest,
+                       A.daysToFine,
+                       A.daysToDiscount,
+                       A.discount,
+                       A.bankTaxValue,
+                       B.description as operation,
+                       C.incomeSourceId,
+                       C.description as incomeSource
+                  FROM finPolicy A 
+                  LEFT JOIN finOperation B ON ( A.operationId = B.operationId )
+                  LEFT JOIN finIncomeSource C ON (A.incomeSourceId = C.incomeSourceId)
+                 WHERE A.PolicyId = ?';
+
+        $context->setContext('finance', $sql);
+    }
+
+    public function lookupPolicy(&$lookup)
+    {
+        global $MIOLO;
+        $module = MIOLO::_request('lmodule');
+
+        $policyId               = $lookup->getFilterValue('policyId');
+        $description            = $lookup->getFilterValue('description');
+        $bankOperationTypeCode  = $lookup->getFilterValue('bankOperationTypeCode');
+        $operationId            = $lookup->getFilterValue('operationId');
+        $operation              = $lookup->getFilterValue('operation');
+        
+        $lookup->addFilterField( new MTextField('policyId',        $policyId,        _M('Code', $module), FIELD_ID_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('description',     $description,     _M('Policy', $module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('operationId',     $operationId,     _M('Operation id', $module), FIELD_ID_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('operation',       $operation,       _M('Operation', $module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('bankOperationTypeCode', $bankOperationTypeCode, _M('Bank operation type id', $module), FIELD_ID_LOOKUP_SIZE) );
+
+        global $page;
+        $page->onLoad('document.' . $page->name . '.description.focus()');
+
+        $columns = array(
+           new DataGridColumn('policyId',               _M('Code', $module), 'right', true, null, true),
+           new DataGridColumn('description',            _M('Policy', $module), 'left', true, null, true),
+           new DataGridColumn('bankOperationTypeCode',  _M('Bank operation type id', $module), 'left',  true, null, true),
+           new DataGridColumn('operationId',            _M('Operation id', $module), 'right', true, null, true),
+           new DataGridColumn('operation',              _M('Operation', $module), 'left', true, null, true),
+           new DataGridColumn('monthlyInterest',        _M('Monthly interest', $module), 'right', true, null, true),
+           new DataGridColumn('fine',                   _M('Fine', $module), 'right', true, null, true),
+           new DataGridColumn('daysToInterest',         _M('Days to interest', $module), 'right',  true, null, true),
+           new DataGridColumn('daysToFine',             _M('Days to fine', $module), 'right', true, null, true),
+           new DataGridColumn('daysToDiscount',         _M('Days to discount', $module), 'right', true, null, true),
+           new DataGridColumn('discount',               _M('Discount', $module), 'right',  true, null, true),
+           new DataGridColumn('bankTaxValue',           _M('Bank tax value', $module), 'right',  true, null, true)
+        );
+
+        $sql = 'SELECT A.policyId, 
+                       A.description,
+                       A.bankOperationTypeCode,
+                       A.operationId,
+                       A.collectionTypeId,
+                       A.monthlyInterest,
+                       A.fine,
+                       A.daysToInterest,
+                       A.daysToFine,
+                       A.daysToDiscount,
+                       A.discount,
+                       A.bankTaxValue,
+                       B.description as operation,
+                       C.incomeSourceId,
+                       C.description as incomeSource
+                  FROM finPolicy A
+             LEFT JOIN finOperation B ON ( A.operationId = B.operationId )
+             LEFT JOIN finIncomeSource C ON ( A.incomeSourceId = C.incomeSourceId )';
+
+        if ( strlen((string)$policyId) > 0 )
+        {
+            $where .= ' AND A.policyId = ?';
+            $args[] = $policyId;
+        }
+
+        if ( strlen((string)$description) > 0 )
+        {
+            $where .= ' AND A.description ILIKE ?';
+            $args[] = $description . '%';
+        }
+
+        if ( strlen((string)$bankOperationTypeCode) > 0 )
+        {
+            $where .= ' AND A.bankOperationTypeCode = ?';
+            $args[] = $bankOperationTypeCode;
+        }
+
+        if ( strlen((string)$operationId) > 0 )
+        {
+            $where .= ' AND A.operationId = ?';
+            $args[] = $operationId;
+        }
+
+        if ( strlen((string)$operation) > 0 )
+        {
+            $where .= ' AND B.description ILIKE ?';
+            $args[] = $operation . '%';
+        }
+
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE A.isExtinct = \''. DB_FALSE . '\'' . $where ;
+        }
+
+        $sql .= ' ORDER BY A.policyId';
+
+        $sqlObject = new sql();
+        if ( strlen((string)$where) == 0 )
+        {
+            $sql .= ' LIMIT 0';
+        }
+
+        $sqlObject->createFrom(SAGU::prepare($sql,$args));
+        $lookup->setFilterColumns(LOOKUP_FILTER_COLUMNS);
+        $lookup->setLookupGrid($module, $sqlObject, $columns, _M('Policy search',$module), 15, 0);
+        $lookup->grid->setIsScrollable();
+    }
+
+    /**
+     * Auto complete for income source
+     *
+     * @param $context (object): MIOLO Context object
+     *
+     * @return (object): MIOLO Gives the action evaluating the code by setContext call
+     *
+     **/
+    public function autoCompleteIncomeSource(&$context)
+    {
+        $sql = 'SELECT A.description,
+                       A.isExtinct
+                  FROM finIncomeSource A
+                 WHERE A.incomeSourceId = ?';
+
+        $context->setContext('finance', $sql);
+    }
+
+    /**
+     * Lookup for income source
+     *
+     * @param $lookup: Lookup Object used by MIOLO
+     *
+     * @return MIOLO Lookup function as actions evaluated by MIOLO
+     *
+     **/
+    public function lookupIncomeSource(&$lookup)
+    {
+        global $MIOLO;
+        $module = MIOLO::_request('lmodule');
+
+        $incomeSourceId = $lookup->getFilterValue('incomeSourceId');
+        $description    = $lookup->getFilterValue('description');
+
+        $lookup->addFilterField( new MTextField('incomeSourceId', $incomeSourceId, _M('Code', $module), FIELD_ID_LOOKUP_SIZE));
+        $lookup->addFilterField( new MTextField('description',    $description,    _M('Income source', $module), FIELD_DESCRIPTION_LOOKUP_SIZE));
+
+        global $page;
+        $page->onLoad('document.' . $page->name . '.description.focus()');
+
+        $columns = array(
+           new DataGridColumn('incomeSourceId', _M('Code', $module), 'right', true, null, true),
+           new DataGridColumn('description',    _M('Income source', $module), 'left', true, null, true)
+        );
+
+        $sql = 'SELECT A.incomeSourceId,
+                       A.description,
+                       A.isExtinct
+                  FROM finIncomeSource A';
+
+        if ( strlen((string)$incomeSourceId) > 0 )
+        {
+            $where .= ' AND A.incomeSourceId = ?';
+            $args[] = $incomeSourceId;
+        }
+
+        if ( strlen((string)$description) > 0 )
+        {
+            $where .= ' AND A.description ILIKE ?';
+            $args[] = $description . '%';
+        }
+
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE A.isExtinct = \''. DB_FALSE . '\'' . $where ;
+        }
+
+        $sql .= ' ORDER BY A.description';
+
+        $sqlObject = new sql();
+        if ( strlen((string)$where) == 0 )
+        {
+            $sql .= ' LIMIT 0';
+        }
+
+        $sqlObject->createFrom(SAGU::prepare($sql,$args));
+        $lookup->setFilterColumns(LOOKUP_FILTER_COLUMNS);
+        $lookup->setLookupGrid($module, $sqlObject, $columns, _M('Income source search',$module), 15, 0);
+        $lookup->grid->setIsScrollable();
+
+    }
+
+    /**
+     * Auto complete for bank account
+     *
+     * @param $context (object): MIOLO Context object
+     *
+     * @return (object): MIOLO Gives the action evaluating the code by setContext call
+     *
+     **/
+    public function autoCompleteBankAccount(&$context)
+    {
+        $sql = 'SELECT A.description,
+                       A.accountNumber,
+                       A.accountNumberDigit,
+                       A.branchNumber,
+                       A.branchNumberDigit,
+                       A.bankId
+                  FROM finBankAccount A
+                 WHERE A.bankAccountId = ?';
+
+        $context->setContext('finance', $sql);
+    }
+
+    /**
+     * Lookup for bank account
+     *
+     * @param $lookup: Lookup Object used by MIOLO
+     *
+     * @return MIOLO Lookup function as actions evaluated by MIOLO
+     *
+     **/
+    public function lookupBankAccount(&$lookup)
+    {
+        global $MIOLO;
+        $module = MIOLO::_request('lmodule');
+
+        $MIOLO->uses('classes/sagu.class','basic');
+        $MIOLO->conf->loadConf($module);
+
+        $bankAccountId      = $lookup->getFilterValue('bankAccountId');
+        $description        = $lookup->getFilterValue('description');
+        $accountNumber      = $lookup->getFilterValue('accountNumber');
+        $accountNumberDigit = $lookup->getFilterValue('accountNumberDigit');
+        $branchNumber       = $lookup->getFilterValue('branchNumber');
+        $branchNumberDigit  = $lookup->getFilterValue('branchNumberDigit');
+        $bankId             = $lookup->getFilterValue('bankId');
+
+        $lookup->addFilterField( new MTextField('bankAccountId', $bankAccountId, _M('Code', $module), FIELD_ID_LOOKUP_SIZE));
+        $lookup->addFilterField( new MTextField('description', $description, _M('Description', $module), FIELD_DESCRIPTION_LOOKUP_SIZE));
+        $lookup->addFilterField( new MTextField('accountNumber', $accountNumber, _M('Account number', $module), FIELD_ID_LOOKUP_SIZE));
+        $lookup->addFilterField( new MTextField('accountNumberDigit', $accountNumberDigit, _M('Account digit', $module), FIELD_ID_LOOKUP_SIZE));
+        $lookup->addFilterField( new MTextField('branchNumber', $branchNumber, _M('Branch number', $module), FIELD_ID_LOOKUP_SIZE));
+        $lookup->addFilterField( new MTextField('branchNumberDigit', $branchNumberDigit, _M('Branch digit', $module), FIELD_ID_LOOKUP_SIZE));
+        $lookup->addFilterField( new MTextField('bankId', $bankId, _M('Bank id', $module), FIELD_ID_LOOKUP_SIZE));
+
+        $columns = array(
+           new DataGridColumn('bankAccountId',      _M('Code', $module), 'right', true, null, true),
+           new DataGridColumn('description',        _M('Description', $module), 'left', true, null, true),
+           new DataGridColumn('accountNumber',      _M('Account number', $module), 'right', true, null, true),
+           new DataGridColumn('accountNumberDigit', _M('Account digit', $module), 'left', true, null, true),
+           new DataGridColumn('branchNumber',       _M('Branch number', $module), 'right', true, null, true),
+           new DataGridColumn('branchNumberDigit',  _M('Branch digit', $module), 'left', true, null, true),
+           new DataGridColumn('bankId',             _M('Bank id', $module), 'left', true, null, true),
+        );
+
+        $sql = 'SELECT A.bankAccountId,
+                       A.description,
+                       A.accountNumber,
+                       A.accountNumberDigit,
+                       A.branchNumber,
+                       A.branchNumberDigit,
+                       A.bankId
+                  FROM finBankAccount A';
+
+        if ( strlen((string)$bankAccountId) > 0 )
+        {
+            $where .= ' AND A.bankAccountId = ?';
+            $args[] = $bankAccountId;
+        }
+
+        if ( strlen((string)$description) > 0 )
+        {
+            $where .= ' AND A.description ILIKE ?';
+            $args[] = $description . '%';
+        }
+
+        if ( strlen((string)$accountNumber) > 0 )
+        {
+            $where .= ' AND A.accountNumber ILIKE ?';
+            $args[] = $accountNumber . '%';
+        }
+
+        if ( strlen((string)$accountNumberDigit) > 0 )
+        {
+            $where .= ' AND A.accountNumberDigit ILIKE ?';
+            $args[] = $accountNumberDigit . '%';
+        }
+
+        if ( strlen((string)$branchNumber) > 0 )
+        {
+            $where .= ' AND A.branchNumber ILIKE ?';
+            $args[] = $branchNumber . '%';
+        }
+
+        if ( strlen((string)$branchNumberDigit) > 0 )
+        {
+            $where .= ' AND A.branchNumberDigit ILIKE ?';
+            $args[] = $branchNumberDigit . '%';
+        }
+
+        if ( strlen((string)$bankId) > 0 )
+        {
+            $where .= ' AND A.bankId ILIKE ?';
+            $args[] = $bankId . '%';
+        }
+
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE ' . substr($where, 5);
+        }
+
+        $sql .= ' ORDER BY A.description';
+
+        $sqlObject = new sql();
+        if ( strlen((string)$where) == 0 )
+        {
+            $sql .= ' LIMIT 0';
+        }
+
+        $sqlObject->createFrom(SAGU::prepare($sql,$args));
+        $lookup->setFilterColumns(LOOKUP_FILTER_COLUMNS);
+        $lookup->setLookupGrid($module, $sqlObject, $columns, _M('Bank account search',$module), 15, 0);
+        $lookup->grid->setIsScrollable();
+
+    }
+
+    /**
+     * Auto complete for bank
+     *
+     * @param $context (object): MIOLO Context object
+     *
+     * @return (object): MIOLO Gives the action evaluating the code by setContext call
+     *
+     **/
+    public function autoCompleteBank(&$context)
+    {
+        $sql = 'SELECT A.description
+                  FROM finBank A
+                 WHERE A.bankId = ?';
+
+        $context->setContext('finance', $sql);
+    }
+
+    /**
+     * Lookup for bank
+     *
+     * @param $lookup: Lookup Object used by MIOLO
+     *
+     * @return MIOLO Lookup function as actions evaluated by MIOLO
+     *
+     **/
+    public function lookupBank(&$lookup)
+    {
+        global $MIOLO;
+        $module = MIOLO::_request('lmodule');
+
+        $MIOLO->uses('classes/sagu.class','basic');
+        $MIOLO->conf->loadConf($module);
+
+        $bankId      = $lookup->getFilterValue('bankId');
+        $description = $lookup->getFilterValue('description');
+
+        $lookup->addFilterField( new MTextField('bankId',      $bankId,      _M('Code', $module), FIELD_ID_LOOKUP_SIZE));
+        $lookup->addFilterField( new MTextField('description', $description, _M('Bank', $module), FIELD_DESCRIPTION_LOOKUP_SIZE));
+
+        $columns = array(
+           new DataGridColumn('bankId',      _M('Code', $module),     'right', true, null, true),
+           new DataGridColumn('description', _M('Bank', $module), 'left',  true, null, true)
+        );
+
+        $sql = 'SELECT A.bankId,
+                       A.description
+                  FROM finBank A';
+
+        if ( strlen((string)$bankId) > 0 )
+        {
+            $where .= ' AND A.bankId ILIKE ?';
+            $args[] = $bankId . '%';
+        }
+
+        if ( strlen((string)$description) > 0 )
+        {
+            $where .= ' AND A.description ILIKE ?';
+            $args[] = $description . '%';
+        }
+
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE ' . substr($where, 5);
+        }
+
+        $sql .= ' ORDER BY A.bankId';
+
+        $sqlObject = new sql();
+        if ( strlen((string)$where) == 0 )
+        {
+            $sql .= ' LIMIT 0';
+        }
+
+        $sqlObject->createFrom(SAGU::prepare($sql,$args));
+        $lookup->setFilterColumns(LOOKUP_FILTER_COLUMNS);
+        $lookup->setLookupGrid($module, $sqlObject, $columns, _M('Bank search', $module), 15, 0);
+        $lookup->grid->setIsScrollable();
+
+    }
+    
+   /**
+     * Auto complete for species
+     *
+     * @param $context (object): MIOLO Context object
+     *
+     * @return (object): MIOLO Gives the action evaluating the code by setContext call
+     *
+     **/
+    public function autoCompleteSpecies(&$context)
+    {
+        $sql = 'SELECT A.description
+                  FROM finSpecies A
+                 WHERE A.speciesId = ?';
+
+        $context->setContext('finance', $sql);
+    }
+
+    /**
+     * Lookup for collection type
+     *
+     * @param $lookup: Lookup Object used by MIOLO
+     *
+     * @return MIOLO Lookup function as actions evaluated by MIOLO
+     *
+     **/
+    public function lookupSpecies(&$lookup)
+    {
+        global $MIOLO;
+        $module = MIOLO::_request('lmodule');
+
+        $MIOLO->uses('classes/sagu.class','basic');
+        $MIOLO->conf->loadConf($module);
+
+        $speciesId   = $lookup->getFilterValue('speciesId');
+        $description = $lookup->getFilterValue('description');
+
+        $lookup->addFilterField( new MTextField('speciesId',   $speciesId,   _M('Code', $module),  FIELD_ID_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('description', $description, _M('Species', $module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+
+        $columns = array(
+           new DataGridColumn('speciesId',   _M('Code', $module), 'right', true, null, true),
+           new DataGridColumn('description', _M('Species', $module), 'left',  true, null, true)
+        );
+
+        $sql = 'SELECT A.speciesId,
+                       A.description
+                  FROM finSpecies A';
+
+        if ( strlen((string)$speciesId) > 0 )
+        {
+            $where .= ' AND A.speciesId = ?';
+            $args[] = $speciesId;
+        }
+        if ( strlen((string)$description) > 0 )
+        {
+            $where .= ' AND A.description ILIKE ?';
+            $args[] = $description . '%';
+        }
+
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE ' . substr($where, 5);
+        }
+
+        $sql .= ' ORDER BY A.description';
+
+        $sqlObject = new sql();
+        if ( strlen((string)$where) == 0 )
+        {
+            $sql .= ' LIMIT 0';
+        }
+
+        $sqlObject->createFrom(SAGU::prepare($sql,$args));
+        $lookup->setFilterColumns(LOOKUP_FILTER_COLUMNS);
+        $lookup->setLookupGrid($module, $sqlObject, $columns, _M('Species search',$module), 15, 0);
+        $lookup->grid->setIsScrollable();
+
+    }
+
+    /**
+     * Auto complete for counter
+     *
+     * @param $context (object): MIOLO Context object
+     *
+     * @return (object): MIOLO Gives the action evaluating the code by setContext call
+     *
+     **/
+    public function autoCompleteCounter(&$context)
+    {
+        $sql = 'SELECT A.responsableId,
+                       B.name,
+                       A.unitId,
+                       C.description
+                  FROM finCounter A
+       INNER JOIN ONLY basPhysicalPerson B
+                    ON ( A.responsableId = B.personId )
+            INNER JOIN basUnit C
+                    ON ( A.unitId = C.unitId )
+                 WHERE A.counterId = ?';
+
+        $context->setContext('finance', $sql);
+    }
+
+    /**
+     * Lookup for counter
+     *
+     * @param $lookup: Lookup Object used by MIOLO
+     *
+     * @return MIOLO Lookup function as actions evaluated by MIOLO
+     *
+     **/
+    public function lookupCounter(&$lookup)
+    {
+        global $MIOLO;
+        $module = MIOLO::_request('lmodule');
+
+        $MIOLO->uses('classes/sagu.class','basic');
+        $MIOLO->conf->loadConf($module);
+
+        $counterId       = $lookup->getFilterValue('counterId');
+        $responsableId   = $lookup->getFilterValue('responsableId');
+        $responsableName = $lookup->getFilterValue('responsableName');
+        $unitId          = $lookup->getFilterValue('unitId');
+
+        $lookup->addFilterField( new MTextField('counterId', $counterId, _M('Counter id', $module), FIELD_ID_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('responsableId', $responsableId, _M('Responsible id', $module), FIELD_ID_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('responsableName', $responsableName, _M('Responsible', $module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+        $lookup->addFilterField( fields::unit($unitId) );
+
+        $columns = array(
+           new DataGridColumn('counterId',        _M('Counter id', $module), 'left', true, null, true),
+           new DataGridColumn('responsableId',    _M('Responsible id', $module), 'left', true, null, true),
+           new DataGridColumn('responsableName',  _M('Responsible', $module), 'left', true, null, true),
+           new DataGridColumn('unitId',           _M('Unit id', $module), 'right', true, null, true),
+           new DataGridColumn('unitDescription',  _M('Unit', $module), 'left', true, null, true)
+        );
+
+        $sql = 'SELECT A.counterId,
+                       A.responsableId,
+                       B.name AS responsableName,
+                       A.unitId,
+                       C.description AS unitDescription
+                  FROM finCounter A
+       INNER JOIN ONLY basPhysicalPerson B
+                    ON ( A.responsableId = B.personId )
+            INNER JOIN basUnit C
+                    ON ( A.unitId = C.unitId ) ';
+
+        if ( strlen((string)$counterId) > 0 )
+        {
+            $where .= ' AND A.counterId = ?';
+            $args[] = $counterId;
+        }
+
+        if ( strlen((string)$responsableId) > 0 )
+        {
+            $where .= ' AND A.responsableId = ?';
+            $args[] = $responsableId;
+        }
+
+        if ( strlen((string)$responsableName) > 0 )
+        {
+            $where .= ' AND B.name ILIKE ?';
+            $args[] = $responsableName . '%';
+        }
+
+        if ( strlen((string)$unitId) > 0 )
+        {
+            $where .= ' AND A.unitId = ?';
+            $args[] = $unitId;
+        }
+
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE ' . substr($where,  5);
+        }
+
+        $sql .= ' ORDER BY B.name';
+
+        $sqlObject = new sql();
+        if ( strlen((string)$where) == 0 )
+        {
+            $sql .= ' LIMIT 0';
+        }
+
+        $sqlObject->createFrom(SAGU::prepare($sql,$args));
+        $lookup->setFilterColumns(LOOKUP_FILTER_COLUMNS);
+        $lookup->setLookupGrid($module, $sqlObject, $columns, _M('Counter search',$module), 15, 0);
+        $lookup->grid->setIsScrollable();
+
+    }
+
+    /**
+     * Auto complete for invoice
+     *
+     * @param $context (object): MIOLO Context object
+     *
+     * @return (object): MIOLO Gives the action evaluating the code by setContext call
+     *
+     **/
+    public function autoCompleteInvoice(&$context)
+    {
+
+        $sql = 'SELECT A.personId,
+                       B.name AS personName, 
+                       A.accountSchemeId,
+                       C.description AS accountSchemeDescription,
+                       A.costCenterId,
+                       D.description AS costCenterDescription,
+                       A.courseId,
+                       A.courseVersion,
+                       F.name AS courseName,
+                       A.unitId, 
+                       G.description AS unitDescription,
+                       TO_CHAR(A.maturityDate,\'' . MASK_DATE . '\') as maturityDate,
+                       round(A.value, ' . REAL_ROUND_VALUE . ') as value,
+                       round(balanceWithPolicies(A.invoiceId), ' . REAL_ROUND_VALUE . ') as balance
+             FROM ONLY finInvoice A
+       INNER JOIN ONLY basPerson B
+                    ON ( A.personId = B.personId )
+            INNER JOIN accAccountScheme C
+                    ON ( A.accountSchemeId = C.accountSchemeId )
+            INNER JOIN accCostCenter D
+                    ON ( A.costCenterId = D.costCenterId )
+             LEFT JOIN acdCourseOccurrence E
+                    ON ( A.courseId        = E.courseId
+                       AND A.courseVersion = E.courseVersion
+                       AND A.unitId        = E.unitId )
+            INNER JOIN acdCourse F
+                    ON ( E.courseId = F.courseId )
+            INNER JOIN basUnit G
+                    ON ( A.unitId = G.unitId )
+                 WHERE invoiceId = ?';
+
+        $context->setContext('finance', $sql);
+    }
+
+    /**
+     * Lookup for invoice
+     *
+     * @param $lookup: Lookup Object used by MIOLO
+     *
+     * @return MIOLO Lookup function as actions evaluated by MIOLO
+     *
+     **/
+    public function lookupInvoice(&$lookup)
+    {
+        global $MIOLO;
+        $module = MIOLO::_request('lmodule');
+
+        $MIOLO->uses('classes/sagu.class','basic');
+        $MIOLO->conf->loadConf($module);
+
+        $invoiceId             = $lookup->getFilterValue('invoiceId');
+        $personId              = $lookup->getFilterValue('personId');
+        $personName            = $lookup->getFilterValue('personName');
+        $accountSchemeId       = $lookup->getFilterValue('accountSchemeId');
+        $accountSchemeDescription = $lookup->getFilterValue('accountSchemeDescription');
+        $costCenterId          = $lookup->getFilterValue('costCenterId');
+        $costCenterDescription = $lookup->getFilterValue('costCenterDescription');
+        $courseId              = $lookup->getFilterValue('courseId');
+        $courseVersion         = $lookup->getFilterValue('courseVersion');
+        $courseName            = $lookup->getFilterValue('courseName');
+        $unitId                = $lookup->getFilterValue('unitId');
+        $maturityDate          = $lookup->getFilterValue('maturityDate');
+
+        $lookup->addFilterField( new MTextField('invoiceId', $invoiceId, _M('Code', $module), FIELD_ID_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('personId', $personId, _M('Person id', $module), FIELD_ID_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('personName', $personName, _M('Person', $module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+        $lookup->addFilterField( fields::unit($unitId) );
+        $lookup->addFilterField( new MTextField('accountSchemeId', $accountSchemeId, _M('Account scheme id', $module), FIELD_ID_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('accountSchemeDescription', $accountSchemeDescription, _M('Account scheme description', $module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('costCenterId', $costCenterId, _M('Cost center id', $module), FIELD_ID_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('costCenterDescription', $costCenterDescription, _M('Cost center description', $module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('courseId', $courseId, _M('Course id', $module), FIELD_ID_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('courseVersion', $courseVersion, _M('Course version', $module), FIELD_ID_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('courseName', $courseName, _M('Course name', $module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('maturityDate', $maturityDate, _M('Maturity date', $module), FIELD_DATE_LOOKUP_SIZE) );
+
+        $columns = array(
+           new DataGridColumn('invoiceId',       _M('Code', $module), 'left', true, null, true ),
+           new DataGridColumn('maturityDate',    _M('Maturity date', $module), 'left', true, null, true ),
+           new DataGridColumn('personId',        _M('Person id', $module), 'right', true, null, true ),
+           new DataGridColumn('personName',      _M('Person', $module), 'left', true, null, true ),
+           new DataGridColumn('accountSchemeId', _M('Account scheme id', $module), 'right', true, null, true ),
+           new DataGridColumn('accountSchemeDescription', _M('Account scheme description', $module), 'left', true, null, true ),
+           new DataGridColumn('costCenterId',    _M('Cost center id', $module), 'right', true, null, true ),
+           new DataGridColumn('costCenterDescription', _M('Cost center description', $module), 'left', true, null, true ),
+           new DataGridColumn('courseId',        _M('Course id', $module), 'right', true, null, true ),
+           new DataGridColumn('courseVersion',   _M('Course version', $module), 'left', true, null, true ),
+           new DataGridColumn('courseName',      _M('Course', $module), 'left', true, null, true ),
+           new DataGridColumn('unitId',          _M('Unit id', $module), 'right', true, null, true ),
+           new DataGridColumn('unitDescription', _M('Unit', $module), 'left', true, null, true ),
+           new DataGridColumn('value',           _M('Value', $module), 'left', true, null, true ),
+           new DataGridColumn('balance',         _M('Balance', $module), 'left', true, null, true )
+        );
+
+        $sql = 'SELECT A.invoiceId,
+                       A.personId,
+                       B.name AS personName, 
+                       A.accountSchemeId,
+                       C.description AS accountSchemeDescription,
+                       A.costCenterId,
+                       D.description AS costCenterDescription,
+                       A.courseId,
+                       A.courseVersion,
+                       F.name AS courseName,
+                       A.unitId, 
+                       G.description AS unitDescription,
+                       TO_CHAR(A.maturityDate,\'' . MASK_DATE . '\') as maturityDate,
+                       round(A.value, ' . REAL_ROUND_VALUE . ') as value,
+                       round(balanceWithPolicies(A.invoiceId), ' . REAL_ROUND_VALUE . ') as balance
+             FROM ONLY finInvoice A
+       INNER JOIN ONLY basPerson B
+                    ON ( A.personId = B.personId )
+            INNER JOIN accAccountScheme C
+                    ON ( A.accountSchemeId = C.accountSchemeId )
+            INNER JOIN accCostCenter D
+                    ON ( A.costCenterId = D.costCenterId )
+             LEFT JOIN acdCourseOccurrence E
+                    ON ( A.courseId        = E.courseId
+                       AND A.courseVersion = E.courseVersion
+                       AND A.unitId        = E.unitId )
+            INNER JOIN acdCourse F
+                    ON ( E.courseId = F.courseId )
+            INNER JOIN basUnit G
+                    ON ( A.unitId = G.unitId )
+                 WHERE A.invoiceId > 0 ';
+
+        if ( strlen((string)$invoiceId) > 0 )
+        {
+            $where .= ' AND A.invoiceId = ?';
+            $args[] = $invoiceId;
+        }
+
+        if ( strlen((string)$maturityDate) > 0 )
+        {
+            $where .= ' AND A.maturityDate = TO_DATE(?,\'' . MASK_DATE . '\')';
+            $args[] = $maturityDate;
+        }
+
+        if ( strlen((string)$personId) > 0 )
+        {
+            $where .= ' AND A.personId = ?';
+            $args[] = $personId;
+        }
+
+        if ( strlen((string)$personName) > 0 )
+        {
+            $where .= ' AND B.name ILIKE ?';
+            $args[] = $personName . '%';
+        }
+
+        if ( strlen((string)$accountSchemeId) > 0 )
+        {
+            $where .= ' AND A.accountSchemeId = ?';
+            $args[] = $accountSchemeId;
+        }
+
+        if ( strlen((string)$accountSchemeDescription) > 0 )
+        {
+            $where .= ' AND C.description ILIKE ?';
+            $args[] = $accountSchemeDescription . '%';
+        }
+        
+        if ( strlen((string)$costCenterId) > 0 )
+        {
+            $where .= ' AND A.costCenterId = ?';
+            $args[] = $costCenterId;
+        }
+
+        if ( strlen((string)$costCenterDescription) > 0 )
+        {
+            $where .= ' AND D.description ILIKE ?';
+            $args[] = $costCenterDescription . '%';
+        }
+        
+        if ( strlen((string)$courseId) > 0 )
+        {
+            $where .= ' AND A.courseId ILIKE ?';
+            $args[] = $courseId;
+        }
+
+        if ( strlen((string)$couseVersion) > 0 )
+        {
+            $where .= ' AND A.couseVersion = ?';
+            $args[] = $couseVersion;
+        }
+        
+        if ( strlen((string)$courseName) > 0 )
+        {
+            $where .= ' AND ( F.name ILIKE ? OR F.shortName ILIKE ? )';
+            $args[] = $courseName . '%';
+            $args[] = $courseName . '%';
+        }
+
+        if ( strlen((string)$unitId) > 0 )
+        {
+            $where .= ' AND A.unitId = ?';
+            $args[] = $unitId;
+        }
+
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= substr($where, 1);
+        }
+
+        $sql .= ' ORDER BY B.name, A.maturityDate DESC';
+
+        $sqlObject = new sql();
+        if ( strlen((string)$where) == 0 )
+        {
+            $sql .= ' LIMIT 0';
+        }
+
+        $sqlObject->createFrom(SAGU::prepare($sql,$args));
+        $lookup->setFilterColumns(LOOKUP_FILTER_COLUMNS);
+        $lookup->setLookupGrid($module, $sqlObject, $columns, _M('Invoice search',$module), 15, 0);
+        $lookup->grid->setIsScrollable();
+
+    }
+
+    /**
+     * Auto complete for invoice
+     *
+     * @param $context (object): MIOLO Context object
+     *
+     * @return (object): MIOLO Gives the action evaluating the code by setContext call
+     *
+     **/
+    public function autoCompleteCheckInvoice(&$context)
+    {
+
+        $sql = 'SELECT A.personId,
+                       B.name AS personName, 
+                       A.courseId,
+                       A.courseVersion,
+                       F.name AS courseName,
+                       A.unitId, 
+                       G.description AS unitDescription,
+                       TO_CHAR(A.maturityDate,\'' . MASK_DATE . '\') as maturityDate,
+                       round(A.value, ' . REAL_ROUND_VALUE . ') as value,
+                       round(balanceWithPolicies(A.invoiceId), ' . REAL_ROUND_VALUE . ') as balance
+             FROM ONLY finInvoice A
+       INNER JOIN ONLY basPerson B
+                    ON ( A.personId = B.personId )
+            INNER JOIN accAccountScheme C
+                    ON ( A.accountSchemeId = C.accountSchemeId )
+            INNER JOIN accCostCenter D
+                    ON ( A.costCenterId = D.costCenterId )
+            INNER JOIN acdCourse F
+                    ON ( A.courseId = F.courseId )
+            INNER JOIN basUnit G
+                    ON ( A.unitId = G.unitId )
+                 WHERE invoiceId = ?';
+
+        $context->setContext('finance', $sql);
+    }
+
+    /**
+     * Lookup for invoice
+     *
+     * @param $lookup: Lookup Object used by MIOLO
+     *
+     * @return MIOLO Lookup function as actions evaluated by MIOLO
+     *
+     **/
+    public function lookupCheckInvoice(&$lookup)
+    {
+        global $MIOLO;
+        $module = MIOLO::_request('lmodule');
+
+        $MIOLO->uses('classes/sagu.class','basic');
+        $MIOLO->conf->loadConf($module);
+
+        $invoiceId             = $lookup->getFilterValue('invoiceId');
+        $personId              = $lookup->getFilterValue('personId');
+        $personName            = $lookup->getFilterValue('personName');
+        $courseId              = $lookup->getFilterValue('courseId');
+        $courseVersion         = $lookup->getFilterValue('courseVersion');
+        $courseName            = $lookup->getFilterValue('courseName');
+        $maturityDate          = $lookup->getFilterValue('maturityDate');
+
+        $lookup->addFilterField( new MTextField('invoiceId', $invoiceId, _M('Invoice', $module), FIELD_ID_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('personId', $personId, _M('Person id', $module), FIELD_ID_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('personName', $personName, _M('Person', $module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('courseId', $courseId, _M('Course id', $module), FIELD_ID_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('courseVersion', $courseVersion, _M('Course version', $module), FIELD_ID_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('courseName', $courseName, _M('Course name', $module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('maturityDate', $maturityDate, _M('Maturity date', $module), FIELD_DATE_LOOKUP_SIZE) );
+
+        $columns = array(
+           new DataGridColumn('invoiceId',       _M('Invoice', $module), 'left', true, null, true ),
+           new DataGridColumn('maturityDate',    _M('Maturity date', $module), 'center', true, null, true ),
+           new DataGridColumn('personId',        _M('Person id', $module), 'right', true, null, true ),
+           new DataGridColumn('personName',      _M('Person', $module), 'left', true, null, true ),
+           new DataGridColumn('courseId',        _M('Course id', $module), 'right', true, null, true ),
+           new DataGridColumn('courseVersion',   _M('Course version', $module), 'left', true, null, true ),
+           new DataGridColumn('courseName',      _M('Course', $module), 'left', true, null, true ),
+           new DataGridColumn('unitId',          _M('Unit id', $module), 'right', true, null, true ),
+           new DataGridColumn('unitDescription', _M('Unit', $module), 'left', true, null, true ),
+           new DataGridColumn('value',           _M('Value', $module), 'left', true, null, true ),
+           new DataGridColumn('balance',         _M('Balance', $module), 'left', true, null, true )
+        );
+
+        $sql = 'SELECT A.invoiceId,
+                       A.personId,
+                       B.name AS personName, 
+                       A.courseId,
+                       A.courseVersion,
+                       F.name AS courseName,
+                       A.unitId, 
+                       G.description AS unitDescription,
+                       TO_CHAR(A.maturityDate,\'' . MASK_DATE . '\') as maturityDate,
+                       round(A.value, ' . REAL_ROUND_VALUE . ') as value,
+                       round(balanceWithPolicies(A.invoiceId), ' . REAL_ROUND_VALUE . ') as balance
+             FROM ONLY finInvoice A
+       INNER JOIN ONLY basPerson B
+                    ON ( A.personId = B.personId )
+            INNER JOIN accAccountScheme C
+                    ON ( A.accountSchemeId = C.accountSchemeId )
+            INNER JOIN accCostCenter D
+                    ON ( A.costCenterId = D.costCenterId )
+            INNER JOIN acdCourse F
+                    ON ( A.courseId = F.courseId )
+            INNER JOIN basUnit G
+                    ON ( A.unitId = G.unitId )
+                 WHERE A.invoiceId > 0 ';
+
+        if ( strlen((string)$invoiceId) > 0 )
+        {
+            $where .= ' AND A.invoiceId = ?';
+            $args[] = $invoiceId;
+        }
+
+        if ( strlen((string)$maturityDate) > 0 )
+        {
+            $where .= ' AND A.maturityDate = TO_DATE(?,\'' . MASK_DATE . '\')';
+            $args[] = $maturityDate;
+        }
+
+        if ( strlen((string)$personId) > 0 )
+        {
+            $where .= ' AND A.personId = ?';
+            $args[] = $personId;
+        }
+
+        if ( strlen((string)$personName) > 0 )
+        {
+            $where .= ' AND B.name ILIKE ?';
+            $args[] = $personName . '%';
+        }
+
+        if ( strlen((string)$courseId) > 0 )
+        {
+            $where .= ' AND A.courseId ILIKE ?';
+            $args[] = $courseId;
+        }
+
+        if ( strlen((string)$couseVersion) > 0 )
+        {
+            $where .= ' AND A.couseVersion = ?';
+            $args[] = $couseVersion;
+        }
+        
+        if ( strlen((string)$courseName) > 0 )
+        {
+            $where .= ' AND ( F.name ILIKE ? OR F.shortName ILIKE ? )';
+            $args[] = $courseName . '%';
+            $args[] = $courseName . '%';
+        }
+
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= substr($where, 1);
+        }
+
+        $sql .= ' ORDER BY B.name, A.maturityDate DESC';
+
+        $sqlObject = new sql();
+        if ( strlen((string)$where) == 0 )
+        {
+            $sql .= ' LIMIT 0';
+        }
+
+        $sqlObject->createFrom(SAGU::prepare($sql,$args));
+        $lookup->setFilterColumns(LOOKUP_FILTER_COLUMNS);
+        $lookup->setLookupGrid($module, $sqlObject, $columns, _M('Invoice search',$module), 15, 0);
+        $lookup->grid->setIsScrollable();
+
+    }
+
+   /**
+     * Auto complete for incentive type
+     *
+     * @param $context (object): MIOLO Context object
+     *
+     * @return (object): MIOLO Gives the action evaluating the code by setContext call
+     *
+     **/
+    public function autoCompleteIncentiveType(&$context)
+    {
+        $sql = 'SELECT A.description
+                  FROM ONLY finIncentiveType A
+                 WHERE A.incentiveTypeId = ?';
+
+        $context->setContext('finance', $sql);
+    }
+
+    /**
+     * Lookup for account scheme
+     *
+     * @param $lookup: Lookup Object used by MIOLO
+     *
+     * @return MIOLO Lookup function as actions evaluated by MIOLO
+     *
+     **/
+    public function lookupIncentiveType(&$lookup)
+    {
+        global $MIOLO;
+        $module = MIOLO::_request('lmodule');
+
+        $MIOLO->uses('classes/sagu.class','basic');
+        $MIOLO->conf->loadConf($module);
+
+        $incentiveTypeId      = $lookup->getFilterValue('incentiveTypeId');
+        $description          = $lookup->getFilterValue('description');
+        $operationId          = $lookup->getFilterValue('operationId');
+        $operationDescription = $lookup->getFilterValue('operationDescription');
+
+        $lookup->addFilterField( new MTextField('incentiveTypeId', $incentiveTypeId, _M('Code', $module), FIELD_ID_LOOKUP_SIZE));
+        $lookup->addFilterField( new MTextField('description', $description, _M('Incentive type', $module), FIELD_DESCRIPTION_LOOKUP_SIZE));
+        $lookup->addFilterField( new MTextField('operationId', $operationId, _M('Operation id', $module), FIELD_ID_LOOKUP_SIZE));
+        $lookup->addFilterField( new MTextField('operationDescription', $operationDescription, _M('Operation', $module), FIELD_DESCRIPTION_LOOKUP_SIZE));
+
+        $columns = array(
+           new DataGridColumn('incentiveTypeId',      _M('Code', $module), 'right', true, null, true),
+           new DataGridColumn('description',          _M('Incentive type', $module), 'left', true, null, true),
+           new DataGridColumn('operationId',          _M('Operation id', $module), 'right', true, null, true),
+           new DataGridColumn('operationDescription', _M('Operation', $module), 'left', true, null, true),
+           new DataGridColumn('needAdjustAuthorization', _M('Need adjust authorization', $module), 'left', true, null, true, array(DB_TRUE => _M('Yes',$module), DB_FALSE => _M('No',$module))),
+           new DataGridColumn('sendInvoices',         _M('Send invoices', $module), 'left', true, null, true, array(DB_TRUE => _M('Yes',$module), DB_FALSE => _M('No',$module))),
+           new DataGridColumn('generateCredits',      _M('Generate credits', $module), 'left', true, null, true, array(DB_TRUE => _M('Yes',$module), DB_FALSE => _M('No',$module))),
+        );
+
+        $sql = 'SELECT A.incentiveTypeId,
+                       A.description,
+                       B.operationId,
+                       B.description AS operationDescription,
+                       A.needAdjustAuthorization,
+                       A.sendInvoices,
+                       A.generateCredits
+             FROM ONLY finIncentiveType A
+            INNER JOIN finOperation B
+                    ON ( A.operationId = B.operationId ) ';
+
+        if ( strlen((string)$incentiveTypeId) > 0 )
+        {
+            $where .= ' AND A.incentiveTypeId = ?';
+            $args[] = $incentiveTypeId;
+        }
+
+        if ( strlen((string)$description) > 0 )
+        {
+            $where .= ' AND A.description ILIKE ?';
+            $args[] = $description . '%';
+        }
+
+        if ( strlen((string)$operationId) > 0 )
+        {
+            $where .= ' AND B.operationId = ?';
+            $args[] = $operationId;
+        }
+
+        if ( strlen((string)$operationDescription) > 0 )
+        {
+            $where .= ' AND B.description ILIKE ?';
+            $args[] = $operationDescription . '%';
+        }
+
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE ' . substr($where, 5);
+        }
+
+        $sql .= ' ORDER BY A.description';
+
+        $sqlObject = new sql();
+        if ( strlen((string)$where) == 0 )
+        {
+            $sql .= ' LIMIT 0';
+        }
+
+        $sqlObject->createFrom(SAGU::prepare($sql,$args));
+        $lookup->setFilterColumns(LOOKUP_FILTER_COLUMNS);
+        $lookup->setLookupGrid($module, $sqlObject, $columns, _M('Incentive type search',$module), 15, 0);
+        $lookup->grid->setIsScrollable();
+
+    }
+
+   /**
+     * Auto complete for course, account scheme, cost center
+     *
+     * @param $context (object): MIOLO Context object
+     *
+     * @return (object): MIOLO Gives the action evaluating the code by setContext call
+     *
+     **/
+    public function autoCompleteCourseAccountSchemeCostCenter(&$context)
+    {
+        /*$sql = 'SELECT A.courseVersion,
+                       B.name,
+                       C.accountSchemeId,
+                       D.description,
+                       C.costCenterId,
+                       E.description,
+                       C.unitId
+                FROM acdCourseVersion A
+                INNER JOIN acdCourse B
+                    USING (courseId)
+                LEFT JOIN accCourseAccount C
+                    ON (A.courseId = C.courseId
+                        AND A.courseVersion = C.courseVersion
+                        AND ((SELECT COUNT(*)
+                          FROM accCourseAccount X
+                          WHERE X.courseId = C.courseId) = 1 ) )
+                LEFT JOIN accAccountScheme D
+                    USING (accountSchemeId)
+                LEFT JOIN accCostCenter E
+                    USING (costCenterId)
+                WHERE ((SELECT COUNT(*)
+                          FROM acdCourseVersion Y
+                          WHERE Y.courseId = A.courseId) = 1 )
+                    AND A.courseId = ? ';*/
+        $sql = 'SELECT A.courseVersion,
+                       B.name,
+                       C.accountSchemeId,
+                       D.description,
+                       C.costCenterId,
+                       E.description,
+                       C.unitId
+                    FROM   acdCourseVersion A
+                INNER JOIN acdCourse B USING (courseId)
+                 LEFT JOIN accCourseAccount C USING (courseId, courseVersion)
+                 LEFT JOIN accAccountScheme D USING (accountSchemeId)
+                 LEFT JOIN accCostCenter E USING (costCenterId)
+                WHERE A.courseId = ? AND A.courseVersion = (SELECT max(courseVersion) FROM accCourseAccount WHERE courseId = A.courseId GROUP BY courseId)';
+
+        $context->setContext('finance', $sql);
+    }
+
+    /**
+     * Lookup for course, account scheme, cost center
+     *
+     * @param $lookup: Lookup Object used by MIOLO
+     *
+     * @return MIOLO Lookup function as actions evaluated by MIOLO
+     *
+     **/
+    public function lookupCourseAccountSchemeCostCenter(&$lookup)
+    {
+        global $MIOLO;
+        $module = MIOLO::_request('lmodule');
+
+        $MIOLO->uses('classes/sagu.class','basic');
+        $MIOLO->conf->loadConf($module);
+
+        $courseId                 = $lookup->getFilterValue('courseId');
+        $courseVersion            = $lookup->getFilterValue('courseVersion');
+        $courseName               = $lookup->getFilterValue('courseName');
+        $accountSchemeId          = $lookup->getFilterValue('accountSchemeId');
+        $costCenterId             = $lookup->getFilterValue('costCenterId');
+
+        $lookup->addFilterField( new MTextField('courseId',         $courseId,         _M('Course id', $module),         FIELD_ID_LOOKUP_SIZE));
+        $lookup->addFilterField( new MTextField('courseVersion',    $courseVersion,    _M('Course version', $module),    FIELD_ID_LOOKUP_SIZE));
+        $lookup->addFilterField( new MTextField('courseName',       $courseName,       _M('Course', $module),            FIELD_DESCRIPTION_LOOKUP_SIZE));
+        $lookup->addFilterField( new MTextField('accountSchemeId',  $accountSchemeId,  _M('Account scheme id', $module), FIELD_ID_LOOKUP_SIZE));
+        $lookup->addFilterField( new MTextField('costCenterId',     $costCenterId,     _M('Cost center id', $module),    FIELD_ID_LOOKUP_SIZE));
+
+        $columns = array(
+           new DataGridColumn('courseId',                 _M('Course id', $module), 'right', true, null, true),
+           new DataGridColumn('courseVersion',            _M('Course version', $module), 'left', true, null, true),
+           new DataGridColumn('courseName',               _M('Course', $module), 'left', true, null, true),
+           new DataGridColumn('unitDescription',          _M('Unit description', $module), 'left', true, null, true),
+           new DataGridColumn('accountSchemeId',          _M('Account scheme id', $module), 'left', true, null, true),
+           new DataGridColumn('accountSchemeDescription', _M('Account scheme', $module), 'left', true, null, true),
+           new DataGridColumn('costCenterId',             _M('Cost center id', $module), 'left', true, null, true),
+           new DataGridColumn('costCenterDescription',    _M('Cost center', $module), 'left', true, null, true),
+        );
+
+        $sql = 'SELECT A.courseId,
+                       A.courseVersion,
+                       B.name AS courseName,
+                       C.accountSchemeId,
+                       D.description AS accountSchemeDescription,
+                       C.costCenterId,
+                       E.description AS costCenterDescription,
+                       F.unitId,
+                       F.description AS unitDescription
+                FROM acdCourseVersion A
+                    INNER JOIN acdCourse B
+                        USING (courseId)
+                    LEFT JOIN accCourseAccount C 
+                        USING (courseId, courseVersion) 
+                    LEFT JOIN accAccountScheme D 
+                        USING (accountSchemeId)
+                    LEFT JOIN accCostCenter E
+                        USING (costCenterId)
+                    LEFT JOIN basUnit F
+                        USING (unitId) ';
+
+        if ( strlen((string)$courseId) > 0 )
+        {
+            $where .= ' AND A.courseId = ?';
+            $args[] = $courseId;
+        }
+
+        if ( strlen((string)$courseVersion) > 0 )
+        {
+            $where .= ' AND A.courseVersion = ?';
+            $args[] = $courseVersion;
+        }
+
+        if ( strlen((string)$courseName) > 0 )
+        {
+            $where .= ' AND ( B.name ILIKE ? OR B.shortName ILIKE ?)';
+            $args[] = $courseName . '%';
+            $args[] = $courseName . '%';
+        }
+
+        if ( strlen((string)$accountSchemeId) > 0 )
+        {
+            $where .= ' AND C.accountSchemeId = ?';
+            $args[] = $accountSchemeId;
+        }
+
+        if ( strlen((string)$costCenterId) > 0 )
+        {
+            $where .= ' AND C.costCenterId = ?';
+            $args[] = $costCenterId;
+        }
+
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE ' . substr($where, 5);
+        }
+
+        $sql .= ' ORDER BY B.name';
+
+        $sqlObject = new sql();
+        if ( strlen((string)$where) == 0 )
+        {
+            $sql .= ' LIMIT 0';
+        }
+
+        $sqlObject->createFrom(SAGU::prepare($sql,$args));
+        $lookup->setFilterColumns(LOOKUP_FILTER_COLUMNS);
+        $lookup->setLookupGrid($module, $sqlObject, $columns, _M('Course search',$module), 15, 0);
+        $lookup->grid->setIsScrollable();
+
+    }
+     /**
+     * Auto complete for contract level
+     *
+     * @param $context (object): MIOLO Context object
+     *
+     * @return (object): MIOLO Gives the action evaluating the code by setContext call
+     *
+     **/
+    public function autoCompleteContract(&$context)
+    {
+        $sql = 'SELECT  A.personId,
+                        B.name as personName,
+                        A.courseId,
+                        C.name as courseName,
+                        A.courseVersion,
+                        A.unitId,
+                        E.description as unitDescription,
+                        F.accountSchemeId,
+                        D.description as accountSchemeDescription,
+                        F.costCenterId,
+                        G.description as costCenterDescription,
+                        A.maturityDay,
+                        A.contractNumber,
+                        A.parcelsNumber
+                  FROM acdContract A
+        LEFT JOIN ONLY basPerson B
+                    ON ( A.personId = B.personId )
+             LEFT JOIN acdCourse C
+                    ON ( A.courseId = C.courseId )
+             LEFT JOIN basUnit E
+                    ON ( A.unitId = E.unitId )
+             LEFT JOIN accCourseAccount F ON (  F.courseId = A.courseId AND
+                                                F.courseVersion = A.courseVersion AND
+                                                F.unitId = A.unitId )
+             LEFT JOIN accAccountScheme D ON ( F.accountSchemeId = D.accountSchemeId )
+             LEFT JOIN accCostCenter G ON ( G.costCenterId = F.costCenterId )
+                 WHERE A.contractId = ? 
+                 AND NOT isContractOut(A.contractId) ';
+        $context->setContext('finance', $sql);
+    }
+     /**
+     * Auto complete for contract level
+     *
+     * @param $context (object): MIOLO Context object
+     *
+     * @return (object): MIOLO Gives the action evaluating the code by setContext call
+     *
+     **/
+    public function autoCompletePersonContract(&$context)
+    {
+        $sql = 'SELECT  B.personId,
+                        A.contractId,
+                        B.name as personName,
+                        A.courseId,
+                        C.name as courseName,
+                        A.courseVersion,
+                        A.unitId,
+                        E.description as unitDescription,
+                        F.accountSchemeId,
+                        D.description as accountSchemeDescription,
+                        F.costCenterId,
+                        G.description as costCenterDescription,
+                        A.maturityDay,
+                        A.contractNumber,
+                        A.parcelsNumber
+                  FROM ONLY basPerson B
+             LEFT JOIN acdContract A
+                    ON ( A.personId = B.personId )
+             LEFT JOIN acdCourse C
+                    ON ( C.courseId = A.courseId )
+             LEFT JOIN basUnit E
+                    ON ( E.unitId = A.unitId )
+             LEFT JOIN accCourseAccount F ON (  F.courseId = A.courseId AND
+                                                F.courseVersion = A.courseVersion AND
+                                                F.unitId = A.unitId )
+             LEFT JOIN accAccountScheme D ON ( F.accountSchemeId = D.accountSchemeId )
+             LEFT JOIN accCostCenter G ON ( G.costCenterId = F.costCenterId )
+                 WHERE B.personId = ? 
+                 AND ( NOT isContractOut(A.contractId) OR A.contractId IS NULL )';
+        $context->setContext('finance', $sql);
+    }
+
+
+    /**
+     * Lookup for contract
+     *
+     * @param $lookup: Lookup Object used by MIOLO
+     *
+     * @return MIOLO Lookup function as actions evaluated by MIOLO
+     *
+     **/
+    public function lookupContract(&$lookup)
+    {
+        global $MIOLO;
+        $module = MIOLO::_request('lmodule');
+
+        $MIOLO->uses('classes/sagu.class','basic');
+        $MIOLO->conf->loadConf($module);
+
+        /**
+         * Load global defines for the basic module
+         */
+        $business  = $MIOLO->getBusiness('basic','BusConfig');
+        $constants = $business->getModuleValues('basic');
+        foreach ( $constants as $cnt )
+        {
+            define($cnt[0],$cnt[1]);
+        }
+
+        $contractId    = $lookup->getFilterValue('contractId');
+        $personId      = $lookup->getFilterValue('personId');
+        $personName    = $lookup->getFilterValue('personName');
+        $courseId      = $lookup->getFilterValue('courseId');
+        $courseVersion = $lookup->getFilterValue('courseVersion');
+        $courseName    = $lookup->getFilterValue('courseName');
+        $unitId        = $lookup->getFilterValue('unitId');
+
+        $lookup->addFilterField( new MTextField('contractId',    $contractId,    _M('Contract id', $module), FIELD_ID_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('personId',      $personId,      _M('Person id', $module), FIELD_ID_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('personName',    $reportLink,    _M('Person', $module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('courseId',      $courseId,      _M('Course id', $module), FIELD_ID_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('courseVersion', $courseVersion, _M('Course version', $module), FIELD_ID_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('courseName',    $courseName,    _M('Course', $module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+        $lookup->addFilterField( fields::unit($unitId) );
+
+        global $page;
+        $page->onLoad('document.' . $page->name . '.personName.focus()');
+
+        $columns = array(
+           new DataGridColumn('contractId',        _M('Code', $module),             'right', true, null, true),
+           new DataGridColumn('personId',          _M('Person id', $module),        'left',  true, null, true),
+           new DataGridColumn('personName',        _M('Person', $module),           'left',  true, null, true),
+           new DataGridColumn('courseId',          _M('Course id', $module),        'left',  true, null, true),
+           new DataGridColumn('courseName',        _M('Course', $module),           'left',  true, null, true),
+           new DataGridColumn('courseVersion',     _M('Course version', $module),   'left',  true, null, true),
+           new DataGridColumn('unitId',            _M('Unit id', $module),          'left',  true, null, false),
+           new DataGridColumn('unitDescription',   _M('Unit', $module),             'left',  true, null, true),
+           new DataGridColumn('accountSchemeDescription',   _M('Account scheme', $module),             'left',  true, null, true),
+           new DataGridColumn('costCenterDescription',   _M('Cost center', $module),             'left',  true, null, true),
+           new DataGridColumn('maturityDay',       _M('Maturity day', $module),     'left',  true, null, true),
+           new DataGridColumn('parcelsNumber',     _M('Parcels number', $module),   'left',  true, null, true)
+        );
+
+        $sql = 'SELECT  A.contractId,
+                        B.personId,
+                        B.name as personName,
+                        A.courseId,
+                        C.name as courseName,
+                        A.courseVersion,
+                        A.unitId,
+                        E.description as unitDescription,
+                        F.accountSchemeId,
+                        D.description as accountSchemeDescription,
+                        F.costCenterId,
+                        G.description as costCenterDescription,
+                        A.maturityDay,
+                        A.contractNumber,
+                        A.parcelsNumber
+                  FROM ONLY basPerson B
+             LEFT JOIN acdContract A
+                    ON ( A.personId = B.personId )
+             LEFT JOIN acdCourse C
+                    ON ( A.courseId = C.courseId )
+             LEFT JOIN basUnit E
+                    ON ( A.unitId = E.unitId )
+             LEFT JOIN accCourseAccount F ON (  F.courseId = A.courseId AND
+                                                F.courseVersion = A.courseVersion AND
+                                                F.unitId = A.unitId )
+             LEFT JOIN accAccountScheme D ON ( F.accountSchemeId = D.accountSchemeId )
+             LEFT JOIN accCostCenter G ON ( G.costCenterId = F.costCenterId ) ';
+
+        if ( strlen((string)$contractId) > 0 )
+        {
+            $where .= ' AND A.contractId = ?';
+            $args[] = $contractId;
+        }
+        if ( strlen((string)$personId) > 0 )
+        {
+            $where .= ' AND B.personId = ?';
+            $args[] = $personId;
+        }
+        if ( strlen((string)$personName) > 0 )
+        {
+            $where .= ' AND TO_ASCII(B.name) ILIKE TO_ASCII(?)';
+            $args[] = $personName . '%';
+        }
+        if ( strlen((string)$courseId) > 0 )
+        {
+            $where .= ' AND A.courseId = ?';
+            $args[] = $courseId;
+        }
+        if ( strlen((string)$courseVersion) > 0 )
+        {
+            $where .= ' AND A.courseVersion = ?';
+            $args[] = $courseVersion;
+        }
+        if ( strlen((string)$courseName) > 0 )
+        {
+            $where .= ' AND ( TO_ASCII(C.name) ILIKE TO_ASCII(?) OR TO_ASCII(C.shortName) ILIKE TO_ASCII(?) )';
+            $args[] = $courseName . '%';
+            $args[] = $courseName . '%';
+        }
+        if ( strlen((string)$turnId) > 0 )
+        {
+            $where .= ' AND A.turnId = ?';
+            $args[] = $turnId;
+        }
+        if ( strlen((string)$unitId) > 0 )
+        {
+            $where .= ' AND A.unitId = ?';
+            $args[] = $unitId;
+        }
+
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE 1 = 1 '.$where;
+        }
+
+        $sql .= ' ORDER BY B.name,
+                           C.name,
+                           A.contractId';    
+        $sqlObject = new sql();
+        if ( strlen((string)$where) == 0 )
+        {
+            $sql .= ' LIMIT 0';
+        }
+        $sqlObject->createFrom(SAGU::prepare($sql,$args));
+        $lookup->setFilterColumns(LOOKUP_FILTER_COLUMNS);
+        $lookup->setLookupGrid($module, $sqlObject, $columns, _M('Contract search','academic'), 15, 0);
+        $lookup->grid->setIsScrollable();
+    }
+
+    /**
+     * Lookup for contract
+     *
+     * @param $lookup: Lookup Object used by MIOLO
+     *
+     * @return MIOLO Lookup function as actions evaluated by MIOLO
+     *
+     **/
+    public function lookupPersonContract(&$lookup)
+    {
+        global $MIOLO;
+        $module = MIOLO::_request('lmodule');
+
+        $MIOLO->uses('classes/sagu.class','basic');
+        $MIOLO->conf->loadConf($module);
+
+        /**
+         * Load global defines for the basic module
+         */
+        $business  = $MIOLO->getBusiness('basic','BusConfig');
+        $constants = $business->getModuleValues('basic');
+        foreach ( $constants as $cnt )
+        {
+            define($cnt[0],$cnt[1]);
+        }
+
+        $contractId    = $lookup->getFilterValue('contractId');
+        $personId      = $lookup->getFilterValue('personId');
+        $personName    = $lookup->getFilterValue('personName');
+        $courseId      = $lookup->getFilterValue('courseId');
+        $courseVersion = $lookup->getFilterValue('courseVersion');
+        $courseName    = $lookup->getFilterValue('courseName');
+        $unitId        = $lookup->getFilterValue('unitId');
+
+        $lookup->addFilterField( new MTextField('contractId',    $contractId,    _M('Contract id', $module), FIELD_ID_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('personId',      $personId,      _M('Person id', $module), FIELD_ID_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('personName',    $reportLink,    _M('Person', $module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('courseId',      $courseId,      _M('Course id', $module), FIELD_ID_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('courseVersion', $courseVersion, _M('Course version', $module), FIELD_ID_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('courseName',    $courseName,    _M('Course', $module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+        $lookup->addFilterField( fields::unit($unitId) );
+
+        global $page;
+        $page->onLoad('document.' . $page->name . '.personName.focus()');
+
+        $columns = array(
+           new DataGridColumn('contractId',        _M('Code', $module),             'right', true, null, true),
+           new DataGridColumn('personId',          _M('Person id', $module),        'left',  true, null, true),
+           new DataGridColumn('personName',        _M('Person', $module),           'left',  true, null, true),
+           new DataGridColumn('courseId',          _M('Course id', $module),        'left',  true, null, true),
+           new DataGridColumn('courseName',        _M('Course', $module),           'left',  true, null, true),
+           new DataGridColumn('courseVersion',     _M('Course version', $module),   'left',  true, null, true),
+           new DataGridColumn('unitId',            _M('Unit id', $module),          'left',  true, null, false),
+           new DataGridColumn('unitDescription',   _M('Unit', $module),             'left',  true, null, true),
+           new DataGridColumn('accountSchemeDescription',   _M('Account scheme', $module),             'left',  true, null, true),
+           new DataGridColumn('costCenterDescription',   _M('Cost center', $module),             'left',  true, null, true),
+           new DataGridColumn('maturityDay',       _M('Maturity day', $module),     'left',  true, null, true),
+           new DataGridColumn('parcelsNumber',     _M('Parcels number', $module),   'left',  true, null, true)
+        );
+
+        $sql = 'SELECT  B.personId,
+                        A.contractId,
+                        B.name as personName,
+                        A.courseId,
+                        C.name as courseName,
+                        A.courseVersion,
+                        A.unitId,
+                        E.description as unitDescription,
+                        F.accountSchemeId,
+                        D.description as accountSchemeDescription,
+                        F.costCenterId,
+                        G.description as costCenterDescription,
+                        A.maturityDay,
+                        A.contractNumber,
+                        A.parcelsNumber
+                  FROM ONLY basPerson B
+             LEFT JOIN acdContract A
+                    ON ( A.personId = B.personId )
+             LEFT JOIN acdCourse C
+                    ON ( A.courseId = C.courseId )
+             LEFT JOIN basUnit E
+                    ON ( A.unitId = E.unitId )
+             LEFT JOIN accCourseAccount F ON (  F.courseId = A.courseId AND
+                                                F.courseVersion = A.courseVersion AND
+                                                F.unitId = A.unitId )
+             LEFT JOIN accAccountScheme D ON ( F.accountSchemeId = D.accountSchemeId )
+             LEFT JOIN accCostCenter G ON ( G.costCenterId = F.costCenterId ) ';
+
+        if ( strlen((string)$contractId) > 0 )
+        {
+            $where .= ' AND A.contractId = ?';
+            $args[] = $contractId;
+        }
+        if ( strlen((string)$personId) > 0 )
+        {
+            $where .= ' AND B.personId = ?';
+            $args[] = $personId;
+        }
+        if ( strlen((string)$personName) > 0 )
+        {
+            $where .= ' AND TO_ASCII(B.name) ILIKE TO_ASCII(?)';
+            $args[] = $personName . '%';
+        }
+        if ( strlen((string)$courseId) > 0 )
+        {
+            $where .= ' AND A.courseId = ?';
+            $args[] = $courseId;
+        }
+        if ( strlen((string)$courseVersion) > 0 )
+        {
+            $where .= ' AND A.courseVersion = ?';
+            $args[] = $courseVersion;
+        }
+        if ( strlen((string)$courseName) > 0 )
+        {
+            $where .= ' AND ( TO_ASCII(C.name) ILIKE TO_ASCII(?) OR TO_ASCII(C.shortName) ILIKE TO_ASCII(?) )';
+            $args[] = $courseName . '%';
+            $args[] = $courseName . '%';
+        }
+        if ( strlen((string)$turnId) > 0 )
+        {
+            $where .= ' AND A.turnId = ?';
+            $args[] = $turnId;
+        }
+        if ( strlen((string)$unitId) > 0 )
+        {
+            $where .= ' AND A.unitId = ?';
+            $args[] = $unitId;
+        }
+
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE 1 = 1 '.$where;
+        }
+
+        $sql .= ' ORDER BY B.name,
+                           C.name,
+                           A.contractId';    
+        $sqlObject = new sql();
+        if ( strlen((string)$where) == 0 )
+        {
+            $sql .= ' LIMIT 0';
+        }
+        $sqlObject->createFrom(SAGU::prepare($sql,$args));
+        $lookup->setFilterColumns(LOOKUP_FILTER_COLUMNS);
+        $lookup->setLookupGrid($module, $sqlObject, $columns, _M('Contract search','academic'), 15, 0);
+        $lookup->grid->setIsScrollable();
+    }
+}
+?>

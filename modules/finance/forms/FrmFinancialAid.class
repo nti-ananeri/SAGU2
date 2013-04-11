@@ -1,0 +1,334 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for finFinancialAid table
+ *
+ * @author Armando Taffarel Neto [taffarel@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Armando Taffarel Neto [taffarel@solis.coop.br]
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 12/12/2005
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Form to search the basCenter table
+ */
+class FrmFinancialAid extends MForm
+{
+    private $module;
+
+    /**
+     * Class constructor
+     */
+    function __construct()
+    {
+        $module = MIOLO::getCurrentModule();
+        if ( MIOLO::_request('function') == 'insert' )
+        {
+            parent::__construct(_M('Insert', $module));
+        }
+        else
+        {
+            parent::__construct(_M('Update', $module));
+        }
+
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+
+    }
+
+    /**
+     *  Default method to define fields
+     */
+    public function createFields()
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+
+        $toolBar = new MToolBar('toolBar',$MIOLO->getActionURL($module,$action));
+        
+        if ( $function == 'insert' )
+        {
+            $toolBar->disableButton('tbBtnDelete');
+            $toolBar->disableButton('tbBtnPrint');
+        }
+        elseif ( $function == 'delete' )
+        {
+            $toolBar->disableButton('tbBtnSave');
+        }
+        
+        $fields[] = $toolBar;
+        
+        if ( in_array($function, array('update', 'delete')) )
+        {
+            $incentiveTypeId = MIOLO::_request('incentiveTypeId');
+
+            $business = $MIOLO->getBusiness($module, 'BusFinancialAid');
+            $data     = $business->getFinancialAid($incentiveTypeId);
+
+            $fields[]  = new MHiddenField('incentiveTypeId', $incentiveTypeId);
+            $fields[]  = new MTextLabel('incentiveTypeId', $data->incentiveTypeId, _M('Incentive type id', $module));
+        }
+        
+        // Descritpion 
+        $financialAidDescription = new MTextField('financialAidDescription', $this->getFormValue('financialAidDescription', $data->description), _M('Incentive description', $module), FIELD_DESCRIPTION_SIZE);
+        $financialAidDescription->setJsHint(_M('Enter description', $module));        
+        $validators[]            = new MRequiredValidator('financialAidDescription',_M('Incentive description', $module), 'required');
+        $fields[]                = $financialAidDescription;
+
+        // Operation id
+        $operationIdLabel     = new MText('operationIdLabel', _M('Operation id',$module).':');
+        $operationIdLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $flds[]               = $operationIdLabel;
+        $operationIdLabel->setClass('m-caption m-caption-required');
+        $operationId          = new MLookupTextField('operationId', $this->getFormValue('operationId', $data->operationId), _M('',$module), FIELD_ID_SIZE, null, null, 'operationDescription', 'finance', 'Operation', null, null, true);
+        $operationId->setJsHint(_M('Select the operation id', $module));
+        $validators[]         = new MRequiredValidator('operationId',_M('Operation id',$module), 'required');
+        $flds[]               = $operationId;
+        $operationDescription = new MTextField('operationDescription', $this->operationDescription->value, '', FIELD_DESCRIPTION_SIZE, _M('When a pupil receive discount, the discount operation used on invoices is that', $module));
+        $operationDescription->setReadOnly(true);
+        $flds[]               = $operationDescription;
+       
+        $hctOperation         = new MHContainer('hctOperation', $flds);
+        $hctOperation->setShowLabel(true);
+        $fields[]             = $hctOperation;
+        unset($flds);
+
+        // Adjust authorization
+        $messagesType                 = SAGU::listTrueFalse(1);
+        $needAdjustAuthorizationLabel = new MText('needAdjustAuthorizationLabel', _M('Need adjust authorization',$module).':');
+        $needAdjustAuthorizationLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $needAdjustAuthorizationLabel->setClass('m-caption m-caption-required');
+        $needAdjustAuthorization      = $this->GetFormValue('needAdjustAuthorization', $data->needAdjustAuthorization ? $data->needAdjustAuthorization : DB_FALSE );
+        $needAdjustAuthorization      = new MRadioButtonGroup('needAdjustAuthorization', '', $messagesType, $needAdjustAuthorization, null, 'horizontal' );
+        $needAdjustAuthorization->SetShowLabel(false);
+        $hctNeedAdjustAuthorization   = new MHContainer('hctNeedAdjustAuthorization', array($needAdjustAuthorizationLabel, $needAdjustAuthorization));
+        $fields[]                     = $hctNeedAdjustAuthorization;
+ 
+        // Send invoices
+        $sendInvoicesLabel = new MText('sendInvoicesLabel', _M('Send invoices',$module).':');
+        $sendInvoicesLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $sendInvoices      = $this->GetFormValue('sendInvoices', strlen((string)$data->sendInvoices)>0 ? $data->sendInvoices : DB_TRUE );
+        $sendInvoices      = new MRadioButtonGroup('sendInvoices', '', $messagesType, $sendInvoices, null, 'horizontal');
+        $sendInvoices->SetShowLabel(false);
+        $hctSendInvoices   = new MHContainer('hctSendInvoices', array($sendInvoicesLabel, $sendInvoices));
+        $fields[]          = $hctSendInvoices;
+
+        // Generate credits 
+        $generateCreditsLabel = new MText('generateCreditsLabel', _M('Generate credits',$module).':');
+        $generateCreditsLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $generateCredits      = $this->GetFormValue('generateCredits', strlen((string)$data->generateCredits)>0 ? $data->generateCredits : DB_TRUE );
+        $generateCredits      = new MRadioButtonGroup('generateCredits', '', $messagesType, $generateCredits, null, 'horizontal');
+        $generateCredits->SetShowLabel(false);
+        $hctGenerateCredits   = new MHContainer('hctGenerateCredits', array($generateCreditsLabel, $generateCredits));
+        $fields[]             = $hctGenerateCredits;
+
+        // Require cost center
+        $requireCostCenterLabel = new MText('requireCostCenterLabel', _M('Require cost center',$module).':');
+        $requireCostCenterLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $requireCostCenter      = $this->GetFormValue('requireCostCenter', strlen((string)$data->requireCostCenter)>0 ? $data->requireCostCenter : DB_FALSE );
+        $requireCostCenter      = new MRadioButtonGroup('requireCostCenter', '', $messagesType, $requireCostCenter, null, 'horizontal');
+        $requireCostCenter->SetShowLabel(false);
+        $hctRequireCostCenter   = new MHContainer('hctRequireCostCenter', array($requireCostCenterLabel, $requireCostCenter));
+        $fields[]               = $hctRequireCostCenter;
+        
+        // Is extinct
+        $isExtinctLabel = new MText('isExtinctLabel', _M('Is extinct',$module).':');
+        $isExtinctLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $isExtinctLabel->setClass('m-caption m-caption-required');
+        $isExtinct      = $this->GetFormValue('isExtinct', $data->isExtinct ? $data->isExtinct : DB_FALSE );
+        $isExtinct      = new MRadioButtonGroup('isExtinct', '', $messagesType, $isExtinct, null, 'horizontal');
+        $isExtinct->SetShowLabel(false);
+        $hctIsExtinct   = new MHContainer('hctIsExtinct', array($isExtinctLabel, $isExtinct));
+        $fields[]       = $hctIsExtinct;
+
+        if ( $function == 'update' )
+        {
+            $fields[] = new MTextLabel('lfinModification', '['.$data->userName.' - '.$data->dateTime.']', _M('Last modification', $module));
+        }
+
+        $fields[] = new Separator('');
+
+        $this->setFields($fields);
+        $this->setValidators($validators);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+        $this->setClose($MIOLO->getActionURL($module, substr($action, 0, strrpos($action, ':'))));
+        $this->page->onLoad('document.'.$this->name.'.financialAidDescription.focus();');
+    }
+    
+    /**
+     * Event triggered when user chooses New from the toolbar
+     **/
+    public function tbBtnNew_click($sender = null)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $data = $this->getTypesData();
+        $vars = get_object_vars($data);
+        foreach ( $vars as $var => $value )
+        {
+            if ( $this->$var && $var != 'description' )
+            {
+                $this->$var->value = $this->getFormValue($var.'S') ? $this->getFormValue($var.'S') : '';
+            }
+        }
+        $this->description->value = $this->getFormValue('descriptionS') ? $this->getFormValue('financialAidDescriptionS') : '';
+    }
+    
+    /**
+     * Event triggered when user chooses Delete from the toolbar
+    **/
+    public function tbBtnDelete_click($sender = null)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $data   = $this->getTypesData();
+        $opts   = array('event'         => 'tbBtnDelete_confirm',
+                        'function'        => 'delete',
+                        'incentiveTypeId' => MIOLO::_request('incentiveTypeId')
+                       );
+                       
+        $gotoYes = $MIOLO->getActionURL( $module, $action, null, $opts );
+        $goto    = SAGU::getStackBackUrl();
+        $gotoNo  = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+        $msg     = MSG_CONFIRM_RECORD_DELETE;
+        $caption = _M('Question',$module);
+        $MIOLO->question($msg, $gotoYes, $gotoNo);
+    }
+
+    /**
+     * Event triggered when user chooses Yes from the Delete prompt dialog
+     **/
+    public function tbBtnDelete_confirm($sender = null)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $business = $MIOLO->getBusiness($module, 'BusFinancialAid');
+        $ok = $business->deleteFinancialAid(MIOLO::_request('incentiveTypeId'));
+
+        if ( $ok )
+        {
+            $msg  = MSG_RECORD_DELETED;
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Information',$module);
+            $MIOLO->information($msg, $goto);
+        }
+        else
+        {
+            $msg  = _M('Error executing requested operation.',$module);
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Error', $module);
+            $MIOLO->error( $msg, $goto, $caption );
+        }
+    }
+
+    /**
+     * Event triggered when user chooses Save from the toolbar
+     **/
+    public function tbBtnSave_click($sender = null)
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+
+        $data     = $this->getTypesData();
+        $business = $MIOLO->getBusiness($module, 'BusFinancialAid');
+
+        if ( $function == 'update' )
+        {
+            $ok  = $business->updateFinancialAid($data);
+            $msg = MSG_RECORD_UPDATED;
+        }
+        else
+        {
+            $ok  = $business->insertFinancialAid($data);
+            $msg = MSG_RECORD_INSERTED;
+        }
+
+        if ( $ok )
+        {
+            $opts = array('incentiveTypeIdS'=>$data->incentiveTypeId,
+                          'function'=>'search');
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL( $module, $action, null, $opts);
+            if ( $function == 'update' )
+            {
+                $caption = _M('Information', $module);
+                $MIOLO->information($msg, $goto);
+            }
+            else
+            {
+                $opts    = array('event'=>'tbBtnNew_click',
+                                 'function'=>'insert');
+
+                $gotoYes = $MIOLO->getActionURL($module, $action, null, $opts);
+                $caption = _M('Question',$module);
+                $MIOLO->question($msg, $gotoYes, $goto);
+            }
+        }
+        else
+        {
+            $msg  = _M('Error executing requested operation.', $module);
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Error', $module);
+            $MIOLO->error( $msg, $goto, $caption );
+        }
+    }
+    
+    
+    public function getTypesData()
+    {
+        $data = new finFinancialAid();
+        $vars = get_object_vars($data);
+        foreach ( $vars as $var => $value )
+        {
+            if ( $this->$var && $var != 'description' )
+            {
+                $data->$var = $this->$var->value;
+            }
+            $data->description = $this->financialAidDescription->value;
+        }
+
+        return $data;
+    }
+
+}
+
+?>

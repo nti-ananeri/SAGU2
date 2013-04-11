@@ -1,0 +1,167 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for finIncentive table
+ *
+ * @author Daniel Afonso Heisler [daniel@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Eduardo Beal Miglioransa [eduardo@solis.coop.br]   
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 02/12/2005
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to manipulate the finIncentive table
+ **/
+class BusinessFinanceBusIncentiveReport extends MBusiness
+{
+
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic', 'sagu');
+        $module = is_null($module) ? 'academic' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+    
+    
+    /**
+     * Do a search on the database table handled by the class
+     *
+     * @param $filters (object): Search filters
+     *
+     * @return (array): An array containing the search results
+     **/
+    public function searchIncentive($filters)
+    {
+        $sql = 'SELECT C.incentiveId,
+                       A.personId,
+                       A.name,
+                       C.supporterId,
+                       D.name,
+                       C.incentiveTypeId,
+                       E.description,
+                       TO_CHAR(C.startDate,\'' . MASK_DATE . '\'),
+                       TO_CHAR(C.endDate,\'' . MASK_DATE . '\'),
+                       UPPER(CASE WHEN C.valueIsPercent IS TRUE THEN \'' . _M('Yes', 'basic') . '\' ELSE \'' . _M('No', 'basic') . '\' END) as valueIsPercent,
+                       ROUND(C.value, \''. REAL_ROUND_VALUE .'\'),
+                       C.agglutinate,
+                       C.costCenterId,
+                       F.description,
+                       TO_CHAR(C.cancellationDate, \''.MASK_DATE.'\'),
+                       E.operationId,
+                       UPPER(CASE WHEN NOT C.cancellationDate IS NULL THEN \'' . _M('Yes', 'basic') . '\' ELSE \'' . _M('No', 'basic') . '\' END) as isCancelled,
+                       UPPER(CASE WHEN endDate < now()::date THEN \'' . _M('Yes', 'basic') . '\' ELSE \'' . _M('No', 'basic') . '\' END) as finished
+                FROM ONLY basPerson A
+                INNER JOIN acdContract B
+                        ON (A.personId = B.personId)
+                INNER JOIN finIncentive C
+                        ON (B.contractId = C.contractId)
+                LEFT JOIN ONLY basPerson D
+                        ON (C.supporterId = D.personId)
+                INNER JOIN ONLY finIncentiveType E
+                        ON (C.incentiveTypeId = E.incentiveTypeId)
+                LEFT JOIN accCostCenter F
+                        ON (C.costCenterId = F.costCenterId)';
+
+        if ( strlen((string)$filters->personId) > 0 )
+        {
+            $where .= ' AND A.personId = ? ';
+            $args[] = $filters->personId;
+        }
+
+        
+        if ( strlen((string)$filters->contractId) > 0 )
+        {
+            $where .= ' AND B.contractId = ? ';
+            $args[] = $filters->contractId;
+        }
+        if ( strlen((string)$filters->supporterId) > 0 )
+        {
+            $where .= ' AND C.supporterId = ? ';
+            $args[] = $filters->supporterId;
+        }
+        if ( strlen((string)$filters->startDate)>0 )
+        {
+            $where .= ' AND C.startDate >= TO_DATE(?, \''.MASK_DATE.'\') ';
+            $args[] = $filters->startDate;
+        }
+        if ( strlen((string)$filters->endDate)>0 )
+        {
+            $where .= ' AND C.endDate <= TO_DATE(?, \''.MASK_DATE.'\') ';
+            $args[] = $filters->endDate;
+        }
+        if ( strlen((string)$filters->incentiveTypeId) > 0 )
+        {
+            $where .= ' AND C.incentiveTypeId = ? ';
+            $args[] = $filters->incentiveTypeId;
+        }
+        if ( strlen((string)$filters->valueIsPercent) > 0 )
+        {
+            $where .= ' AND C.valueIsPercent = ? ';
+            $args[] = $filters->valueIsPercent;
+        }
+        if ( strlen((string)$filters->value) > 0 )
+        {
+            $where .= ' AND C.value = ? ';
+            $args[] = $filters->value;
+        }
+        if ( strlen((string)$filters->agglutinate) > 0 )
+        {
+            $where .= ' AND C.agglutinate = ? ';
+            $args[] = $filters->agglutinate;
+        }
+        if ( strlen((string)$filters->costCenterId) > 0 )
+        {
+            $where .= ' AND C.costCenterId = ? ';
+            $args[] = $filters->costCenterId;
+        }
+        if ( strlen((string)$filters->cancellationDate) > 0 )
+        {
+            $where .= ' AND C.cancellationDate = TO_DATE(?, \''.MASK_DATE.'\') ';
+            $args[] = $filters->cancellationDate;
+        }
+
+        unset($result);
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql.= ' WHERE ' . substr($where, 4) . '
+                  ORDER BY E.description, TO_ASCII(TRIM(A.name)) ';
+            $db     = $this->getDatabase();
+            $result = $db->query(SAGU::prepare($sql, $args));
+        }
+
+        return $result;
+    }
+}
+?>

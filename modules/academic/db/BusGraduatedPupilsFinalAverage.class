@@ -1,0 +1,119 @@
+<?php
+/**
+ * @author Leovan Tavares da Silva [leovan] [leovan@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * Leovan Tavares da Silva [leovan@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 04/08/2006
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to manipulate the basPupilListing table
+ **/
+class BusinessAcademicBusGraduatedPupilsFinalAverage extends Business
+{
+
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic', 'sagu');
+        $module = is_null($module) ? 'academic' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+    
+    /**
+     *  Return the locked contracts list
+     *
+     *  @return (array): Array containing the results.
+     */
+     public function listGraduatedPupilsFinalAverage($filters)
+     {
+        $module = MIOLO::getCurrentModule();
+        
+        set_time_limit(0);
+        
+        $db = $this->getDatabase();
+        
+        $sql = 'SELECT B.courseId,
+                       B.personId, 
+                       D.name,
+                       ROUND(avg(A.finalNote)::NUMERIC, \'' . REAL_ROUND_VALUE . '\'),
+                       getContractCurricularComponents(B.contractId, \'{' . CURRICULUM_TYPE_NON_OPTIONAL . '}\', \'{' . ENROLL_STATUS_APPR_OR_EXC . '}\')
+                  FROM acdEnroll A
+            INNER JOIN acdContract B
+                    ON (B.contractId = A.contractId)
+            INNER JOIN acdCurriculum C
+                    ON (C.curriculumId = A.curriculumId)
+            INNER JOIN ONLY basPhysicalPersonStudent D
+                    ON (D.personId = B.personId) 
+                 WHERE C.curriculumTypeId IN (' . CURRICULUM_TYPE_NON_OPTIONAL . ')
+                   AND A.statusId IN (' . ENROLL_STATUS_APPROVED . ')';
+                            
+        if (strlen((string)$filters->periodId) > 0)
+        {
+            $where .= ' AND B.formationPeriodId = ? ';
+            $args[] = $filters->periodId;
+        }
+        if (strlen((string)$filters->courseId) > 0)
+        {
+            $where .= ' AND B.courseId = ? ';
+            $args[] = $filters->courseId;
+        }
+        if (strlen((string)$filters->courseVersion) > 0)
+        {
+            $where .= ' AND B.courseVersion = ? ';
+            $args[] = $filters->courseVersion;
+        }
+        if (strlen((string)$filters->unitId) > 0)
+        {
+            $where .= ' AND B.unitId = ? ';
+            $args[] = $filters->unitId;
+        }
+        if (strlen((string)$filters->turnId) > 0)
+        {
+            $where .= ' AND B.turnId = ?';
+            $args[] = $filters->turnId;
+        }
+                                 
+        if (strlen((string)$where) > 0)
+        {
+            $sql .= $where . ' GROUP BY B.courseId, B.personId, D.name, B.contractId ORDER BY 4 DESC, 5, 3';
+            
+            $result = $db->query(SAGU::prepare($sql, $args));
+             
+            return $result;
+        }
+        return null;
+    }
+}
+?>

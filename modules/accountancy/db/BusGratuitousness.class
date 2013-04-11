@@ -1,0 +1,162 @@
+<?php
+/**
+ *
+ *
+ * @author Armando Taffarel Neto [taffarel@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * Armando Taffarel Neto [taffarel@solis.coop.br]
+ * 
+ * @since
+ * Class created on 10/07/2006
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ **/
+class BusinessAccountancyBusGratuitousness extends Business
+{
+    function BusinessAccountancyBusGratuitousness()
+    {
+        $this->db = $this->getDatabase();
+    }
+
+
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module = is_null($module) ? 'accountancy' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+    
+    /**
+     * Get the Gratuitousness in a specified period
+     *
+     * @param $filters (object): Search filters
+     *
+     * @return (array): An array containing the search results
+     **/
+    public function getGratuitousness($filters)
+    {
+        $sql = 'SELECT getPersonName(personId) as personName,
+                       (SELECT content FROM basDocument WHERE personId = A.personId AND documentTypeId = ' . CPF_CODE . ') as cpf,
+                       getPersonName((SELECT fatherId FROM ONLY basPhysicalPerson WHERE personId = A.personId)) || \' - \' ||
+                       getPersonName((SELECT motherId FROM ONLY basPhysicalPerson WHERE personId = A.personId)),
+                       getPersonAddress(personId) as personAddress,
+                       B.entryDate,
+                       round(B.value, ' . REAL_ROUND_VALUE . ')
+                FROM ONLY finInvoice A
+                INNER JOIN (SELECT invoiceId,
+                                   value,
+                                   entryDate
+                            FROM finEntry
+                            WHERE entryDate >= TO_DATE(?, \'' . MASK_DATE . '\') AND
+                                  entryDate <= TO_DATE(?, \'' . MASK_DATE . '\')' ;
+                                 
+        if ( strlen((string)$filters->beginDate) > 0 )
+        {
+            $args[] = $filters->beginDate;
+        }
+        if ( strlen((string)$filters->endDate) > 0 )
+        {
+            $args[] = $filters->endDate;
+        }
+        if ( is_array($filters->operations) )
+        {
+            $sql .= ' AND operationId IN (' . implode(',', $filters->operations) . ')';
+        }
+
+        $sql .= '            ) as B
+                    USING (invoiceId)';
+
+        if ( strlen((string)$filters->orderBy) > 0 )
+        {
+            $sql .= 'ORDER BY ' . $filters->orderBy;
+        }
+
+        unset($result);
+        if ( strlen((string)$sql) > 0 )
+        {
+            $db     = $this->getDatabase();
+            $result = $db->query(SAGU::prepare($sql, $args));
+        }
+
+        return $result;
+    }
+
+    /**
+     * Count the Gratuitousness in a specified period
+     *
+     * @param $filters (object): Search filters
+     *
+     * @return (integer): Count value
+     **/
+    public function getGratuitousnessCount($filters)
+    {
+        $sql = 'SELECT count(distinct a.PersonId)
+                FROM ONLY finInvoice A
+                INNER JOIN (SELECT invoiceId,
+                                   value,
+                                   entryDate
+                            FROM finEntry
+                            WHERE entryDate >= TO_DATE(?, \'' . MASK_DATE . '\') AND
+                                  entryDate <= TO_DATE(?, \'' . MASK_DATE . '\')' ;
+                                 
+        if ( strlen((string)$filters->beginDate) > 0 )
+        {
+            $args[] = $filters->beginDate;
+        }
+        if ( strlen((string)$filters->endDate) > 0 )
+        {
+            $args[] = $filters->endDate;
+        }
+        if ( is_array($filters->operations) )
+        {
+            $sql .= ' AND operationId IN (' . implode(',', $filters->operations) . ')';
+        }
+
+        $sql .= '            ) as B
+                    USING (invoiceId)';
+
+        unset($result);
+        if ( strlen((string)$sql) > 0 )
+        {
+            $db     = $this->getDatabase();
+            $result = $db->query(SAGU::prepare($sql, $args));
+        }
+
+        return $result[0][0];
+    }
+
+
+}
+
+?>

@@ -1,0 +1,499 @@
+<?php
+
+/**
+ * Policy form
+ *
+ * @author Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+ *
+ * @since
+ * Class created on 08/09/2005
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2005 SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+
+/**
+ * Form to manipulate a policy
+ **/
+class FrmPolicy extends MForm
+{
+
+    /**
+     * Class constructor
+     **/
+    function __construct()
+    {
+
+        $module = MIOLO::getCurrentModule();
+
+        if ( MIOLO::_request('function') == 'insert' )
+        {
+            parent::__construct(_M('Insert', $module));
+        }
+        else
+        {
+            parent::__construct(_M('Update', $module));
+        }
+
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+
+        $toolBar = new MToolBar('toolBar',$MIOLO->getActionURL($module,$action));
+
+        if ( $function == 'insert' )
+        {
+            $toolBar->disableButton('tbBtnDelete');
+            $toolBar->disableButton('tbBtnPrint');
+        }
+        elseif ( $function == 'delete' )
+        {
+            $toolBar->disableButton('tbBtnSave');
+        }
+        $fields[] = $toolBar;
+
+        if ( in_array($function,array('update','delete')) )
+        {
+            $policyId = MIOLO::_request('policyId') ? MIOLO::_request('policyId') : MIOLO::_request('policyId', 'GET');
+            $fields[] = new MTextLabel('policyId', $policyId, _M('Id', $module));
+            $fields[] = new MHiddenField('policyId', $policyId);
+
+            $business = $MIOLO->getBusiness($module, 'BusPolicy');
+            $data     = $business->getPolicy($policyId);
+        }
+        $this->page->onLoad('document.' . $this->name . '.description.focus();');
+        
+        // Description
+        $descriptionLabel = new MText('descriptionLabel', _M('Description', $module).':');
+        $descriptionLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $descriptionLabel->setClass('m-caption m-caption-required');
+        $description      = new MTextField('description', $this->getFormValue('description', $data->description), '', FIELD_DESCRIPTION_SIZE);
+        $validators[]     = new MRequiredValidator('description', _M('Description', $module));
+        $description->setJsHint(_M('Enter the description',$module));
+        $fields[]         = new MHContainer('hctDescription', array($descriptionLabel, $description));
+
+        // Bank operation type
+        $bankOperationTypeCodeLabel = new MText('bankOperationTypeCodeLabel', _M('Bank operation type id', $module).':');
+        $bankOperationTypeCodeLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $bankOperationTypeCodeLabel->setClass('m-caption m-caption-required');
+        $bankOperationTypeCode      = new MTextField('bankOperationTypeCode', $this->getFormValue('bankOperationTypeCode', $data->bankOperationTypeCode), '', FIELD_DESCRIPTION_SIZE);
+        $validators[]               = new MRangeValidator('bankOperationTypeCode', _M('Bank operation type id', $module), 0, 9999999999, 'i', 'required');
+        $fields[]                   = new MHContainer('hctBankOperationTypeCode', array($bankOperationTypeCodeLabel, $bankOperationTypeCode));
+
+        // Operation
+        $operationLabel       = new MText('operationLabel', _M('Operation id', $module).':');
+        $operationLabel->setWidth(FIELD_CONTAINER_SIZE);
+//        $operationLabel->setClass('m-caption m-caption-required');
+        $operationId          = new MLookupTextField('operationId', $this->getFormValue('operationId', $data->operationId), '', FIELD_ID_SIZE, null, null, 'operationDescription', $module, 'Operation', null, null, true);
+        $operationId->setJsHint(_M('Enter the operation id', $module));
+        $validators[]         = new MIntegerValidator('operationId', _M('Operation id', $module),null);
+        $operationDescription = new MTextField('operationDescription', $this->getFormValue('operationDescription', $data->operationDescription), '', FIELD_DESCRIPTION_SIZE);
+        $operationDescription->setReadOnly(true);
+        $fields[]             = new MHContainer('hctOperationId', array($operationLabel, $operationId, $operationDescription));
+
+        // Income Source
+        $incomeSourceLabel = new MText('incomeSourceLabel', _M('Income source',$module).':');
+        $incomeSourceLabel->setWidth(FIELD_CONTAINER_SIZE);        
+        $incomeSourceLabel->setClass('m-caption m-caption-required');
+        $incomeSourceId  = new MLookupTextField('incomeSourceId', 
+                                               strlen((string)$this->getFormValue('incomeSourceId'))>0 ? $this->getFormValue('incomeSourceId') : $data->incomeSourceId,
+                                               null,
+                                               FIELD_ID_SIZE,
+                                               null,
+                                               null,
+                                               'incomeSourceDescription',
+                                               'finance',
+                                               'IncomeSource',
+                                               null,
+                                               null,
+                                               true);
+        $incomeSourceId->setJsHint(_M('Select the income source id', $module));
+        $validators[]    = new MIntegerValidator('incomeSourceId', _M('Income source',$module), null);
+        $incomeSourceDescription = new MTextField('incomeSourceDescription', $this->getFormValue('incomeSourceDescription',$data->incomeSourceDescription), null, FIELD_DESCRIPTION_SIZE);
+        $incomeSourceDescription->setReadOnly(true);
+        $hctIncomeSource = new MHContainer('hctIncomeSource', array($incomeSourceLabel, $incomeSourceId, $incomeSourceDescription));
+        $hctIncomeSource->setShowLabel(true);
+        $fields[]        = $hctIncomeSource;
+        // Collection type
+        $bussinessCollectionType = $MIOLO->getBusiness($module, 'BusCollectionType');
+        $fields[]                = new MSelection('collectionTypeId', $this->getFormValue('collectionTypeId', $data->collectionTypeId), _M('Collection type id', $module),  $bussinessCollectionType->listCollectionType(), false);
+        $validators[]            = new MRequiredValidator('collectionTypeId', _M('Collection type id', $module),'required');
+
+        // Monthly interest
+        $monthlyInterestLabel = new MText('monthlyInterestLabel', _M('Monthly interest', $module).':');
+        $monthlyInterestLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $monthlyInterestLabel->setClass('m-caption m-caption-required');
+        $monthlyInterest      = new MTextField('monthlyInterest', $this->getFormValue('monthlyInterest', $data->monthlyInterest), '', FIELD_ID_SIZE);
+        $validators[]         = new MFloatValidator('monthlyInterest', _M('Monthly interest', $module), FLOAT_SEPARATOR, REAL_ROUND_VALUE, 'required');
+        $monthlyInterest->setJsHint(_M('Value or percent value of interest when maturity date on invoice is expired', $module));
+        $hctMonthlyInterest   = new MHContainer('hctMonthlyInterest', array($monthlyInterestLabel, $monthlyInterest));
+
+        //is monthly interest in percent
+        $messagesType                    =  SAGU::listYesNo(1);
+        $isMonthlyInterestInPercentLabel = new MText('isMonthlyInterestInPercentLabel', _M('Is value in percent',$module) . '?');
+        $isMonthlyInterestInPercentLabel->setClass('m-caption m-caption-required');
+        $isMonthlyInterestInPercentLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $isMonthlyInterestInPercent      = $this->GetFormValue('isMonthlyInterestInPercent',$data->isMonthlyInterestInPercent) ? $this->GetFormValue('isMonthlyInterestInPercent',$data->isMonthlyInterestInPercent) : DB_TRUE;
+        $isMonthlyInterestInPercent      = new MRadioButtonGroup('isMonthlyInterestInPercent', '', $messagesType, $isMonthlyInterestInPercent, null, 'horizontal');
+        $isMonthlyInterestInPercent->SetShowLabel(false);
+        $hctIsMonthlyInterestInPercent   = new MHContainer('hctIsMonthlyInterestInPercent', array($isMonthlyInterestInPercentLabel, $isMonthlyInterestInPercent));
+
+        //Base group from monthly interest
+        $hctRes[] = new MVContainer('hctBaseMonthlyInterest', array($hctMonthlyInterest, $hctIsMonthlyInterestInPercent));
+        $fields[] = new BaseGroup('bsgMonthlyInterest', _M('Value or percent value of interest when maturity date on invoice is expired', $module), $hctRes);
+        unset($hctRes);
+
+        // Fine
+        $fineLabel    = new MText('fineLabel', _M('Fine', $module).':');
+        $fineLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $fineLabel->setClass('m-caption m-caption-required');
+        $fine         = new MTextField('fine', $this->getFormValue('fine', $data->fine), '', FIELD_ID_SIZE);
+        $validators[] = new MFloatValidator('fine', _M('Fine', $module), FLOAT_SEPARATOR, REAL_ROUND_VALUE, 'required');
+        $fine->setJsHint(_M('When maturity date more days to fine is expired, that percent is divided by 30 (rounded days of month) and applied as daily fine', $module));
+        $hctFine      = new MHContainer('hctFine', array($fineLabel, $fine));
+
+        //is fine in percent
+        $messagesType         =  SAGU::listYesNo(1);
+        $isFineInPercentLabel = new MText('isFineInPercentLabel', _M('Is value in percent',$module) . '?');
+        $isFineInPercentLabel->setClass('m-caption m-caption-required');
+        $isFineInPercentLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $isFineInPercent      = $this->GetFormValue('isFineInPercent',$data->isFineInPercent) ? $this->GetFormValue('isFineInPercent',$data->isFineInPercent) : DB_TRUE;
+        $isFineInPercent      = new MRadioButtonGroup('isFineInPercent', '', $messagesType, $isFineInPercent, null, 'horizontal');
+        $isFineInPercent->SetShowLabel(false);
+        $hctIsFineInPercent   = new MHContainer('hctIsFineInPercent', array($isFineInPercentLabel, $isFineInPercent));
+
+        // Calcular a multa pelo valor nominal ou original do título
+        $opts                    =  array( array( _M('Original',$module), DB_TRUE),
+                                           array( _M('Corrected',$module), DB_FALSE) );
+        $isFineInOriginalValueLabel = new MText('isFineInOriginalValueLabel', _M('Use fine in value', $module).':');
+        $isFineInOriginalValueLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $isFineInOriginalValueLabel->setClass('m-caption m-caption-required');
+        $isFineInOriginalValue      = new MRadioButtonGroup('isFineInOriginalValue', '', $opts,  $this->getFormValue('isFineInOriginalValue', $data->isFineInOriginalValue) ? $this->getFormValue('isFineInOriginalValue', $data->isFineInOriginalValue) : DB_TRUE, null, 'horizontal');
+        $isFineInOriginalValue->setShowLabel(false);
+        $hctIsFineInOriginalValue   = new MHcontainer('hctIsFineInOriginalValue', array($isFineInOriginalValueLabel, $isFineInOriginalValue));
+
+        //Base group from fine
+        $hctRes[] = new MVContainer('hctBaseFine', array($hctFine, $hctIsFineInPercent, $hctIsFineInOriginalValue));
+        $fields[] = new BaseGroup('bsgFine', _M('When maturity date more days to fine is expired, that percent is divided by 30 (rounded days of month) and applied as daily fine', $module), $hctRes);
+        unset($hctRes);
+
+        // Days to interest
+        $daysToInterestLabel = new MText('daysToInterestLabel', _M('Days to interest', $module).':');
+        $daysToInterestLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $daysToInterestLabel->setClass('m-caption m-caption-required');
+        $daysToInterest      = new MTextField('daysToInterest', $this->getFormValue('daysToInterest', $data->daysToInterest), '', FIELD_ID_SIZE);
+        $daysToInterest->setJsHint(_M('Days after the maturity date on invoice to apply interest percent, if you don\'t want that, fill this field with 0', $module));
+        $validators[]        = new MRegExpValidator('daysToInterest', _M('Days to interest', $module),'(^-?[0-9][0-9]*$)');
+        $validators[count($validators)-1]->type = 'required';
+        $daysToInterestHint  = new MHint('daysToInterestHint', _M('Days after the maturity date on invoice to apply interest percent, if you don\'t want that, fill this field with 0', $module));
+        $fields[]            = new MHContainer('hctDaysToInterest', array($daysToInterestLabel, $daysToInterest, $daysToInterestHint));
+
+        // Days to fine
+        $daysToFineLabel = new MText('daysToFineLabel', _M('Days to fine', $module).':');
+        $daysToFineLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $daysToFineLabel->setClass('m-caption m-caption-required');
+        $daysToFine      = new MTextField('daysToFine', $this->getFormValue('daysToFine', $data->daysToFine), '', FIELD_ID_SIZE);
+        $daysToFine->setJsHint(_M('Days to apply fine, that value is applied baseed on maturity date plus days to interest', $module));
+        $validators[]    = new MRegExpValidator('daysToFine',_M('Days to fine', $module),'(^-?[0-9][0-9]*$)');
+        $validators[count($validators)-1]->type = 'required';
+        $daysToFineHint  = new MHint('daysToFineHint', _M('Days to apply fine, that value is applied baseed on maturity date plus days to interest', $module));
+        $fields[]        = new MHContainer('hctDaysToFine', array($daysToFineLabel, $daysToFine, $daysToFineHint));
+
+        // Days to protest
+        $daysToProtestLabel = new MText('daysToProtestLabel', _M('Days to protest', $module).':');
+        $daysToProtestLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $daysToProtestLabel->setClass('m-caption m-caption-required');
+        $daysToProtest      = new MTextField('daysToProtest', $this->getFormValue('daysToProtest', $data->daysToProtest), '', FIELD_ID_SIZE);
+        $daysToProtest->setJsHint(_M('Days to call bank protest, if that policy is with register, if normal that field is not used', $module));
+        $validators[] = new MRegExpValidator('daysToProtest',_M('Days to protest', $module),'(^-?[0-9][0-9]*$)');
+        $validators[count($validators)-1]->type = 'required';
+        $daysToProtestHint  = new MHint('daysToProtestHint', _M('Days to call bank protest, if that policy is with register, if normal that field is not used', $module));
+        $fields[] = new MHContainer('hctDaysToProtest', array($daysToProtestLabel, $daysToProtest, $daysToProtestHint));
+
+        //Calculate value with maturiy date
+        $messagesType                    =  SAGU::listYesNo(1);
+        $calculateValueWithMaturiyDateLabel = new MText('calculateValueWithMaturiyDateLabel', _M('Calculate value with maturiy date',$module) . '?');
+        $calculateValueWithMaturiyDateLabel->setClass('m-caption m-caption-required');
+        $calculateValueWithMaturiyDateLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $calculateValueWithMaturiyDate      = $this->GetFormValue('calculateValueWithMaturiyDate',$data->calculateValueWithMaturiyDate) ? $this->GetFormValue('calculateValueWithMaturiyDate',$data->calculateValueWithMaturiyDate) : DB_TRUE;
+        $calculateValueWithMaturiyDate      = new MRadioButtonGroup('calculateValueWithMaturiyDate', '', $messagesType, $calculateValueWithMaturiyDate, null, 'horizontal');
+        $calculateValueWithMaturiyDate->SetShowLabel(false);
+        $calculateValueWithMaturiyDateHint  = new MHint('calculateValueWithMaturiyDateHint', _M('If marked NOT, the system added the days of fines and interest to the maturity date', $module));
+        $fields[] = new MHContainer('hctcalculateValueWithMaturiyDate', array($calculateValueWithMaturiyDateLabel, $calculateValueWithMaturiyDate, $calculateValueWithMaturiyDateHint));
+
+        // Days to discount
+        $daysToDiscountLabel = new MText('daysToDiscountLabel', _M('Days to discount', $module).':');
+        $daysToDiscountLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $daysToDiscountLabel->setClass('m-caption m-caption-required');
+        $daysToDiscount = new MTextField('daysToDiscount', $this->getFormValue('daysToDiscount', $data->daysToDiscount), '', FIELD_ID_SIZE);
+        $daysToDiscount->setJsHint(_M('May you want grant discount for anticipated payment, please, fill with number of days before maturity to grant the discount', $module));
+        $validators[] = new MRegExpValidator('daysToDiscount',_M('Days to discount', $module),'(^-?[0-9][0-9]*$)');
+        $validators[count($validators)-1]->type = 'required';
+        $daysToDiscountHint  = new MHint('daysToDiscountHint', _M('May you want grant discount for anticipated payment, please, fill with number of days before maturity to grant the discount', $module));
+        $fields[] = new MHContainer('hctDaysToDiscount', array($daysToDiscountLabel, $daysToDiscount, $daysToDiscountHint));
+
+        // Discount
+        $discountLabel = new MText('discountLabel', _M('Discount', $module).':');
+        $discountLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $discountLabel->setClass('m-caption m-caption-required');
+        $discount      = new MTextField('discount', $this->getFormValue('discount', $data->discount), '', FIELD_ID_SIZE);
+        $validators[]  = new MFloatValidator('discount', _M('Discount', $module), FLOAT_SEPARATOR, REAL_ROUND_VALUE, 'required');
+        $discount->setJsHint(_M('If discount days is applied, fill that with discount value or percent', $module));
+        $hctDiscount   = new MHContainer('hctDiscount', array($discountLabel, $discount));
+
+        //is discount in percent
+        $messagesType             =  SAGU::listYesNo(1); 
+        $isDiscountInPercentLabel = new MText('isDiscountInPercentLabel', _M('Is value in percent',$module) . '?');
+        $isDiscountInPercentLabel->setClass('m-caption m-caption-required');
+        $isDiscountInPercentLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $isDiscountInPercent      = $this->GetFormValue('isDiscountInPercent',$data->isDiscountInPercent) ? $this->GetFormValue('isDiscountInPercent',$data->isDiscountInPercent) : DB_TRUE;
+        $isDiscountInPercent      = new MRadioButtonGroup('isDiscountInPercent', '', $messagesType, $isDiscountInPercent, null, 'horizontal');
+        $isDiscountInPercent->SetShowLabel(false);
+        $hctIsDiscountInPercent   = new MHContainer('hctIsDiscountInPercent', array($isDiscountInPercentLabel, $isDiscountInPercent));
+
+        //is discount at last month day
+        //$messagesType             =  SAGU::listYesNo(1); 
+        $isDiscountAtLastMonthDayLabel = new MText('isDiscountInPercentLabel', _M('Is discount at last month day',$module) . '?');
+        $isDiscountAtLastMonthDayLabel->setClass('m-caption m-caption-required');
+        $isDiscountAtLastMonthDayLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $isDiscountAtLastMonthDay      = $this->GetFormValue('isDiscountAtLastMonthDay',$data->isDiscountAtLastMonthDay) ? $this->GetFormValue('isDiscountAtLastMonthDay',$data->isDiscountAtLastMonthDay) : DB_FALSE;
+        $isDiscountAtLastMonthDay      = new MRadioButtonGroup('isDiscountAtLastMonthDay', '', $messagesType, $isDiscountAtLastMonthDay, null, 'horizontal');
+        $isDiscountAtLastMonthDay->SetShowLabel(false);
+        $hctIsDiscountAtLastMonthDay   = new MHContainer('hctIsDiscountAtLastMonthDay', array($isDiscountAtLastMonthDayLabel, $isDiscountAtLastMonthDay));
+
+        //Base group from discount
+        $hctRes[] = new MVContainer('hctBaseDiscount', array($hctDiscount, $hctIsDiscountInPercent, $hctIsDiscountAtLastMonthDay));
+        $fields[] = new BaseGroup('bsgDiscount', _M('If discount days is applied, fill that with discount value or percent', $module), $hctRes);
+        unset($hctRes);
+
+        // Bank tax value
+        $bankTaxValueLabel = new MText('bankTaxValueLabel', _M('Bank tax value', $module).':');
+        $bankTaxValueLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $bankTaxValueLabel->setClass('m-caption m-caption-required');
+        $bankTaxValue      = new MTextField('bankTaxValue', $this->getFormValue('bankTaxValue', $data->bankTaxValue), '', FIELD_ID_SIZE);
+        $validators[]  = new MFloatValidator('bankTaxValue', _M('Bank tax value', $module), FLOAT_SEPARATOR, REAL_ROUND_VALUE, 'required');
+        $bankTaxValue->setJsHint(_M('Indicates whether will be charged a fixed amount per invoice fee or a percentage of the invoice value', $module));
+        $hctBankTaxValue   = new MHContainer('hctBankTaxValue', array($bankTaxValueLabel, $bankTaxValue));
+
+        //is bank tax value in percent
+        $messagesType             =  SAGU::listYesNo(1); 
+        $isBankTaxValueInPercentLabel = new MText('isBankTaxValueInPercentLabel', _M('Is value in percent',$module) . '?');
+        $isBankTaxValueInPercentLabel->setClass('m-caption m-caption-required');
+        $isBankTaxValueInPercentLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $isBankTaxValueInPercent      = $this->GetFormValue('isBankTaxValueInPercent',$data->isBankTaxValueInPercent) ? $this->GetFormValue('isBankTaxValueInPercent',$data->isBankTaxValueInPercent) : DB_FALSE;
+        $isBankTaxValueInPercent      = new MRadioButtonGroup('isBankTaxValueInPercent', '', $messagesType, $isBankTaxValueInPercent, null, 'horizontal');
+        $isBankTaxValueInPercent->SetShowLabel(false);
+        $hctIsBankTaxValueInPercent   = new MHContainer('hctIsBankTaxValueInPercent', array($isBankTaxValueInPercentLabel, $isBankTaxValueInPercent));
+
+        //Base group from bank tax value
+        $hctRes[] = new MVContainer('hctBaseBankTaxValue', array($hctBankTaxValue, $hctIsBankTaxValueInPercent));
+        $fields[] = new BaseGroup('bsgBankTaxValue', _M('Indicates whether will be charged a fixed amount per invoice fee or a percentage of the invoice value', $module), $hctRes);
+        unset($hctRes);
+
+        // Juros compostos ou simples
+        $opts                    =  SAGU::listTrueFalse(1);
+        $useFineCompositiveLabel = new MText('useFineCompositiveLabel', _M('Use fine compositive', $module).':');
+        $useFineCompositiveLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $useFineCompositiveLabel->setClass('m-caption m-caption-required');
+        $useFineCompositive      = new MRadioButtonGroup('useFineCompositive', '', $opts,  $this->getFormValue('useFineCompositive', $data->useFineCompositive) ? $this->getFormValue('useFineCompositive', $data->useFineCompositive) : DB_TRUE, null, 'horizontal');
+        $useFineCompositive->setShowLabel(false);
+        $useFineCompositive->setJsHint(_M('Select if that policy use fine compositive or not', $module));
+        $fields[]                = new MHcontainer('hctUseFineCompositive', array($useFineCompositiveLabel, $useFineCompositive));
+
+        if ( $function != 'insert' )
+        {
+            // Is extinct
+            $opts    =  SAGU::listTrueFalse(1);
+            $isExtinctLabel = new MText('isExtinctLabel', _M('Is extinct', $module).':');
+            $isExtinctLabel->setWidth(FIELD_CONTAINER_SIZE);
+            $isExtinctLabel->setClass('m-caption m-caption-required');
+            $isExtinct = new MRadioButtonGroup('isExtinct', '', $opts,  $this->getFormValue('isExtinct', $data->isExtinct) ? $this->getFormValue('isExtinct', $data->isExtinct) : DB_FALSE, null, 'horizontal');
+            $isExtinct->setShowLabel(false);
+            $isExtinct->setJsHint(_M('Select if that policy is extinct or not', $module));
+            $fields[] = new MHcontainer('hctIsExtinct', array($isExtinctLabel, $isExtinct));
+        }
+
+        if ( $function == 'update' )
+        {
+            $fields[] = new MTextLabel('lastModification', '[' . $data->userName . ' - ' . $data->dateTime . ']', _M('Last modification',$module));
+        }
+        
+        $fields[] = new Separator('');
+
+        $this->setFields($fields);
+        if ( isset($validators) )
+        {
+            $this->setValidators($validators);
+        }
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+        $this->setClose($MIOLO->getActionURL($module,substr($action,0,strrpos($action,':'))));
+    }
+
+    /**
+     * Event triggered when user chooses New from the toolbar
+     **/
+    public function tbBtnNew_click($sender=NULL)
+    {
+    }
+
+    /**
+     * Event triggered when user chooses Delete from the toolbar
+     **/
+    public function tbBtnDelete_click($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $data   = $this->getTypesData();
+        $opts   = array('event'    => 'tbBtnDelete_confirm',
+                        'function' => 'delete',
+                        'policyId' => MIOLO::_request('policyId'));
+
+        $gotoYes = $MIOLO->getActionURL( $module, $action, null, $opts );
+
+        // This return the primary key to the search form so that user
+        // can see the record he would delete
+        $opts   = array('policyIdS' => MIOLO::_request('policyId'));
+        $goto    = SAGU::getStackBackUrl();
+        $gotoNo  = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+
+        $caption = _M('Question',$module);
+        $MIOLO->question(MSG_CONFIRM_RECORD_DELETE, $gotoYes, $gotoNo);
+    }
+
+    /**
+     * Event triggered when user chooses Yes from the Delete prompt dialog
+     **/
+    public function tbBtnDelete_confirm($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $business = $MIOLO->getBusiness($module, 'BusPolicy');
+        $ok = $business->deletePolicy($this->policyId->value);
+
+        if ( $ok )
+        {
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Information',$module);
+            $MIOLO->information(MSG_RECORD_DELETED, $goto);
+        }
+        else
+        {
+            $msg  = _M('Error executing requested operation.',$module);
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Error',$module);
+            $MIOLO->error( $msg, $goto, $caption );
+        }
+    }
+
+    /**
+     * Event triggered when user chooses Save from the toolbar
+     **/
+    public function tbBtnSave_click($sender=NULL)
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+
+        $data     = $this->getTypesData();
+        $business = $MIOLO->getBusiness($module, 'BusPolicy');
+
+        if ( $function == 'update' )
+        {
+            $ok  = $business->updatePolicy($data);
+            $msg = MSG_RECORD_UPDATED;
+        }
+        else
+        {
+            $ok  = $business->insertPolicy($data);
+            $msg = MSG_RECORD_INSERTED;
+        }
+
+        if ( $ok )
+        {
+            // This returns the primary key data to the search form
+            // so that the user can see the inserted/updated record.
+            $opts = array('policyIdS' => $data->policyId);
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL( $module, $action, null, $opts);
+            if ( $function == 'update' )
+            {
+                $caption = _M('Information',$module);
+                $MIOLO->information($msg, $goto);
+            }
+            else
+            {
+                $opts    = array('function'=>'insert');
+
+                $gotoYes = $MIOLO->getActionURL($module, $action, null, $opts);
+                $caption = _M('Question',$module);
+                $MIOLO->question($msg, $gotoYes, $goto);
+            }
+        }
+        else
+        {
+            $msg  = _M('Error executing requested operation.',$module);
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Error',$module);
+            $MIOLO->error( $msg, $goto, $caption );
+        }
+    }
+
+    /**
+     * Method to gather all information from the form fields
+     * and put them on a database compatible object
+     **/
+    public function getTypesData()
+    {
+        $data = new FinPolicy();
+        $vars = get_object_vars($data);
+        foreach ( $vars as $var => $value )
+        {
+            $data->$var = $this->$var->value;
+        }
+
+        return $data;
+    }
+
+}
+
+?>

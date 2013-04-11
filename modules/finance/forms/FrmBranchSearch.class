@@ -1,0 +1,151 @@
+<?php
+
+/**
+ *
+ * This file handles the connection and actions for finBranch table
+ *
+ * @author Rosemberg Almeida dos Santos [rosbrg@gmail.com]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * 
+ * @since
+ * Class created on 30/10/2007
+ *
+ * \b @organization \n
+ * UNISULBAHIA FACULDADES INTEGRADAS \n
+ * The Sagu2 development team
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Form to search the finBranch table
+ */
+class FrmBranchSearch extends MForm
+{
+    private $home;
+    private $module;
+
+    /**
+     * Class constructor
+     */
+    function __construct($data)
+    {
+        $this->module = 'finance';
+        $module = $this->module;
+
+        $this->home   = $data->home;
+
+        parent::__construct(_M('Search',$module));
+
+        // hide the 'Submit' button
+        $this->setShowPostButton(false);
+
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+
+    }
+
+    /**
+     *  Default method to define fields
+     */
+    public function createFields()
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $toolBar = new MToolBar('toolBar',$MIOLO->getActionURL($module,$action));
+        $toolBar->disableButton('tbBtnSave');
+        $toolBar->disableButton('tbBtnDelete');
+//        $toolBar->disableButton('tbBtnPrint');
+
+        //favoritos
+        $enabledImage  = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-20x20.png');
+        $disabledImage = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-disabled-20x20.png');
+        $url           = $MIOLO->getActionURL($module, $this->home, null, array('function' => 'search', 'event' => 'bookmark'));
+        $toolBar->addButton('tbBtnBookmark', _M('Add to bookmarks', 'basic'), $url, null, true, $enabledImage, $disabledImage);
+
+        if ( MIOLO::_request('event') == 'bookmark' )
+        {
+            $MIOLO->getClass('basic', 'access');
+            access::insert('Branch', $this->home, 'branch-16x16.png', true);
+        }
+        //fim favoritos
+
+        $fields[] = $toolBar;
+
+        $bankLabelS = new MText('bankLabelS', _M('Bank',$module). ':');
+        $bankLabelS->setWidth(FIELD_CONTAINER_SIZE);
+
+        $bankIdS = new MLookupTextField('bankIdS', $this->getFormValue('bankIdS', $data->bankIdS), '', FIELD_ID_SIZE, null, null, 'bankNameS', 'finance', 'Bank', null, null, true);
+        $bankIdS->setJsHint(_M('Enter the bank id',$module));
+        $validators[] = new MIntegerValidator('bankIdS');
+
+        $bankNameS = new MTextField('bankNameS', $this->getFormValue('bankNameS', $data->bankNameS), '', FIELD_DESCRIPTION_SIZE);
+
+        $bankNameS->setJsHint(_M('Bank name',$module));
+        $bankNameS->setReadOnly(true);
+
+        $hctBankS  = new MHContainer('hctBankS', array($bankLabelS, $bankIdS, $bankNameS));
+        $hctBankS->setShowLabel(true);
+        $fields[] = $hctBankS;
+
+        // Branch
+        $branchNumberLabelS = new MText('branchNumberLabelS', _M('Branch', $module).':');
+        $branchNumberLabelS->setWidth(FIELD_CONTAINER_SIZE);
+        $branchNumberS = new MTextField('branchNumberS', $this->getFormValue('branchNumberS',$data->branchNumberS), '', 5);
+        $branchNumberS->setJsHint(_M('Enter the branch number',$module));
+        $branchNumberTraceS = new MText('branchNumberTrace', '-');
+        $branchNumberDigitS = new MTextField('branchNumberDigitS', $this->getFormValue('branchNumberDigitS',$data->branchNumberDigitS), '', 3);
+        $branchNumberDigitS->setJsHint(_M('Enter the branch digit',$module));
+        $fields[] = new MHContainer('hctBranch', array($branchNumberLabelS, $branchNumberS, $branchNumberTraceS, $branchNumberDigitS));
+
+        // City
+        $cityLabel = new MText('cityLabel', _M('City','basic') . ':');
+        $cityLabel->setWidth(FIELD_CONTAINER_SIZE);
+
+        $cityIdS = new MLookupTextField('cityIdS', $this->cityIdS->value, '', FIELD_LOOKUPFIELD_SIZE, null, null,
+         'cityNameS', basic, 'City', null, null, true);
+        $cityIdS->setJsHint(_M('Enter the city code','basic'));
+        $validators[] = new MIntegerValidator('cityIdS');
+
+        $cityNameS = new MTextField('cityNameS', $this->cityNameS->value, '', FIELD_DESCRIPTION_SIZE);
+        $cityNameS->setJsHint(_M('Enter the city name','basic'));
+        $cityNameS->setReadOnly(true);
+
+        $hctCity = new MHContainer('hctCity', array($cityLabel, $cityIdS, $cityNameS));
+        $hctCity->setShowLabel(true);
+        $fields[]  = $hctCity;
+
+        $fields[] = new MButton('btnSearch',_M('Search',$module));
+        $this->setFields($fields);
+
+        // get filters values
+        $filters->branchNumber        = $this->branchNumberS->value;
+        $filters->branchNumberDigit   = $this->branchNumberDigitS->value;
+        $filters->bankId              = $this->bankIdS->value;
+
+        $grdResults = $MIOLO->getUI()->getGrid($module,'GrdBranchSearch',$filters);
+        $business   = $this->manager->getBusiness($module,'BusBranch');
+        $data       = $business->searchBranch($filters);
+        $grdResults->setData($data);
+        $this->addField($grdResults);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+
+        if ( $this->isSubmitted() )
+        {
+            $this->page->onLoad('document.' . $this->name . '.branchIdS.focus();');
+        }
+    }
+}
+?>

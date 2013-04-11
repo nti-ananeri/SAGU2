@@ -1,0 +1,335 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for finCounter table
+ *
+ * @author Armando Taffarel Neto [taffarel@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * Armando Taffarel Neto [taffarel@solis.coop.br]
+ * 
+ * @since
+ * Class created on 03/01/2006
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to manipulate the finCounter table
+ **/
+class BusinessFinanceBusCounter extends MBusiness
+{
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module = is_null($module) ? 'finance' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+    /**
+     * List all records from the table handled by the class
+     *
+     * @param: None
+     *
+     * @returns (array): Return an array with the entire table
+     *
+     **/
+    public function listCounter()
+    {
+        $module = 'finance';
+
+        $sql = ' SELECT A.counterId,
+                        \'' . _M('Counter', $module) . '\' || \' \' || A.counterId
+                   FROM finCounter A
+               ORDER BY 1 ';
+
+        $db = $this->getDatabase();
+        
+        $return = $db->query($sql);
+
+        return $return;
+    }
+
+    /**
+     * Return a specific record from the database
+     *
+     * @param $counterId (integer): Primary key of the record to be retrieved
+     *
+     * @return (object): Return an object of the type handled by the class
+     *
+     **/
+    public function getCounter($counterId)
+    {
+        $sql = 'SELECT A.counterId,
+                       A.responsableId,
+                       A.unitId,
+                       A.isActive,
+                       A.printerName,
+                       A.userName,
+                       TO_CHAR(A.dateTime,\'' . MASK_TIMESTAMP . '\')
+                  FROM finCounter A
+                 WHERE A.counterId = ?';
+
+        $db = $this->getDatabase();
+        $result = $db->query(SAGU::prepare($sql,$counterId));
+        //$db->close();
+
+        $counter = new FinCounter();
+
+        list ( $counter->counterId,
+               $counter->responsableId,
+               $counter->unitId,
+               $counter->isActive,
+               $counter->printerName,
+               $counter->userName,
+               $counter->dateTime ) = $result[0];
+
+        return $counter; 
+    }
+
+
+     /**
+     * Return a specific record from the database for check in counter
+     *
+     * @param $responsableId (integer): Person id responsable of the record
+     *
+     * @return (object): Return an object of the type handled by the class
+     *
+     **/
+    public function getCounterResponsable($responsableId)
+    {
+        $sql = 'SELECT A.counterId,
+                       A.responsableId,
+                       C.description,
+                       B.name
+                  FROM finCounter A,
+                  ONLY basPhysicalPerson B,
+                       basUnit C
+                WHERE  A.responsableId = B.personId
+                  AND  A.unitId        = C.unitId
+                  AND  A.responsableId = ?';
+
+        $db = $this->getDatabase();
+        $result = $db->query(SAGU::prepare($sql,$responsableId));
+        //$db->close();
+        $counterResponsable = new FinCounter();
+
+        list ( $counterResponsable->counterId,
+               $counterResponsable->responsableId,
+               $counterResponsable->unitDescription,
+               $counterResponsable->personName ) = $result[0];
+
+        return $counterResponsable;
+    }
+
+
+
+    /**
+     * Do a search on the database table handled by the class
+     *
+     * @param $filters (object): Search filters
+     *
+     * @return (array): An array containing the search results
+     **/
+    public function searchCounter($data)
+    {
+        $sql = 'SELECT A.counterId,
+                       A.responsableId,
+                       B.name,
+                       A.unitId,
+                       C.description,
+                       A.isActive,
+                       A.printerName
+                  FROM finCounter A
+       INNER JOIN ONLY basPhysicalPerson B
+                    ON (A.responsableId = B.personId)
+            INNER JOIN basUnit C
+                    ON (A.unitId = C.unitId)';
+
+        $where = '';
+        unset($args);
+        if ( strlen((string)$data->counterId) > 0 )
+        {
+            $where .= '    AND   A.counterId = ?';
+            $args[] = $data->counterId;
+        }
+        if ( strlen((string)$data->responsableId) > 0 )
+        {
+            $where .= '    AND   A.responsableId = ?';
+            $args[] = $data->responsableId;
+        }
+        if ( strlen((string)$data->responsableName) > 0 )
+        {
+            $where .= '    AND   B.name ILIKE ?';
+            $args[] = $data->responsableName.'%';
+        }
+
+        if ( strlen((string)$data->unitId) > 0 )
+        {
+            $where .= '    AND   A.unitId = ?';
+            $args[] = $data->unitId;
+        }        
+        if ( strlen((string)$data->unitDescription)> 0)
+        {
+            $where .= '    AND    C.description ILIKE ? ';
+            $args[] = $data->unitDescription.'%';
+        }
+        if ( strlen((string)$data->isActive)> 0)
+        {
+            $where .= '    AND    A.isActive=? ';
+            $args[] = $data->isActive;
+        }
+        if ( strlen((string)$data->printerName)> 0)
+        {
+            $where .= '    AND    A.printerName ILIKE ? ';
+            $args[] = $data->printerName.'%';
+        }
+
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE ' . substr($where,8) .
+                    ' ORDER BY B.name';
+
+            $db = $this->getDatabase();
+            $result = $db->query(SAGU::prepare($sql,$args));
+        }
+
+        return $result;
+    }
+
+    /**
+     * Insert a new record
+     *
+     * @param $data (object): An object of the type handled by the class
+     *
+     * @return True if succed, otherwise False
+     *
+     **/
+    public function insertCounter($data)
+    {
+        $db = $this->getDatabase();
+
+        $sql = 'INSERT INTO finCounter
+                           (counterId,
+                            responsableId,
+                            unitId,
+                            isActive,
+			    printerName)
+                    VALUES (?,?,?,?,?)';
+
+         $args = array( $data->counterId,
+                        $data->responsableId,
+                        $data->unitId,
+                        $data->isActive,
+			$data->printerName);
+        
+        $db     = $this->getDatabase();
+        $result = $db->execute(SAGU::prepare($sql, $args));
+
+        return $result;
+    }
+
+    /**
+     * Update data from a specific record
+     *
+     * @param $data (object): Data which will replace the old record data
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+    public function updateCounter($data)
+    {
+        $sql = 'UPDATE finCounter
+                   SET responsableId = ?,
+                       unitId = ?,
+                       isActive = ?,
+		       printerName = ?
+                 WHERE counterId  = ?';
+
+        $args = array($data->responsableId,
+                      $data->unitId,
+                      $data->isActive,
+		      $data->printerName,
+                      $data->counterId);
+
+        $db = $this->getDatabase();
+        $sqls = SAGU::prepare($sql,$args);
+        for ( $i=0; $i<count($sqls); $i++ )
+        {
+            $result = $db->execute($sqls[$i]);
+        }
+        return $result;
+    }
+
+    /**
+     * Delete a record
+     *
+     * @param $counterId (string): Primary key for deletion
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+    public function deleteCounter($counterId)
+    {
+        $sql = 'DELETE FROM finCounter
+                      WHERE counterId = ?';
+
+        $args = array($counterId);
+        $db = $this->getDatabase();
+        $result = $db->execute(SAGU::prepare($sql,$args));
+        
+        return $result;
+    }
+
+    public function listPrinters($printer = NULL)
+    {
+	$sql = 'SELECT printerName, printerName from finCounter ';
+	$where  = '    AND    NOT printerName IS NULL';
+	$where .= '    AND    NOT printerName = \'\'';
+        if ( strlen((string)$printer)> 0)
+        {
+            $where .= '    AND    printerName ILIKE ? ';
+            $args[] = $printer.'%';
+        }
+	
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE ' . substr($where,8) .
+                    ' GROUP BY printerName ORDER BY 1';
+
+            $db = $this->getDatabase();
+            $result = $db->query(SAGU::prepare($sql,$args));
+        }
+	return $result;
+    }
+}
+
+?>

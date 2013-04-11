@@ -1,0 +1,246 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for acdDegree table
+ *
+ * @author Hélio Henrique Rodrigues Guimarães [helio@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 22/08/2006
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to manipulate the acdDegree table
+ **/
+
+class BusinessAcademicBusGroupRelease extends Business
+{
+
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module = is_null($module) ? 'academic' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+    /**
+     * Return a specific record from the database
+     *
+     * @param $degreeId (integer): Primary key of the record to be retrieved
+     *
+     * @return (object): Return an object of the type handled by the class
+     *
+     **/
+    public function getGroupRelease($groupReleaseId)
+    {
+
+        $sql = 'SELECT A.groupReleaseId,
+                       A.groupId,
+                       A.degreeId,
+                       to_char(A.releaseDate, \''.MASK_TIMESTAMP.'\'),
+                       A.userName,
+                       TO_CHAR(A.dateTime,\'' . MASK_TIMESTAMP . '\'),
+                       A.ipAddress
+                  FROM acdGroupRelease A
+                 WHERE A.groupReseaseId = ?';
+
+        $db     = $this->getDatabase();
+        $result = $db->query(SAGU::prepare($sql, $groupReleaseId));
+
+        $groupRelease = new AcdGroupRelease();
+
+        list ( $groupRelease->groupReleaseId,
+               $groupRelease->groupId,
+               $groupRelease->degreeId,
+               $groupRelease->releaseDate,
+               $groupRelease->userName,
+               $groupRelease->dateTime,
+               $v->ipAddress ) = $result[0];
+
+        return $groupRelease; 
+    }
+
+    /**
+     * Insert a new record
+     *
+     * @param $data (object): An object of the type handled by the class
+     *
+     * @return True if succed, otherwise False
+     *
+     **/
+    public function insertGroupRelease($data)
+    {
+        $sql = 'INSERT INTO acdGroupRelease
+                            ( groupId,
+                              degreeId )
+                     VALUES (?,?)';
+
+        $db     = $this->getDatabase();
+        $result = $db->execute(SAGU::prepare($sql, array($data->groupId, $data->degreeId)));
+
+        return $result;
+    }
+
+    public function deleteGroupRelease($data)
+    {
+        $sql = 'DELETE FROM acdGroupRelease
+                      WHERE groupId  = ?
+                        AND degreeId = ?';
+
+        $db     = $this->getDatabase();
+        $result = $db->execute(SAGU::prepare($sql, array($data->groupId, $data->degreeId)));
+
+        return $result;
+    }
+
+    public function searchGroupRelease($data)
+    {
+
+        $sql = 'SELECT B.groupId,
+                       F.degreeId,
+                       F.description,
+                       to_char(F.limitDate, \''.MASK_DATE.'\'),
+                       F.degreenumber,
+                       CASE WHEN A.groupId IS NOT NULL THEN true ELSE false END as isReleased,
+                       H.curricularComponentId,
+                       H.curricularComponentVersion,
+                       H.name,
+                       G.courseId,
+                       G.courseVersion,
+                       getCourseName(G.courseId) as courseName
+                  FROM acdGroup B
+            INNER JOIN acdLearningPeriod E
+                    ON ( B.learningPeriodId = E.learningPeriodId )
+            INNER JOIN acdDegree F
+                    ON ( E.learningPeriodId = F.learningPeriodId )
+            INNER JOIN acdCurriculum G
+                    ON ( B.curriculumId = G.curriculumId )
+            INNER JOIN acdCurricularComponent H
+                    ON (     H.curricularComponentId = G.curricularComponentId
+                         AND H.curricularComponentVersion = G.curricularComponentVersion )
+             LEFT JOIN acdGroupRelease A
+                    ON (      A.groupId  = B.groupId 
+                         AND  A.degreeId = F.degreeId )';
+
+        if ( strlen((string)$data->groupId) > 0 )
+        {
+            $where .= ' AND A.groupId = ?';
+            $args[] = $data->groupId;
+        }
+
+        if ( strlen((string)$data->professorId) > 0 )
+        {
+            $where .= ' AND B.groupId IN ( SELECT groupId FROM acdSchedule WHERE scheduleId IN ( SELECT scheduleId FROM acdScheduleProfessor WHERE professorId = ? ) )';
+            $args[] = $data->professorId;
+        }
+
+        if ( strlen((string)$data->periodId) > 0 )
+        {
+            $where .= ' AND E.periodId = ?';
+            $args[] = $data->periodId;
+        }
+
+        if ( strlen((string)$where)>0 )
+        {
+            $sql .= '    WHERE ' . substr($where,4) ;
+                    ' ORDER BY G.courseId, G.courseVersion, G.curricularComponentId, G.curricularComponentVersion, B.groupId, F.limitDate, F.degreenumber';
+
+            $db     = $this->getDatabase();
+            $result = $db->query(SAGU::prepare($sql,$args));
+        }
+
+        return $result;
+    }
+
+    public function getProfessorsWithDailyDelayed($periodId, $degreeNumber=null)
+    {
+        $sql  = 'SELECT D.groupId,
+                        A.personId,
+                        A.name,
+                        F.curricularComponentId,
+                        F.curricularComponentVersion,
+                        F.name,
+                        H.description,
+                        G.beginHour,
+                        G.endHour,
+                        I.description
+                   FROM basPhysicalPersonProfessor A
+             INNER JOIN acdScheduleProfessor B
+                     ON ( A.personId = B.professorId )
+             INNER JOIN acdSchedule C
+                     ON ( B.scheduleId = C.scheduleId )
+             INNER JOIN acdGroup D
+                     ON (     C.groupId = D.groupId 
+                          AND D.learningPeriodId IN ( SELECT learningPeriodId
+                                                        FROM acdLearningPeriod
+                                                       WHERE periodId = ?))
+             INNER JOIN acdCurriculum E
+                     ON ( D.curriculumId = E.curriculumId )
+             INNER JOIN acdCurricularComponent F
+                     ON (     E.curricularComponentId      = F.curricularComponentId
+                          AND E.curricularComponentVersion = F.curricularComponentVersion )
+             INNER JOIN acdScheduleLearningPeriod G
+                     ON ( C.scheduleLearningPeriodId = G.scheduleLearningPeriodId )
+             INNER JOIN basWeekDay H
+                     ON ( H.weekDayId = C.weekDayId )
+             INNER JOIN acdDegree I
+                     ON (     I.learningPeriodId = D.learningPeriodId ';
+        $args[] = $periodId;
+
+
+        if ( strlen((string)$degreeNumber)>0 )
+        {
+            $sql .= '                  AND I.degreeNumber = ? )';
+            $args[] = $degreeNumber;
+        }
+        else
+        {
+            $sql .= ' ) ';
+        }
+
+        $sql .= ' LEFT JOIN acdGroupRelease J
+                         ON (     D.groupId  = J.groupId 
+                              AND I.degreeId = J.degreeId )
+                      WHERE J.groupId IS NULL
+                   ORDER BY I.degreeNumber, A.name';
+
+        $db     = $this->getDatabase();
+        $result = $db->query(SAGU::prepare($sql, $args));
+
+        return $result; 
+    }
+
+}
+
+?>

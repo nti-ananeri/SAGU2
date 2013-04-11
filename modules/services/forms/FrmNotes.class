@@ -1,0 +1,190 @@
+<?php
+
+class FrmNotes extends MForm
+{
+    private $home;
+
+    /**
+     * Class constructor
+     **/
+    function __construct($data)
+    {
+        $this->home = $data->home;
+
+        parent::__construct(_M('Notes', 'academic'));
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_REQUEST('function');
+
+        $busPeriod    = $MIOLO->getBusiness('academic', 'BusPeriod');
+        $periodValue  = $this->getFormValue('periodId',$this->enrollData->periodId) ? $this->getFormValue('periodId',$this->enrollData->periodId) : CURRENT_PERIOD_ID;
+        $periodId     = new MComboBox('periodId', $periodValue, _M('Period', 'academic'), $busPeriod->listPeriod());
+        $periodId->setAutoPostBack(true);
+        $validators[] = new MRequiredValidator('periodId', _M('Period','academic'), 'required');
+        $fields[]     = $periodId;
+
+        $fields[]     = new MSeparator();
+
+        $this->setFields($fields);
+        $this->setValidators($validators);
+        $this->page->onLoad('document.' . $this->name . '.periodId.focus();');
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setClose($MIOLO->getActionURL('services', substr($action, 0, strrpos($action, ':'))));
+        $this->setShowPostButton(false);
+        
+        if ( $this->periodId->value )
+        {
+            unset($fields);
+
+            $mioloUserName = trim($MIOLO->getLogin()->id);
+            $busPerson     = $MIOLO->getBusiness('basic', 'BusPerson');
+
+            //se for um usuário do sistema logado
+            if ( strlen((string)$mioloUserName) >  0 )
+            {
+                $personData = $busPerson->getPersonByMioloUserName($mioloUserName);
+            }
+            else //caso for um aluno
+            {
+                $personData->personId = $MIOLO->session->getValue('loginUid');
+            }
+            $personId = $personData->personId;
+
+            $businessNotes          = $MIOLO->getBusiness('services', 'BusNotes');
+            $businessContract       = $MIOLO->getBusiness('academic', 'BusContract');
+            $businessLearningPeriod = $MIOLO->getBusiness('academic', 'BusLearningPeriod');
+
+            $contracts = $businessContract->getPersonActiveContracts($personId);
+
+            if ( count($contracts) > 0 )
+            {
+                foreach ( $contracts as $row )
+                {
+                    list ( $contractId,
+                           $courseId,
+                           $courseVersion,
+                           $courseName,
+                           $unitId,
+                           $unitDescription,
+                           $turnId,
+                           $turnDescription,
+                           $isOut ) = $row;
+
+                    if ( $isOut == DB_FALSE )
+                    {
+                        $learningPeriod = $businessLearningPeriod->getLearningPeriodByCourseAndPeriod($courseId, $courseVersion, $this->periodId->value, $turnId);
+                        $academicNotes  = $businessNotes->getContractAcademicNotes($contractId, $learningPeriod->learningPeriodId);
+
+                        //titulo do curso
+                        $title    = _M('Course', 'academic') . ': ' . $courseName;
+                        $tableRaw = new MTableRaw($title, null, null);
+                        $tableRaw->addStyle('width', '100%');
+                        $fields[] = new Separator();
+                        $fields[] = $tableRaw;
+
+                        //notas de cada disciplina do curso
+                        if ( count($academicNotes) > 0 )
+                        {
+
+                            unset($enrollIdOld, $curricularComponentOld);
+                            $y                      = 0;
+                            $enrollIdOld            = $academicNotes[$y][0];
+                            $curricularComponentOld = $academicNotes[$y][5];
+
+                            foreach ( $academicNotes as $row2 )
+                            {
+                                list ( $enrollId,
+                                       $groupId,
+                                       $curriculumId,
+                                       $curricularComponentId,
+                                       $curricularComponentVersion,
+                                       $curricularComponent,
+                                       $semester,
+                                       $degree,
+                                       $note ) = $row2;
+
+                                if ( $enrollId != $enrollIdOld )
+                                {
+                                    $title     = $curricularComponentOld . ' - ' . _M('Serie', 'academic') . ': ' . $semester;
+                                    $columns[] = "<div style=\"text-align: center;\">" . _M('Average', 'academic') . "</div>";
+                                    $columns[] = "<div style=\"text-align: center;\">" . _M('Exam', 'academic') . "</div>";
+                                    $columns[] = "<div style=\"text-align: center;\">" . _M('Final', 'academic') . "</div>";
+                                    $columns[] = "<div style=\"text-align: center;\">" . _M('Status', 'academic') . "</div>";
+                                    $matrix2 = $businessNotes->getFinalNotes($enrollIdOld);
+                                    $matrix[0][] = $matrix2[0][0];
+                                    $matrix[0][] = $matrix2[0][1];
+                                    $matrix[0][] = $matrix2[0][2];
+                                    $matrix[0][] = $matrix2[0][3];
+
+                                    $tableRaw  = new MTableRaw($title, $matrix, $columns);
+                                    //$tableRaw->setAlternate(true);
+                                    //$tableRaw->addStyle('width', '100%');
+                                    if ( count($columns) > 0 )
+                                    {
+                                        for ( $x=0; $x<count($columns); $x++ )
+                                        {
+                                            $size = 100 / count($columns);
+                                            $tableRaw->setCellAttribute(0, $x, 'width', (int)$size . '%');
+                                            $tableRaw->setCellAttribute(0, $x, 'align', 'center');
+                                        }
+                                    }
+                                    $fields[]    = $tableRaw;
+                                    unset($columns, $title, $matrix);
+                                }
+                                $matrix[0][] = $note;
+                                $columns[]   = "<div style=\"text-align: center;\">" . $degree . "</div>";
+                                $enrollIdOld            = $enrollId;
+                                $curricularComponentOld = $curricularComponent;
+                                $y++;
+                            }
+
+                            //apenas para a última linha
+                            $title     = $curricularComponentOld . ' - ' . _M('Serie', 'academic') . ': ' . $semester;
+                            $columns[] = "<div style=\"text-align: center;\">" . _M('Average', 'academic') . "</div>";
+                            $columns[] = "<div style=\"text-align: center;\">" . _M('Exam', 'academic') . "</div>";
+                            $columns[] = "<div style=\"text-align: center;\">" . _M('Final', 'academic') . "</div>";
+                            $columns[] = "<div style=\"text-align: center;\">" . _M('Status', 'academic') . "</div>";
+                            $matrix2 = $businessNotes->getFinalNotes($enrollId);
+                            $matrix[0][] = $matrix2[0][0];
+                            $matrix[0][] = $matrix2[0][1];
+                            $matrix[0][] = $matrix2[0][2];
+                            $matrix[0][] = $matrix2[0][3];
+
+                            $tableRaw    = new MTableRaw($title, $matrix, $columns);
+                            //$tableRaw->setAlternate(true);
+                            //$tableRaw->addStyle('width', '100%');
+                            if ( count($columns) > 0 )
+                            {
+                                for ( $x=0; $x<count($columns); $x++ )
+                                {
+                                    $size = 100 / count($columns);
+                                    $tableRaw->setCellAttribute(0, $x, 'width', (int)$size . '%');
+                                    $tableRaw->setCellAttribute(0, $x, 'align', 'center');
+                                }
+                            }
+                            $fields[] = $tableRaw;
+                            unset($columns, $title, $matrix);
+                        }
+                        else
+                        {
+                            $fields[] = new Mtext('erro', _M('No notes registered in the selected period', 'academic'));
+                        }
+                        $this->addFields($fields);
+                    }
+                }
+            }
+        }
+    }
+}
+
+?>

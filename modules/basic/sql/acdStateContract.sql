@@ -1,0 +1,20 @@
+INSERT INTO acdstatecontract (username, datetime, ipaddress, statecontractid, description, inouttransition, needsreason, isclosecontract) VALUES ('admin', date(now()), '127.0.0.1', 1, 'VESTIBULANDO', 'I', false, false);
+INSERT INTO acdstatecontract (username, datetime, ipaddress, statecontractid, description, inouttransition, needsreason, isclosecontract) VALUES ('admin', date(now()), '127.0.0.1', 2, 'TRANSFERÊNCIA EXTERNA DE', 'I', false, false);
+INSERT INTO acdstatecontract (username, datetime, ipaddress, statecontractid, description, inouttransition, needsreason, isclosecontract) VALUES ('admin', date(now()), '127.0.0.1', 3, 'PORTADOR DE DIPLOMA', 'I', false, false);
+INSERT INTO acdstatecontract (username, datetime, ipaddress, statecontractid, description, inouttransition, needsreason, isclosecontract) VALUES ('admin', date(now()), '127.0.0.1', 4, 'MATRÍCULA', 'T', false, false);
+INSERT INTO acdstatecontract (username, datetime, ipaddress, statecontractid, description, inouttransition, needsreason, isclosecontract) VALUES ('admin', date(now()), '127.0.0.1', 5, 'TRANCAMENTO', 'T', true, true);
+INSERT INTO acdstatecontract (username, datetime, ipaddress, statecontractid, description, inouttransition, needsreason, isclosecontract) VALUES ('admin', date(now()), '127.0.0.1', 6, 'REINGRESSO', 'T', false, false);
+INSERT INTO acdstatecontract (username, datetime, ipaddress, statecontractid, description, inouttransition, needsreason, isclosecontract) VALUES ('admin', date(now()), '127.0.0.1', 7, 'TRANSFERÊNCIA INTERNA PARA', 'T', true, true);
+INSERT INTO acdstatecontract (username, datetime, ipaddress, statecontractid, description, inouttransition, needsreason, isclosecontract) VALUES ('admin', date(now()), '127.0.0.1', 8, 'TRANSFERÊNCIA INTERNA DE', 'T', true, false);
+INSERT INTO acdstatecontract (username, datetime, ipaddress, statecontractid, description, inouttransition, needsreason, isclosecontract) VALUES ('admin', date(now()), '127.0.0.1', 9, 'CONCLUSAO DE TODAS AS DISCIPLINAS', 'T', false, true);
+INSERT INTO acdstatecontract (username, datetime, ipaddress, statecontractid, description, inouttransition, needsreason, isclosecontract) VALUES ('admin', date(now()), '127.0.0.1', 10, 'PRORROGAÇAO DO TRABALHO DE CONCLUSAO', 'T', true, true);
+INSERT INTO acdstatecontract (username, datetime, ipaddress, statecontractid, description, inouttransition, needsreason, isclosecontract) VALUES ('admin', date(now()), '127.0.0.1', 11, 'COLAÇÃO DE GRAU', 'O', false, true);
+INSERT INTO acdstatecontract (username, datetime, ipaddress, statecontractid, description, inouttransition, needsreason, isclosecontract) VALUES ('admin', date(now()), '127.0.0.1', 12, 'TRANSFERÊNCIA EXTERNA PARA', 'O', true, true);
+INSERT INTO acdstatecontract (username, datetime, ipaddress, statecontractid, description, inouttransition, needsreason, isclosecontract) VALUES ('admin', date(now()), '127.0.0.1', 13, 'ABANDONO', 'O', true, true);
+INSERT INTO acdstatecontract (username, datetime, ipaddress, statecontractid, description, inouttransition, needsreason, isclosecontract) VALUES ('admin', date(now()), '127.0.0.1', 14, 'INSCRIÇÃO', 'I', false, false);
+INSERT INTO acdStateContract (username, datetime, ipaddress, statecontractid, description, inouttransition, needsreason, isclosecontract) VALUES ('admin', date(now()), '127.0.0.1', 15, 'RENOVAÇÃO DE TRANCAMENTO', 'T', true, true);
+INSERT INTO acdStateContract (username, datetime, ipaddress, statecontractid, description, inouttransition, needsreason, isclosecontract) VALUES ('admin', date(now()), '127.0.0.1', 16, 'CANCELAMENTO DE CONTRATO', 'O', true, true);
+INSERT INTO acdStateContract (username, datetime, ipaddress, statecontractid, description, inouttransition, needsreason, isclosecontract) VALUES ('admin', date(now()), '127.0.0.1', 17, 'PRÓ-UNI', 'I', false, false);
+INSERT INTO acdstatecontract (username, datetime, ipaddress, statecontractid, description, inouttransition, needsreason, isclosecontract) VALUES ('admin', date(now()), '127.0.0.1', 18, 'DESISTÊNCIA DE VAGA', 'O', true, true);
+SELECT setval('seq_statecontractid',(SELECT max(statecontractid) FROM acdStateContract));
+

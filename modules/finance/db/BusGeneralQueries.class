@@ -1,0 +1,136 @@
+<?php
+/**
+ *
+ * This file has general queries related to finance processes.
+ *
+ * @author Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 21/10/2005
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to provide general queries that may be useful to many modules
+ **/
+class BusinessFinanceBusGeneralQueries extends Business
+{
+
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module = is_null($module) ? 'finance' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+    /**
+     * Obtain the debt pertaining to a specific defaulter
+     *
+     * @param: contractId: Contract for a person to analyse the debts
+     *         futureDebts (boolean) default false: Check for future debts (open invoices whith future debts)
+     *
+     * @returns (float): Return the debt value
+     *
+     **/
+    public function getDefaulterDebt($contractId, $futureDebts = true)
+    {
+        /*
+         * DEFAULT_QUERY_RULE is a constant defined under basConfig
+         * to determine if the defaulter debt will be calculated using
+         * the person's contract or using the person id
+         */
+        if ( DEFAULT_QUERY_RULE == 'PERSON' )
+        {
+            /*
+             * This select calculates the debt summing all entries from all contracts of a person, considering
+             * the debt pertains to a person, not to a specific contract
+             */
+            $sql = 'SELECT COALESCE(SUM(C.value * CASE WHEN D.operationTypeId = \'C\' THEN -1 ELSE 1 END),0.0) AS debt
+                      FROM acdContract A,
+                      ONLY finReceivableInvoice B,
+                           finEntry C,
+                           finOperation D
+                     WHERE A.contractId = ?
+                       AND B.personId = A.personId
+                       AND C.invoiceId = B.invoiceId
+                       AND D.operationId = C.operationId';
+             if ($futureDebts == false)
+             {
+                $sql.= ' AND B.maturityDate<=now() ';
+             }
+/*
+        $sql = 'SELECT sum(balanceWithPolicies(A.invoiceId, true))
+                  FROM finReceivableInvoice A
+                 WHERE A.personId = ?
+                   AND A.maturityDate <= date(now())
+              GROUP BY A.personId
+                HAVING sum(balanceWithPolicies(A.invoiceId, true)) > ' .  MINIMAL_VALUE_TO_PRINT_INVOICE;
+*/
+        }
+        else
+        {
+            /*
+             * This select calculates the debt summing all entries from a specific contract only, meaning the debt
+             * pertains to the contract only. In this case, a pupil may enroll even if he has some debt on another
+             * contract.88
+             */
+            $sql = 'SELECT COALESCE(SUM(C.value * CASE WHEN D.operationTypeId = \'C\' THEN -1 ELSE 1 END),0.0) AS debt
+                      FROM acdContract A,
+                      ONLY finReceivableInvoice B,
+                           finEntry C,
+                           finOperation D
+                     WHERE A.contractId = ?
+                       AND B.personId = A.personId
+                       AND B.courseId = A.courseId
+                       AND B.courseVersion = A.courseVersion
+                       AND C.invoiceId = B.invoiceId
+                       AND D.operationId = C.operationId';
+                       
+            if ($futureDebts == false)
+            {
+                $sql.= ' AND B.maturityDate<=now() ';
+            }
+        }
+
+        $db = $this->getDatabase();
+        $result = $db->query(SAGU::prepare($sql,$contractId));
+        //$db->close();
+
+        $debt = (float)$result[0][0];
+        
+        return $debt;
+    }
+
+}
+
+?>

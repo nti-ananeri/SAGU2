@@ -1,0 +1,73 @@
+<?php
+
+class BusinessServicesBusNotes extends Business
+{
+
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic', 'sagu');
+        $module = is_null($module) ? 'academic' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+    public function getContractAcademicNotes($contractId, $learningPeriodId)
+    {
+
+        $sql = 'SELECT B.enrollId,
+                       C.groupId,
+                       C.curriculumId,
+                       D.curricularComponentId,
+                       D.curricularComponentVersion,
+                       getCurricularComponentName(D.curricularComponentId) as curricularComponent,
+                       D.semester,
+                       AD.description,
+                       ROUND(A.note::NUMERIC, \'' . REAL_ROUND_VALUE . '\') as note
+                  FROM acdEnroll B
+             LEFT JOIN acdDegreeEnroll A
+                 USING ( enrollId )
+             LEFT JOIN acdDegree AD
+                 USING ( degreeId )
+            INNER JOIN acdGroup C
+                 USING ( groupId )
+            INNER JOIN acdCurriculum D
+                    ON ( C.curriculumId = D.curriculumId )
+            INNER JOIN acdLearningPeriod LP
+                    ON ( LP.learningPeriodId = C.learningPeriodId )
+                 WHERE LP.learningPeriodId IN (SELECT learningPeriodId 
+                                                 FROM acdLearningPeriod
+                                                WHERE periodId IN (SELECT periodId
+                                                                     FROM acdLearningPeriod
+                                                                    WHERE learningPeriodId = ?))
+                   AND B.contractId = ?
+              ORDER BY A.enrollId,
+                       AD.degreeNumber';
+
+        $args   = array ( $learningPeriodId, $contractId );
+        $db     = $this->getDatabase();
+        $result = $db->query(SAGU::prepare($sql, $args));
+
+        return $result;
+    }
+
+    public function getFinalNotes($enrollId)
+    {
+        $sql = 'SELECT ROUND(A.note::NUMERIC, \'' . REAL_ROUND_VALUE . '\') as average,
+                       ROUND(A.examNote::NUMERIC, \'' . REAL_ROUND_VALUE . '\') as exam,
+                       ROUND(A.finalNote::NUMERIC, \'' . REAL_ROUND_VALUE . '\') as final,
+                       B.description as state
+                  FROM acdEnroll A,
+                       acdEnrollStatus B
+                 WHERE A.statusId = B.statusId
+                   AND A.enrollId = ?';
+
+        $db     = $this->getDatabase();
+        $result = $db->query(SAGU::prepare($sql, $enrollId));
+
+        return $result;
+    }
+
+}
+
+?>

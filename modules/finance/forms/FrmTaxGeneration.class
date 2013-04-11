@@ -1,0 +1,233 @@
+<?php
+
+/**
+ *
+ * This file handles the connection and actions for fiReceivableInvoice table
+ *
+ * @author Armando Taffarel Neto [taffarel@solis.coop.br]
+ * @last modification: William Prigol Lopes [william@solis.coop.br]
+ *                  Add ajax functionality
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Armando Taffarel Neto [taffarel@solis.coop.br]
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 24/05/2006
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+ 
+/**
+ * Form to search the finInvoice table
+ */
+class FrmTaxGeneration extends MForm
+{
+
+    /**
+     * Class constructor
+     */
+    function __construct()
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        
+        parent::__construct(_M('Tax generation', $module));
+        // hide the 'Submit' button
+        $this->setShowPostButton(false);
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        if (($f = $this->page->request('cpaint_function')) != "") 
+        {
+            $this->manager->getTheme()->clearContent();
+            $this->$f($this->page->request('cpaint_argument'));
+            $this->page->generateMethod = 'generateAJAX';
+        }
+        else
+        {
+             $this->defineFields();
+             $this->eventHandler();
+        }
+    }
+
+    /**
+     *  Default method to define fields
+     */
+    public function defineFields()
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        // BASE GROUP  INVOICE
+        // person
+        $personLabel = new MText('personLabel', _M('Person',$module).':');
+        $personLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $personLabel->setClass('m-caption m-caption-required');
+        $fld[]            = $personLabel;
+        
+        $unitId = new MHiddenField('unitId', '');
+        $flds[] = $unitId;
+
+        $personId = new MLookupTextField('personId',$this->getFormValue('personId',$data->personId), _M('Person',$module), FIELD_LOOKUPFIELD_SIZE, null, null, array('personId', 'contractId', 'personName', 'courseId', 'courseName', 'courseVersion', 'unitId', 'limbo', 'accountSchemeId', 'accountSchemeDescription', 'costCenterId', 'costCenterDescription'), 'finance', 'PersonContract', null, array('personId' => 'personId','unitId' => 'unitId'), !$this->page->isPostBack() );
+        $personId->setJsHint(_M('Enter the person code',$module));
+        $fld[]            = $personId;
+        $validators[]      = new MIntegerValidator('personId', _M('Person id', $module), 'optional');
+
+        $personName = new MTextField('personName', $this->getFormValue('personName',$data->personName), _M('Name',$module), FIELD_DESCRIPTION_SIZE);
+        $personName->setReadOnly(true);
+        $fld[]              = $personName;
+
+        $hctPerson = new MHContainer('hctContract', $fld);
+        $hctPerson->setShowLabel(false);
+        $flds[]   = $hctPerson;
+
+        // Limbo =)
+        $limbo = new MHiddenField('limbo', '');
+        $flds[] = $limbo;
+
+        unset($fld);
+        $contractLabel = new MText('contractLabel', _M('Contract', $module) . ':');
+        $contractLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $fld[]         = $contractLabel;
+
+        $contractId  = new MLookupTextField('contractId', $this->getFormValue('contractId', $data->contractId), null, FIELD_LOOKUPFIELD_SIZE, null, null, array('personId', 'personName', 'courseId', 'courseName', 'courseVersion'), 'finance', 'Contract', null, array('personId' => 'personId', 'courseId' => 'courseId', 'courseVersion'=> 'courseVersion'), true);
+        $contractId->setJsHint(_M('Enter the contract code',$module));
+        $validators[] = new MIntegerValidator('contractId', _M('Contract id', $module), 'optional');
+
+        $courseId = new MLookupTextField('courseId', $this->getFormValue('courseId',$data->courseId), null,FIELD_ID_SIZE, null, null, array('courseVersion','courseName'), $module, 'CourseAccountSchemeCostCenter', null, array('courseId' => 'courseId', 'courseVersion' => 'courseVersion', 'unitId' => 'unitId'), ($function == 'update') ? false:true);
+        $courseId->setJsHint(_M('Select the course id', $module));
+        //$validators[] = new MRequiredValidator('courseId',_M('Course',$module));
+        $courseVersion = new MTextField('courseVersion', $this->getFormValue('courseVersion',$data->courseVersion), null,FIELD_ID_SIZE);
+        //$validators[] = new MRequiredValidator('courseVersion',_M('Course version',$module), 'required');   
+        $couseVersionDescription = new MText('couseVersionDescription',_M('Version',$module));
+        $courseName = new MTextField('courseName', $this->getFormValue('courseName',$data->courseName), null, FIELD_DESCRIPTION_SIZE);
+        $courseName->setReadOnly(true);
+        $hctCourse = new MHContainer('hctCourse', array($contractLabel, $contractId, $courseId, $couseVersionDescription, $courseVersion, $courseName));
+        $hctCourse->setShowLabel(true);
+        $flds[]   = $hctCourse;       
+        $businessPeriod = $MIOLO->getBusiness('academic','BusPeriod');
+        if ( is_null($this->getFormValue('periodId', $data->periodId)) ||
+             strlen((string)$this->getFormValue('periodId', $data->periodId)) == 0 )
+        {
+            $periodIdValue = CURRENT_PERIOD_ID;
+        }
+        else
+        {
+            $periodIdValue = $this->getFormValue('periodId', $data->periodId);
+        }
+
+        $periodIdLabel = new MText('periodIdLabel', _M('Period',$module).':');
+        $periodIdLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $periodIdLabel->setClass('m-caption m-caption-required');
+
+        $periodId = new MSelection('periodId', $periodIdValue, null , $businessPeriod->listPeriod(), true );
+        $flds[] = new MHContainer('hctPeriod', array ($periodIdLabel, $periodId));
+        $validators[] = new MRequiredValidator('periodId');
+
+        // tax
+        $taxLabel = new MText('taxLabel', _M('Tax',$module).':');
+        $taxLabel->setWidth(FIELD_CONTAINER_SIZE);
+		//$taxLabel->setClass('m-caption m-caption-required');
+
+        $business = $MIOLO->getBusiness('finance','BusTax');
+        $taxId = new MSelection('taxId', $this->getFormValue('taxId',$data->taxId), '', $business->listTax());
+        $taxId->setJsHint( _M('Choose the tax',$module) );
+        $validators[] = new MIntegerValidator('taxId',_M('Tax',$module), 'required');
+
+        $hctTax = new MHContainer('hctTax', array($taxLabel, $taxId, $taxDescription));
+        $hctTax->setShowLabel(true);
+        $flds[]   = $hctTax;
+
+        // Maturity Date
+        $maturityDateLabel = new MText('maturityDateLabel', _M('Maturity date', $module).':');
+        $maturityDateLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $maturityDateLabel->setClass('m-caption m-caption-required');
+        $maturityDate      = new MCalendarField('maturityDate', $this->getFormValue('maturityDate',$data->maturityDate), '', FIELD_DATE_SIZE);
+        $maturityDate->setJsHint(_M('Enter the initial maturity date',$module));
+        $validators[] = new MDATEDMYValidator('maturityDate');
+        $hctEMaturityDate   = new MHContainer('hctEmaturityDate', array($maturityDateLabel, $maturityDate));
+        $flds[]             = $hctEMaturityDate;
+
+        // Comments
+        $commentsLabel = new MText('commentsLabel', _M('Comments', $module).':');
+        $commentsLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $comments = new MMultiLineField('comments', $data->comments ? $data->comments : $this->getFormValue('comments',$data->comments), '', 80, 4, 80);
+        $comments->setJsHint(_M('Enter the comments',$module));
+        $flds[] = new MHContainer('hctMessage', array($commentsLabel, $comments));
+       
+        
+        $messageInvoiceLabel   = new MText('messageInvoiceLabel', _M('Invoice message', $module).':');
+		$messageInvoiceLabel->setWidth(FIELD_CONTAINER_SIZE);
+		$messageInvoice        = new MTextField('messageInvoice', $this->getFormValue('messageInvoice',$data->messageInvoice), '', FIELD_DESCRIPTION_SIZE);
+		$flds[]      = new MHContainer('hctMessageInvoice', array($messageInvoiceLabel, $messageInvoice));
+
+        $spanGenerate = new MSpan('spanSpacing', '<hr>');
+        $btnGenerate  = new MButton('btnGenerate', _M('Generate', $module), 'SUBMIT');
+        $sepDiv       = new MDiv('divGenerate', array($spanGenerate, $btnGenerate));
+        $sepDiv->setWidth('99%');
+        $mainFields[] = $sepDiv;
+        $flds[] = new MVContainer('vContainer', $mainFields);
+      
+        $this->addFields($flds);
+        $this->setValidators($validators);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+        $this->setClose($MIOLO->getActionURL($module, substr($action, 0, strrpos($action, ':'))));
+    }
+
+    /**
+     * Event triggered when user chooses Generate from the toolbar
+     **/
+    public function btnGenerate_click($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+        $goto   = MIOLO::_request('goto') ? MIOLO::_request('goto') : MIOLO::_request('goto', 'GET');
+        $db = $MIOLO->getBusiness('finance', 'BusTax');
+
+        $ok = $db->insertTaxPupil($this->getData());
+
+        if ( $ok )
+        {
+            $msg = _M('Invoices added with success', $module);
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action, null, $opts);
+            $MIOLO->information($msg, $goto);
+        }
+        else
+        {
+            $msg  = _M('Error executing requested operation.', $module);
+            
+            $goto = $this->getFormValue('goto');
+            if (!(strlen((string)$goto)>0))
+            {
+                $goto = SAGU::getStackBackUrl();
+            }
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            
+            $caption = _M('Error', $module);
+            $MIOLO->error($msg, $goto, $caption);
+        }
+    }
+
+}
+?>

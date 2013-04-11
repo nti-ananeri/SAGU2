@@ -1,0 +1,490 @@
+<?php
+
+/**
+ * Enroll confirmation form
+ *
+ * @author Leovan Tavares da Silva [alexsmith@solis.coop.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ *
+ * @since
+ * Class created on 18/04/2006
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2005 SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+
+/**
+ * Form to confirm an enroll
+ **/
+class FrmEnrollConfirmationNew extends MForm
+{
+    var $enrollData;
+    var $data;
+
+    /**
+     * Class constructor
+     **/
+    function __construct()
+    {
+
+        $action = MIOLO::getCurrentAction();
+        $module = MIOLO::getCurrentModule();
+        $MIOLO  = MIOLO::getInstance();
+
+
+        $this->enrollData = unserialize(urldecode(stripslashes(MIOLO::_request('enrollData'))));
+
+        parent::__construct(_M('Enroll confirmation', $module));
+
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $periodId       = $this->enrollData->periodId;
+        $contractId     = $this->enrollData->contractId;
+
+        $businessNewEnroll  = $MIOLO->getBusiness($module, 'BusEnrollNew');
+        if ( strlen((string)$this->enrollData->contractId) > 0 )
+        {
+            $business = $MIOLO->GetBusiness($module, 'BusContract');
+            $contract = $business->getContract($contractId);
+            $contract->periodId = $periodId;
+            $learningPeriod     = $businessNewEnroll->getLearningPeriod($contract);
+            $this->enrollData->learningPeriodId = $learningPeriod->learningPeriodId; 
+            $fields[] = new MHiddenField('periodId', $learningPeriod->periodId);
+            $fields[] = new MHiddenField('contractId', $this->getFormValue('contractId',$contractId));
+
+            $txtPeriodId = new MTextField('txtPeriodId', $learningPeriod->periodId, _M('Period id',$module), FIELD_ID_SIZE);
+            $txtPeriodId->setReadOnly(true);
+            $txtContractId = new MTextField('txtContractId', $contractId, _M('Contract id',$module), FIELD_ID_SIZE);
+            $txtContractId->setReadOnly(true);
+        
+            $txtPersonId = new MTextField('txtPersonId', $contract->personId, _M('Person id',$module), FIELD_ID_SIZE);
+            $txtPersonId->setReadOnly(true);
+            $txtPersonName = new MTextField('txtPersonName', $contract->personName, _M('Person name',$module), FIELD_DESCRIPTION_SIZE);
+            $txtPersonName->setReadOnly(true);
+        }
+        else
+        {
+            $learningPeriod     = $businessNewEnroll->getLearningPeriod($this->enrollData);
+            $this->enrollData->learningPeriodId = $learningPeriod->learningPeriodId; 
+            $fields[] = new MHiddenField('periodId', $learningPeriod->periodId);
+            $txtPeriodId = new MTextField('txtPeriodId', $learningPeriod->periodId, _M('Period id',$module), FIELD_ID_SIZE);
+            $txtPeriodId->setReadOnly(true);
+        }
+        
+        $txtParcelsNumber = new MTextField('txtParcelsNumber', $this->enrollData->parcelsNumber, _M('Parcels number', $module), FIELD_ID_SIZE);
+        $txtParcelsNumber->setReadOnly(true);
+
+        $cntLine1 = new MHContainer('cntLine1', array($txtPeriodId, $txtContractId, $txtPersonId, $txtPersonName, $txtParcelsNumber));
+
+        $txtCourseId = new MTextField('txtCourseId', $this->enrollData->courseId, _M('Course id',$module), FIELD_ID_SIZE);
+        $txtCourseId->setReadOnly(true);
+        $txtCourseVersion = new MTextField('txtCourseVersion', $this->enrollData->courseVersion, _M('Course version',$module), FIELD_ID_SIZE);
+        $txtCourseVersion->setReadOnly(true);
+        $txtCourseName = new MTextField('txtCourseName', $this->enrollData->courseName, _M('Course name',$module), 60);
+        $txtCourseName->setReadOnly(true);
+        $txtCourseTurnDescription = new MTextField('txtCourseTurnDescription', $this->enrollData->turnDescription, _M('Turn',$module), FIELD_DESCRIPTION_SIZE);
+        $txtCourseTurnDescription->setReadOnly(true);
+
+        $cntLine2 = new MHContainer('cntLine2', array($txtCourseId, $txtCourseVersion, $txtCourseName, $txtCourseTurnDescription));
+
+        $cntContractInfo = new MBaseGroup('cntContractInfo', _M('Enroll details', $module), array($cntLine1, $cntLine2), 'vertical');
+
+        $fields[] = $cntContractInfo;
+
+        $busGroup    = $MIOLO->getBusiness($module, 'BusGroup');
+        $busEnroll   = $MIOLO->getBusiness($module, 'BusEnroll');
+        $busSchedule = $MIOLO->getBusiness($module, 'BusSchedule');
+        
+        $cntSemester = new MVContainer('cntSemester');
+
+        if (count($this->enrollData->groupId) > 0)
+        {
+            foreach($this->enrollData->groupId as $groupId => $value )
+            {
+                $groupData = $busGroup->getGroup($groupId);
+                
+                $curricularComponentId      = $groupData->curriculumCurricularComponentId;
+                $curricularComponentVersion = $groupData->curriculumCurricularComponentVersion;
+                $curricularComponentName    = $groupData->curriculumCurricularComponentName;
+                $curriculumId               = $groupData->curriculumId;
+                $groupId                    = $groupData->groupId;
+                $vacant                     = $groupData->vacant;
+                $totalEnrolled              = strlen((string)$groupData->totalEnrolled) > 0 ? $groupData->totalEnrolled : 0;
+                
+                $substituted = $busEnroll->checkIfSubstituted($contractId, $learningPeriodId, $curriculumId);
+                if ( $substituted->curricularComponentId && $substituted->curricularComponentVersion )
+                {
+                    $businessCurricularComponent = $MIOLO->getBusiness($module, 'BusCurricularComponent');
+                    $curricularComponent = $businessCurricularComponent->getCurricularComponent($substituted->curricularComponentId, $substituted->curricularComponentVersion);
+                    $curricularComponentId      = $substituted->curricularComponentId;
+                    $curricularComponentVersion = $substituted->curricularComponentVersion;
+                    $curricularComponentName    = $curricularComponent->name . ' (' . $curricularComponentName . ')';
+                }
+
+                $txtCurricularComponentId = new MText('txtCurricularcomponentId_' . $curriculumId, "$curricularComponentId/$curricularComponentVersion");
+                $txtCurricularComponentId->addBoxStyle('width', '10%');
+
+                $txtCurricularComponentName = new MText('txtCurricularcomponentName_' . $curriculumId, "$curricularComponentName");
+                $txtCurricularComponentName->setBold(true);
+
+                $cntCurriculum = new MHContainer('cntCurriculum_' . $curriculumId, array($txtCurricularComponentId, $txtCurricularComponentName));
+
+                $cntGroups = new MBaseGroup('cntGroups_' . $curriculumId, null, 'vertical');
+
+                $txtVacancies = new MText('txtVacancies_' . $groupId, _M('Vacant', $module) . ": $totalEnrolled/$vacant");
+                $txtVacancies->setWidth(600);
+                //$txtVacancies->addBoxStyle('width', '100%');
+
+                $cntGroup = new MHContainer('cntGroup_' . $groupId, array($txtVacancies));
+
+                $cntGroups->addControl($cntGroup);
+                
+                $schedules = $busEnroll->getSchedules($groupId);
+                
+                if (count($schedules) > 0)
+                {
+                    $cntSchedules = new MVContainer('cntSchedules_' . $groupId);
+                    foreach ( $schedules as $schedule )
+                    {
+                        list ( $scheduleId,
+                               $beginDate,
+                               $beginHour,
+                               $endDate,
+                               $endHour,
+                               $turnId,
+                               $turnDescription,
+                               $turnBeginHour,
+                               $turnEndHour,
+                               $unitId,
+                               $unitDescription,
+                               $weekDayId,
+                               $weekDayDescription,
+                               $physicalResourceId,
+                               $physicalResourceVersion,
+                               $physicalResourceDescription ) = $schedule;
+
+                               $filters             = new AcdScheduleProfessor();
+                               $filters->scheduleId = $scheduleId;
+                               $businessScheduleProfessor = $MIOLO->getBusiness($module, 'BusScheduleProfessor');
+                               $professors                = $businessScheduleProfessor->searchScheduleProfessor($filters);
+                                  
+                        // schedule first column
+                        $txtUnit = new MText('txtUnit_' . $scheduleId, _M('Unit', $module) . ": $unitDescription");
+                        $txtWeekDay = new MText('txtWeekDay_' . $scheduleId, _M('Week day', $module) . ": $weekDayDescription");
+                        $txtPhysicalResource = new MText('txtPhysicalResource_' . $scheduleId, _M('Physical resource', $module) . ": $physicalResourceDescription");
+                        $cntScheduleCol1 = new MVContainer('cntScheduleCol1_' . $scheduleId, array($txtUnit, $txtWeekDay, $txtPhysicalResource));
+
+                        // schedule second column
+                        $txtTurn = new MText('txtTurn_' . $scheduleId, _M('Turn', $module) . ": $turnDescription");
+                        $txtBeginEndDate = new MText('txtBeginEndDate_' . $scheduleId, _M('Begin/End date', $module) . ": $beginDate - $endDate");
+                        $txtBeginEndHour = new MText('txtBeginEndHour_' . $scheduleId, _M('Begin/End hour', $module) . ": $beginHour - $endHour");
+                        $cntScheduleCol2 = new MVContainer('cntScheduleCol2_' . $scheduleId, array($txtTurn, $txtBeginEndDate, $txtBeginEndHour));
+
+                        //$cntScheduleCol3 = new MVContainer('cntScheduleCol3_' . $scheduleId, array($txtTurn, $txtBeginEndDate, $txtBeginEndHour));
+
+                        $cntSchedule = new MHContainer('cntSchedule_' . $scheduleId, array($cntScheduleCol1, $cntScheduleCol2, $cntScheduleCol3));
+
+                        $cntSchedules->addControl($cntSchedule);
+
+                        if ( count($professors)>0 )
+                        {
+                            unset($txtProfessor);
+                            foreach ( $professors as $professor )
+                            {
+                                $txtProfessor[] = new MText('txtProfessor_' . $scheduleId, _M('Professor', $module) . ": {$professor[2]}");
+                            }
+                                $cntProfessor = new MVContainer('cntProfessor_' . $scheduleId, $txtProfessor);
+                                $cntSchedules->addControl($cntProfessor);
+                        }
+                    } 
+                    $cntGroups->addControl($cntSchedules);
+                }
+                $cntSemester->addControl($cntCurriculum);
+                $cntSemester->addControl($cntGroups);
+            }
+        }
+        
+        $fields[] = $cntSemester;
+        $fields[] = new MSeparator();
+
+        //Financial summary
+        if ( ( MODULE_FINANCE_INSTALLED == 'YES' ) && ( $learningPeriod->isFinanceGenerate == DB_TRUE ) )
+        {
+            $this->data = $this->enrollData;
+            $business          = $MIOLO->getBusiness($module, 'BusEnroll');
+            $fakeEnrollSummary = $business->generateFakeEnrollSummary($this->data);
+
+            $busPrice          = $MIOLO->getBusiness('finance', 'BusPrice');
+            $busLearningPeriod = $MIOLO->getBusiness($module, 'BusLearningPeriod');
+            
+            $learningPeriodId  = $this->data->learningPeriodId;
+            $coursePrice       = $business->checkLearningPeriodPrice($learningPeriodId);
+            
+            while ( !$coursePrice )
+            {
+                $learningPeriodData = $busLearningPeriod->getLearningPeriod($learningPeriodId);
+                $learningPeriodId   = $learningPeriodData->previousLearningPeriodId;
+                
+                if (strlen((string)$learningPeriodId) > 0)
+                {
+                    $coursePrice = $business->checkLearningPeriodPrice($learningPeriodId);
+                }
+                else
+                {
+                    $coursePrice = true;
+                }
+            }
+            
+            if (strlen((string)$learningPeriodId) == 0)
+            {
+                $fields[] = new MText('priceErrors', '<b>' . _M('Impossible to get course price', $module) . '!</b>', 'red');
+            }
+            else
+            {
+                if ( $learningPeriodId != $this->data->learningPeriodId )
+                {
+                    $learningPeriodData = $busLearningPeriod->getLearningPeriod($learningPeriodId);
+                    $msg = _M('Using the prices of period', $module) . ' ' . $learningPeriodData->periodId . '. ' . _M('So, the values in financial summary may change', $module) . '.';
+                    $this->addInfo($msg);
+                }
+                
+                $fields[] = new MText('financialSummary', '<b>' . _M('Financial summary', $module) . ':</b>');
+
+                //taxa de matrícula
+                $busContract       = $MIOLO->getBusiness($module, 'BusContract');
+                $busLearningPeriod = $MIOLO->getBusiness($module, 'BusLearningPeriod');
+            
+                $contractData       = $busContract->getContract($this->data->contractId);
+                $learningPeriodData = $busLearningPeriod->getLearningPeriod($this->data->learningPeriodId);
+
+                $busReceivableInvoice = $MIOLO->getBusiness('finance', 'BusReceivableInvoice');
+
+                $haveEnrollFee = $busReceivableInvoice->haveEnrollFee($contractData->personId, $learningPeriodData->beginDate, $learningPeriodData->endDate, $contractData->courseId, $contractData->courseVersion, $contractData->unitId);
+
+                $enrollFeeDate = $busReceivableInvoice->generateMaturityDate($learningPeriodData->beginDate, $contractData->maturityDay);
+
+                //se tiver taxa de matrícula traz o título
+                if ( $haveEnrollFee != false )
+                {
+                    $enrollFee = $busReceivableInvoice->getEnrollFeeInformations($contractData->personId, $learningPeriodData->beginDate);
+
+                    $feeCount = 0;
+                    $fakeIncomes[$enrollFeeDate]->total = $enrollFee[0][5];
+                    foreach ( $enrollFee as $rowFee )
+                    {
+                        $fakeIncomes[$enrollFeeDate]->data[$feeCount++] = array($this->data->contractId, $rowFee[0], $rowFee[1], $rowFee[2], $rowFee[3], number_format($rowFee[4], 2, '.', ''), 5);
+                    }
+                }
+                //se nao tiver taxa de matricula
+                else
+                {
+                    $busDefaultOperations = $MIOLO->getBusiness('finance', 'BusDefaultOperations');
+                    $defaultOperation     = $busDefaultOperations->getDefaultOperations();
+
+                    $busOperation = $MIOLO->getBusiness('finance', 'BusOperation');
+                    $feeOperation = $busOperation->getOperation($defaultOperation->enrollTaxOperation);
+
+                    $priceArgs = array($this->data->learningPeriodId, $learningPeriodData->beginDate, $learningPeriodData->endDate);
+                    $price = $busPrice->getPrice($priceArgs);
+
+                    $fakeIncomes[$enrollFeeDate]->total = $price->enrollValue;
+                    $fakeIncomes[$enrollFeeDate]->data[0] = array($this->data->contractId, $feeOperation->operationId, $feeOperation->description, $feeOperation->operationTypeId, $enrollFeeDate, number_format($price->enrollValue, 2, '.', ''), 5);
+                    //ignora incentivos
+                    if ( GENERATE_INCENTIVES_ON_ENROLL_TAX_INVOICE == 'YES' )
+                    {
+                        $fakeIncomes[$enrollFeeDate]->data[1] = array(null, null, _M('If there are incentives in this contract, they shall be computed also in the tax of enrollment.','academic'), null, null, null);
+                    }
+                }
+
+                //simula as demais parcelas
+                $busFinance = $MIOLO->getBusiness('finance', 'BusIncomeForecast');
+                $res        = $business->simulateIncomeForecast($fakeEnrollSummary, $this->data->contractId, $this->data->learningPeriodId, $this->data->parcelsNumber, $learningPeriodId);
+
+                if ( count($res) > 0 )
+                {
+                    foreach ( $res as $fakeIncomeForecast )
+                    {
+                        list (  $contractId,
+                                $operationId,
+                                $operationDesc,
+                                $operationType,
+                                $maturityDate,
+                                $value,
+                                $parcelsNumber,
+                                $parcelsInitialNumber  ) = $fakeIncomeForecast;
+                                
+                        if ( $operationType == 'D' )
+                        {
+                            $fakeIncomes[$maturityDate]->total += $value;
+                        }
+                        elseif ( $fakeIncomes[$maturityDate]->total > 0 )
+                        {
+                            $fakeIncomes[$maturityDate]->total -= $value;
+                        }
+
+                        $fakeIncomes[$maturityDate]->data[] = array($contractId, $operationId, $operationDesc, $operationType, $maturityDate, number_format($value, 2, '.', ''), $parcelsNumber);
+                    }
+                }
+
+                //imprime na tela as previsões
+                if ( count($fakeIncomes) > 0 )
+                {
+                    $parcelIndex = 1;
+                    
+                    foreach ( $fakeIncomes as $maturityDate => $fakeParcelData )
+                    {
+                        $grdResults = $MIOLO->getUI()->getGrid($module,'GrdIncomeForecast',null);
+                        $grdResults->href = $MIOLO->getActionURL($module, $action, null, array('contractId'=>$this->data->contractId, 'learningPeriodId'=>$this->data->learningPeriodId));
+                        $grdResults->setData($fakeParcelData->data);
+
+                        $totalValue = number_format($fakeParcelData->total, 2, '.', '');
+                        
+                        if ($totalValue >= 0)
+                        {
+                            $fontColor = 'red';
+                        }
+                        else
+                        {
+                            $fontColor = 'blue';
+                        }
+                        
+                        $grdResults->setFooter(new MText('text' . $parcelIndex , '&nbsp;' . $space1 . 'Parcela: '. $parcelIndex . $space . ' Total no mês: <b><font color=\'' . $fontColor . '\'>' . $totalValue . '</font></b>'));
+                        $fields[] = $grdResults;
+                        $parcelIndex++;
+                    }
+                }
+            }
+        }
+        
+        $returnTo = substr($action,0,strrpos($action,':')) . ':enrollCurricularComponentsNew';
+        $confirm  = substr($action,0,strrpos($action,':')) . ':enrollConfirmed';
+        $sep1 = new MSeparator();
+        $vars       = array ( 'enrollData' => urlencode(serialize($this->enrollData)) );
+        $prevUrl    = $MIOLO->getActionURL($module, $returnTo, null, $vars);
+        $btnPrev = new MButton('btnPrev', '<< ' . _M('Previous', $module), $prevUrl);
+        $btnConfirm = new MButton('btnConfirm', _M('Confirm', $module));
+
+        //Error container
+        $divError        = new MDiv('divError', $lblMsg, null, 'align=center');
+        $fields[]        = $divError;
+
+        $controls[] = $sep1;
+        $controls[] = $btnPrev;        
+        
+        $controls[] = $btnConfirm;
+
+        $sep2    = new MSeparator();
+        $controls[] = $sep2;
+        $cntButtons = new MDiv('cntButtons', $controls, null, 'align=center');
+
+        $fields[] = $cntButtons;
+        
+        $this->setFields($fields);
+        $this->setShowPostButton(false);
+        $this->setClose(false);
+    }
+
+    function btnConfirm_click()
+    {
+        global $MIOLO, $module, $action;
+
+        $business = $MIOLO->GetBusiness($module, 'BusContract');
+        if ( strlen((string)$this->enrollData->contractId) > 0 )
+        {
+            $contract = $business->getContract($this->enrollData->contractId);
+        }
+
+        $business      = $MIOLO->getBusiness($module, 'BusCourseVersion');
+        $courseVersion = $business->getCourseVersion($this->enrollData->courseId, $this->enrollData->courseVersion);
+
+        /* VERIFICACAO FINANCEIRA */
+        /* Verifica se algum título financeiro de matrícula já foi lançado */
+        $busLearningPeriod = $MIOLO->getBusiness($module, 'BusLearningPeriod');
+        $learningPeriod    = $busLearningPeriod->getLearningPeriod($this->enrollData->learningPeriodId);
+
+        $businessFinance = $MIOLO->getBusiness('finance', 'BusReceivableInvoice');
+        $res = true; 
+        //$res             = $businessFinance->getEnrollFinancialStatus($learningPeriod->periodId, $this->enrollData->contractId, $this->enrollData->classId);
+        if ( $res == false )
+        {
+            $msg           = _M('The student already has invoices with operation of enroll for the period in question, so it is impossible to make the enroll. The correct procedure to be executed is the Addition or Cancellation of curricular components.', 'academic');
+            $lblMsg        = new MText('lblMsg', $msg);
+            $lblMsg->color = 'red';
+
+            $fields[] = $lblMsg;
+            $fields[] = new Separator('');
+
+            $this->divError->addControl($fields);
+        }
+        else
+        {
+            //Verificação se é matrícula seriada        
+            $this->data->isSerialEnrollProcess = false;
+
+            if ( in_array($courseVersion->courseVersionTypeId, explode(',', str_replace(' ', '', SERIAL_ENROLL_TYPE_IDS) ) ) )
+            {
+                $this->data->isSerialEnrollProcess = true;
+            }
+        
+            $filters->learningPeriodId = $this->enrollData->learningPeriodId;
+        
+            $business          = $MIOLO->getBusiness($module, 'BusEnroll');
+            $busLearningPeriod = $MIOLO->getBusiness($module, 'BusLearningPeriod');
+
+            //Verifica se é matrícual, matrícula para os bixos ou reajuste
+            $periodEnrollDate         = new acdPeriodEnrollDate();
+            $businessPeriodEnrollDate = $MIOLO->getBusiness($module, 'BusPeriodEnrollDate');
+            $periodEnrollDate         = $businessPeriodEnrollDate->getCurrentPeriodEnrollDate($this->enrollData->learningPeriodId);
+            $busFunctions             = $MIOLO->getBusiness('basic', 'BusFunctions');
+            $errorMsg = '';
+
+            if ( count($business->getErrors()) == 0 )
+            {
+                $vars       = array ( 'enrollData' => urlencode(serialize($this->enrollData)) );
+                $postAction = substr($action,0,strrpos($action,':')) . ':enrollConfirmedNew';
+                $postUrl    = $MIOLO->getActionURL($module, $postAction, null, $vars);
+                $this->page->mGoto($postUrl);
+            }
+            else
+            {
+                $msg  = _M('Error executing requested operation.', $module) . $errorMsg;
+                $goto = $MIOLO->getActionURL($module, $action);
+                $caption = _M('Error',$module);
+                $MIOLO->error( $msg, $goto, $caption );
+            }
+        }
+    }
+}
+
+?>

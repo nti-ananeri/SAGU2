@@ -1,0 +1,162 @@
+<?php
+
+/**
+ * Income forecast generation form
+ *
+ * @author Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ *
+ * @since
+ * Class created on 07/12/2005
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2005 SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+
+/**
+ * Form to control income forecast generation
+ **/
+class FrmIncomeForecastGeneration extends MForm
+{
+
+    /**
+     * Class constructor
+     **/
+    function __construct()
+    {
+
+        $module = MIOLO::getCurrentModule();
+        parent::__construct(null);
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $url      = $MIOLO->getActionURL($module, substr($action, 0, strrpos($action, ':')));
+
+        // Obtain learningPeriodId data for session
+	    $learningPeriodId = $MIOLO->session->getValue('learningPeriodId');
+        $learningPeriodId = is_array($learningPeriodId) ? implode(', ', $learningPeriodId) : $learningPeriodId;
+        
+        $MIOLO->session->setValue('learningPeriodId', null);
+
+        // Begin the process
+        $business         = $MIOLO->getBusiness($module, 'BusIncomeForecast');
+        $businessContract = $MIOLO->getBusiness('academic', 'BusContract');
+        if (!$business->generateIncomeForecast($learningPeriodId) )
+        {
+            $MIOLO->error(_M('Couldn\'t generate income forecasts.', $module), $url);
+        }
+        else
+        {
+            if (is_array($business->generationData->contracts))
+            {
+                $j = 0;
+                for ( $i=0; $i<count($business->generationData->contracts); $i++ )
+                {
+                    if ($contractList != $business->generationData->contracts[$i]->contractId)
+                    {
+                        $contractInfo = $businessContract->getContract($business->generationData->contracts[$i]->contractId);
+                        
+                        $dataContract[$i+$j][] = '<b>'.$business->generationData->contracts[$i]->contractId.' - '.$contractInfo->personName.' - ['.$contractInfo->courseName.' ('.$contractInfo->courseVersion.')]</b>';
+                        $dataContract[$i+$j][] = '';
+                        $dataContract[$i+$j][] = '';
+                        $j++;
+                        $contractList = $business->generationData->contracts[$i]->contractId;
+                    }
+                    $dataContract[$i+$j][] = $business->generationData->contracts[$i]->operationId;
+                    $dataContract[$i+$j][] = $business->generationData->contracts[$i]->parcelsNumber;
+                    $dataContract[$i+$j][] = SAGU::formatNumber($business->generationData->contracts[$i]->value);
+                }
+                $cols     = array(_M('Operation id', $module), _M('Parcels number', $module), _M('Value', $module));
+                $tableRaw = new MTableRaw(_M('Processed income forecasts', $module), $dataContract, $cols);
+                $tableRaw->setAlternate(true);
+                $fields[] = $tableRaw;
+            }
+            else
+            {
+                $fields[] = new MText('errormsg', '<b>'._M('No enroll summary found to process', $module).'</b>', 'red');
+            }
+        }
+        // pega dados nao processados por falta de valores no periodo letivo para o curso
+        $dataNotValue = $business->getIncomeForecastValueNull($learningPeriodId);
+        if(is_array($dataNotValue[0]))
+        {
+            $businessLearningPeriod = $MIOLO->getBusiness('academic', 'BusLearningPeriod');
+            foreach($dataNotValue as $key => $array)
+            {
+                $learningPeriodData = $businessLearningPeriod->getLearningPeriod($array[0]);
+                $args = array('learningPeriodId'=>$array[0], 
+                              'function'=>'insert', 
+                              'courseId'=>$learningPeriodData->courseId,
+                              'courseVersion'=>$learningPeriodData->courseVersion,
+                              'returnTo'=>'close');
+
+                $lnk = $MIOLO->getActionURL('finance', 'main:register:price', null, $args);
+                $lnkCourseValue = new MOpenWindow('courseValue'.$key, $array[0], $lnk);
+                $dataNotValue[$key][0] = $lnkCourseValue->generate();
+            }
+            $cols      = array( _M('Learning period id', $module), 
+                                _M('Enroll summaries to process', $module), 
+                                _M('Course name', $module), 
+                                _M('Course unit', $module));
+
+            $tableRaw2 = new MTableRaw(_M('Income forecasts not processed by course value not registered', $module), $dataNotValue, $cols);
+
+            $sep = new MSeparator('<hr>');
+            $sep->setWidth('99%');
+            $fields[] = $sep;
+            $fields[] = $tableRaw2;                            
+        }
+
+        $sep      = new MText('sep', '<hr>');
+        $fields[] = $sep;
+        $close = MIOLO::_request('close') ? MIOLO::_request('close') : MIOLO::_request('close', 'GET');
+        if ($close == true)
+        {
+            $url = $MIOLO->getActionURL( 'basic', 'html:scripts:sagu.js' );
+            $this->page->scripts->add($url);
+            $action = 'javascript:closeAndReload()';
+        }
+        else
+        {
+            $action = $MIOLO->getActionURL($module, 'main:process:incomeForecastGenerationCourse');
+        }
+        $button[] = new MButton('btnOk', _M('OK', $module), $action); 
+        $fields[] = new MDiv('divButton', $button, null, 'align="center"');
+        $fields[] = new MSeparator('');
+
+        $this->setFields($fields);
+        $this->setShowPostButton(false);
+    }
+
+}
+
+?>

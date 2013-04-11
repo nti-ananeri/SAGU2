@@ -1,0 +1,247 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for acdProfessorCurricularComponent table
+ *
+ * @author Flaudizio B. S. Filho [flaudizio@yahoo.com.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 18/12/2006
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to manipulate the acdProfessorCurricularComponent table
+ **/
+class BusinessAcademicBusProfessorCurricularComponent extends Business
+{
+
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic', 'sagu');
+        $module = is_null($module) ? 'academic' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+    
+    /**
+     * Return a specific record from the database
+     *
+     * @param $professorCurricularComponentId (integer): Primary key of the record to be retrieved
+     *
+     * @return (object): Return an object of the type handled by the class
+     *
+     **/
+    public function getProfessorCurricularComponent($professorCurricularComponentId)
+    {
+        $sql = 'SELECT A.professorCurricularComponentId,
+                       A.professorId,
+                       B.name,
+                       A.curricularComponentId,
+                       A.curricularComponentVersion,
+                       C.name,
+                       A.userName,
+                       TO_CHAR(A.dateTime,\'' . MASK_TIMESTAMP . '\'),
+                       A.ipAddress
+                  FROM acdProfessorCurricularComponent A
+       INNER JOIN ONLY basPhysicalPersonProfessor B
+                    ON (B.personId = A.professorId)
+       INNER JOIN ONLY acdCurricularComponent C
+                    ON (    A.curricularComponentId = C.curricularComponentId
+                        AND A.curricularComponentVersion = C.curricularComponentVersion ) 
+                 WHERE professorCurricularComponentId = ? ';
+
+        $db     = $this->getDatabase();
+        $result = $db->query(SAGU::prepare($sql, $professorCurricularComponentId));
+        //$db->close();
+
+        $professorCurricularComponent = new acdProfessorCurricularComponent();
+        list ( $professorCurricularComponent->professorCurricularComponentId,
+               $professorCurricularComponent->professorId,
+               $professorCurricularComponent->professorName,
+               $professorCurricularComponent->curricularComponentId,
+               $professorCurricularComponent->curricularComponentVersion,
+               $professorCurricularComponent->curricularComponentName,
+               $professorCurricularComponent->userName,
+               $professorCurricularComponent->dateTime,
+               $professorCurricularComponent->ipAddress ) = $result[0];
+
+        return $professorCurricularComponent; 
+    }
+    
+    /**
+     * Do a search on the database table handled by the class
+     *
+     * @param $filters (object): Search filters
+     *
+     * @return (array): An array containing the search results
+     **/
+    public function searchProfessorCurricularComponent($filters)
+    {
+        $sql = 'SELECT A.professorCurricularComponentId,
+                       A.professorId,
+                       B.name,
+                       A.curricularComponentId || \' / \' || A.curricularComponentVersion,
+                       C.name
+                  FROM acdProfessorCurricularComponent A
+       INNER JOIN ONLY basPhysicalPersonProfessor B
+                    ON (B.personId = A.professorId)
+       INNER JOIN ONLY acdCurricularComponent C
+                    ON (    A.curricularComponentId = C.curricularComponentId
+                        AND A.curricularComponentVersion = C.curricularComponentVersion )';
+        
+        if ( strlen((string)$filters->professorCurricularComponentId) > 0 )
+        {
+            $where .= ' AND A.professorCurricularComponentId = ? ';
+            $args[] = $filters->professorCurricularComponentId;
+        }
+        if ( strlen((string)$filters->professorId) > 0 )
+        {
+            $where .= ' AND A.professorId = ? ';
+            $args[] = $filters->professorId;
+        }
+        if ( strlen((string)$filters->professorName) > 0 )
+        {
+            $where .= ' AND TO_ASCII(B.name) ILIKE TO_ASCII(?) ';
+            $args[] = $filters->professorName.'%';
+        }
+        if ( strlen((string)$filters->curricularComponentId) > 0 )
+        {
+            $where .= ' AND A.curricularComponentId = ? ';
+            $args[] = $filters->curricularComponentId;
+        }
+        if ( strlen((string)$filters->curricularComponentVersion) > 0 )
+        {
+            $where .= ' AND A.curricularComponentVersion = ?';
+            $args[] = $filters->curricularComponentVersion;
+        }
+        if ( strlen((string)$filters->curricularComponentName) > 0 )
+        {
+            $where .= ' AND TO_ASCII(C.name) ILIKE TO_ASCII(?)';
+            $args[] = $filters->curricularComponentName .'%';
+        }        
+
+        unset($result);
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql.= ' WHERE ' . substr($where, 4) . '
+                  ORDER BY B.name,
+                           C.name ';
+            $db = $this->getDatabase();
+            $result = $db->query(SAGU::prepare($sql, $args));
+            //$db->close();
+        }
+
+        return $result;
+    }
+
+    /**
+     * Insert a new record
+     *
+     * @param $data (object): An object of the type handled by the class
+     *
+     * @return True if succed, otherwise False
+     *
+     **/
+    public function insertProfessorCurricularComponent($data)
+    {
+        $sql = 'INSERT INTO acdProfessorCurricularComponent
+                            (professorId,
+                             curricularComponentid,
+                             curricularComponentVersion)
+                     VALUES (?,?,?) ';
+
+        $args = array( $data->professorId,
+                       $data->curricularComponentId,
+                       $data->curricularComponentVersion );
+
+        $db     = $this->getDatabase();
+        $result = $db->execute(SAGU::prepare($sql, $args));
+        //$db->close();
+        return $result;
+    }
+
+    /**
+     * Update data from a specific record
+     *
+     * @param $data (object): Data which will replace the old record data
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+   public function updateProfessorCurricularComponent($data)
+    {
+        $sql = 'UPDATE acdProfessorCurricularComponent
+                   SET professorId                   = ?,
+                       curricularComponentId         = ?,
+                       curricularComponentVersion    = ?
+                 WHERE professorCurricularComponentId = ? ';
+
+        $args = array( $data->professorId,
+                       $data->curricularComponentId,
+                       $data->curricularComponentVersion,
+                       $data->professorCurricularComponentId );
+
+        $db   = $this->getDatabase();
+        $sqls = SAGU::prepare($sql, $args);
+
+        for ( $i=0; $i<count($sqls); $i++ )
+        {
+            $result = $db->execute($sqls[$i]);
+        }
+
+        //$db->close();
+
+        return $result;
+    }
+
+    /**
+     * Delete a record
+     *
+     * @param $professorCurricularComponentId (string): Primary key for deletion
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+   public function deleteProfessorCurricularComponent($professorCurricularComponentId)
+    {
+        $sql = 'DELETE FROM acdProfessorCurricularComponent
+                      WHERE professorCurricularComponentId = ? ';
+
+        $db     = $this->getDatabase();
+        $result = $db->execute(SAGU::prepare($sql, $professorCurricularComponentId));
+        //$db->close();
+        return $result;
+    }
+}
+?>

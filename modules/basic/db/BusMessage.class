@@ -1,0 +1,283 @@
+<?php
+
+/**
+ * Class to manipulate the basMessage table
+ **/
+class BusinessBasicBusMessage extends Business
+{
+
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic', 'sagu');
+        $module = is_null($module) ? 'basic' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+    
+    /**
+     * Return a specific record from the database
+     *
+     * @param $messageId (integer): Primary key of the record to be retrieved
+     *
+     * @return (object): Return an object of the type handled by the class
+     *
+     **/
+    public function getMessage($messageId)
+    {
+        $sql = 'SELECT A.messageId,
+                       A.fromPersonId,
+                       B.name as fromPersonName,
+                       A.toPersonId,
+                       C.name as toPersonName,
+                       A.title,
+                       A.message,
+                       TO_CHAR(A.messageDate,\'' . MASK_DATE . '\') as messageDate,
+                       TO_CHAR(A.beginDate,\'' . MASK_DATE . '\') as beginDate,
+                       TO_CHAR(A.endDate,\'' . MASK_DATE . '\') as endDate,
+                       toPersonType,
+                       isMarked,
+                       A.userName,
+                       TO_CHAR(A.dateTime,\'' . MASK_TIMESTAMP . '\'),
+                       A.ipAddress
+                  FROM basMessage A
+       INNER JOIN ONLY basPerson B
+                    ON (B.personId = A.fromPersonId)
+       INNER JOIN ONLY basPerson C
+                    ON (C.personId = A.toPersonId)
+                 WHERE A.messageId = ? ';
+
+        $db     = $this->getDatabase();
+        $result = $db->query(SAGU::prepare($sql, $messageId));
+        //$db->close();
+
+        $message = new basMessage();
+        list ( $message->messageId,
+               $message->fromPersonId,
+               $message->fromPersonName,
+               $message->toPersonId,
+               $message->toPersonName,
+               $message->title,
+               $message->message,
+               $message->messageDate,
+               $message->beginDate,
+               $message->endDate,
+               $message->toPersonType,
+               $message->isMarked,
+               $message->userName,
+               $message->dateTime,
+               $message->ipAddress ) = $result[0];
+
+        return $message; 
+    }
+    
+    /**
+     * Do a search on the database table handled by the class
+     *
+     * @param $filters (object): Search filters
+     *
+     * @return (array): An array containing the search results
+     **/
+    public function searchMessage($filters)
+    {
+        $sql = 'SELECT A.messageId,
+                       A.fromPersonId,
+                       B.name as fromPersonName,
+                       A.toPersonId,
+                       C.name as toPersonName,
+                       A.title,
+                       A.message,
+                       TO_CHAR(A.messageDate,\'' . MASK_DATE . '\') as messageDate,
+                       TO_CHAR(A.beginDate,\'' . MASK_DATE . '\') as beginDate,
+                       TO_CHAR(A.endDate,\'' . MASK_DATE . '\') as endDate,
+                       A.toPersonType,
+                       A.isMarked
+                  FROM basMessage A
+       INNER JOIN ONLY basPerson B
+                    ON (B.personId = A.fromPersonId)
+       INNER JOIN ONLY basPerson C
+                    ON (C.personId = A.toPersonId) ';
+
+        if ( strlen((string)$filters->messageId) > 0 )
+        {
+            $where .= ' AND A.messageId = ? ';
+            $args[] = $filters->messageId;
+        }
+
+        if ( strlen((string)$filters->fromPersonId) > 0 )
+        {
+            $where .= ' AND A.fromPersonId = ? ';
+            $args[] = $filters->fromPersonId;
+        }
+
+        if ( strlen((string)$filters->toPersonId) > 0 )
+        {
+            $where .= ' AND A.toPersonId = ? ';
+            $args[] = $filters->toPersonId;
+        }
+
+        if ( strlen((string)$filters->toPersonType) > 0 )
+        {
+            $where .= ' AND A.toPersonType ILIKE ? ';
+            $args[] = $filters->toPersonType;
+        }
+
+        if ( strlen((string)$filters->isMarked) > 0 )
+        {
+            $where .= ' AND A.isMarked = ? ';
+            $args[] = $filters->isMarked;
+        }
+
+        if ( strlen((string)$filters->date) > 0 )
+        {
+            $where .= ' AND TO_DATE(?,\'' . MASK_DATE . '\') BETWEEN A.beginDate AND A.endDate ';
+            $args[] = $filters->date;
+        }
+
+        unset($result);
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql.= ' WHERE ' . substr($where, 4) . '
+                  ORDER BY A.messageDate DESC';
+            $db = $this->getDatabase();
+            $result = $db->query(SAGU::prepare($sql, $args));
+            //$db->close();
+        }
+
+        return $result;
+    }
+
+    /**
+     * Insert a new record
+     *
+     * @param $data (object): An object of the type handled by the class
+     *
+     * @return True if succed, otherwise False
+     *
+     **/
+    public function insertMessage($data)
+    {
+        $sql = 'INSERT INTO basMessage
+                            (messageId,
+                             fromPersonId,
+                             toPersonId,
+                             title,
+                             message,
+                             beginDate,
+                             endDate,
+                             toPersonType)
+                     VALUES (nextval(\'seq_messageid\'),?,?,?,?,
+                             to_date(?, \''.MASK_DATE.'\'),
+                             to_date(?, \''.MASK_DATE.'\'), ?) ';
+
+        $args = array( $data->fromPersonId,
+                       $data->toPersonId,
+                       $data->title,
+                       $data->message,
+                       $data->beginDate,
+                       $data->endDate,
+                       $data->toPersonType );
+
+        $db     = $this->getDatabase();
+        $result = $db->execute(SAGU::prepare($sql, $args, false));
+        //$db->close();
+        return $result;
+    }
+
+    /**
+     * Update a record
+     *
+     * @param $data (object): An object of the type handled by the class
+     *
+     * @return True if succed, otherwise False
+     *
+     **/
+    public function updateMessage($data)
+    {
+        $sql = 'UPDATE basMessage
+                   SET title        = ?,
+                       message      = ?,
+                       beginDate    = ?,
+                       endDate      = ?,
+                       toPersonType = ?
+                 WHERE messageId    = ?';
+
+        $args = array( $data->title,
+                       $data->message,
+                       $data->beginDate,
+                       $data->endDate,
+                       $data->toPersonType,
+                       $data->messageId );
+
+        $db     = $this->getDatabase();
+        $result = $db->execute(SAGU::prepare($sql, $args, false));
+
+        return $result;
+    }
+
+    /**
+     * Delete a record
+     *
+     * @param $messageId (string): Primary key for deletion
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+    public function deleteMessage($messageId)
+    {
+        $sql = 'DELETE FROM basMessage
+                      WHERE messageId = ? ';
+
+        $db     = $this->getDatabase();
+        $result = $db->execute(SAGU::prepare($sql, $messageId));
+        //$db->close();
+        return $result;
+    }
+
+    /**
+     * Update is marked field to true
+     *
+     * @param $data (object): An object of the type handled by the class
+     *
+     * @return True if succed, otherwise False
+     *
+     **/
+    public function updateMessageMarked($messageId)
+    {
+
+        $sql = 'SELECT isMarked
+                  FROM basMessage
+                 WHERE messageId = ? ';
+
+        $db     = $this->getDatabase();
+        $result = $db->query(SAGU::prepare($sql, $messageId));
+
+        if ( $result[0][0] == DB_TRUE )
+        {
+            $sql = 'UPDATE basMessage
+                       SET isMarked  = false
+                     WHERE messageId = ?';
+        }
+        else
+        {
+            $sql = 'UPDATE basMessage
+                       SET isMarked  = true
+                     WHERE messageId = ?';
+        }
+
+        $db     = $this->getDatabase();
+        $result = $db->execute(SAGU::prepare($sql, $messageId));
+
+        return $result;
+    }
+
+}
+?>

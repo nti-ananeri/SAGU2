@@ -1,0 +1,169 @@
+<?php
+
+/**
+ *
+ * This file handles the connection and actions for basCity table
+ *
+ * @author Daniel Afonso Heisler [daniel@solis.coop.br] 
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 02/05/2005
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Form to search the basCity table
+ */
+class FrmCitySearch extends MForm
+{
+    private $home;
+    private $module;
+
+    /**
+     * Class constructor
+     */
+    function __construct($data)
+    {
+
+        $this->module = 'basic';
+        $module       = $this->module;
+
+        $this->home   = $data->home;
+
+        parent::__construct(_M('Search',$module));
+
+        // hide the 'Submit' button
+        $this->setShowPostButton(false);
+
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+
+    }
+
+    /**
+     *  Default method to define fields
+     */
+    public function createFields()
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $toolBar = new MToolBar('toolBar',$MIOLO->getActionURL($module,$action));
+//        $toolBar->disableButton('tbBtnSearch');
+        $toolBar->disableButton('tbBtnSave');
+        $toolBar->disableButton('tbBtnDelete');
+//        $toolBar->disableButton('tbBtnPrint');
+
+
+        //favoritos
+        $enabledImage  = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-20x20.png');
+        $disabledImage = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-disabled-20x20.png');
+        $url           = $MIOLO->getActionURL($module, $this->home, null, array('function' => 'search', 'event' => 'bookmark'));
+        $toolBar->addButton('tbBtnBookmark', _M('Add to bookmarks', 'basic'), $url, null, true, $enabledImage, $disabledImage);
+
+        if ( MIOLO::_request('event') == 'bookmark' )
+        {
+            $MIOLO->getClass('basic', 'access');
+            access::insert('City', $this->home, 'city-16x16.png', true);
+        }
+        //fim favoritos
+
+        $fields[] = $toolBar;
+
+//         $cityIdS = new MTextField('cityIdS', $this->cityIdS->value, _M('City id',$module), 10);
+//         $cityIdS->setJsHint(_M('Enter the city code',$module));
+//         $fields[] = $cityIdS;
+
+        $fields[]  = new MHiddenField('cityIdS', $this->getFormValue('cityIdS', $cityIdS));
+
+        $cityNameS = new MTextField('cityNameS', $this->cityNameS->value, _M('City',$module), FIELD_DESCRIPTION_SIZE);
+        $cityNameS->setJsHint(_M('Enter the city name',$module));
+        $fields[] = $cityNameS;
+
+        $zipCodeS = new MTextField('zipCodeS', $this->zipCodeS->value, _M('Zip code',$module), FIELD_ZIPCODE_SIZE);
+        $zipCodeS->setJsHint(_M('Enter the city zip code',$module));
+        $fields[] = $zipCodeS;
+        $validators[] = new MRangeValidator('zipCodeS', '', '00000000', '99999999', 'i', 'optional');
+
+        $business = $MIOLO->GetBusiness($module, 'BusCountry');
+        $args = $business->listCountry();
+
+        $data->countryIdS->value = $this->getFormValue('countryIdS', $this->countryIdS->value ? $this->coutryIdS->value : DEFAULT_COUNTRY_ID);
+        $countryIdS = new MComboBox('countryIdS', $this->countryIdS->value, _M('Country id',$module), $args);
+        $countryIdS->setJsHint(_M('Enter the state country',$module));
+        $countryIdS->setAutoSubmit(true);
+        $fields[] = $countryIdS;
+
+        if ( $data->countryIdS->value )
+        {
+
+            $business = $MIOLO->GetBusiness($module, 'BusState');
+            $options = $business->listState($data->countryIdS->value);
+            // este if deve permanecer ate que o problema de o $options nao poder ser
+            // nulo ser resolivdo pelo MIOLO2.
+            if ( count($options) == 0 )
+            {
+                $options = array();
+            }
+
+            $stateIdS = new MComboBox('stateIdS', $this->stateIdS->value, _M('State id',$module), $options);
+            $stateIdS->setJsHint(_M('Enter the state',$module));
+            $fields[] = $stateIdS;
+        }
+
+        $fields[] = new MButton('btnSearch',_M('Search',$module));
+
+        $this->setFields($fields);
+
+        // get filters values
+        $filters->cityId      = $this->cityIdS->value;
+        $filters->name        = $this->cityNameS->value;
+        $filters->zipCode     = $this->zipCodeS->value;
+        $filters->countryId   = $this->countryIdS->value;
+        $filters->stateId     = $this->stateIdS->value;
+
+        unset($this->cityIdS->value);
+
+        $grdResults = $MIOLO->getUI()->getGrid($module,'GrdCitySearch',$filters);##
+        $business   = $this->manager->getBusiness($module,'BusCity');
+        $data       = $business->searchCity($filters);
+        $grdResults->setData($data);
+
+        //###GRID///is_array($data) ? $grdResults->SetScrollHeight(GRID_SCROLL_HEIGHT) : false;
+
+        $this->addField($grdResults);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+
+        if ( $this->isSubmitted() )
+        {
+            $this->page->onLoad('document.' . $this->name . '.cityIdS.focus();');
+        }
+
+    }
+
+}
+
+?>

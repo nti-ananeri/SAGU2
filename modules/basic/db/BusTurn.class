@@ -1,0 +1,275 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for basTurn table
+ *
+ * @author Mauricio de Castro [mcastro@solis.coop.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Mauricio de Castro [mcastro@solis.coop.br]
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ *
+ * @since
+ * Class created on 10/08/2005
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Solucoes Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to manipulate the basTurn table
+ **/
+class BusinessBasicBusTurn extends Business
+{
+
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module = is_null($module) ? 'basic' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+    /**
+     * List all records from the table handled by the class
+     *
+     * @param: None
+     *
+     * @returns (array): Return an array with the entire table
+     *
+     **/
+    public function listTurn()
+    {
+        $db  = $this->getDatabase();
+        $sql = 'SELECT turnId,
+                       description,
+                       shortDescription,
+                       TO_CHAR(beginHour,\'' . MASK_TIME . '\'),
+                       TO_CHAR(endHour,\'' . MASK_TIME . '\'),
+                       charId
+                  FROM basTurn   
+              ORDER BY description';
+        $ret = $db->query($sql);
+        //$db->close();
+        return $ret;
+    }
+    
+    /**
+     * Return a specific record from the database
+     *
+     * @param $turnId (integer): Primary key of the record to be retrieved
+     *
+     * @return (object): Return an object of the type handled by the class
+     *
+     **/
+    public function getTurn($turnId)
+    {
+        $sql = 'SELECT turnId,
+                       description,
+                       shortDescription,
+                       TO_CHAR(beginHour,\'' . MASK_TIME . '\'),
+                       TO_CHAR(endHour,\'' . MASK_TIME . '\'),
+                       charId,
+                       userName,
+                       TO_CHAR(dateTime,\'' . MASK_TIMESTAMP . '\'),
+                       ipAddress
+                  FROM basTurn
+                 WHERE turnId = ?';
+
+        $db     = $this->getDatabase();
+        $result = $db->query(SAGU::prepare($sql, $turnId));
+        //$db->close();
+
+        $turn = new basTurn();
+        list ( $turn->turnId,
+               $turn->description,
+               $turn->shortDescription,
+               $turn->beginHour,
+               $turn->endHour,
+               $turn->charId,
+               $turn->userName,
+               $turn->dateTime,
+               $turn->ipAddress ) = $result[0];
+        return $turn; 
+    }
+    
+    /**
+     * Do a search on the database table handled by the class
+     *
+     * @param $filters (object): Search filters
+     *
+     * @return (array): An array containing the search results
+     **/
+    public function searchTurn($filters)
+    {
+
+        $sql= 'SELECT turnId,
+                      description,
+                      shortDescription,
+                      TO_CHAR(beginHour,\'' . MASK_TIME . '\'),
+                      TO_CHAR(endHour,\'' . MASK_TIME . '\'),
+                      charId
+                 FROM basTurn ';
+
+        if ( strlen((string)$filters->turnId) > 0 )
+        {
+            $where .= ' AND turnId = ? ';
+            $args[] = $filters->turnId;
+        }
+        if ( strlen((string)$filters->description) > 0 )
+        {
+            $where .= ' AND TO_ASCII(description) ILIKE TO_ASCII(?) ';
+            $args[] = $filters->description . '%';
+        }
+        if ( strlen((string)$filters->shortDescription) > 0 )
+        {
+            $where .= ' AND TO_ASCII(shortDescription) ILIKE TO_ASCII(?) ';
+            $args[] = $filters->shortDescription . '%';
+        }
+        if ( strlen((string)$filters->beginHour) > 0 )
+        {
+            $where .= ' AND TO_TIMESTAMP(beginHour, \'' . MASK_TIME . '\') >= TO_TIMESTAMP(?, \'' . MASK_TIME . '\') ';
+            $args[] = $filters->beginHour;
+        }
+        if ( strlen((string)$filters->endHour) > 0 )
+        {
+            $where .= ' AND TO_TIMESTAMP(endHour, \'' . MASK_TIME . '\') <= TO_TIMESTAMP(?, \'' . MASK_TIME . '\') ';
+            $args[] = $filters->endHour ;
+        }
+        if ( strlen((string)$filters->charId) > 0 )
+        {
+            $where .= ' AND charId ILIKE ? ';
+            $args[] = $filters->charId . '%';
+        }
+
+        unset($result);
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE ' . substr($where, 4) . ' ORDER BY description';
+            $db = $this->getDatabase();
+            $result = $db->query(SAGU::prepare($sql, $args));
+            //$db->close();
+        }
+        return $result;
+    }
+
+    /**
+     * Insert a new record
+     *
+     * @param $data (object): An object of the type handled by the class
+     *
+     * @return True if succed, otherwise False
+     *
+     **/
+    public function insertTurn($data)
+    {
+        $sql = 'INSERT INTO basTurn
+                            (description,
+                             shortDescription,
+                             beginHour,
+                             endHour,
+                             charId)
+                     VALUES (?,
+                             ?,
+                             TO_TIMESTAMP(?, \'' . MASK_TIME . '\'),
+                             TO_TIMESTAMP(?, \'' . MASK_TIME . '\'),
+                             ?)';
+
+        $args = array( $data->description,
+                       $data->shortDescription,
+                       $data->beginHour,
+                       $data->endHour,
+                       $data->charId );
+
+        $db     = $this->getDatabase();
+        $result = $db->execute(SAGU::prepare($sql, $args));
+        //$db->close();
+
+        return $result;
+    }
+
+    /**
+     * Update data from a specific record
+     *
+     * @param $data (object): Data which will replace the old record data
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+   public function updateTurn($data)
+    {
+        $sql = 'UPDATE basTurn
+                   SET description      = ?,
+                       shortDescription = ?,
+                       beginHour        = TO_TIMESTAMP(?, \'' . MASK_TIME . '\'),
+                       endHour          = TO_TIMESTAMP(?, \'' . MASK_TIME . '\'),
+                       charId           = ?
+                 WHERE turnId = ?';
+
+        $args = array( $data->description,
+                       $data->shortDescription,
+                       $data->beginHour,
+                       $data->endHour,
+                       $data->charId,
+                       $data->turnId );
+
+        $db   = $this->getDatabase();
+        $sqls = SAGU::prepare($sql, $args);
+
+        for ( $i=0; $i<count($sqls); $i++ )
+        {
+            $result = $db->execute($sqls[$i]);
+        }
+
+        //$db->close();
+
+        return $result;
+    }
+
+    /**
+     * Delete a record
+     *
+     * @param $turnId (string): Primary key for deletion
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+   public function deleteTurn($turnId)
+    {
+        $sql = 'DELETE FROM basTurn
+                      WHERE turnId = ?';
+
+        $db     = $this->getDatabase();
+        $result = $db->execute(SAGU::prepare($sql, $turnId));
+        //$db->close();
+
+        return $result;
+    }
+
+}
+
+?>

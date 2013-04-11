@@ -1,0 +1,147 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for finSpecies table
+ *
+ * @author Rudi Uhrig Neto [rudi@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 20/12/2005
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to manipulate the finSpecies table
+ **/
+class BusinessFinanceBusImportReturn748 extends Business
+{
+    private $db;
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $this->db = $MIOLO->getDatabase($module, 'finance');
+    }
+
+   /**
+    * Process 
+    *
+    * @param $sqlData (array): 
+    *
+    * @return (boolean): True if succeed
+    *
+    */
+    public function processReturn($sqlData)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        if (is_array($sqlData->sql))
+        {
+            // This needed for sagu1 conversion
+            $businessInvoice = $MIOLO->getBusiness($module, 'BusInvoice');
+
+            // --
+            $this->db->execute('BEGIN TRANSACTION');
+            for ($x = 0; $x<count($sqlData->sql); $x++)
+            {
+                $return->data[$x]['importInfo'] = $sqlData->occurrency[$x]['description'];
+                // -- This needed for sagu1 conversion
+                $invoiceId = $businessInvoice->getInvoiceIdBySagu1InvoiceId($sqlData->sql[$x][0]);
+                if ($invoiceId != false)
+                {
+                    $sqlData->sql[$x][0] = $invoiceId;
+                }
+                if (is_int($sqlData->sql[$x][0]))
+                {
+                    if ($businessInvoice->verifyInvoice($sqlData->sql[$x][0]))
+                    {
+                        // -- 
+                        $sql = ' INSERT INTO finEntry (invoiceId,
+                                                       operationId,
+                                                       entryDate,
+                                                       value,
+                                                       costCenterId,
+                                                       comments,
+                                                       isAccounted)
+                                               VALUES (?, ? , to_date(?, \''.MASK_DATE .' \'), ?, ?, ?, ?) ';
+                        
+                        $keepGoing = $this->db->execute(SAGU::prepare($sql, $sqlData->sql[$x]));
+                        if ($keepGoing === false)
+                        {
+                            $this->closeTransaction(false);
+                            $return->data[$x]['information'] = _M('Error on import. Transaction canceled.', $module);
+                            break 4;
+                        }
+                        else
+                        {
+                            $return->data[$x]['information'] = _M('Imported with success', $module);
+                        }
+                    }
+                    else
+                    {
+                        $return->data[$x]['information'] = _M('Invoice does not exists', $module);
+                    }
+                }
+                else
+                {
+                    $return->data[$x]['information'] = _M('Invoice code is invalid', $module);
+                }
+                $return->data[$x]['invoiceId'] = $sqlData->invoice[$x];
+            }
+            $return->status = $keepGoing !== false ? true : false;
+
+            return $return;
+        }
+    }
+
+    /**
+     * Function to close the transaction, depending the status make a commit or rollback
+     *
+     * @param $status (boolean): The status of "normally" keepGoing variable indicating to get a commit or rollback
+     *
+     */
+    private function closeTransaction($status)
+    {
+        if ($status == true)
+        {
+            echo "COMMIT";
+//          $this->db->execute('COMMIT');
+            return true;
+        }
+        else
+        {
+            echo "ROLLBACK";
+            $this->db->execute('ROLLBACK');
+            return false;
+        }
+    }
+}
+?>

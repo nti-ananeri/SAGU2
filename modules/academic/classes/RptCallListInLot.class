@@ -1,0 +1,250 @@
+<?
+/**
+ *
+ * @author Giovani Murilo Dantas Correa [gmurilo@isolution.inf.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Daniel Afonso Heisler [daniel@isolution.inf.br]
+ *
+ * @since
+ * Class created on 23/03/2009
+ *
+ * \b Organization: \n
+ * iSolution - Soluções de Internet \n
+ * The iSolution TEAM
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2007 iSolution - Soluções de Internet \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://isolution.inf.br
+ *
+ **/
+set_time_limit(0);
+$MIOLO = MIOLO::getInstance();
+
+define('FPDF_FONTPATH', $MIOLO->getModulePath('basic', '/classes/fpdf/font/'));
+$MIOLO->getClass('academic', 'RptCallList');
+
+class RptCallListInLot extends RptCallList
+{
+  public $module = 'academic';
+
+  public function __construct($filtersx = NULL)
+  {
+
+    if ( is_array($filtersx->groupId[0]) )
+    {
+      $a = $filtersx->groupId[0];
+      $filtersx->groupId = $a;
+    }
+
+    if ( !$filtersx->describeDays )
+    {
+      $filtersx->describeDays = true;
+    }
+
+    $MIOLO = MIOLO::getInstance();
+    $this->useUserInfo = false;
+    $this->title = strtoupper(_M('Call list in lot', 'academic'));
+    $this->businessCallList = $MIOLO->getBusiness($this->module, 'BusCallList');
+    $groups = $this->businessCallList->getGroups($filtersx);
+    if( count($groups) == 0)
+    {
+      PDF::__construct();
+      $this->addPage('L', 'mm', 'A4');
+      $this->aliasNbPages();
+      $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->fontSizeBody);
+      $this->SetFillColor(255,0,0);
+      $this->cell($this->psize, $this->lsize, _M('No data found to process', 'finance'), null, null, 'C', 1);
+      $this->output();
+      return;
+    }
+    $this->pn = 1;
+    $ni = true;
+
+    foreach($groups as $key => $group)
+    {
+      if ( count($groups) == 1 )
+      {
+        $this->title = strtoupper(_M('Call list', 'academic'));
+      }
+      unset($this->headerData);
+      unset($filters);
+      unset($this->calendar);
+      unset($this->pupils);
+      unset($this->degree);
+
+      $filters->describeDays  = $filtersx->describeDays;
+      $filters->groupId       = $group->groupId;
+      $filters->degreeNumber  = $group->degreeNumber;
+
+      $headerData = $this->businessCallList->getHeader($filters);
+
+      $this->headerData = $headerData;
+      $this->headerData->describeDays = $filtersx->describeDays;
+      $this->headerData->degreeNumber = $filters->degreeNumber;
+      $this->filters->unitId = $headerData->unitId;
+      $this->calendar = $this->businessCallList->getCalendars($this->headerData);
+      $this->pupils   = $this->businessCallList->getPupils($this->headerData);
+      $this->degree   = $this->businessCallList->getDegreeDescription($this->headerData);
+      if ( $ni == true )
+      {
+        $ni = false;
+        PDF::__construct();
+      }
+
+      if ($group->degreeNumber % 2 != 0)
+      {
+        $this->addPage('L', 'mm', 'A4');
+        $this->aliasNbPages();
+        $this->criaReport($filters);
+      }
+    }
+     
+    $this->output();
+  }
+
+  public function Footer()
+  {
+    $this->setY($this->PageBreakTrigger-($this->lsize));
+    if($this->oldGroup <> $this->headerData->groupId)
+    {
+      $this->oldGroup = $this->headerData->groupId;
+      $this->xP = 0;
+      if ( $this->page == 1 )
+      {
+        $this->pn = $this->page;
+        $this->xP = 1;
+        $this->footerProfessorName = $this->headerData->professorName;
+        $this->degree   = $this->businessCallList->getDegreeDescription($this->headerData);
+      }
+      else
+      {
+        $this->pn++;
+      }
+    }
+    else if ( $this->oldGroup == $this->headerData->groupId && $this->xP == 0 )
+    {
+      $this->footerProfessorName = $this->headerData->professorName;
+      $this->degree   = $this->businessCallList->getDegreeDescription($this->headerData);
+      $this->xP = 1;
+      $this->pn = 1;
+    }
+    else
+    {
+      $this->pn++;
+    }
+
+    $pn = $this->pn;
+
+    if( count($this->degree) > 0 )
+    {
+      foreach($this->degree as $item)
+      {
+        if ( $item->isSubstitutive == DB_FALSE )
+        {
+          $data->mediaFinal = $item->finalAverage;
+          $data->media      = $item->average;
+          $data->pesoMedia  = $item->averageWeight;
+          $data->pesoExam   = $item->examWeight;
+          $data->weight    += $item->weight;
+          if($item->weight == 1 )
+          {
+            $data->soma[]     = '( ' . $item->description .' )';
+          }
+          else
+          {
+            $data->soma[]     = '( ' . $item->description .'*'. $item->weight  .' )';
+          }
+        }
+        else
+        {
+          $data->substitutive = true;
+        }
+      }
+      $data->descricaoMedia = '( '. implode('+', $data->soma) . ' ) / '.$data->weight;
+      if ( $data->pesoMedia > 1 )
+      {
+        $data->descricaoMediaFinal = '( '. _M('Average', 'academic') . ' * '. $data->pesoMedia.' ) +';
+        $data->pesoFinal = $data->pesoMedia;
+      }
+      else
+      {
+        $data->descricaoMediaFinal = _M('Average','academic').' + ';
+        $data->pesoFinal = 1;
+      }
+      if ( $data->pesoExam > 1 )
+      {
+        $data->descricaoMediaFinal .= '( '. _M('Final examination', 'academic') . ' * ' . $data->pesoExam.' )';
+        $data->pesoFinal += $data->pesoExam;
+      }
+      else
+      {
+        $data->descricaoMediaFinal .= '( '. _M('Final examination', 'academic'). ' )';
+        $data->pesoFinal += 1;
+      }
+      $data->descricaoMediaFinal = '(' . $data->descricaoMediaFinal .') / '.$data->pesoFinal;
+    }
+    $this->setFont(DEFAULT_REPORT_FONT, 'IB', $this->fontSizeBody-1);
+    $this->cell($this->psize, 1, '', 'T',1, 'C');
+    $this->ln(1);
+    $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->fontSizeBody-2);
+    $this->setTextColor(0,0,255);
+    if( strlen((string)$this->headerData->describeDays) > 0)
+    {
+      $this->cell(($this->psize/3), $this->lsize-1, _M('Attendance roster', 'academic') .': '. ATTENDANCE_PRESENCE_CHAR);
+    }
+    else
+    {
+      $this->cell(($this->psize/3), $this->lsize-1, _M('Attendance roster', 'academic'));
+    }
+    $this->setTextColor(0,0,0);
+    //$this->cell($this->psize/3, $this->lsize-1, _M('Average','academic'). ': ' . $data->descricaoMedia);
+    $this->ln();
+    $this->setTextColor(255,0,0);
+    if( strlen((string)$this->headerData->describeDays) > 0 )
+    {
+      $this->cell(($this->psize/3), $this->lsize-1, _M('Absence roster', 'academic'). ': '. ATTENDANCE_ABSENCE_CHAR);
+    }
+    else
+    {
+      $this->cell(($this->psize/3), $this->lsize-1, _M('Absence roster', 'academic'));
+    }
+    $this->setTextColor(0,0,0);
+    //$this->cell($this->psize/3, $this->lsize-1, _M('Final average', 'academic'). ': '. $data->descricaoMediaFinal);
+    $this->ln();
+    $this->setFont(DEFAULT_REPORT_FONT, 'B', 5);
+    $this->setTextColor(255,0,0);
+    if ( strlen((string)$this->headerData->describeDays) > 0 )
+    {
+      $this->ln();
+    }
+    else
+    {
+      if(defined('ATTENDANCE_DESCRIBEDAYS_TEXT'))
+      {
+        $this->multicell($this->psize, $this->lsize-1, ATTENDANCE_DESCRIBEDAYS_TEXT);
+      }
+    }
+    if( $data->substitutive && defined('ATTENDANCE_SUBSTITUTIVE_TEXT') )
+    {
+      $this->multicell($this->psize, $this->lsize-1, ATTENDANCE_SUBTITUTIVE_TEXT);
+    }
+    $this->setTextColor(0,0,0);
+    $this->setY(-10);
+    $this->setFont(DEFAULT_REPORT_FONT, 'I', 8);
+    $this->cell(($this->psize/6), $this->lsize, $this->title,  0, 0, 'L');
+    $this->setFont(DEFAULT_REPORT_FONT, 'BI', 8);
+    $this->cell(($this->psize/6)*4, $this->lsize, $this->footerProfessorName , 0, 0, 'C');
+    $this->setFont(DEFAULT_REPORT_FONT, 'I', 8);
+    $this->cell(($this->psize/6), $this->lsize, _M('Page @1', $this->module, $pn), 0, 0, 'R');
+    $this->ln();
+  }
+}
+?>

@@ -1,0 +1,279 @@
+<?
+/**
+*
+* @author Giovani Murilo Dantas Correa [gmurilo@isolution.inf.br]
+*
+* $version: $Id$
+*
+* \b Maintainers \n
+* Daniel Afonso Heisler [daniel@isolution.inf.br]
+*
+* @since
+* Class created on 26/03/2009
+*
+* \b Organization: \n
+* iSolution - Soluções de Internet \n
+* The iSolution TEAM
+*
+* \b CopyLeft: \n
+* CopyLeft (L) 2007 iSolution - Soluções de Internet \n
+*
+* \b License \n
+* Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+*
+* \b History \n
+* See history in CVS repository: http://isolution.inf.br   
+*
+**/
+class BusinessFinanceBusCommissionReport  extends Business
+{
+    public $db;
+
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module = is_null($module) ? 'finance' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+    public function __construct()
+    {
+        parent::__construct();
+        $this->db = $this->getDatabase();
+    }
+    
+    public function getAgreements($filters)
+    {
+        if ( count($filters) > 0 )
+        {
+            if( strlen((string)$filters->beginMonth) > 0 )
+            {
+                $month[0] = str_pad($filters->beginMonth,2,0,STR_PAD_LEFT);
+            }
+            if ( strlen((string)$filters->endMonth) > 0 )
+            {
+                $month[1] = str_pad($filters->endMonth,2,0,STR_PAD_LEFT);
+            }
+            if ( strlen((string)$filters->beginYear) > 0 )
+            {
+                $year[0] = $filters->beginYear;
+            }
+            if ( strlen((string)$filters->endYear) > 0 )
+            {
+                $year[1] = $filters->endYear;
+            }
+            if(count($month) == 2 && count($year) == 2 )
+            {
+                $dia = date('d',mktime(0,0,0,$month[1]+1,0, $year[1])) ;
+                $beginDate = '01'.$month[0].$year[0];
+                $endDate = $dia.$month[1].$year[1];
+            }
+            if(strlen((string)$filters->startDate) > 0 && strlen((string)$filters->endDate) > 0 )
+            {
+                $id = explode('/', $filters->startDate);
+                $fd = explode('/', $filters->endDate);
+                $beginDate = implode('', $id);
+                $endDate = implode('', $fd);
+            }
+        }
+        else
+        {
+            return;
+        }
+        $sql    ="
+        SELECT 
+            A.mes,
+            A.dia,
+            A.ano,
+            A.hora,
+            A.datetime,
+            A.username,
+            A.ipaddress,
+            A.agreementId,
+            A.parcelsNumber,
+            A.discount,
+            A.balance,
+            A.inputValue,
+            A.maturityDateInput,
+            A.personId,
+            A.name,
+            C.invoiceId,
+            D.description,
+            TO_CHAR(C.maturityDate, '" . MASK_DATE . "'),
+            CASE 
+                WHEN B.invoiceType = 'I' THEN 'Input'  ELSE 'Output' 
+            END as tipoTitulo,
+            CASE 
+                WHEN  SUM(F.value) > 0 THEN ROUND(SUM(F.value),2) ELSE 0
+            END as pagamentos,
+            CASE 
+                WHEN  SUM(G.value) > 0 THEN ROUND(SUM(G.value),2) ELSE 0
+            END as valorGerado,
+            CASE 
+                WHEN  SUM(H.value) > 0 THEN ROUND(SUM(H.value),2) ELSE 0
+            END as descontos,
+            CASE 
+                WHEN  SUM(I.value) > 0 THEN ROUND(SUM(I.value),2) ELSE 0
+            END as incentivos,
+            CASE 
+                WHEN  SUM(J.value) > 0 THEN ROUND(SUM(J.value),2) ELSE 0
+            END as juros,
+            CASE 
+                WHEN C.invoiceid IS NULL THEN 0 ELSE balanceWithPoliciesDated(C.invoiceId,now()::date) 
+            END as valorAtual,
+            C.comments,
+            TO_CHAR(max(F.entryDate), '" . MASK_DATE . "') as dataPamento,
+            CASE 
+                WHEN C.maturityDate = A.maturityDateInput AND B.invoiceType = 'O' THEN TRUE ELSE FALSE 
+            END as parcelaDeEntrada,    
+            C.status,
+            C.maturitydate
+        FROM ( SELECT DISTINCT 
+                extract(month from A.datetime) as mes,
+                extract(day from A.datetime) as dia, 
+                extract(year from A.datetime) as ano,
+                to_char(A.datetime, 'hh:mm:ss') as hora,
+                A.datetime,
+                A.username,
+                A.ipaddress,
+                A.agreementid,
+                A.parcelsnumber,
+                A.discount,
+                A.balance,
+                A.inputValue,
+                A.maturityDateInput,
+                D.name,
+                D.personId
+            FROM 
+                finagreementhistory A INNER JOIN
+                finagreementhistoryparcels B ON ( B.agreementId = A.agreementId ) INNER JOIN 
+                ONLY finInvoice C ON (C.invoiceId = B.invoiceId ) INNER JOIN
+                ONLY basPerson D ON (C.personId = D.personId) 
+            WHERE  
+                C.maturityDate BETWEEN TO_DATE('".$beginDate."','ddmmyyyy') AND TO_DATE('".$endDate."','ddmmyyyy') 
+            GROUP BY 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15
+            ORDER BY 
+                D.name 
+            ) A INNER JOIN 
+            finagreementhistoryparcels B ON (B.agreementId = A.agreementId) INNER JOIN
+            ONLY finInvoice C ON ( C.invoiceId = B.invoiceId ) INNER JOIN
+            finIncomeSource D ON (D.incomeSourceId = C.incomeSourceId ) INNER JOIN
+            finEntry F ON ( F.invoiceId = C.invoiceId AND F.operationId IN (SELECT operationId FROM finOperation WHERE operationGroupId = 'P')) LEFT JOIN
+	        finEntry G ON ( G.invoiceId = C.invoiceId AND G.operationId IN (SELECT operationId FROM finOperation WHERE operationGroupId = 'N')) LEFT JOIN
+	        finEntry H ON ( H.invoiceId = C.invoiceId AND H.operationId IN (SELECT operationId FROM finOperation WHERE operationGroupId = 'D')) LEFT JOIN
+	        finEntry I ON ( I.invoiceId = C.invoiceId AND I.operationId IN (SELECT operationId FROM finOperation WHERE operationGroupId = 'I')) LEFT JOIN
+            finEntry J ON ( J.invoiceId = C.invoiceId AND J.operationId IN (SELECT operationId FROM finOperation WHERE operationGroupId = 'J')) 
+        GROUP BY
+            A.mes,
+            A.dia,
+            A.ano,
+            A.hora,
+            A.datetime,
+            A.username,
+            A.ipaddress,
+            A.agreementId,
+            A.parcelsNumber,
+            A.discount,
+            A.balance,
+            A.inputValue,
+            A.maturityDateInput,
+            A.personId,
+            A.name,
+            B.invoiceType,
+            C.maturityDate,
+            C.invoiceId,
+            C.comments,
+            C.status,
+            D.description
+    ORDER BY
+            3,1,2,A.agreementId, B.invoiceType, C.maturityDate";
+        $result = $this->db->query(SAGU::prepare($sql, $args));
+        if(count($result) > 0 )
+        {
+            $c = 14;
+            for($x=0;$x< count($result); $x++)
+            {
+                if(!$agreementId || $agreementId <> $result[$x][7])
+                {
+                    $agreementId = $result[$x][7];
+                    if($obj) 
+                    {
+                        foreach ( $obj->invoices as $invoices => $invoice)
+                        {
+                            if($invoice->tipo == 'Input')
+                            {
+                                $obj->valorTotalSemJuros += $invoice->valor-$invoice->incentivos;
+                                $obj->jurosTotal += $invoice->juros;
+                                $obj->valorTotalAtualizado += $invoice->valorPago;
+                            }
+                        }
+                        $result2[$obj->codNegociacao] = $obj;
+                        unset($obj);
+                    }
+                    list(   $obj->mes, 
+                            $obj->dia, 
+                            $obj->ano, 
+                            $obj->hora, 
+                            $obj->datetime,
+                            $obj->usuario, 
+                            $obj->enderecoip, 
+                            $obj->codNegociacao, 
+                            $obj->numeroDeParcelas, 
+                            $obj->desconto, 
+                            $obj->valor, 
+                            $obj->valorEntrada, 
+                            $obj->vencimentoEntrada,
+                            $obj->personId,
+                            $obj->name) = $result[$x];
+                    $lst->invoiceId         = $result[$x][$c+1];
+                    $lst->origem            = $result[$x][$c+2];         
+                    $lst->dataVencimento    = $result[$x][$c+3]; 
+                    $lst->tipo              = $result[$x][$c+4];
+                    $lst->valorPago         = $result[$x][$c+5]; 
+                    $lst->valor             = $result[$x][$c+6]; 
+                    $lst->descontos         = $result[$x][$c+7];
+                    $lst->incentivos        = $result[$x][$c+8];
+                    $lst->juros             = $result[$x][$c+9];
+                    $lst->valorAtualizado   = $result[$x][$c+10];
+                    $lst->comentarios       = $result[$x][$c+11];
+                    $lst->dataPagamento     = $result[$x][$c+12];
+                    $lst->eParcelaEntrada   = $result[$x][$c+13];
+                    $lst->status            = $result[$x][$c+14];
+                    $obj->invoices[$result[$x][$c+1]] = $lst;
+                    unset($lst);
+
+                }
+                else
+                {
+                    $lst->invoiceId         = $result[$x][$c+1];
+                    $lst->origem            = $result[$x][$c+2];         
+                    $lst->dataVencimento    = $result[$x][$c+3]; 
+                    $lst->tipo              = $result[$x][$c+4];
+                    $lst->valorPago         = $result[$x][$c+5]; 
+                    $lst->valor             = $result[$x][$c+6]; 
+                    $lst->descontos         = $result[$x][$c+7];
+                    $lst->incentivos        = $result[$x][$c+8];
+                    $lst->juros             = $result[$x][$c+9];
+                    $lst->valorAtualizado   = $result[$x][$c+10];
+                    $lst->comentarios       = $result[$x][$c+11];
+                    $lst->dataPagamento     = $result[$x][$c+12];
+                    $lst->eParcelaEntrada   = $result[$x][$c+13];
+                    $lst->status            = $result[$x][$c+14];
+                    $obj->invoices[$result[$x][$c+1]] = $lst;
+                    unset($lst);
+                }
+            }
+            if($obj)
+            {
+                $result2[$obj->codNegociacao] = $obj;
+                unset($obj);
+            }
+            unset($result);
+            $result = $result2;
+        }
+        return $result;
+    }
+}
+?>

@@ -1,0 +1,467 @@
+<?php
+class BusinessAcademicBusEnrollServicesPupilUpdate extends Business
+{
+
+    public $db;
+
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module = is_null($module) ? 'academic' : $module;
+        return $MIOLO->getDatabase($module);
+    }
+
+    public function __construct()
+    {
+        $this->db = $this->getDatabase();
+    }
+    public function getPupil($data)
+    {
+        $sql = "    SELECT
+                        B.contractId,
+                        A.personId,
+                        getPersonName(A.personId),
+                        'RES: ' || COALESCE ( A.residentialPhone, '') || ' / TRAB: ' || COALESCE ( A.workPhone, '') || ' / CEL: ' || COALESCE (A.cellPhone, ''),
+                        A.contentCPF,
+                        A.contentRG,
+                        TO_CHAR(dateBirth, '" . MASK_DATE .  "'),
+                        email,
+                        C.invoiceId,
+                        balance(C.invoiceId),
+                        D.bankId,
+                        TO_CHAR(A.dateTime, '" . MASK_DATE_TIME . "'),
+                        B.courseId,
+                        B.courseVersion,
+                        getTurnDescription(B.turnId),
+                        (SELECT count(*) FROM finReceivableInvoice WHERE contractId = B.contractId ) 
+                    FROM 
+                        srvEnrollPhysicalPersonStudent A
+                        LEFT JOIN ONLY acdContract B ON (A.personId = B.personId AND NOT isContractOut(B.contractId))
+                        LEFT JOIN ONLY finReceivableInvoice C ON ( C.contractId = B.contractId AND C.periodId = A.periodId AND C.incomeSourceId = (SELECT value::integer FROM basConfig WHERE parameter = 'ENROLL_INCOME_SOURCE_ID' ) AND C.status IS NULL )
+                        LEFT JOIN finBankAccount D ON ( D.bankAccountId = C.bankAccountId )
+                    WHERE  
+                        1 = 1 ";
+
+        if ( strlen((string)$data->personId) > 0 )
+        {
+            $sql .= ' AND A.personId = '.$data->personId.'::integer';
+        }
+        
+        $sql .= ' AND A.periodId = ? ';
+        $args[] = CURRENT_PERIOD_ID;
+        $sql = SAGU::prepare($sql, $args);
+        $result = $this->db->query($sql);
+        if(count($result) > 0 )
+        {    
+            foreach($result as $resultado)
+            {
+                for ($x=0; $x < count($resultado); $x++)
+                {
+                    if($x == 4 && strlen((string)$resultado[$x]) > 0 )
+                    {
+                        $resultado[$x] = SAGU::convertInCPFFormat($resultado[$x]);
+                    }
+                    else
+                    {
+                        $resultado[$x] = $resultado[$x];
+                    }
+                }
+                $result2[] = $resultado;
+            }
+            return $result2;
+        }
+    }
+
+    /**
+     * Do a search on the database table handled by the class
+     *
+     * @param $filters (object): Search filters
+     *
+     * @return (array): An array containing the search results
+     **/
+    public function getPupils($data)
+    {
+        $sql = "    SELECT
+                        B.contractId,
+                        A.personId,
+                        getPersonName(A.personId),
+                        'RES: ' || COALESCE ( A.residentialPhone, '') || ' / TRAB: ' || COALESCE ( A.workPhone, '') || ' / CEL: ' || COALESCE (A.cellPhone, ''),
+                        A.contentCPF,
+                        A.contentRG,
+                        TO_CHAR(dateBirth, '" . MASK_DATE .  "'),
+                        email,
+                        C.invoiceId,
+                        balance(C.invoiceId),
+                        D.bankId,
+                        TO_CHAR(A.dateTime, '" . MASK_DATE_TIME . "'),
+                        B.courseId,
+                        B.courseVersion,
+                        getTurnDescription(B.turnId),
+                        (SELECT count(*) FROM finReceivableInvoice WHERE contractId = B.contractId ) 
+                    FROM 
+                        srvEnrollPhysicalPersonStudent A
+                        LEFT JOIN ONLY acdContract B ON (A.personId = B.personId AND NOT isContractOut(B.contractId))
+                        LEFT JOIN ONLY finReceivableInvoice C ON ( C.contractId = B.contractId AND C.periodId = A.periodId AND C.incomeSourceId = (SELECT value::integer FROM basConfig WHERE parameter = 'ENROLL_INCOME_SOURCE_ID' ) AND C.status IS NULL )
+                        LEFT JOIN finBankAccount D ON ( D.bankAccountId = C.bankAccountId )
+                    WHERE  
+                        1 = 1 ";
+
+        if ( strlen((string)$data->personName) > 0 )
+        {
+            $sql .= ' AND TO_ASCII(getPersonName(A.personId)) ilike TO_ASCII(?)';
+            $args[] = $data->personName.'%';  
+        }
+
+        if ( strlen((string)$data->courseId) > 0 )
+        {
+            $sql .= ' AND B.courseId = ? ';
+            $args[] = $data->courseId;  
+        }
+
+        if ( strlen((string)$data->courseVersion) > 0 )
+        {
+            $sql .= ' AND B.courseVersion = ?::integer ';
+            $args[] = $data->courseVersion;  
+        }
+
+        if ( strlen((string)$data->turnId) > 0 )
+        {
+            $sql .= ' AND B.turnId = ?::integer ';
+            $args[] = $data->turnId;  
+        }
+
+        if ( strlen((string)$data->unitId) > 0 )
+        {
+            $sql .= ' AND B.unitId = ?::integer ';
+            $args[] = $data->unitId;  
+        }
+
+        if ( strlen((string)$data->updateStartDate) > 0 && strlen((string)$data->updateEndDate) > 0 )
+        {
+            $sql .= ' AND A.datetime::date BETWEEN TO_DATE(?, \'' . MASK_DATE .'\') AND TO_DATE(?, \'' . MASK_DATE .'\') ';
+            $args[] = $data->updateStartDate;  
+            $args[] = $data->updateEndDate;  
+        }
+        if ( $data->listOpenInvoices == DB_TRUE || $data->listOpenInvoices == DB_FALSE )
+        {
+            $sql .= ' AND balance(C.invoiceId) ' . ( $data->listOpenInvoices == DB_TRUE  ? ' > ' : ' <= ' ). ' 0 ';
+        }
+
+
+        if ( $data->listUpdatedContracts == DB_TRUE || $data->listUpdatedContracts == DB_FALSE )
+        {
+            $sql .= ' AND A.updated IS ' . ( $data->listUpdatedContracts == DB_TRUE   ? 'TRUE' : 'FALSE' ) ;  
+        }
+        
+        if ( strlen((string)$data->personId) > 0 )
+        {
+            $sql .= ' AND A.personId = '.$data->personId.'::integer';
+        }
+        
+        $sql .= ' AND A.periodId = ? ';
+        $args[] = CURRENT_PERIOD_ID;
+        $sql = SAGU::prepare($sql, $args);
+        $result = $this->db->query($sql);
+        if(count($result) > 0 )
+        {    
+            foreach($result as $resultado)
+            {
+                for ($x=0; $x < count($resultado); $x++)
+                {
+                    if($x == 4 && strlen((string)$resultado[$x]) > 0 )
+                    {
+                        $resultado[$x] = SAGU::convertInCPFFormat($resultado[$x]);
+                    }
+                    else
+                    {
+                        $resultado[$x] = $resultado[$x];
+                    }
+                }
+                $result2[] = $resultado;
+            }
+            return $result2;
+        }
+    }
+    public function getInvoicesPupil ( $contractId ) 
+    {
+        $MIOLO = MIOLO::getInstance();
+        $sql = 'SELECT 
+                    invoiceId,
+                    personId,
+                    balance(invoiceId)
+                FROM 
+                    ONLY finReceivableInvoice 
+                WHERE
+                    contractId = ?::integer AND
+                    incomeSourceId = 1
+                ORDER BY
+                    personId, maturityDate ';
+        $result = $this->db->query(SAGU::prepare($sql, $contractId) );
+        return $result;
+
+    }
+    public function updatePersonData($contractIds)
+    {
+
+        $MIOLO = MIOLO::getInstance();
+        $user = $MIOLO->getLogin();
+        $sql[]='BEGIN TRANSACTION';
+        $sql[]='UPDATE 
+                    basPerson A 
+                SET 
+                    zipCode = B.zipCode, 
+                    cityId = B.cityId, 
+                    location = B.location,
+                    number = B.number,
+                    complement = B.complement,
+                    neighborhood = B.neighborhood,
+                    email = B.email,
+                    emailAlternative = B.emailAlternative,
+                    userName = \''. $user->id . '\',
+                    ipaddress = \'' . $_SERVER['REMOTE_ADDR'] . '\'::inet,
+                    datetime = now()
+                FROM 
+                    srvEnrollPhysicalPersonStudent B INNER JOIN
+                    acdContract C USING ( personId )
+                WHERE 
+                    A.personId = B.personId 
+                    AND C.contractId IN ( ' . implode(',', $contractIds) . ' ) 
+                    AND B.periodId = \''.CURRENT_PERIOD_ID.'\''; 
+        $sql[]='UPDATE 
+                    basPhysicalPerson A 
+                SET 
+                    sex = B.sex,
+                    maritalStatusId = B.maritalStatusId,
+                    residentialPhone = B.residentialPhone,
+                    workPhone = B.workPhone,
+                    cellPhone = B.cellPhone,
+                    messagePhone = B.messagePhone,
+                    dateBirth = B.dateBirth,
+                    specialNecessityId = B.specialNecessityId,
+                    specialNecessityDescription = B.specialNecessityDescription,
+                    ethnicOriginId = B.ethnicOriginId,
+                    carPlate = B.carPlate,
+                    userName = \''. $user->id . '\',
+                    ipaddress = \'' . $_SERVER['REMOTE_ADDR'] . '\'::inet,
+                    datetime = now()
+                FROM 
+                    srvEnrollPhysicalPersonStudent B INNER JOIN
+                    acdContract C USING ( personId )
+                WHERE 
+                    A.personId = B.personId 
+                    AND C.contractId IN ( ' . implode(',', $contractIds) . ' ) 
+                    AND B.periodId = \''.CURRENT_PERIOD_ID.'\''; 
+        $sql[]='DELETE FROM basDocument WHERE personId IN  (SELECT personId FROM acdContract WHERE contractId IN ( ' . implode(',', $contractIds) . ')) AND documentTypeId IN (' . RG_CODE . ', ' . CPF_CODE . ')';        
+        $sql[]='INSERT INTO basDocument ( personId, content, documentTypeId, userName, ipaddress, datetime ) SELECT personId, contentCPF, ' . CPF_CODE . ', \''. $user->id .'\', \'' . $_SERVER['REMOTE_ADDR']. '\', now() FROM srvEnrollPhysicalPersonStudent INNER JOIN acdContract USING ( personId ) WHERE contractId IN  ( ' . implode(',', $contractIds) . ') AND periodId = \''. CURRENT_PERIOD_ID.'\'';
+        $sql[]='INSERT INTO basDocument ( personId, content, documentTypeId, organ, dateExpedition, userName, ipaddress, datetime ) SELECT personId, contentRG, ' . RG_CODE . ', organRG, dateExpeditionRG, \''. $user->id .'\', \'' . $_SERVER['REMOTE_ADDR']. '\', now() FROM srvEnrollPhysicalPersonStudent INNER JOIN acdContract USING ( personId ) WHERE contractId IN  ( ' . implode(',', $contractIds) . ') AND periodId = \''. CURRENT_PERIOD_ID.'\'';
+        $sql[]='UPDATE srvEnrollPhysicalPersonStudent SET updated = TRUE, updatedUserName = \'' . $user->id .  '\', updatedDateTime = now() WHERE personId IN (SELECT personId FROM acdContract WHERE contractId IN ( ' . implode(',', $contractIds). ') ) AND periodId = \''. CURRENT_PERIOD_ID.'\'';
+        $sql[]='INSERT INTO 
+                acdMovementContract 
+                (userName, 
+                 dateTime, 
+                 ipAddress, 
+                 contractId, 
+                 stateContractId, 
+                 stateTime, 
+                 learningPeriodId ) 
+                SELECT DISTINCT
+                \'' . $user->id . '\', 
+                now(),
+                \''. $_SERVER['REMOTE_ADDR'].'\'::inet,
+                C.contractId,
+                '. STATE_CONTRACT_ID_ENROLLED .',
+                now(),
+                E.learningPeriodId
+                FROM 
+                    srvEnrollPhysicalPersonStudent A 
+                    INNER JOIN ONLY acdContract C ON ( A.personId = C.personId AND NOT isContractOut(C.contractId) )
+                    LEFT JOIN acdLearningPeriod E ON ( E.courseId = C.courseId AND E.courseVersion = C.courseVersion AND E.turnId = C.turnId AND E.unitId = C.unitId )
+                    LEFT JOIN acdMovementContract F ON ( F.contractId = C.contractId AND F.learningPeriodId = E.learningPeriodId AND F.stateContractId = '. STATE_CONTRACT_ID_ENROLLED .' ) 
+                WHERE
+                    C.contractId IN ('.implode(',', $contractIds).') 
+                    AND E.periodId = \'' . CURRENT_PERIOD_ID . '\'
+                    AND F.contractId IS NULL ';
+        $ok = $this->db->execute($sql);
+        $ok = $this->generateInvoice($contractIds);
+        if( $ok )
+        {
+           return $this->db->execute('COMMIT');
+        }
+        else
+        {
+            $this->db->execute('ROLLBACK');
+            return false;
+        }
+    }
+
+    public function generateInvoice($contractIds)
+    {
+        //Obtem os dados da pessoa, curso, centro de custos, plano de contas, periodo
+        $sql = 'SELECT  DISTINCT A.personid, 
+                        A.courseid, 
+                        A.courseVersion, 
+                        A.unitid, 
+                        B.accountSchemeId, 
+                        B.costCenterId, 
+                        C.incomesourceid, 
+                        COALESCE(A.policyId, D.policyId, C.policyId) as policyId,
+                        ( E.value::numeric(14,2) / (COALESCE ( A.parcelsNumber::varchar, D.parcelsNumber::varchar, 5::varchar ))::numeric(14,2) ) as value, 
+                        COALESCE(D.bankAccountId, C.bankAccountId ) as bankaccountId,
+                        COALESCE(D.bankContractId, C.bankContractId ) as bankContractId,
+                        now()::date as emissiondate,
+                        A.maturityDay as diaDeVencimento,
+                        (COALESCE ( A.parcelsNumber::varchar, D.parcelsNumber::varchar, 5::varchar ))::numeric(14,2) as parcelsNumber,
+                        (SELECT enrollOperation FROM finDefaultOperations LIMIT 1) as operationId,
+                        (SELECT value FROM basconfig WHERE parameter = \'CURRENT_PERIOD_ID\') as periodId,
+                        A.contractId,
+                        extract(month from D.beginDate) as mes,
+                        extract(year from D.beginDate) as ano,
+                        extract(month from now()::date) as mesAtual,
+                        extract(day from now()::date) as diaAtual,
+                        extract(year from now()::date) as anoAtual
+                            FROM acdContract A 
+                            INNER join accCourseAccount B using (courseid, courseversion, unitid) 
+                            INNER join acdCourse C using (courseid) 
+                            INNER join acdLearningPeriod D using (courseid, courseversion, turnid, unitid) 
+                            INNER join finPrice E using (learningperiodid) 
+                            WHERE A.contractId IN ( '.implode( ',', $contractIds).' )
+                            AND D.periodid = (SELECT value FROM basconfig WHERE parameter = \'CURRENT_PERIOD_ID\') 
+                            AND E.startdate = (SELECT max(startdate) FROM finPrice WHERE learningperiodid = E.learningperiodid)
+                            AND NOT isContractOut(A.contractId) ';
+        $result = $this->db->query($sql);
+        if ( count($result) == 0 )
+        {
+            return false;
+        }
+
+        foreach ($result as $res)
+        {
+            $finInvoiceObj->personId = $res[0];
+            $finInvoiceObj->courseId = $res[1];
+            $finInvoiceObj->courseVersion = $res[2];
+            $finInvoiceObj->unitId = $res[3];
+            $finInvoiceObj->accountSchemeId = $res[4];
+            $finInvoiceObj->costCenterId    = $res[5];
+            $finInvoiceObj->incomeSourceId = $res[6];
+            $finInvoiceObj->policyId       = $res[7];
+            $finInvoiceObj->value = $res[8];
+            $finInvoiceObj->bankAccountId = $res[9];
+            $finInvoiceObj->bankContractId = $res[10];
+            $finInvoiceObj->emissionDate = $res[11];
+            $finInvoiceObj->maturityDay  = $res[12];
+            $parcelsNumber = (int)$res[13];
+            $parcelsNumber++;
+            $finInvoiceObj->periodId = $res[15];
+            $finInvoiceObj->contractId = $res[16];
+            $finInvoiceObj->maturityMonth = $res[17];
+            $finInvoiceObj->maturityYear = $res[18];
+            $hjMes = $res[19];
+            $hjDia = $res[20];
+            $hjAno = $res[21];
+            for($x = 2; $x <= $parcelsNumber; $x++)
+            {
+                unset($args);
+                $comp = mktime(0,0,0,$finInvoiceObj->maturityMonth, $finInvoiceObj->maturityDay, $finInvoiceObj->maturityYear);
+                $hj = mktime(0,0,0,$hjMes, $hjDia, $hjAno);
+                while ( $comp <= $hj )
+                {
+                    $finInvoiceObj->maturityMonth++;
+                }
+                if ($x > 2 )
+                {
+                    $finInvoiceObj->maturityMonth++;
+                }
+                if ( $finInvoiceObj->maturityMonth > 12 )
+                {
+                    $finInvoiceObj->maturityMonth = 1;
+                    $finInvoiceObj->marutityYear++;
+                }
+                $finInvoiceObj->maturityDate = date( MASK_DATE_PHP , mktime(0,0,0,$finInvoiceObj->maturityMonth, $finInvoiceObj->maturityDay, $finInvoiceObj->maturityYear));
+                $invoice = $this->db->query('select nextval(\'seq_invoiceid\')');
+                $args[] =   $invoice[0][0];
+                $args[] =   $finInvoiceObj->personId;
+                $args[] =   $finInvoiceObj->courseId;
+                $args[] =   $finInvoiceObj->courseVersion;
+                $args[] =   $finInvoiceObj->unitId;
+                $args[] =   $finInvoiceObj->accountSchemeId;
+                $args[] =   $finInvoiceObj->costCenterId;
+                $args[] =   $finInvoiceObj->incomeSourceId;
+                $args[] =   $finInvoiceObj->value;
+                $args[] =   $finInvoiceObj->bankAccountId;
+                $args[] =   $finInvoiceObj->bankContractId;
+                $args[] =   $finInvoiceObj->emissionDate;
+                $args[] =   $finInvoiceObj->maturityDate;
+                $args[] =   $x;
+                $args[] =   $finInvoiceObj->policyId;
+                $args[] =   _M('Parcel', 'finance') . ' ' . $x . '/' . $parcelsNumber;
+                $args[] =   $finInvoiceObj->periodId;
+                //Ajusta os dados do titulo
+                $finInvoiceObj->invoiceId = $invoice[0][0];
+                $table = 'finInvoice';
+                $sqls[] = SAGU::prepare('INSERT INTO '.$table.' (invoiceId, personId, courseId, courseVersion, unitId, accountSchemeId, costCenterId, incomeSourceId, value, bankAccountId, bankContractId, emissionDate, MaturityDate, parcelNumber, policyId, messageInvoice, periodId) values(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, TO_DATE(?, \'' . MASK_DATE . '\'), ?, ?, ?, ?)',$args);
+                
+                $args[] = $finInvoiceObj->contractId;
+                $table = 'finReceivableInvoice';
+                $sqls[] = SAGU::prepare('INSERT INTO '.$table.' (invoiceId, personId, courseId, courseVersion, unitId, accountSchemeId, costCenterId, incomeSourceId, value, bankAccountId, bankContractId, emissionDate, MaturityDate, parcelNumber, policyId, messageInvoice, periodId, contractId) values(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, TO_DATE(?, \'' . MASK_DATE . '\'), ?, ?, ?, ?,?)',$args);
+    
+                $finEntryObj->invoiceId = $finInvoiceObj->invoiceId;
+                $finEntryObj->costCenterId = $finInvoiceObj->costCenterId; 
+                $finEntryObj->entryDate    = $finInvoiceObj->emissionDate;        
+                $finEntryObj->operationId[0] = $res[14];
+                $finEntryObj->value[0]     = $finInvoiceObj->value;
+                $sql = 'SELECT CASE WHEN valueIsPercent THEN (('.SAGU::formatNumber((float)$finInvoiceObj->value).'::float*value)/100) ELSE (value::float) END, agglutinate, costCenterId, operationId FROM ONLY finIncentive INNER JOIN ONLY finIncentiveType using (incentivetypeid) WHERE contractId = '.$finInvoiceObj->contractId.' AND endDate > now()::date';
+                $incentivos = $this->db->query($sql);
+                for($y =0; $y < count($incentivos); $y++)
+                {
+                    if($incentivos[$y][1] == 't' && $y > 1)
+                    {
+                        unset($args);
+                        $args[] = $finEntryObj->invoiceId;
+                        $args[] = $incentivos[$y][2];
+                        $args[] = $finEntryObj->entryDate;
+                        $args[] = $incentivos[$y][3];
+                        $args[] = $incentivos[$y][0];
+                        $sqlx = 'INSERT INTO finEntry (invoiceId, costCenterId, entryDate, operationId, value)
+                        VALUES (?,?,?,?,?) ';
+                        $sqls[] = SAGU::prepare($sqlx,$args);
+                    }
+                    else if ( $y == 0 )
+                    {
+                        unset($args);
+                        $args[] = $finEntryObj->invoiceId;
+                        $args[] = $incentivos[$y][2];
+                        $args[] = $finEntryObj->entryDate;
+                        $args[] = $incentivos[$y][3];
+                        $args[] = $incentivos[$y][0];
+                        $sqlx = 'INSERT INTO finEntry (invoiceId, costCenterId, entryDate, operationId, value)
+                        VALUES (?,?,?,?,?) ';
+                        $sqls[] = SAGU::prepare($sqlx,$args);
+                    }
+                }
+                $this->status = false;
+                for($y=0;$y< count($finEntryObj->value); $y++)
+                {
+                    unset($args);
+                    $args[] = $finEntryObj->invoiceId;
+                    $args[] = $finEntryObj->costCenterId;
+                    $args[] = $finEntryObj->entryDate;
+                    $args[] = $finEntryObj->operationId[$y];
+                    $args[] = $finEntryObj->value[$y];
+                    $sqlx = 'INSERT INTO finEntry (invoiceId, costCenterId, entryDate, operationId, value)
+                      VALUES (?,?,?,?,?) ';
+                    $sqls[] = SAGU::prepare($sqlx,$args);
+                }
+            }
+        }
+        return $this->db->execute($sqls);
+    }
+}
+?>

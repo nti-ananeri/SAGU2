@@ -1,0 +1,325 @@
+<?php
+
+/**
+ * PupilListing form
+ *
+ * @author William Prigol Lopes [william@solis.coop.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * Leovan Tavares da Silva [leovan@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ *
+ * @since
+ * Class created on 25/08/2005
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2005 SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+
+/**
+ * Form to manipulate a pupilListing
+ **/
+class FrmEnrolledPupilsReportMount extends MForm
+{
+    private $home;
+
+    /**
+     * Class constructor
+     **/
+    function __construct($data)
+    {
+        $module = MIOLO::getCurrentModule();
+        $this->home   = $data->home;
+
+        parent::__construct(ucfirst (_M('pupils enrolled', $module) ));
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+
+
+        $toolBar = new MToolBar('toolBar', $MIOLO->getActionURL($module, $action));
+        $toolBar->hideButton('tbBtnNew');
+        $toolBar->hideButton('tbBtnSave');
+        $toolBar->hideButton('tbBtnDelete');
+        $toolBar->hideButton('tbBtnSearch');
+
+        //favoritos
+        $enabledImage  = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-20x20.png');
+        $disabledImage = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-disabled-20x20.png');
+        $url           = $MIOLO->getActionURL($module, $this->home, null, array('function' => 'search', 'event' => 'bookmark'));
+        $toolBar->addButton('tbBtnBookmark', _M('Add to bookmarks', 'basic'), $url, null, true, $enabledImage, $disabledImage);
+
+        if ( MIOLO::_request('event') == 'bookmark' )
+        {
+            $MIOLO->getClass('basic', 'access');
+            access::insert('Enrolled pupils report', $this->home, 'enrolledPupilsReport-16x16.png', true);
+        }
+        //fim favoritos
+
+        $fields[] = $toolBar;
+
+        $businessPeriod = $MIOLO->getBusiness($module, 'BusPeriod');
+        $periodLabel   = new MText('periodLabel', _M('Period', $module) . ':');
+        $periodLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $periodId       = new MComboBox('periodId', strlen((string)$this->getFormValue('periodId', $data->periodId))>0 ? $this->getFormValue('periodId', $data->periodId) : CURRENT_PERIOD_ID, null, $businessPeriod->listPeriod() );
+        $periodId->setJsHint(_M('Enter the period code', $module));
+        $fields[]       = new MHContainer('hctPeriod', array($periodLabel, $periodId));
+    //    $validators[]   = new MRequiredValidator('periodId', _M('Period',$module));
+
+        //Unit
+        $business = $MIOLO->getBusiness('basic', 'BusUnit');
+        $unitLabel   = new MText('unitLabel', _M('Unit', $module) . ':');
+        $unitLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $unitId = new MComboBox('unitId',
+                                    $this->GetFormValue('unitId',$data->unitId),
+                                    null,
+                                    $business->listUnit());
+        //$validators[] = new MRequiredValidator('unitId');
+        $fields[] = new MHContainer('hctUnit', array($unitLabel, $unitId));
+
+        //Course
+        $courseLabel   = new MText('courseLabel', _M('Course', $module) . ':');
+        $courseLabel->setWidth(FIELD_CONTAINER_SIZE);
+
+        $courseId      = new MLookupTextField('courseId', $this->getFormValue('courseId'), '', FIELD_LOOKUPFIELD_SIZE, null, null, 'courseVersion, courseName, unitId, unitDescription, turnId, turnDescription', $module, 'CourseOccurrence', null, array('courseId' => 'courseId'), !$this->page->isPostBack());
+        $courseId->setJsHint(_M('Enter the course code', $module));
+
+        $courseName    = new MTextField('courseName', $this->getFormValue('courseName', $data->courseName), '', FIELD_DESCRIPTION_SIZE);
+        //$courseName->setReadOnly(true);
+        $courseName->setJsHint(_M('Course name',$module));
+
+        $courseVersion = new MTextField('courseVersion', $this->getFormValue('courseVersion', $data->courseVersion), '', FIELD_ID_SIZE);
+        $courseVersion->setJsHint(_M('Course version code',$module));
+
+        $hctCourse     = new MHContainer('hctCourse', array($courseLabel, $courseId, $courseVersion, $courseName));
+        $hctCourse->setShowLabel(true);
+        $fields[]      = $hctCourse;
+
+        //Turn
+        $business = $MIOLO->getBusiness('basic', 'BusTurn');
+        $turnLabel   = new MText('turnLabel', _M('Turn', $module) . ':');
+        $turnLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $turnId = new MComboBox( 'turnId',
+                                    $this->GetFormValue('turnId',$data->turnId),
+                                    null,
+                                    $business->listTurn());
+        //$validators[] = new MRequiredValidator('turnId');
+        $fields[] = new MHContainer('hctTurn', array($turnLabel, $turnId));
+
+        //Semester
+        $semesterLabel   = new MText('semesterLabel', _M('Série/periodo/ano', $module) . ':');
+        $semesterLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $semester = new MTextField('semester', $this->getFormValue('semester', $data->semester), null, 10 );
+        $semesterHint  = new MHint('semesterHint',_M('Year when it is an annual course otherwise, semester', $module));
+        $semester->setJsHint(_M('Enter the year or the semester', $module));
+        $fields[] = new MHContainer('hctSemester', array($semesterLabel, $semester, $semesterHint));
+
+        //Class
+        $classLabel = new MText('classLabel', _M('Class','academic') . ':');
+        $classLabel->setWidth(FIELD_CONTAINER_SIZE);
+
+        $classId    = new MLookupTextField('classId', $this->getFormValue('classId', $data->classId), _M('Class id','academic'), FIELD_LOOKUPFIELD_SIZE, null, null, array('classNameS'), 'academic', 'Class', null, null, true);
+        $classNameS = new MTextField('classNameS', $this->getFormValue('classNameS'), _M('Class name', 'academic'), FIELD_DESCRIPTION_SIZE);
+        $hctClass   = new MHContainer('hctClass', array($classLabel, $classId, $classNameS));
+        $hctClass->setShowLabel(false);
+        $fields[]   = $hctClass;
+        
+
+        $busFormationLevel = $MIOLO->getBusiness($module, 'BusFormationLevel');
+        $formationLevels   = $busFormationLevel->listFormationLevel();
+
+        $filter = new MMultiSelection('formationLevelId', is_array($this->getFormValue('formationLevelId', $data->formationLevelId)) ? $this->getFormValue('formationLevelId', $data->formationLevelId) : array(), _M('Formation level', $module), $formationLevels, true, null, 5);
+
+
+        $fields[]          = $filter;
+
+        $fields[] = new Separator('');
+
+        $startDateLabel = new MText('startDateLabel', _M('Begin date',$module).':');
+        $startDateLabel->setWidth(FIELD_CONTAINER_SIZE);
+//        $startDateLabel->setClass('m-caption m-caption-required');
+        $startDate = new MCalendarField('startDate', $this->getFormValue('startDate', $data->startDate), _M('',$module), FIELD_DATE_SIZE);
+        $startDate->setJsHint(_M('Enter the begin date',$module));
+        $validators[] = new MDATEDMYValidator('startDate', null, 'optional');
+        $hctStartDate = new MHContainer('hctStartDate', array($startDateLabel, $startDate));
+        $hctStartDate->setShowLabel(true);
+        $field1[] = $hctStartDate;
+
+        // data final
+        $endDateLabel = new MText('endDateLabel', _M('End date',$module).':');
+        $endDateLabel->setWidth(FIELD_CONTAINER_SIZE);
+//        $endDateLabel->setClass('m-caption m-caption-required');
+        $endDate = new MCalendarField('endDate', $this->getFormValue('endDate', $data->endDate), _M('',$module), FIELD_DATE_SIZE);
+        $endDate->setJsHint(_M('Enter the end date',$module));
+        $validators[] = new MDATEDMYValidator('endDate', null, 'optional');
+        $hctEndDate = new MHContainer('hctEndDate', array($endDateLabel, $endDate));
+        $hctEndDate->setShowLabel(true);
+        $field1[] = $hctEndDate;
+
+        $fields[]  = new MBaseGroup('mbgDefaulter', _M('Enroll date', $module), $field1);
+        unset($field1);
+
+        $startAgeGroupDateLabel = new MText('startAgeGroupDateLabel', _M('Minimum age','basic').':');
+        $startAgeGroupDateLabel->setWidth(FIELD_CONTAINER_SIZE);
+//        $startDateLabel->setClass('m-caption m-caption-required');
+        $startAgeGroupDate = new MTextField('startAgeGroupDate', $this->getFormValue('startAgeGroupDate', $data->startAgeGroupDate), _M('',$module), FIELD_DATE_SIZE);
+        $startAgeGroupDate->setJsHint(_M('Enter the minimum age','basic'));
+        $validators[] = new MIntegerValidator('startAgeGroupDate',  _M('Minimum age','basic'), 'optional');
+        $hctStartAgeGroupDate = new MHContainer('hctStartAgeGroupDate', array($startAgeGroupDateLabel, $startAgeGroupDate));
+        $hctStartAgeGroupDate->setShowLabel(true);
+        $field1[] = $hctStartAgeGroupDate;
+
+        // data final
+        $endAgeGroupDateLabel = new MText('endAgeGroupDateLabel', _M('Maximum age','basic').':');
+        $endAgeGroupDateLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $endAgeGroupDate = new MTextField('endAgeGroupDate', $this->getFormValue('endAgeGroupDate', $data->endAgeGroupDate), _M('',$module), FIELD_DATE_SIZE);
+        $endAgeGroupDate->setJsHint(_M('Enter the maximum age','basic'));
+        $validators[] = new MIntegerValidator('endAgeGroupDate',  _M('Maximum age','basic') , 'optional');
+        $hctEndAgeGroupDate = new MHContainer('hctEndAgeGroupDate', array($endAgeGroupDateLabel, $endAgeGroupDate));
+        $hctEndAgeGroupDate->setShowLabel(true);
+        $field1[] = $hctEndAgeGroupDate;
+
+        $fields[]  = new MBaseGroup('mbgDefaulter', _M('Age group', 'basic'), $field1);
+        $dataFieldsSelect[0] = _M('Id', 'basic');
+        $dataFieldsSelect[1] = _M('Name', 'basic');
+        $dataFieldsSelect[2] = _M('Cell phone', 'basic');
+        $dataFieldsSelect[3] = _M('Work phone', 'basic');
+        $dataFieldsSelect[4] = _M('Residential phone', 'basic');
+        $dataFieldsSelect[5] = _M('Neighborhood', 'basic');
+        $dataFieldsSelect[6] = _M('Course', 'academic');
+        $dataFieldsSelect[7] = _M('Turn', 'basic');
+        $dataFieldsSelect[8] = _M('Age', 'basic');
+        $dataFieldsSelect[9] = _M('Sex', 'basic');
+
+
+        $fieldsSelectLabel    = new MText('fieldsSelectLabel', _M('Fields', 'basic').':');
+        $fieldsSelectLabel->setClass('m-caption m-caption-required');
+        $fieldsSelectLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $fieldsSelect   = new MMultiSelection('fieldsSelect', is_array($this->getFormValue('fieldsSelect', $data->fieldsSelect)) ? $this->getFormValue('fieldsSelect', $data->fieldsSelect) : array($this->getFormValue('fieldsSelect', $data->fieldsSelect)), '', $dataFieldsSelect, false, null, 5);
+        $fields[] = new MHContainer('hctFieldsSelect', array($fieldsSelectLabel, $fieldsSelect));
+        
+        $validators[]   = new MRequiredValidator('fieldsSelect', _M('Fields', $module), 'required');
+
+        $module = 'finance';
+        $printModeLabel = new MText('printModeLabel', _M('Print mode', $module));
+        $printModeLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $printModeLabel->setClass('m-caption m-caption-required');
+        $listAnalyticalSynthetic[] = array( _M('Analytical', $module), '1');
+        $listAnalyticalSynthetic[] = array( _M('Synthetic', $module), '2');
+        $listAnalyticalSynthetic[] = array( _M('Sintetico p/ curso', $module), '3');
+        $printMode      = new MRadioButtonGroup('printMode', '', $listAnalyticalSynthetic, $this->GetFormValue('printMode', '3'), null, 'horizontal');
+        $printMode->SetShowLabel(false);
+        $printMode->SetAutoPostBack(false);
+        $fields[]  = new MBaseGroup('mbgPrintMode', _M('Print mode', $module), array($printMode));
+
+        $module = 'academic';
+        $dtEnrollSituation = MIOLO::_request('enrollSituation');
+        $enrollSituation4 = new MCheckBox('enrollSituation[4]', 4, '', false /*$dtEnrollSituation[4]*/,_M('Normal', $module));
+        if ( strlen((string)$dtEnrollSituation[4]) > 0 ) 
+        {
+            $enrollSituation4->setAttribute('checked', 'true');
+        }
+        $flds[] = $enrollSituation4;
+        $enrollSituation1 = new MCheckBox('enrollSituation[1]', 1, '', false/*$dtEnrollSituation[1]*/,_M('Dependence', $module));
+        if ( strlen((string)$dtEnrollSituation[1]) > 0 ) 
+        {
+            $enrollSituation1->setAttribute('checked', 'true');
+        }
+        $flds[] = $enrollSituation1;
+        $enrollSituation2 = new MCheckBox('enrollSituation[2]', 2, '', false/*$dtEnrollSituation[2]*/,_M('Adaptation', $module));
+        if ( strlen((string)$dtEnrollSituation[2]) > 0 ) 
+        {
+            $enrollSituation2->setAttribute('checked', 'true');
+        }
+        $flds[] = $enrollSituation2;
+        //$enrollSituation3 = new MCheckBox('enrollSituation[3]', 3, '', false/*$dtEnrollSituation[3]*/,_M('Cancelados/Transferidos', $module));
+//        if ( strlen((string)$dtEnrollSituation[3]) > 0 ) 
+  //      {
+//            $enrollSituation3->setAttribute('checked', 'true');
+  //      }
+        $flds[] = $enrollSituation3;
+        $enrollSituation5 = new MCheckBox('enrollSituation[5]', 5, '', false/*$dtEnrollSituation[3]*/,_M('Matriculados em Disciplinas Na Turma', $module));
+        if ( strlen((string)$dtEnrollSituation[3]) > 5 ) 
+        {
+            $enrollSituation5->setAttribute('checked', 'true');
+        }
+        $flds[] = $enrollSituation5;
+        $fields[]  = new MBaseGroup('mbgEnrollSituation', _M('Situação', $module), $flds);
+
+        $fields[] = new Separator('');
+
+        //$fields[] = new MButton('tbBtnPrint', _M('Generate', $module));
+
+        //$fields[] = new Separator('');
+
+        $this->setValidators($validators);
+
+        $this->setFields($fields);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+        $this->setClose($MIOLO->getActionURL($module, substr($action, 0, strrpos($action, ':'))));
+    }
+
+    /**
+     * Event triggered when user chooses Delete from the toolbar
+     **/
+    public function tbBtnPrint_click($sender = null)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $filter->optionId                   = $this->getFormValue('reportOption');
+        $filter->periodId                   = $this->getFormValue('periodId');
+        $filter->unitId                     = $this->getFormValue('unitId');
+        $filter->courseId                   = $this->getFormValue('courseId');
+        $filter->courseName                 = $this->getFormValue('courseName');
+        $filter->courseVersion              = $this->getFormValue('courseVersion');
+        $filter->turnId                     = $this->getFormValue('turnId');
+        $filter->semester                   = $this->getFormValue('semester');
+        $filter->classId                    = $this->getFormValue('classId');
+        $filter->className                  = $this->getFormValue('classNameS');
+        $filter->formationLevelId           = $this->getFormValue('formationLevelId');
+//        $filter->printMode                  = $this->getFormValue('printMode');
+        $filter->printMode = 1;
+        $filter->enrollSituation            = $this->getFormValue('enrollSituation');
+        $filter->beginDate                  = $this->getFormValue('startDate');
+        $filter->endDate                    = $this->getFormValue('endDate');
+        $filter->minimumAge                 = $this->getFormValue('startAgeGroupDate');
+        $filter->maximumAge                 = $this->getFormValue('endAgeGroupDate');
+        $filter->fieldsSelect               = $this->fieldsSelect->value;        
+        $reportX = 'RptEnrolledPupilsReportMount';
+        $MIOLO->getClass($module,$reportX);
+        $report = new $reportX($filter);
+    }
+
+}
+
+?>

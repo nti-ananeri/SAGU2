@@ -1,0 +1,1365 @@
+<?php
+/**
+ *
+ * This file manipulate the lookups for the basic module of sagu
+ *
+ * @author Daniel Afonso Heisler [daniel@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ *
+ * @since
+ * Class created on 13/09/2005
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br
+ *
+ **/
+
+$MIOLO = MIOLO::getInstance();
+$MIOLO->getClass('basic', 'lookupFields');
+
+/**
+ * Load global defines for the basic module
+ */
+$business  = $MIOLO->getBusiness('basic','BusConfig');
+$constants = $business->getModuleValues('basic');
+foreach ( $constants as $cnt )
+{
+    define($cnt[0],$cnt[1]);
+}
+
+
+$constants = $business->getModuleValues('selectiveProcess');
+foreach ( $constants as $cnt )
+{
+    define($cnt[0],$cnt[1]);
+}
+
+/**
+ * Class to manipulate the Lookups
+ **/
+class BusinessSelectiveProcessLookup
+{
+    /**
+     * Auto complete for selective process
+     *
+     * @param $context (object): MIOLO Context object
+     *
+     * @return (object): MIOLO Gives the action evaluating the code by setContext call
+     *
+     **/
+    public function autoCompleteSelectiveProcess(&$context)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+
+        $sql = 'SELECT description AS selectiveProcessDescription
+                  FROM sprSelectiveProcess
+                 WHERE selectiveProcessId = ?';
+ 
+        $context->setContext('selectiveProcess', $sql);
+    }
+
+    /**
+     * Lookup for selective process
+     *
+     * @param $lookup: Lookup Object used by MIOLO
+     *
+     * @return MIOLO Lookup function as actions evaluated by MIOLO
+     *
+     **/
+    public function lookupSelectiveProcess(&$lookup)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::_request('lmodule');
+
+        $MIOLO->uses('classes/sagu.class','basic');
+        $MIOLO->conf->loadConf($module);
+
+        $selectiveProcessId = $lookup->getFilterValue('selectiveProcessId');
+        $periodId           = $lookup->getFilterValue('periodId');
+        $beginDate          = $lookup->getFilterValue('beginDate');
+        $companyId          = $lookup->getFilterValue('companyId');
+
+        $business = $MIOLO->getBusiness('selectiveProcess', 'BusSelectiveProcess');
+        $lookup->addFilterField( new MComboBox('selectiveProcessId', $selectiveProcessId, _M('Selective process',$module), $business->listSelectiveProcess()) );
+
+        $business = $MIOLO->getBusiness('basic', 'BusCompany');
+        $lookup->addFilterField( new MComboBox('companyId', $companyId, _M('Company',$module), $business->listCompany()) );
+
+        $business = $MIOLO->getBusiness('academic', 'BusPeriod');
+        $lookup->addFilterField( new MComboBox('periodId', $periodId, _M('Period',$module), $business->listPeriod()) );
+
+        $lookup->addFilterField( new MTextField('beginDate', $begindate, _M('Begin date',$module), FIELD_DATE_LOOKUP_SIZE) );
+
+        $columns = array(
+           new DataGridColumn('selectiveProcessId',          _M('Code', $module), 'right', true, null, true),
+           new DataGridColumn('selectiveProcessDescription', _M('Selective process', $module), 'left', true, null, true),
+           new DataGridColumn('periodId',                    _M('Period', $module), 'left', true, null, true),
+           new DataGridColumn('beginDate',                   _M('Begin date', $module), 'left', true, null, true),
+           new DataGridColumn('companyName',                 _M('Company', $module), 'left', true, null, true)
+        );
+
+        $sql = 'SELECT A.selectiveProcessId,
+                       A.description as selectiveProcessDescription,
+                       A.periodId,
+                       TO_CHAR(A.beginDate,\'' . MASK_DATE . '\') as beginDate,
+                       B.acronym as companyName
+                  FROM sprSelectiveProcess A 
+             LEFT JOIN basCompanyConf B
+                 USING ( companyid ) ';
+
+        if ( strlen((string)$selectiveProcessId) > 0 )
+        {
+            $where .= ' AND A.selectiveProcessId ILIKE ?';
+            $args[] = $selectiveProcessId;
+        }
+
+        if ( strlen((string)$beginDate) > 0 )
+        {
+            $where .= ' AND A.beginDate = TO_DATE(?,\'' . MASK_DATE . '\')';
+            $args[] = $beginDate;
+        }
+
+        if ( strlen((string)$companyId) > 0 )
+        {
+            $where .= ' AND A.companyId = ?';
+            $args[] = $companyId;
+        }
+
+        if ( strlen((string)$periodId) > 0 )
+        {
+            $where .= ' AND periodId ILIKE ?';
+            $args[] = $periodId;
+        }
+
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE ' . substr($where, 5);
+        }
+
+        $sql .= ' ORDER BY A.description';
+
+        $sqlObject = new sql();
+        if ( strlen((string)$where) == 0 )
+        {
+            $sql .= ' LIMIT 0';
+        }
+
+        $sqlObject->createFrom(SAGU::prepare($sql,$args));
+        $lookup->setFilterColumns(LOOKUP_FILTER_COLUMNS);
+        $lookup->setLookupGrid($module, $sqlObject, $columns, _M('Selective process search',$module), 15, 0);
+        $lookup->grid->setIsScrollable();
+
+    }
+
+    /**
+     * Auto complete for selective process occurrence
+     *
+     * @param $context (object): MIOLO Context object
+     *
+     * @return (object): MIOLO Gives the action evaluating the code by setContext call
+     *
+     **/
+    public function autoCompleteSelectiveProcessOccurrence(&$context)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $sql = 'SELECT B.description AS selectiveProcessDescription,
+                       A.selectiveProcessTypeId,
+                       C.description AS selectiveProcessTypeDescription
+                  FROM sprSelectiveProcessOccurrence A
+             LEFT JOIN sprSelectiveProcess B
+                    ON ( A.selectiveProcessId     = B.selectiveProcessId )
+             LEFT JOIN sprSelectiveProcessType C
+                    ON ( A.selectiveProcessTypeId = C.selectiveProcessTypeId )
+                 WHERE A.selectiveProcessId       = ?';
+ 
+        $context->setContext('selectiveProcess', $sql);
+    }
+
+    /**
+     * Lookup for selective process occurrence
+     *
+     * @param $lookup: Lookup Object used by MIOLO
+     *
+     * @return MIOLO Lookup function as actions evaluated by MIOLO
+     *
+     **/
+    public function lookupSelectiveProcessOccurrence(&$lookup)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::_request('lmodule');
+
+        $MIOLO->uses('classes/sagu.class','basic');
+        $MIOLO->conf->loadConf($module);
+
+        $selectiveProcessId = $lookup->getFilterValue('selectiveProcessId');
+        $periodId           = $lookup->getFilterValue('periodId');
+        $beginDate          = $lookup->getFilterValue('beginDate');
+        $companyId          = $lookup->getFilterValue('companyId');
+        $typeId             = $lookup->getFilterValue('typeId');
+
+        $business = $MIOLO->getBusiness('selectiveProcess', 'BusSelectiveProcess');
+        $lookup->addFilterField( new MComboBox('selectiveProcessId', $selectiveProcessId, _M('Selective process',$module), $business->listSelectiveProcess()) );
+
+        $business = $MIOLO->getBusiness('basic', 'BusCompany');
+        $lookup->addFilterField( new MComboBox('companyId', $companyId, _M('Company',$module), $business->listCompany()) );
+
+        $business = $MIOLO->getBusiness('academic', 'BusPeriod');
+        $lookup->addFilterField( new MComboBox('periodId', $periodId, _M('Period',$module), $business->listPeriod()) );
+
+        $business = $MIOLO->getBusiness('selectiveProcess', 'BusSelectiveProcessType');
+        $lookup->addFilterField( new MComboBox('typeId', $typeId, _M('Type',$module), $business->listSelectiveProcessType()) );
+
+        $lookup->addFilterField( new MTextField('beginDate', $begindate, _M('Begin date',$module), FIELD_DATE_LOOKUP_SIZE) );
+
+        $columns = array(
+           new DataGridColumn('selectiveProcessId',          _M('Code', $module), 'right', true, null, true),
+           new DataGridColumn('selectiveProcessDescription', _M('Selective process', $module), 'left', true, null, true),
+           new DataGridColumn('periodId',                    _M('Period', $module), 'left', true, null, true),
+           new DataGridColumn('beginDate',                   _M('Begin date', $module), 'left', true, null, true),
+           new DataGridColumn('companyName',                 _M('Company', $module), 'left', true, null, true),
+           new DataGridColumn('typeDescription',             _M('Type', $module), 'left', true, null, true),
+           new DataGridColumn('isMain',                      _M('Is main', $module), 'left', true, null, true, array(DB_TRUE => _M('Yes',$module), DB_FALSE => _M('No',$module))),
+           new DataGridColumn('priority',                    _M('Priority', $module), 'left', true, null, true)
+        );
+
+        $sql = 'SELECT A.selectiveProcessId,
+                       A.description as selectiveProcessDescription,
+                       A.periodId,
+                       TO_CHAR(A.beginDate,\'' . MASK_DATE . '\') as beginDate,
+                       B.acronym as companyName,
+                       C.isMain,
+                       C.priority,
+                       D.description as typeDescription
+                  FROM sprSelectiveProcess A 
+             LEFT JOIN basCompanyConf B
+                 USING ( companyid )
+            INNER JOIN sprSelectiveProcessOccurrence C
+                    ON ( A.selectiveProcessId = C.selectiveProcessId )
+            INNER JOIN sprSelectiveProcessType D
+                    ON ( C.selectiveProcessTypeId = D.selectiveProcessTypeId ) ';
+
+        if ( strlen((string)$selectiveProcessId) > 0 )
+        {
+            $where .= ' AND A.selectiveProcessId ILIKE ?';
+            $args[] = $selectiveProcessId;
+        }
+
+        if ( strlen((string)$beginDate) > 0 )
+        {
+            $where .= ' AND A.beginDate = TO_DATE(?,\'' . MASK_DATE . '\')';
+            $args[] = $beginDate;
+        }
+
+        if ( strlen((string)$companyId) > 0 )
+        {
+            $where .= ' AND A.companyId = ?';
+            $args[] = $companyId;
+        }
+
+        if ( strlen((string)$typeId) > 0 )
+        {
+            $where .= ' AND D.selectiveProcessTypeId = ?';
+            $args[] = $typeId;
+        }
+
+        if ( strlen((string)$periodId) > 0 )
+        {
+            $where .= ' AND periodId ILIKE ?';
+            $args[] = $periodId;
+        }
+
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE ' . substr($where, 5);
+        }
+
+        $sql .= ' ORDER BY A.description';
+
+        $sqlObject = new sql();
+        if ( strlen((string)$where) == 0 )
+        {
+            $sql .= ' LIMIT 0';
+        }
+
+        $sqlObject->createFrom(SAGU::prepare($sql,$args));
+        $lookup->setFilterColumns(LOOKUP_FILTER_COLUMNS);
+        $lookup->setLookupGrid($module, $sqlObject, $columns, _M('Selective process occurrence search',$module), 15, 0);
+        $lookup->grid->setIsScrollable();
+
+    }
+
+    /**
+     * Auto complete for course vacant
+     *
+     * @param $context (object): MIOLO Context object
+     *
+     * @return (object): MIOLO Gives the action evaluating the code by setContext call
+     *
+     **/
+    public function autoCompleteCourseVacant(&$context)
+    {
+        $sql = 'SELECT A.selectiveProcessId,
+                       B.description AS selectiveProcessDescription,
+                       A.vacant,
+                       A.description AS CourseVacantDescription
+                  FROM sprCourseVacant A
+             LEFT JOIN sprSelectiveProcess B
+                    ON ( A.selectiveProcessId = B.selectiveProcessId )
+                 WHERE A.courseVacantId       = ?';
+
+        $context->setContext('selectiveProcess', $sql);
+    }
+
+    /**
+     * Lookup for course vacant
+     *
+     * @param $lookup: Lookup Object used by MIOLO
+     *
+     * @return MIOLO Lookup function as actions evaluated by MIOLO
+     *
+     **/
+    public function lookupCourseVacant(&$lookup)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::_request('lmodule');
+
+        $MIOLO->uses('classes/sagu.class','basic');
+        $MIOLO->conf->loadConf($module);
+
+        $courseVacantId          = $lookup->getFilterValue('courseVacantId');
+        $selectiveProcessId      = $lookup->getFilterValue('selectiveProcessId');
+        $vacant                  = $lookup->getFilterValue('vacant');
+        $courseVacantDescription = $lookup->getFilterValue('courseVacantDescription');
+
+        $lookup->addFilterField( new MTextField('courseVacantId', $courseVacantId, _M('Code', $module), FIELD_ID_LOOKUP_SIZE) );
+        $business = $MIOLO->getBusiness('selectiveProcess', 'BusSelectiveProcess');
+        $lookup->addFilterField( new MComboBox('selectiveProcessId', $selectiveProcessId, _M('Selective process',$module), $business->listSelectiveProcess()) );
+        $lookup->addFilterField( new MTextField('vacant', $vacant, _M('Vacants', $module), FIELD_ID_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('courseVacantDescription', $courseVacantDescription, _M('Vacancy description', $module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+
+        $columns = array(
+           new DataGridColumn('courseVacantId',              _M('Code', $module), 'right', true, null, true),
+           new DataGridColumn('selectiveProcessId',          _M('Selective process id', $module), 'right', true, null, true),
+           new DataGridColumn('selectiveProcessDescription', _M('Selective process description', $module), 'left',  true, null, true),
+           new DataGridColumn('vacant',                      _M('Vacants', $module), 'left',  true, null, true),
+           new DataGridColumn('courseVacantDescription',     _M('Vacancy description', $module), 'left',  true, null, true),
+        );
+
+        $sql = 'SELECT A.courseVacantId,
+                       A.selectiveProcessId,
+                       B.description AS selectiveProcessDescription,
+                       A.vacant,
+                       A.description AS CourseVacantDescription
+                  FROM sprCourseVacant A
+             LEFT JOIN sprSelectiveProcess B
+                    ON ( A.selectiveProcessId = B.selectiveProcessId )';
+
+        if ( strlen((string)$courseVacantId) > 0 )
+        {
+            $where .= ' AND A.courseVacantId = ?';
+            $args[] = $courseVacantId;
+        }
+
+        if ( strlen((string)$selectiveProcessId) > 0 )
+        {
+            $where .= ' AND A.selectiveProcessId ILIKE ?';
+            $args[] = $selectiveProcessId;
+        }
+
+        if ( strlen((string)$vacant) > 0 )
+        {
+            $where .= ' AND A.vacant = ?';
+            $args[] = $vacant;
+        }
+
+        if ( strlen((string)$courseVacantDescription) > 0 )
+        {
+            $where .= ' AND TO_ASCII(A.description) ILIKE TO_ASCII(?)';
+            $args[] = '%' . $courseVacantDescription . '%';
+        }
+
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE ' . substr($where, 5);
+        }
+
+        $sql .= ' ORDER BY A.description';
+
+        $sqlObject = new sql();
+        if ( strlen((string)$where) == 0 )
+        {
+            $sql .= ' LIMIT 0';
+        }
+
+        $sqlObject->createFrom(SAGU::prepare($sql,$args));
+        $lookup->setFilterColumns(LOOKUP_FILTER_COLUMNS);
+        $lookup->setLookupGrid($module, $sqlObject, $columns, _M('Vacancy search',$module), 15, 0);
+        $lookup->grid->setIsScrollable();
+
+    }
+
+    /**
+     * Auto complete for exam occurrence
+     *
+     * @param $context (object): MIOLO Context object
+     *
+     * @return (object): MIOLO Gives the action evaluating the code by setContext call
+     *
+     **/
+    public function autoCompleteExamOccurrence(&$context)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+
+        $sql = 'SELECT A.selectiveProcessId,
+                       B.description AS selectiveProcessDescription,
+                       A.selectiveProcessTypeId,
+                       C.description AS selectiveProcessTypeDescription,
+                       A.examId,
+                       D.description AS examDescription,
+                       A.numberQuestions,
+                       A.weightQuestion,
+                       A.numberOrder
+                  FROM sprExamOccurrence A
+             LEFT JOIN sprSelectiveProcess B
+                    ON ( A.selectiveProcessId     = B.selectiveProcessId )
+             LEFT JOIN sprSelectiveProcessType C
+                    ON ( A.selectiveProcessTypeId = C.selectiveProcessTypeId )
+             LEFT JOIN sprExam D
+                    ON ( A.examId = D.examId )
+                 WHERE A.examOccurrenceId       = ?';
+ 
+        $context->setContext('selectiveProcess', $sql);
+    }
+
+    /**
+     * Lookup for course vacant
+     *
+     * @param $lookup: Lookup Object used by MIOLO
+     *
+     * @return MIOLO Lookup function as actions evaluated by MIOLO
+     *
+     **/
+    public function lookupExamOccurrence(&$lookup)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::_request('lmodule');
+
+        $MIOLO->uses('classes/sagu.class','basic');
+        $MIOLO->conf->loadConf($module);
+
+        $examOccurrenceId       = $lookup->getFilterValue('examOccurrenceId');
+        $selectiveProcessId     = $lookup->getFilterValue('selectiveProcessId');
+        $selectiveProcessTypeId = $lookup->getFilterValue('selectiveProcessTypeId');
+        $examId                 = $lookup->getFilterValue('examId');
+
+        $lookup->addFilterField( new MTextField('examOccurrenceId', $examOccurrenceId, _M('Code', $module), FIELD_ID_LOOKUP_SIZE) );
+        $business = $MIOLO->getBusiness('selectiveProcess', 'BusSelectiveProcess');
+        $lookup->addFilterField( new MComboBox('selectiveProcessId', $selectiveProcessId, _M('Selective process',$module), $business->listSelectiveProcess()) );
+
+        $business = $MIOLO->getBusiness('selectiveProcess', 'BusSelectiveProcessType');
+        $lookup->addFilterField( new MComboBox('selectiveProcessTypeId', $selectiveProcessTypeId, _M('Type',$module), $business->listSelectiveProcessType()) );
+
+        $business = $MIOLO->getBusiness('selectiveProcess', 'BusExam');
+        $lookup->addFilterField( new MComboBox('examId', $examId, _M('Exam',$module), $business->listExam()) );
+
+        $columns = array(
+           new DataGridColumn('examOccurrenceId',                _M('Code', $module), 'right', true, null, true),
+           new DataGridColumn('selectiveProcessId',              _M('Selective process id', $module), 'right', true, null, true),
+           new DataGridColumn('selectiveProcessDescription',     _M('Selective process', $module), 'left',  true, null, true),
+           new DataGridColumn('selectiveProcessTypeId',          _M('Selective process type id', $module), 'right', true, null, false),
+           new DataGridColumn('selectiveProcessTypeDescription', _M('Type', $module), 'left',  true, null, true),
+           new DataGridColumn('examId',                          _M('Exam id', $module), 'right', true, null, false),
+           new DataGridColumn('examDescription',                 _M('Exam', $module), 'left',  true, null, true),
+           new DataGridColumn('numberQuestions',                 _M('Number questions', $module), 'left',  true, null, true),
+           new DataGridColumn('weightQuestion',                  _M('Weight question', $module), 'left',  true, null, true),
+           new DataGridColumn('numberOrder',                     _M('Number order', $module), 'left',  true, null, false)
+        );
+
+        $sql = 'SELECT A.examOccurrenceId,
+                       A.selectiveProcessId,
+                       B.description AS selectiveProcessDescription,
+                       A.selectiveProcessTypeId,
+                       C.description AS selectiveProcessTypeDescription,
+                       A.examId,
+                       D.description AS examDescription,
+                       A.numberQuestions,
+                       A.weightQuestion,
+                       A.numberOrder
+                  FROM sprExamOccurrence A
+             LEFT JOIN sprSelectiveProcess B
+                    ON ( A.selectiveProcessId = B.selectiveProcessId )
+             LEFT JOIN sprSelectiveProcessType C
+                    ON ( A.selectiveProcessTypeId = C.selectiveProcessTypeId )
+             LEFT JOIN sprExam D
+                    ON ( A.examId = D.examId )';
+
+        if ( strlen((string)$examOccurrenceId) > 0 )
+        {
+            $where .= ' AND A.examOccurrenceId = ?';
+            $args[] = $examOccurrenceId;
+        }
+
+        if ( strlen((string)$selectiveProcessId) > 0 )
+        {
+            $where .= ' AND A.selectiveProcessId ILIKE ?';
+            $args[] = $selectiveProcessId . '%';
+        }
+
+        if ( strlen((string)$selectiveProcessTypeId) > 0 )
+        {
+            $where .= ' AND A.selectiveProcessTypeId = ?';
+            $args[] = $selectiveProcessTypeId;
+        }
+
+        if ( strlen((string)$examId) > 0 )
+        {
+            $where .= ' AND A.examId = ?';
+            $args[] = $examId;
+        }
+
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE ' . substr($where, 5);
+        }
+
+        $sql .= ' ORDER BY A.examOccurrenceId';
+
+        $sqlObject = new sql();
+        if ( strlen((string)$where) == 0 )
+        {
+            $sql .= ' LIMIT 0';
+        }
+
+        $sqlObject->createFrom(SAGU::prepare($sql,$args));
+        $lookup->setFilterColumns(LOOKUP_FILTER_COLUMNS);
+        $lookup->setLookupGrid($module, $sqlObject, $columns, _M('Exam occurrence search',$module), 15, 0);
+        $lookup->grid->setIsScrollable();
+
+    }
+
+    /**
+     * Auto complete for course occurrence
+     *
+     * @param $context (object): MIOLO Context object
+     *
+     * @return (object): MIOLO Gives the action evaluating the code by setContext call
+     *
+     **/
+    public function autoCompleteInscription(&$context)
+    {
+
+        $sql = 'SELECT A.selectiveProcessId,
+                       A.personId,
+                       B.name AS personName,
+                       A.cityExam,
+                       A.placeRoomId,
+                       A.languageId,
+                       A.isHighSchool,
+                       A.isInternet,
+                       TO_CHAR(A.dateInscription,\'' . MASK_DATE . '\') ,
+                       A.totalPoints,
+                       A.isClassified
+                  FROM sprInscription A
+       INNER JOIN ONLY basPerson B
+                    ON ( B.personId = A.personId )
+                 WHERE A.inscriptionId = ?';
+
+        $context->setContext('selectiveProcess', $sql);
+    }
+
+    /**
+     * Lookup for course version
+     *
+     * @param $lookup: Lookup Object used by MIOLO
+     *
+     * @return MIOLO Lookup function as actions evaluated by MIOLO
+     *
+     **/
+    public function lookupInscription(&$lookup)
+    {
+        global $MIOLO;
+        $module = MIOLO::_request('lmodule');
+
+        $MIOLO->uses('classes/sagu.class','basic');
+        $MIOLO->conf->loadConf($module);
+
+        /**
+         * Load global defines for the basic module
+         */
+        $business  = $MIOLO->getBusiness('basic','BusConfig');
+        $constants = $business->getModuleValues('basic');
+        foreach ( $constants as $cnt )
+        {
+            define($cnt[0],$cnt[1]);
+        }
+
+        $inscriptionId      = $lookup->getFilterValue('inscriptionId');
+        $selectiveProcessId = $lookup->getFilterValue('selectiveProcessId');
+        $personId           = $lookup->getFilterValue('personId');
+        $personName         = $lookup->getFilterValue('personName');
+        $cityExam           = $lookup->getFilterValue('cityExam');
+        $placeRoomId        = $lookup->getFilterValue('placeRoomId');
+        $languageId         = $lookup->getFilterValue('languageId');
+        $isHighSchool       = $lookup->getFilterValue('isHighSchool');
+        $isInternet         = $lookup->getFilterValue('isInternet');
+        $dateInscription    = $lookup->getFilterValue('dateInscription');
+        $totalPoints        = $lookup->getFilterValue('totalPoints');
+        $isClassified       = $lookup->getFilterValue('isClassified');
+
+        $lookup->addFilterField( new MTextField('inscriptionId',       $inscriptionId,       _M('Code', $module),                 FIELD_ID_LOOKUP_SIZE) );
+        $business = $MIOLO->getBusiness('selectiveProcess', 'BusSelectiveProcess');
+        $lookup->addFilterField( new MComboBox('selectiveProcessId', $selectiveProcessId, _M('Selective process',$module), $business->listSelectiveProcess()) );
+        $lookup->addFilterField( new MTextField('personId',            $personId,            _M('Person id', $module),            FIELD_ID_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('personName',          $personName,          _M('Person', $module),               FIELD_DESCRIPTION_LOOKUP_SIZE) );
+        $lookup->addFilterField( fields::language($languageId) );
+        $lookup->addFilterField( new MSelection('isHighSchool',        $isHighSchool,        _M('Is high school', $module),       SAGU::listTrueFalse()) );
+        $lookup->addFilterField( new MSelection('isInternet',          $isInternet,          _M('Is internet', $module),          SAGU::listTrueFalse()) );
+        $lookup->addFilterField( new MSelection('isClassified',        $isClassified,        _M('Is classified', $module),        SAGU::listTrueFalse()) );
+
+        $columns = array(
+           new DataGridColumn('inscriptionId',      _M('Code', $module), 'right', true, null, true),
+           new DataGridColumn('selectiveProcessId', _M('Selective process id', $module), 'right', true, null, true),
+           new DataGridColumn('selectiveProcessDescription', _M('Selective process', $module), 'right', true, null, true),
+           new DataGridColumn('personId',           _M('Person id', $module), 'left', true, null, true),
+           new DataGridColumn('personName',         _M('Person', $module), 'left', true, null, true),
+           new DataGridColumn('cityExamId',         _M('City exam id', $module), 'right', true, null, false),
+           new DataGridColumn('cityExam',           _M('City exam', $module), 'left', true, null, true),
+           new DataGridColumn('placeRoomId',        _M('Place room id', $module), 'left',  true, null, false),
+           new DataGridColumn('languageId',         _M('Language id', $module), 'right', true, null, false),
+           new DataGridColumn('language',           _M('Language', $module), 'left', true, null, true),
+           new DataGridColumn('isHighSchool',       _M('Is high school', $module), 'left', true, null, true, array(DB_TRUE => _M('Yes',$module), DB_FALSE => _M('No',$module))),
+           new DataGridColumn('isInternet',         _M('Is internet',    $module),       'left', true, null, true, array(DB_TRUE => _M('Yes',$module), DB_FALSE => _M('No',$module))),
+           new DataGridColumn('dateInscription',    _M('Date inscription', $module),     'left', true, null, false),
+           new DataGridColumn('totalPoints',        _M('Total points', $module),       'left', true, null, true),
+           new DataGridColumn('isClassified',       _M('Is classified', $module),      'right', true, null, true, array(DB_TRUE => _M('Yes',$module), DB_FALSE => _M('No',$module)))
+        );
+
+        $sql = 'SELECT A.inscriptionId,
+                       A.selectiveProcessId,
+                       A.personId,
+                       B.name AS personName,
+                       A.cityExam as cityExamId,
+                       A.placeRoomId,
+                       A.languageId,
+                       A.isHighSchool,
+                       A.isInternet,
+                       TO_CHAR(A.dateInscription,\'' . MASK_DATE . '\') ,
+                       A.totalPoints,
+                       A.isClassified,
+                       C.description as selectiveProcessDescription,
+                       getCity(A.cityExam) as cityExam,
+                       getLanguage(A.languageId) as language
+                  FROM sprInscription A
+            INNER JOIN sprSelectiveProcess C
+                    ON ( A.selectiveProcessId = C.selectiveProcessId )
+       INNER JOIN ONLY basPerson B
+                    ON ( B.personId = A.personId )';
+
+        if ( strlen((string)$inscriptionId) > 0 )
+        {
+            $where .= ' AND A.inscriptionId ILIKE ?';
+            $args[] = $inscriptionId;
+        }
+
+        if ( strlen((string)$selectiveProcessId) > 0 )
+        {
+            $where .= ' AND A.selectiveProcessId ILIKE ?';
+            $args[] = $selectiveProcessId;
+        }
+
+        if ( strlen((string)$personId) > 0 )
+        {
+            $where .= ' AND A.personId = ?';
+            $args[] = $personId;
+        }
+
+        if ( strlen((string)$personName) > 0 )
+        {
+            $where .= ' AND TO_ASCII(B.name) ILIKE TO_ASCII(?)';
+            $args[] = $personName .'%';
+        }
+
+        if ( strlen((string)$cityExam) > 0 )
+        {
+            $where .= ' AND A.cityExam = ?';
+            $args[] = $cityExam;
+        }
+
+        if ( strlen((string)$placeRoomId) > 0 )
+        {
+            $where .= ' AND A.placeRoomId = ?';
+            $args[] = $placeRoomId;
+        }
+
+        if ( strlen((string)$languageId) > 0 )
+        {
+            $where .= ' AND A.languageId = ?';
+            $args[] = $languageId;
+        }
+
+        if ( strlen((string)$isHighSchool) > 0 )
+        {
+            $where .= ' AND A.isHighSchool = ?';
+            $args[] = $isHighSchool;
+        }
+
+        if ( strlen((string)$isInternet) > 0 )
+        {
+            $where .= ' AND A.isInternet = ?';
+            $args[] = $isInternet;
+        }
+
+        if ( strlen((string)$totalPoints) > 0 )
+        {
+            $where .= ' AND A.totalPoints  = ?';
+            $args[] = $totalPoints;
+        }
+
+        if ( strlen((string)$isClassified) > 0 )
+        {
+            $where .= ' AND A.isClassified = ?';
+            $args[] = $isClassified;
+        }
+
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE ' . substr($where, 5);
+        }
+
+        $sql .= ' ORDER BY B.name ';
+
+        $sqlObject = new sql();
+        if ( strlen((string)$where) == 0 )
+        {
+            $sql .= ' LIMIT 0';
+        }
+
+        $sqlObject->createFrom(SAGU::prepare($sql,$args));
+        $lookup->setFilterColumns(LOOKUP_FILTER_COLUMNS);
+        $lookup->setLookupGrid($module, $sqlObject, $columns, _M('Inscription search',$module), 15, 0);
+        $lookup->grid->setIsScrollable();
+
+    }
+ 
+     /**
+     * Auto complete for course occurrence
+     *
+     * @param $context (object): MIOLO Context object
+     *
+     * @return (object): MIOLO Gives the action evaluating the code by setContext call
+     *
+     **/
+    public function autoCompletePlaceRoom(&$context)
+    {
+    
+        $sql = 'SELECT A.placeRoomId,
+                       A.placeSelectiveProcessId,
+                       A.placeId,
+                       A.room,
+                       A.build,
+                       A.vacant,
+                       A.priority,
+                       A.specialNecessity,
+                       A.languageId
+                  FROM sprPlaceRoom A
+                 WHERE A.placeRoomId = ? ';
+
+        $context->setContext('selectiveProcess', $sql);
+    }
+
+    public function lookupPlaceRoom(&$lookup)
+    {
+        global $MIOLO;
+        $module = MIOLO::_request('lmodule');
+
+        $MIOLO->uses('classes/sagu.class','basic');
+        $MIOLO->conf->loadConf($module);
+
+        $placeRoomId        = $lookup->getFilterValue('placeRoomId');
+        $selectiveProcessId = $lookup->getFilterValue('selectiveProcessId');
+        $placeId            = $lookup->getFilterValue('placeId');
+        $room               = $lookup->getFilterValue('room');
+        $build              = $lookup->getFilterValue('build');
+        $vacant             = $lookup->getFilterValue('vacant');
+        $priority           = $lookup->getFilterValue('priority');
+        $specialNecessity   = $lookup->getFilterValue('specialNecessity');
+        $languageId         = $lookup->getFilterValue('languageId');
+
+        $lookup->addFilterField( new MTextField('placeRoomId', $placeRoomId, _M('Code', $module), FIELD_ID_LOOKUP_SIZE) );
+        $business = $MIOLO->getBusiness('selectiveProcess', 'BusSelectiveProcess');
+        $lookup->addFilterField( new MComboBox('selectiveProcessId', $selectiveProcessId, _M('Selective process',$module), $business->listSelectiveProcess()) );
+        $lookup->addFilterField( new MTextField('room',        $room,        _M('Room', $module), FIELD_ID_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('build',       $build,       _M('Build', $module), FIELD_ID_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('vacant',      $vacant,      _M('Vacant', $module), FIELD_ID_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('priority',    $priority,    _M('Priority', $module), FIELD_ID_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MSelection('specialNecessity', $specialNecessity, _M('Special necessity', $module), SAGU::listTrueFalse()) );
+        $lookup->addFilterField( fields::language($languageId)  );
+
+        $columns = array(
+           new DataGridColumn('placeRoomId',        _M('Code', $module), 'right', true, null, true),
+           new DataGridColumn('selectiveProcessId', _M('Selective process id', $module), 'left', true, null, true),
+           new DataGridColumn('selectiveProcessDescription', _M('Selective process', $module), 'left', true, null, true),
+           new DataGridColumn('placeId',            _M('Place id', $module), 'left', true, null, false),
+           new DataGridColumn('room',               _M('Room', $module), 'right', true, null, true),
+           new DataGridColumn('build',              _M('Build', $module), 'left',  true, null, true),
+           new DataGridColumn('vacant',             _M('Vacants', $module), 'right', true, null, true),
+           new DataGridColumn('priority',           _M('Priority', $module), 'left',  true, null, true),
+           new DataGridColumn('specialNecessity',   _M('Special necessity', $module), 'left',  true, null, true, array(DB_TRUE => _M('Yes',$module), DB_FALSE => _M('No',$module))),
+           new DataGridColumn('languageId',         _M('Language id', $module), 'right', true, null, false),
+           new DataGridColumn('language',           _M('Language', $module), 'left', true, null, true)
+        );
+
+        $sql = 'SELECT A.placeRoomId,
+                       B.selectiveProcessId,
+                       B.placeId,
+                       A.room,
+                       A.build,
+                       A.vacant,
+                       A.priority,
+                       A.specialNecessity,
+                       C.languageId,
+                       C.description as language,
+                       A2.description as selectiveProcessDescription
+                  FROM sprPlaceRoom A
+            INNER JOIN sprSelectiveProcess A2
+                    ON ( A.selectiveProcessId = A2.selectiveProcessId )
+             LEFT JOIN sprPlaceOccurrence B
+                    ON (     A.selectiveProcessId = B.selectiveProcessId
+                         AND A.placeId = B.placeId )
+             LEFT JOIN sprLanguage C
+                    ON ( C.languageId = A.languageId )';
+
+        if ( strlen((string)$placeRoomId) > 0 )
+        {
+            $where .= ' AND A.placeRoomId = ?';
+            $args[] = $placeRoomId;
+        }
+
+        if ( strlen((string)$selectiveProcessId) > 0 )
+        {
+            $where .= ' AND A.selectiveProcessId ILIKE ?';
+            $args[] = $selectiveProcessId;
+        }
+
+        if ( strlen((string)$placeId) > 0 )
+        {
+            $where .= ' AND A.placeId = ?';
+            $args[] = $placeId;
+        }
+
+        if ( strlen((string)$room) > 0 )
+        {
+            $where .= ' AND A.room ILIKE ?';
+            $args[] = $room;
+        }
+
+        if ( strlen((string)$build) > 0 )
+        {
+            $where .= ' AND A.build ILIKE ?';
+            $args[] = $build;
+        }
+
+        if ( strlen((string)$vacant) > 0 )
+        {
+            $where .= ' AND A.vacant = ?';
+            $args[] = $vacant;
+        }
+
+        if ( strlen((string)$priority) > 0 )
+        {
+            $where .= ' AND A.priority = ?';
+            $args[] = $priority;
+        }
+
+        if ( strlen((string)$specialNecessity) > 0 )
+        {
+            $where .= ' AND A.specialNecessity = ?';
+            $args[] = $specialNecessity;
+        }
+
+        if ( strlen((string)$languageId) > 0 )
+        {
+            $where .= ' AND A.languageId  = ?';
+            $args[] = $languageId;
+        }
+
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE ' . substr($where, 5);
+        }
+
+        $sql .= ' ORDER BY A.placeRoomId ';
+
+        $sqlObject = new sql();
+        if ( strlen((string)$where) == 0 )
+        {
+            $sql .= ' LIMIT 0';
+        }
+
+        $sqlObject->createFrom(SAGU::prepare($sql,$args));
+        $lookup->setFilterColumns(LOOKUP_FILTER_COLUMNS);
+        $lookup->setLookupGrid($module, $sqlObject, $columns, _M('Place room search',$module), 15, 0);
+        $lookup->grid->setIsScrollable();
+    }
+
+    public function autoCompleteLanguage(&$context)
+    {
+        $sql = 'SELECT description AS languageDescription
+                  FROM sprLanguage
+                 WHERE languageId = ?';
+ 
+        $context->setContext('selectiveProcess', $sql);
+    }
+
+    /**
+     * Lookup for selective process languages 
+     *
+     * @param $lookup: Lookup Object used by MIOLO
+     *
+     * @return MIOLO Lookup function as actions evaluated by MIOLO
+     *
+     **/
+    public function lookupLanguage(&$lookup)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::_request('lmodule');
+
+        $MIOLO->uses('classes/sagu.class','basic');
+        $MIOLO->conf->loadConf($module);
+
+        $languageId          = $lookup->getFilterValue('languageId');
+        $languageDescription = $lookup->getFilterValue('languageDescription');
+        $shortDescription    = $lookup->getFilterValue('shortDescription');
+
+        $lookup->addFilterField( new MTextField('languageId', $languageId, _M('Code',$module), FIELD_ID_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('languageDescription', $languageDescription, _M('Language',$module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('shortDescription', $shortDescription, _M('Short description',$module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+
+        $columns = array(
+           new DataGridColumn('languageId',          _M('Code', $module), 'right', true, null, true),
+           new DataGridColumn('languageDescription', _M('Language', $module), 'left', true, null, true),
+           new DataGridColumn('shortDescription',    _M('Short description', $module), 'left', true, null, true)
+        );
+
+        $sql = 'SELECT A.languageId,
+                       A.description AS languageDescription,
+                       A.shortDescription
+                  FROM sprLanguage A';
+
+        if ( strlen((string)$languageId) > 0 )
+        {
+            $where .= ' AND A.languageId ILIKE ?';
+            $args[] = $languageId;
+        }
+
+        if ( strlen((string)$languageDescription) > 0 )
+        {
+            $where .= ' AND TO_ASCII(A.description) ILIKE TO_ASCII(?)';
+            $args[] = $languageDescription . '%';
+        }
+
+        if ( strlen((string)$shortDescription) > 0 )
+        {
+            $where .= ' AND TO_ASCII(A.shortDescription) ILIKE TO_ASCII(?)';
+            $args[] = $shortDescription . '%';
+        }
+
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE ' . substr($where, 5);
+        }
+
+        $sql .= ' ORDER BY description';
+
+        $sqlObject = new sql();
+        if ( strlen((string)$where) == 0 )
+        {
+            $sql .= ' LIMIT 0';
+        }
+
+        $sqlObject->createFrom(SAGU::prepare($sql,$args));
+        $lookup->setFilterColumns(LOOKUP_FILTER_COLUMNS);
+        $lookup->setLookupGrid($module, $sqlObject, $columns, _M('Language search',$module), 15, 0);
+        $lookup->grid->setIsScrollable();
+
+    }
+
+    /**
+     * Auto complete for course occurrence
+     *
+     * @param $context (object): MIOLO Context object
+     *
+     * @return (object): MIOLO Gives the action evaluating the code by setContext call
+     *
+     **/
+    public function autoCompleteCourseOccurrence(&$context)
+    {
+        $sql = 'SELECT A.courseOccurrenceId,
+                       A.courseVacantId,
+                       B.vacant,
+                       C.name as courseName,
+                       A.courseVersion,
+                       A.turnId,
+                       D.description AS turnDescription,
+                       A.unitId,
+                       E.description AS unitDescription,
+                       A.isAvailable
+                 FROM  sprCourseOccurrence A
+             LEFT JOIN sprCourseVacant B
+                    ON ( A.courseVacantId = B.courseVacantId )
+             LEFT JOIN acdCourse C
+                    ON ( A.courseId = C.courseId )
+             LEFT JOIN basTurn D
+                    ON ( A.turnId = D.turnId )
+             LEFT JOIN basUnit E
+                    ON ( A.unitId = E.unitId )
+                 WHERE A.courseOccurrenceId = ?';
+
+        $context->setContext('selectiveProcess', $sql);
+    }
+
+    /**
+     * Lookup for course version
+     *
+     * @param $lookup: Lookup Object used by MIOLO
+     *
+     * @return MIOLO Lookup function as actions evaluated by MIOLO
+     *
+     **/
+    public function lookupCourseOccurrence(&$lookup)
+    {
+        global $MIOLO;
+        $module = MIOLO::_request('lmodule');
+
+        $MIOLO->uses('classes/sagu.class','basic');
+        $MIOLO->conf->loadConf($module);
+
+        /**
+         * Load global defines for the basic module
+         */
+        $business  = $MIOLO->getBusiness('basic','BusConfig');
+        $constants = $business->getModuleValues('basic');
+        foreach ( $constants as $cnt )
+        {
+            define($cnt[0],$cnt[1]);
+        }
+
+        $courseOccurrenceId = $lookup->getFilterValue('courseOccurrenceId');
+        $courseId           = $lookup->getFilterValue('courseId');
+        $courseVersion      = $lookup->getFilterValue('courseVersion');
+        $courseName         = $lookup->getFilterValue('courseName');
+        $turnId             = $lookup->getFilterValue('turnId');
+        $unitId             = $lookup->getFilterValue('unitId');
+        $status             = $lookup->getFilterValue('status');
+        $selectiveProcessId = $lookup->getFilterValue('selectiveProcessId');
+
+        $lookup->addFilterField( new MTextField('courseOccurrenceId', $courseOccurrenceId, _M('Code', $module), FIELD_ID_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('courseId', $courseId, _M('Course id', $module), FIELD_ID_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('courseVersion', $courseVersion, _M('Course version', $module), FIELD_ID_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('courseName', $courseName, _M('Course', $module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+        $lookup->addFilterField( fields::turn($turnId) );
+        $lookup->addFilterField( fields::unit($unitId) );
+        $business = $MIOLO->getBusiness('selectiveProcess', 'BusSelectiveProcess');
+        $lookup->addFilterField( new MComboBox('selectiveProcessId', $selectiveProcessId, _M('Selective process',$module), $business->listSelectiveProcess()) );
+
+        $columns = array(
+           new DataGridColumn('courseOccurrenceId', _M('Code', $module), 'right', true, null, true),
+           new DataGridColumn('courseId',           _M('Course id', $module), 'right', true, null, true),
+           new DataGridColumn('courseVersion',      _M('Course version', $module), 'right', true, null, true),
+           new DataGridColumn('courseName',         _M('Course', $module), 'left', true, null, true),
+           new DataGridColumn('turnId',             _M('Turn id', $module), 'right', true, null, false),
+           new DataGridColumn('turnDescription',    _M('Turn', $module), 'left', true, null, true),
+           new DataGridColumn('unitId',             _M('Unit id', $module), 'right', true, null, false),
+           new DataGridColumn('unitDescription',    _M('Unit', $module), 'left', true, null, true),
+           new DataGridColumn('courseVacantId',     _M('Vacancy id', $module), 'right', true, null, false),
+           new DataGridColumn('vacant',             _M('Vacants', $module), 'left', true, null, true),
+           new DataGridColumn('isAvailable',        _M('Is available', $module), 'left',  true, null, true, array(DB_TRUE => _M('Yes',$module), DB_FALSE => _M('No',$module)))
+        );
+
+        $sql = 'SELECT A.courseOccurrenceId,
+                       A.courseVacantId,
+                       B.vacant,
+                       A.courseVersion,
+                       C.shortName as courseName,
+                       A.turnId,
+                       D.description AS turnDescription,
+                       A.unitId,
+                       E.description AS unitDescription,
+                       A.isAvailable,
+                       B.selectiveProcessId,
+                       A.courseId
+                 FROM  sprCourseOccurrence A
+             LEFT JOIN sprCourseVacant B
+                    ON ( A.courseVacantId = B.courseVacantId )
+             LEFT JOIN acdCourse C
+                    ON ( A.courseId = C.courseId )
+             LEFT JOIN basTurn D
+                    ON ( A.turnId = D.turnId )
+             LEFT JOIN basUnit E
+                    ON ( A.unitId = E.unitId ) ';
+
+        if ( strlen((string)$courseOccurrenceId) > 0 )
+        {
+            $where .= ' AND A.courseOccurrenceId = ?';
+            $args[] = $courseOccurrenceId;
+        }
+
+        if ( strlen((string)$courseId) > 0 )
+        {
+            $where .= ' AND A.courseId ILIKE ?';
+            $args[] = $courseId;
+        }
+
+        if ( strlen((string)$courseVersion) > 0 )
+        {
+            $where .= ' AND A.courseVersion = ?';
+            $args[] = $courseVersion;
+        }
+
+        if ( strlen((string)$courseName) > 0 )
+        {
+            $where .= ' AND ( TO_ASCII(C.name) ILIKE TO_ASCII(?) OR TO_ASCII(C.shortName) ILIKE TO_ASCII(?) )';
+            $args[] = $courseName . '%';
+            $args[] = $courseName . '%';
+        }
+
+        if ( strlen((string)$turnId) > 0 )
+        {
+            $where .= ' AND A.turnId = ?';
+            $args[] = $turnId;
+        }
+
+        if ( strlen((string)$unitId) > 0 )
+        {
+            $where .= ' AND A.unitId = ?';
+            $args[] = $unitId;
+        }
+
+        if ( strlen((string)$selectiveProcessId) > 0 )
+        {
+            $where .= ' AND B.selectiveProcessId ILIKE ?';
+            $args[] = $selectiveProcessId . '%';
+        }
+
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE ' . substr($where, 5);
+        }
+
+        $sql .= ' ORDER BY C.courseId,
+                           A.courseVersion DESC';
+
+        $sqlObject = new sql();
+        if ( strlen((string)$where) == 0 )
+        {
+            $sql .= ' LIMIT 0';
+        }
+
+        $sqlObject->createFrom(SAGU::prepare($sql,$args));
+        $lookup->setFilterColumns(LOOKUP_FILTER_COLUMNS);
+        $lookup->setLookupGrid($module, $sqlObject, $columns, _M('Vacancy occurrence search',$module), 15, 0);
+        $lookup->grid->setIsScrollable();
+
+    }
+
+    /**
+     * Auto complete for selective process cities
+     *
+     * @param $context (object): MIOLO Context object
+     *
+     * @return (object): MIOLO Gives the action evaluating the code by setContext call
+     *
+     **/
+    public function autoCompleteSelectiveProcessCity(&$context)
+    {
+    
+        $sql = 'SELECT A.name
+                  FROM basCity A
+                 WHERE A.cityId = ?  ';
+
+
+        $context->setContext('selectiveProcess', $sql);
+    }
+
+    public function lookupSelectiveProcessCity(&$lookup)
+    {
+        global $MIOLO;
+        $module = MIOLO::_request('lmodule');
+
+        $MIOLO->uses('classes/sagu.class','basic');
+        $MIOLO->conf->loadConf($module);
+
+        $cityId             = $lookup->getFilterValue('cityId');
+        $cityName           = $lookup->getFilterValue('cityName');
+        $selectiveProcessId = $lookup->getFilterValue('selectiveProcessId');
+
+        $lookup->addFilterField( new MTextField('cityId', $cityId, _M('City id', $module),    FIELD_ID_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('cityName', $cityName, _M('City', $module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+
+        $business = $MIOLO->getBusiness('selectiveProcess', 'BusSelectiveProcess');
+        $lookup->addFilterField( new MComboBox('selectiveProcessId', $selectiveProcessId, _M('Selective process',$module), $business->listSelectiveProcess()) );
+
+        $columns = array(
+           new DataGridColumn('cityId',   _M('City id', $module), 'left',  true, null, true),
+           new DataGridColumn('cityName', _M('City', $module),    'left',  true, null, true),
+           new DataGridColumn('selectiveProcessId', _M('Selective process id', $module), 'left',  true, null, true),
+           new DataGridColumn('selectiveProcessDescription', _M('Selective process', $module), 'left',  true, null, true)
+        );
+
+        $sql = 'SELECT A.cityId,
+                       A.name AS cityName,
+                       C.selectiveProcessId,
+                       D.description as selectiveProcessDescription
+                  FROM basCity A
+            INNER JOIN sprPlace B
+                 USING ( cityId )
+            INNER JOIN sprPlaceOccurrence C 
+                 USING ( placeId )
+            INNER JOIN sprSelectiveProcess D
+                    ON ( C.selectiveProcessId = D.selectiveProcessId)';
+
+        if ( strlen((string)$cityId) > 0 )
+        {
+            $where .= ' AND A.cityId = ?';
+            $args[] = $cityId;
+        }
+
+        if ( strlen((string)$cityName) > 0 )
+        {
+            $where .= ' AND TO_ASCII(A.name) ILIKE TO_ASCII(?)';
+            $args[] = $cityName . '%';
+        }
+
+        if ( strlen((string)$selectiveProcessId) > 0 )
+        {
+            $where .= ' AND C.selectiveProcessId = ?';
+            $args[] = $selectiveProcessId;
+        }
+
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE ' . substr($where, 5);
+        }
+
+        $sql .= ' ORDER BY A.name ';
+
+
+        $sqlObject = new sql();
+        if ( strlen((string)$where) == 0 )
+        {
+            $sql .= ' LIMIT 0';
+        }
+
+        $sqlObject->createFrom(SAGU::prepare($sql,$args));
+        $lookup->setFilterColumns(LOOKUP_FILTER_COLUMNS);
+        $lookup->setLookupGrid($module, $sqlObject, $columns, _M('City search',$module), 15, 0);
+        $lookup->grid->setIsScrollable();
+    }
+
+    /**
+     * Auto complete for selective process type
+     *
+     * @param $context (object): MIOLO Context object
+     *
+     * @return (object): MIOLO Gives the action evaluating the code by setContext call
+     *
+     **/
+    public function autoCompleteSelectiveProcessType(&$context)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+
+        $sql = 'SELECT description
+                  FROM sprSelectiveProcessType
+                 WHERE selectiveProcessTypeId = ?';
+ 
+        $context->setContext('selectiveProcess', $sql);
+    }
+
+    /**
+     * Lookup for selective process
+     *
+     * @param $lookup: Lookup Object used by MIOLO
+     *
+     * @return MIOLO Lookup function as actions evaluated by MIOLO
+     *
+     **/
+    public function lookupSelectiveProcessType(&$lookup)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::_request('lmodule');
+
+        $MIOLO->uses('classes/sagu.class','basic');
+        $MIOLO->conf->loadConf($module);
+
+        $selectiveProcessId = $lookup->getFilterValue('selectiveProcessTypeId');
+        $description        = $lookup->getFilterValue('description');
+
+        $lookup->addFilterField( new MTextField('selectiveProcessTypeId', $selectiveProcessId, _M('Selective process type id',$module), FIELD_ID_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('description', $description, _M('Description',$module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+
+        $columns = array(
+           new DataGridColumn('selectiveProcessTypeId', _M('Code', $module),        'right', true, null, true),
+           new DataGridColumn('description',            _M('Description', $module), 'left', true, null, true)
+        );
+
+        $sql = 'SELECT A.selectiveProcessTypeId,
+                       A.description
+                  FROM sprSelectiveProcessType A';
+
+        if ( strlen((string)$selectiveProcessTypeId) > 0 )
+        {
+            $where .= ' AND A.selectiveProcessTypeId = ?';
+            $args[] = $selectiveProcessTypeId;
+        }
+        if ( strlen((string)$description) > 0 )
+        {
+            $where .= ' AND TO_ASCII(A.description) ILIKE TO_ASCII(?)';
+            $args[] = $description;
+        }
+
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE ' . substr($where, 5);
+        }
+
+        $sql .= ' ORDER BY A.description';
+
+        $sqlObject = new sql();
+        if ( strlen((string)$where) == 0 )
+        {
+            $sql .= ' LIMIT 0';
+        }
+
+        $sqlObject->createFrom(SAGU::prepare($sql,$args));
+        $lookup->setFilterColumns(LOOKUP_FILTER_COLUMNS);
+        $lookup->setLookupGrid($module, $sqlObject, $columns, _M('Selective process type search',$module), 15, 0);
+        $lookup->grid->setIsScrollable();
+
+    }
+
+
+
+}
+
+?>

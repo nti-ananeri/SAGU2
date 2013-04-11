@@ -1,0 +1,124 @@
+<?php
+
+class FrmBoletim extends MForm
+{
+    private $home;
+
+    /**
+     * Class constructor
+     **/
+    function __construct($data)
+    {
+        $this->home = $data->home;
+
+        parent::__construct(_M('Boletim', 'academic'));
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_REQUEST('function');
+
+        $busPeriod    = $MIOLO->getBusiness('academic', 'BusPeriod');
+        $periodValue  = $this->getFormValue('periodId',$this->enrollData->periodId) ? $this->getFormValue('periodId',$this->enrollData->periodId) : CURRENT_PERIOD_ID;
+        $periodId     = new MComboBox('periodId', $periodValue, _M('Period', 'academic'), $busPeriod->listPeriod());
+        $periodId->setAutoPostBack(true);
+        $validators[] = new MRequiredValidator('periodId', _M('Period','academic'), 'required');
+        $fields[]     = $periodId;
+
+        $fields[]     = new MSeparator();
+
+        $this->setFields($fields);
+        $this->setValidators($validators);
+        $this->page->onLoad('document.' . $this->name . '.periodId.focus();');
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setClose($MIOLO->getActionURL('services', substr($action, 0, strrpos($action, ':'))));
+        $this->setShowPostButton(false);
+        
+        if ( $this->periodId->value )
+        {
+            unset($fields);
+            $personId = $MIOLO->session->getValue('loginUid');
+
+            $businessContract       = $MIOLO->getBusiness('academic', 'BusContract');
+            $businessLearningPeriod = $MIOLO->getBusiness('academic', 'BusLearningPeriod');
+
+            $contracts = $businessContract->getPersonActiveContracts($personId);
+
+            $exists = false;
+            if ( count($contracts) > 0 )
+            {
+                foreach ( $contracts as $row )
+                {
+                    list ( $contractId,
+                           $courseId,
+                           $courseVersion,
+                           $courseName,
+                           $unitId,
+                           $unitDescription,
+                           $turnId,
+                           $turnDescription,
+                           $isOut ) = $row;
+
+                    if ( $isOut == DB_FALSE )
+                    {
+                        $learningPeriod = $businessLearningPeriod->getLearningPeriodByCourseAndPeriod($courseId, $courseVersion, $this->periodId->value, $turnId);
+
+                        //verifica se o aluno teve uma matrícula naquele período
+                        if ( $businessContract->haveEnroll($contractId, $learningPeriod->learningPeriodId) == DB_TRUE )
+                        {
+                            $exists = true;
+                            $options[] = new MOption('contractId' . $contractId, $contractId, $courseId . '/' . $courseVersion . ' - ' . $courseName . ' - ' . $unitDescription . ' - ' . $turnDescription, false);
+                        }
+                    }
+                }
+                if ( count($options) > 0 )
+                {
+                    $radioContractLabel = new MText('radioContractLabel', _M('Course','academic') . ':');
+                    $radioContractLabel->setWidth(FIELD_CONTAINER_SIZE);
+                    $radioContractLabel->setClass('m-caption m-caption-required');
+                    $radioContract      = new MRadioButtonGroup('contractId', '', $options, $this->contractId->value, '', 'horizontal', '');
+                    $radioContract->setShowLabel(false);
+                    $radioContract->setAutoPostBack(true);
+                    $hctRadioContract      = new MHContainer('hctRadioContract', array($radioContractLabel, $radioContract));
+                    $hctRadioContract->setShowLabel(false);
+                    $fields[]           = $hctRadioContract;
+                }
+            }
+            if ( $exists == false )
+            {
+                $fields[] = new Mtext('erro', _M('No boletim in the selected period', 'academic'));
+            }
+            $this->addFields($fields);
+        }
+
+        if ( $this->contractId->value )
+        {
+            $data->personId         = $MIOLO->session->getValue('loginUid');
+            $data->learningPeriodId = $learningPeriod->learningPeriodId;
+            $data->periodId         = $this->periodId->value;
+            $data->emissionDate     = date('d/m/Y');
+
+            $data->contractId       = $this->contractId->value;
+            $contract               = $businessContract->getContract($data->contractId);
+            $data->courseId         = $contract->courseId;
+            $data->courseVersion    = $contract->courseVersion;
+            $data->courseName       = $contract->courseName;
+            $data->unitId           = $contract->unitId;
+            $data->turnId           = $contract->turnId;
+
+            $MIOLO->getClass('academic', 'RptBoletim');
+            $report = new RptBoletim($data);
+        }
+    }
+
+}
+
+?>

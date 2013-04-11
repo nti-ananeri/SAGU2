@@ -1,0 +1,177 @@
+<?php
+
+/**
+ * GenerateMultiplePrice form
+ *
+ * @author Armando Taffarel Neto [taffarel@solis.coop.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * Armando Taffarel Neto [taffarel@solis.coop.br]
+ *
+ * @since
+ * Class created on 16/05/2006
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2005 SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+
+/**
+ * Form to generate Multiple Price
+ **/
+class FrmGenerateMultiplePriceCourse extends MForm
+{
+    private $home;
+    public $filters;
+    /**
+     * Class constructor
+     **/
+    function __construct($data)
+    {
+
+        $module = MIOLO::getCurrentModule();
+
+        $this->home   = $data->home;
+
+        parent::__construct(_M('Generate multiple price', $module));
+
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+
+
+        $toolBar = new MToolBar('toolBar',$MIOLO->getActionURL($module,$action));
+
+        $toolBar->disableButton('tbBtnNew');
+        $toolBar->disableButton('tbBtnDelete');
+        $toolBar->disableButton('tbBtnPrint');
+        $toolBar->disableButton('tbBtnSave');
+        $toolBar->disableButton('tbBtnSearch');
+
+        //favoritos
+        $enabledImage  = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-20x20.png');
+        $disabledImage = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-disabled-20x20.png');
+        $url           = $MIOLO->getActionURL($module, $this->home, null, array('function' => 'search', 'event' => 'bookmark'));
+        $toolBar->addButton('tbBtnBookmark', _M('Add to bookmarks', 'basic'), $url, null, true, $enabledImage, $disabledImage);
+
+        if ( MIOLO::_request('event') == 'bookmark' )
+        {
+            $MIOLO->getClass('basic', 'access');
+            access::insert('Generate multiple price', $this->home, 'generateMultiplePriceCourse-16x16.png', true);
+        }
+        //fim favoritos
+
+        $fields[] = $toolBar; 
+
+        $businessPeriod = $MIOLO->getBusiness('academic', 'BusPeriod');
+        $periodId       = new MComboBox('periodId', strlen((string)$this->getFormValue('periodId', $data->periodId))>0 ? $this->getFormValue('periodId', $data->periodId) : CURRENT_PERIOD_ID, _M('Period', $module), $businessPeriod->listPeriod() );
+        $validators[]   = new MRequiredValidator('periodId');
+        $flds[]         = $periodId;
+        
+        
+        $business = $MIOLO->getBusiness('academic', 'BusFormationLevel');
+        $formationLevelId = new MComboBox('formationLevelId',
+                                $this->getFormValue('formationLevelId',$data->formationLevelId),
+                                _M('Formation level', $module),
+                                $business->listFormationLevel());
+        $validators[] = new MRequiredValidator('formationLevelId');
+        $flds[] = $formationLevelId;
+
+        $btn1     = new MButton('btnFilter', _M('Filter', $module));
+        $flds[]  = $btn1;
+        
+        $hctForm = new MHContainer('hctForm', $flds);
+        $hctForm->setShowLabel(true);
+        $fields[]  = $hctForm;
+        unset($flds);
+
+       
+        $fields[] = new MSeparator('<hr>');
+        
+        $this->setFields($fields);
+        $this->setValidators($validators);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+        $this->setClose($MIOLO->getActionURL($module,substr($action,0,strrpos($action,':'))));
+        
+        $this->filters->formationLevelId = $this->formationLevelId->value;
+        $this->filters->periodId         = $this->periodId->value;
+
+    }
+
+    /**
+     * Event triggered when user chooses Generate from the toolbar
+     **/
+    public function btnFilter_click($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $grdResults = $MIOLO->getUI()->getGrid($module,'GrdGenerateMultiplePrice',$this->filters);
+        $business = $MIOLO->getBusiness($module,'BusGenerateMultiplePrice');
+        $data = $business->getPrices($this->filters);
+        $grdResults->setData($data);
+        $this->addField($grdResults);
+
+        $btn1[]     = new MButton('btnNext', _M('Next', $module) . ' >>');
+        $div1       = new MDiv('div1', $btn1, null, 'align=center');
+
+        $fields[] = $div1;
+        $fields[] = new Separator('');
+        
+        $this->addField($fields);
+    }
+
+    /**
+     * Event triggered when user chooses Generate from the toolbar
+     **/
+    public function btnNext_click($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+        
+        $learningPeriodIds = $this->getFormValue('selectgridGenerateMultiplePrice',$this->selectgridGenerateMultiplePrice);
+
+        if ( count($learningPeriodIds) > 0 )
+        {
+            foreach ( $learningPeriodIds as $id => $value )
+            {
+                $vars["learningPeriodIds[$id]"] = $value;
+            }
+        } 
+
+        $postAction = substr($action,0,strrpos($action,':')) . ':generateMultiplePrice';
+        $this->page->mGoto($MIOLO->getActionURL($module, $postAction, null, $vars));
+    }
+}
+
+?>

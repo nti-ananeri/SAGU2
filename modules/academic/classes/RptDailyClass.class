@@ -1,0 +1,288 @@
+<?
+/**
+*
+* @author Giovani Murilo Dantas Correa [gmurilo@isolution.inf.br]
+*
+* $version: $Id$
+*
+* \b Maintainers \n
+* Daniel Afonso Heisler [daniel@isolution.inf.br]
+*
+* @since
+* Class created on 24/09/2008
+*
+* \b Organization: \n
+* iSolution - Soluções de Internet \n
+* The iSolution TEAM
+*
+* \b CopyLeft: \n
+* CopyLeft (L) 2007 iSolution - Soluções de Internet \n
+*
+* \b License \n
+* Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+*
+* \b History \n
+* See history in CVS repository: http://isolution.inf.br   
+*
+**/
+set_time_limit(0);        
+$MIOLO = MIOLO::getInstance();
+$module = 'academic';
+
+define('FPDF_FONTPATH', $MIOLO->getModulePath('basic', '/classes/fpdf/font/'));
+define('REPORT_ID', _M('Examination frequence',$module));
+$MIOLO->Uses('classes/fpdf/fpdf.php', 'basic');
+class PDF extends FPDF
+{
+    public $title;    
+    public $fontSizeBody;
+    public $psize;
+    public $lsize;
+    public $module;
+    public $useUserInfo = true;
+    
+    public function __construct($orientation='L',$unit='mm',$format='A4')
+    {
+        parent::__construct($orientation, $unit, $format);
+    }
+
+    public function Header()
+    {
+     	$MIOLO  = MIOLO::getInstance();
+        $this->module = MIOLO::getCurrentModule();
+		$bCompany = $MIOLO->getBusiness('basic','BusCompany');
+		$bPerson = $MIOLO->getBusiness('basic','BusPhysicalPerson');
+		$bLPerson = $MIOLO->getBusiness('basic','BusLegalPerson');
+		$dataC   = $bCompany->getCompany(DEFAULT_COMPANY_CONF);
+		$dataLP	 = $bLPerson->getLegalPerson($dataC->personId);
+        //Imagem do cabeçalho
+        $this->psize =   (($this->wPt/$this->k)-($this->lMargin*2));
+        $FONT_SIZE_CB = 8;
+        $this->fontSizeBody = 8;
+        $FONT_SIZE_TITLE = 11;
+        $this->lsize = 4;
+        $this->setFont(DEFAULT_REPORT_FONT, 'I', $this->fontSizeBody);
+        $y = 0;
+        if($this->useUserInfo)
+        {
+            $this->cell($this->psize, $this->lsize, _M('Username', 'admin').': '.trim($MIOLO->login->id), NULL, null, 'R', 0);
+            $this->ln();
+            $this->cell($this->psize, $this->lsize, _M('Date', 'basic').': '.date(MASK_DATE_PHP.' h:i:s'), '', null, 'R', 0);
+            $this->ln();
+            $y=($this->lsize*2);
+        }
+        $this->cell($this->psize, $this->lsize, $title, 'LRT', null, null, 0);
+        $this->ln();
+        //Titulo do relatorio  
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', $FONT_SIZE_CB);
+        $this->cell($this->psize, $this->lsize, $dataC->name .' - '.$dataC->acronym, 'LR', null, 'C');
+        $this->ln();
+        $this->cell($this->psize, $this->lsize, $dataLP->name .' - '. $dataLP->shortname, 'LR', null, 'C');
+        $this->ln();
+        $this->cell($this->psize, $this->lsize, strtoupper($dataLP->location . ', '._M('Number', $this->module) . ' ' . $dataLP->number . ' - ' . $dataLP->neighborhood . ' /  ' . $dataLP->cityName . '-' . $dataLP->stateId . ' | ' . _M('Phone', $this->module). ': '.$dataLP->phone), 'LR', null, 'C');
+        $this->ln();
+        $x=$this->lsize*2;
+        if(strlen((string)$this->title) > 0 )
+        {
+            $this->cell($this->psize, $this->lsize, null, 'LR', null, null, 0);
+            $this->ln();
+            $this->setFont(DEFAULT_REPORT_FONT, 'B', $FONT_SIZE_TITLE);
+            $this->cell($this->psize, $LINE_SIZE, $this->title, 'LR', null, 'C');
+            $this->ln();
+            $x=0;
+        }
+        $this->Image(SAGUFile::getPhotoPath($dataC->personId), $this->lMargin+4, $this->tMargin+0.5+$y, NULL, (round(PHOTO_HEIGHT/$this->k,0)/1.8)-$x, PHOTO_FORMAT);
+        $this->cell($this->psize, $this->lsize, null, 'LRB', null, null, 0);
+        $this->ln();
+    }
+    public function Footer()
+    {
+        $this->setY(-15);
+        $pn = $this->PageNo().'/{nb}';
+        $this->cell($this->psize, $this->lsize, '', 'B', 1);
+        $this->ln(); 
+		$this->setFont(DEFAULT_REPORT_FONT, 'I', 8);
+		$this->cell($this->psize, $this->lsize, _M('REPORT @1 ', 'academic', REPORT_ID).' '._M('Page @1', $this->module, $pn), 0, 0, 'R');
+   		//$this->cell($this->psize, $this->lsize, _M('REPORT @1 ', 'academic', REPORT_ID), 0, 0, 'R');
+        $this->ln();
+    }
+}
+class RptDailyClass extends PDF
+{
+    public $start = 0;
+    public function __construct($filters = NULL)
+    {
+        parent::__construct();
+        $this->useUserInfo = true;
+        $this->title = 'DIÁRIO DE CLASSE';
+        $this->addPage('L', 'mm', 'A4');
+        $this->aliasNbPages();
+        $this->criaReport($filters);
+		$this->output();
+    }
+    
+    public function complementHeader($data)
+    {
+        if ( $this->start == 0 )
+        {
+            $this->start++;
+        }
+        else
+        {
+            $this->addPage('L', 'mm', 'A4');
+        }
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', 8);    
+        $this->cell(30, $this->lsize, _M('Course', 'academic'), 'LTB', NULL, 'L');
+        $this->setFont(DEFAULT_REPORT_FONT, NULL, 8);    
+        $this->cell($this->psize-125, $this->lsize, $data->courseId . ' - ' . $data->courseName, 'LTB', NULL, 'L');
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', 8);    
+        $this->cell(30, $this->lsize, _M('Semester', 'academic'), 'LTB', NULL, 'L');
+        $this->setFont(DEFAULT_REPORT_FONT, NULL, 8);    
+        $this->cell(20, $this->lsize, $data->periodId, 'LTB', NULL, 'L');
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', 8);    
+        $this->cell(30, $this->lsize, _M('Period', 'academic'), 'LTB', NULL, 'L');
+        $this->setFont(DEFAULT_REPORT_FONT, NULL, 8);    
+        $this->cell(15, $this->lsize, $data->semester, 'LTBR', NULL, 'R');
+        $this->ln();
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', 8);    
+        $this->cell(30, $this->lsize, _M('Turn', 'basic'), 'LTB', NULL, 'L');
+        $this->setFont(DEFAULT_REPORT_FONT, NULL, 8);    
+        $this->cell($this->psize-125, $this->lsize, $data->turnDescription, 'LTB', NULL, 'L');
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', 8);    
+        $this->cell(30, $this->lsize, _M('Class', 'academic'), 'LTB', NULL, 'L');
+        $this->setFont(DEFAULT_REPORT_FONT, NULL, 8);    
+        $this->cell(65, $this->lsize, $data->classId, 'LTBR', NULL, 'L');
+        $this->ln();
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', 8);    
+        $this->cell(30, $this->lsize, _M('Curricular component', 'academic'), 'LTB', NULL, 'L');
+        $this->setFont(DEFAULT_REPORT_FONT, NULL, 8);    
+        $this->cell($this->psize-30, $this->lsize, $data->curricularComponentId . /* '/' . $data->curricularComponentVersion .*/ ' - ' . $data->curricularComponentName, 'LTBR', NULL, 'L');
+        $this->ln();
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', 8);    
+        $this->cell(30, $this->lsize, _M('Professor', 'academic'), 'LTB', NULL, 'L');
+        $this->setFont(DEFAULT_REPORT_FONT, NULL, 8);    
+        $this->cell($this->psize-30, $this->lsize, $data->professorId . ' - ' . $data->professorName, 'LTBR', NULL, 'L');
+        $this->ln();
+    }
+    public function tableHeader()
+    {
+        $nCols = 1;
+        $colSize = ($this->psize-95) / $nCols;
+        //$this->setY(44+$this->tMargin);
+
+        $this->ln();
+        $this->ln();
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', 8);    
+        $this->cell(10, $this->lsize*3, 'N.', 'LTB', NULL, 'C');
+        $this->cell(15, $this->lsize*3, _M('Id', 'basic'), 'LTB', NULL, 'C');
+        $this->cell(70, $this->lsize*3, _M('Name', 'basic'), 'LTB', NULL, 'C');
+        $nCols = 40;
+        $colSize = ($this->psize-102) / $nCols;
+        $this->setFont(DEFAULT_REPORT_FONT, '', 5);
+        $this->cell(7, $this->lsize, 'Aula', 'LT', NULL, 'L');
+        for($ncol = 1; $ncol <= $nCols; $ncol++)
+        {
+            $this->cell($colSize, $this->lsize, $ncol, 'LTBR', NULL, 'C');
+        }
+        $this->setY($this->y+$this->lsize);
+        $this->cell(95, $this->lsize, NULL, NULL, NULL, 'C');
+        $this->cell(7, $this->lsize, 'Mês', 'L', NULL, 'L');
+        for($ncol = 1; $ncol <= $nCols; $ncol++)
+        {
+            $this->cell($colSize, $this->lsize, NULL, 'LTBR', NULL, 'C');
+        }
+        $this->setY($this->y+$this->lsize);
+        $this->cell(95, $this->lsize, NULL, NULL, NULL, 'C');
+        $this->cell(7, $this->lsize, 'Dia', 'LB', NULL, 'L');
+        for($ncol = 1; $ncol <= $nCols; $ncol++)
+        {
+            $this->cell($colSize, $this->lsize, NULL, 'LTBR', NULL, 'C');
+        }
+        $this->ln();
+    }
+    public function criaReport($data)
+    {
+        $MIOLO = MIOLO::getInstance();
+        if ( count($data->pupils) == 0 )
+        {
+            $this->ln();
+            $this->ln();
+            $this->ln();
+            $this->cell($this->psize, $this->lsize, 'Nenhum registro encontrado', '', NULL, 'C');
+            return;
+        }
+        foreach ($data->pupils as $itemN1 => $value)
+        {
+            foreach($data->pupils[$itemN1] as $itemN2 => $value)
+            {
+                foreach($data->pupils[$itemN1][$itemN2] as $itemN3 => $value)
+                {
+                    foreach($data->pupils[$itemN1][$itemN2][$itemN3] as $itemN4 => $value)
+                    {
+                        foreach($data->pupils[$itemN1][$itemN2][$itemN3][$itemN4] as $itemN5 => $value)
+                        {
+                            
+                            $ret->periodId                  = $itemN1;
+                            $ret->classId                   = $itemN2;
+                            $ret->turnDescription           = $data->turn[$itemN3];
+                            $ret->professorName             = $data->professor[$itemN4];
+                            $ret->professorId               = $itemN4;
+                            $ret->curricularComponentName   = $data->curricularComponent[$itemN5];
+                            $ret->curricularComponentId     = $itemN5;
+                            $ret->courseId                  = $data->courseId;
+                            $ret->courseName                = $data->course[$data->courseId];
+                            $ret->semester                  = $data->semester;
+                            $nCols = 40;
+                            $colSize = ($this->psize-102) / $nCols;
+                            $x = 0;
+                            asort($data->pupils[$itemN1][$itemN2][$itemN3][$itemN4][$itemN5]);
+
+                            foreach($data->pupils[$itemN1][$itemN2][$itemN3][$itemN4][$itemN5] as $itemN6 => $value)
+                            {
+                                $x++;
+
+                                if ($x== 1 || $x == 30 || $x == 59)
+                                {
+                                    $this->complementHeader($ret);
+                                    $this->tableHeader();
+                                }
+                                $adp = NULL;
+                                $this->setFont(DEFAULT_REPORT_FONT, NULL, 8);
+                                if( strlen((string)$filters->courseId) > 0 )
+                                {
+                                    if ( strtolower($data->pupilsCourse[$itemN6]) != $filters->courseId )
+                                    {
+                                        $adp = _M('Yes', 'basic');
+                                    }
+                                }
+                                $this->cell(10, $this->lsize, $x, 'LTB', NULL, 'C');
+                                $this->cell(15, $this->lsize, $itemN6, 'LTB', NULL, 'C');
+                                $this->cell(77, $this->lsize, $value, 'LTB', NULL, 'L');
+                                $this->setFont(DEFAULT_REPORT_FONT, '', 6);    
+                                for($ncol = 1; $ncol <= $nCols; $ncol++)
+                                {
+                                    $this->cell($colSize, $this->lsize, NULL, 'LTBR', NULL, 'C');
+                                }
+                                $this->ln();
+                            }
+                            $this->ln();
+                            $this->ln();
+                            $this->setFont(DEFAULT_REPORT_FONT, 'B', 8);    
+                            $this->cell($this->psize, $this->lsize, 'São Luís - '.date('d/m/Y'), NULL, NULL, 'C');
+                            $this->ln();
+                            $this->ln();
+                            $this->cell($this->psize/2, $this->lsize, '__________________________', NULL, NULL, 'C');
+                            $this->cell($this->psize/2, $this->lsize, '__________________________', NULL, NULL, 'C');
+                            $this->ln();
+                            $this->cell($this->psize/2, $this->lsize, 'Professor(a)', NULL, NULL, 'C');
+                            $this->cell($this->psize/2, $this->lsize, 'Coordenador(a)', NULL, NULL, 'C');
+                            $this->ln();
+                            $this->ln();
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+?>

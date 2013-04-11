@@ -1,0 +1,134 @@
+<?php
+
+/**
+ * Default defines 
+ * To report identification
+ */
+define('REPORT_ID', 'AC011'); 
+define('FPDF_FONTPATH', $MIOLO->getModulePath('basic', '/classes/fpdf/font/'));
+
+$MIOLO = MIOLO::getInstance();
+$module = MIOLO::getCurrentModule();
+$MIOLO->Uses('classes/fpdf/pdf.php', 'basic');
+
+/**
+ * PDF extension to generate report
+ */
+class RptIncentiveReport extends PDF
+{
+
+    public function __construct( $filters )
+    {
+        $MIOLO       = MIOLO::getInstance();
+        $module      = MIOLO::getCurrentModule();
+        $this->title =strtoupper(_M('Incentive report', $module) );
+        $this->useUserInfo = false;
+        parent::__construct();
+        foreach($filters as $item => $value)
+        {
+            $this->filters->{$item} = $value;
+        }
+        $this->aliasNbPages();
+        $this->addPage('P', 'mm', 'A4');
+        $this->PageBreakTrigger = ($this->h-$this->tMargin);
+        $db = $MIOLO->getBusiness('finance', 'BusIncentiveReport');
+        $this->infos = $db->searchIncentive($this->filters);
+        $this->generatePDF();
+    }
+
+    public function getHeader($header)
+    {
+        unset ($this->colName, $this->colSize);
+        $this->colName[1] = _M('Id', 'basic');
+        $this->colName[2] = _M('Pupil', 'academic');
+        $this->colName[10] = _M('Discount','finance');
+        $this->colName[9] =  '%';
+        $this->colName[7] = _M('Start date', 'finance');
+        $this->colName[8] = _M('End date', 'academic');
+        $this->colName[16] = _M('Cancelled', 'academic');
+        $this->colName[17] = _M('finished', 'academic');
+
+        $this->colSize[1] = 10;
+        $this->colSize[10] = 20;
+        $this->colSize[9] = 19;
+        $this->colSize[7] = 15;
+        $this->colSize[8] = 15;
+        $this->colSize[16] = 15;
+        $this->colSize[17] = 15;
+        $this->colSize[2] = ($this->psize-array_sum($this->colSize));
+
+        $this->colAlign[1] = 'R';
+        $this->colAlign[2] = 'L';
+        $this->colAlign[10] = 'R';
+        $this->colAlign[9] = 'C';
+        $this->colAlign[7] = 'C';
+        $this->colAlign[8] = 'C';
+        $this->colAlign[16] = 'C';
+        $this->colAlign[17] = 'C';
+
+        $fs = 10;
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', $fs);
+        $ok = true;
+        while ($ok == true )
+        {
+            $ok = false;
+            foreach ( $this->colSize as $item => $value )
+            {
+                if ( $this->getStringWidth($this->colName[$item])+3 > $value )
+                {
+                    $fs -= 0.1;
+                    $this->setFont(DEFAULT_REPORT_FONT, 'B', $fs);
+                    $this->fs = $fs;
+                    $ok = true;
+                }
+            }
+        }
+        $this->setFillColor(230);
+
+        if ( strlen((string)$header) > 0 )
+        {
+            $this->setFont(DEFAULT_REPORT_FONT, 'BI', $fs);
+            $grau = strtoupper(_M('Incentive type', 'finance') . ':');
+            $gsize = $this->getStringWidth($grau) +1;
+            $this->cell($gsize, $this->lsize, $grau, 'LTB', null, null, 1);
+            $this->setFont(DEFAULT_REPORT_FONT, 'I', $fs);
+            $this->cell($this->psize-$gsize, $this->lsize, $header, 'RTB', null, null, 1);
+            $this->ln();
+        }
+        $this->setFillColor(240);
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', $fs);
+        foreach($this->colName as $item => $value )
+        {
+            $this->cell($this->colSize[$item], $this->lsize+2, strtoupper($value), 1, null, 'C', 1);
+        }
+        $this->ln();
+    }
+    public function generatePDF()
+    {
+        $y = $this->y;
+        $x = 0;
+        $oldDiscount = '';
+        $this->setFont(DEFAULT_REPORT_FONT, '', $this->fs);
+        if ( count($this->infos) > 0 )
+        {
+            foreach ( $this->infos as $ln => $discount )
+            {
+                if ( $this->y+$this->lsize >= $this->PageBreakTrigger || $x == 0 || $discount[6] <> $oldDiscount )
+                {
+                    $this->getHeader($discount[6]);
+                    $this->setFont(DEFAULT_REPORT_FONT, '', $this->fs);
+                    $oldDiscount = $discount[6];
+                    $x++;
+                }
+                foreach ( $this->colName as $item => $value )
+                {
+                    $this->cell($this->colSize[$item], $this->lsize, $discount[$item], 1, null, $this->colAlign[$item]);
+                }
+                $this->ln();
+            }
+        }
+        parent::generatePDF();
+    }
+}
+
+?>

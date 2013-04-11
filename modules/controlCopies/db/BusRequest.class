@@ -1,0 +1,460 @@
+<?php
+/**
+ *
+ * @author Rafael Dutra  [rdutra@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 28/07/2006
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2006 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to manipulate the ccpRequest table
+ **/
+
+
+class BusinessControlCopiesBusRequest extends MBusiness   
+{
+
+    public function getDatabase ()
+    {
+        $MIOLO = MIOLO::getInstance($module = null);
+        $MIOLO->getClass('basic','sagu');
+        $module = is_null($module) ? 'controlCopies' : $module;
+        
+        return $MIOLO->getDatabase($module);
+    }
+
+    public function insertRequest($ids)
+    {
+
+        $db     = $this->getDatabase();
+        $sqlId = 'SELECT nextval(\'seq_requestid\')';
+        $id    = $db->query($sqlId);
+    
+        $sql = 'INSERT INTO ccpRequest (requestId,
+                                        date,
+                                        serviceId,
+                                        amount,
+                                        sectorId,
+                                        centerId,
+                                        projectId,
+                                        costcenterId,
+                                        referring,
+                                        personId,
+                                        operator,
+                                        operatorSectorId,
+                                        unitaryValue)
+                    VALUES (?, now(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)';
+        
+        $args   = array($id[0][0],
+                        $ids->serviceId,
+                        $ids->amount,
+                        $ids->sectorId,
+                        $ids->centerId,
+                        $ids->projectId,
+                        $ids->costCenterId,
+                        $ids->referring,
+                        $ids->personId,
+                        $ids->operator,
+                        $ids->operatorSectorId,
+                        $ids->unitaryValue);
+        $result = $db->execute(SAGU::prepare($sql, $args));
+
+
+        if ($ids->serviceId == 21)
+        {
+	    $sqlFax = 'INSERT INTO ccpRequestFax (requestId,
+                                                  telephone, 
+                                                  sended,
+                                                  tariff) 
+                                      VALUES (?, ?, ?, ?)';
+
+            $args = array($id[0][0],
+                          $ids->telephone,
+                          $ids->sended,
+                          $ids->tariff);
+
+            $resultFax = $db->execute(SAGU::prepare($sqlFax, $args));
+        }
+
+        return $result;
+    }
+
+
+    public function searchRequest($ids)
+    {
+        $sql = 'SELECT A.requestId, 
+                       A.costCenterId,
+                       A.personId,
+                       G.name,
+                       A.serviceId,
+                       B.description as serviceDescription,
+                       A.unitaryValue,
+                       A.amount,
+                       TO_CHAR(A.datetime,\'' . MASK_TIMESTAMP . '\'),
+                       A.centerId, 
+                       D.name as centerDescription,
+                       A.sectorId,
+                       C.description as sectorDescription,
+                       A.projectId,
+                       E.description as projectDescription,
+                       A.referring,     
+                       A.operator,  
+                       A.operatorSectorId,
+                       A.username, 
+                       TO_CHAR(A.datetime,\'' . MASK_TIMESTAMP . '\'),
+                       A.ipaddress
+                  FROM ccpRequest A
+             LEFT JOIN ccpService B
+                    ON (B.serviceId = A.serviceId)
+             LEFT JOIN basSector C     
+                    ON (C.sectorId = A.sectorId)
+             LEFT JOIN acdCenter D     
+                    ON (D.centerId = A.centerId)
+             LEFT JOIN acdProject E     
+                    ON (E.projectId = A.projectId)
+             LEFT JOIN accCostCenter F     
+                    ON (F.costCenterId = A.costCenterId)
+             LEFT JOIN basPhysicalPersonEmployee G    
+                    ON (G.personId = A.personId)
+             LEFT JOIN ccpSector H    
+                    ON (H.sectorId = A.operatorSectorId)';
+
+            if (strlen((string)$ids->requestId) > 0 )
+            {
+                $where .= ' AND A.requestId = ?';
+                $args[] = $ids->requestId;
+            } 
+            if (strlen((string)$ids->serviceId) > 0 )
+            {
+                $where .= ' AND A.serviceid = ?';
+                $args[] = $ids->serviceId;
+            } 
+            
+            if (strlen((string)$ids->amount) > 0 )
+            {
+                $where .= ' AND A.amount = ?';
+                $args[] = $ids->amount;
+            } 
+           
+            if (strlen((string)$ids->beginDate) > 0 )
+            {
+                $where .= ' AND DATE(A.datetime) >= TO_DATE(?, \'' . MASK_DATE . '\')';
+                $args[] = $ids->beginDate;
+            }
+
+            if (strlen((string)$ids->endDate) > 0 )
+            {
+                $where .= ' AND DATE(A.datetime) <= TO_DATE(?, \'' . MASK_DATE . '\')';
+                $args[] = $ids->endDate;
+            }
+            
+            if (strlen((string)$ids->sectorId) > 0 )
+            {
+                $where .= ' AND A.sectorid = ?';
+                $args[] = $ids->sectorId;
+            } 
+            
+            if (strlen((string)$ids->centerId) > 0 )
+            {
+                $where .= ' AND A.centerid = ?';
+                $args[] = $ids->centerId;
+            } 
+            
+            if (strlen((string)$ids->projectId) > 0 )
+            {
+                $where .= ' AND A.projectid = ?';
+                $args[] = $ids->projectId;
+            } 
+            
+            if (strlen((string)$ids->costCenterId) > 0 )
+            {
+                $where .= ' AND A.costCenterid = ?';
+                $args[] = $ids->costCenterId;
+            } 
+            
+            if (strlen((string)$ids->referring) > 0 )
+            {
+                $where .= ' AND A.referring = ?';
+                $args[] = $ids->referring;
+            } 
+            
+            if (strlen((string)$ids->personId) > 0 )
+            {
+                $where .= ' AND A.personId = ?';
+                $args[] = $ids->personId;
+            } 
+            
+            if (strlen((string)$ids->operatorSectorId) > 0 )
+            {
+                $where .= ' AND A.operatorSectorId = ?';
+                $args[] = $ids->operatorSectorId;
+            } 
+            
+            if (strlen((string)$where) > 0)
+            {
+                $sql   .= ' WHERE ' . substr($where, 4);
+                $db     = $this->getDatabase(); 
+                $result = $db->query(SAGU::prepare($sql, $args));
+            }
+            return $result;
+    }
+
+    public function getRequestFax($requestId)
+    {
+        $sqlFax = 'SELECT telephone,
+                          sended,
+                          tariff
+                     FROM ccpRequestFax
+                    WHERE requestId = ?'; 
+
+        $db     = $this->getDatabase(); 
+        $result = $db->query(SAGU::prepare($sqlFax, $requestId));
+
+        list($data->telephone,
+             $data->sended,
+             $data->tariff
+            ) = $result[0];
+
+        return $data;
+    }
+
+    public function rptSolicitationForPeriod($data)
+    {
+        $sql = ' SELECT A.costCenterId,
+                       C.name,
+                       D.description,
+                       A.amount,
+                       D.unit,
+                       A.amount * A.unitaryValue as total
+                  FROM ccpRequest A
+            INNER JOIN accCostCenter B
+                    ON (A.costCenterId = B.costCenterId)
+            INNER JOIN basPhysicalPersonEmployee C
+                    ON (A.personId  = C.personId)
+            INNER JOIN ccpService D
+                    ON (A.serviceId = D.serviceId)';
+
+        if ( count($data->beginDate) > 0 )
+        {
+            $where .= ' AND DATE(A.datetime) >= TO_DATE(?, \'' . MASK_DATE . '\')';
+            $args[] = $data->beginDate;
+        }
+
+        if ( count($data->endDate) > 0 )
+        {
+            $where .= ' AND DATE(A.datetime) <= TO_DATE(?, \'' . MASK_DATE . '\')';
+            $args[] = $data->endDate;
+        }
+
+        if ( count($data->personId) > 0 )
+        {
+            $where .= ' AND A.personId = ?';
+            $args[] = $data->personId;
+        }
+
+
+        if ( $where )
+        {
+
+            $sql .= ' WHERE ' . substr($where, 4) . '
+                   ORDER BY 2, C.name';
+
+            $db = $this->getDatabase();
+            $result = $db->query(SAGU::Prepare($sql, $args));
+        }
+
+        return $result;
+    }
+
+  public function rptLoginSolicitationForPeriod($data)
+    {
+        $sql = ' SELECT C.personId,
+                        A.costCenterId,
+                        C.name,
+                        D.description,
+                        A.amount,
+                        D.unit,
+                        A.amount * A.unitaryValue as total
+                   FROM ccpRequest A
+             INNER JOIN accCostCenter B
+                     ON (A.costCenterId = B.costCenterId)
+             INNER JOIN basPhysicalPersonEmployee C
+                     ON (A.personId  = C.personId)
+             INNER JOIN ccpService D
+                     ON (A.serviceId = D.serviceId)';
+
+        if ( count($data->beginDate) > 0 )
+        {
+            $where .= ' AND DATE(A.datetime) >= TO_DATE(?, \'' . MASK_DATE . '\')';
+            $args[] = $data->beginDate;
+        }
+
+        if ( count($data->endDate) > 0 )
+        {
+            $where .= ' AND DATE(A.datetime) <= TO_DATE(?, \'' . MASK_DATE . '\')';
+            $args[] = $data->endDate;
+        }
+
+
+        if ( $where )
+        {
+
+            $sql .= ' WHERE ' . substr($where, 4) . '
+                   ORDER BY 2, C.name';
+
+            $db = $this->getDatabase();
+            $result = $db->query(SAGU::Prepare($sql, $args));
+        }
+
+        return $result;
+    }
+
+
+    public function getRequest($ids)
+    {
+        $sql = 'SELECT requestId,
+                       serviceId, 
+                       amount, 
+                       sectorId, 
+                       centerId, 
+                       projectId, 
+                       costCenterId,         
+                       referring,     
+                       personId,   
+                       operator,  
+                       operatorSectorId,         
+                       unitaryValue,
+                       userName, 
+                       TO_CHAR(datetime,\'' . MASK_TIMESTAMP . '\'),
+                       ipAddress
+                  FROM ccpRequest 
+                 WHERE requestId = ?';
+    
+        $db     = $this->getDatabase();
+        $result = $db->query(SAGU::prepare($sql, $ids));
+
+        list( $data->requestId,
+              $data->serviceId, 
+              $data->amount, 
+              $data->sectorId, 
+              $data->centerId, 
+              $data->projectId, 
+              $data->costCenterId,         
+              $data->referring,     
+              $data->personId,   
+              $data->operator,  
+              $data->operatorSectorId,         
+              $data->unitaryValue,
+              $data->userName, 
+              $data->dateTime,
+              $data->ipAddress
+            ) = $result[0];
+
+        return $data;
+    }
+
+
+    public function updateRequest($ids)
+    {
+
+        $db     = $this->getDatabase();
+    
+    
+        $sql = 'UPDATE ccpRequest
+                SET serviceId         = ? , 
+                    amount            = ? , 
+                    sectorId          = ? , 
+                    centerId          = ? , 
+                    projectId         = ? , 
+                    costCenterId      = ? ,         
+                    referring         = ? ,     
+                    personId          = ? ,   
+                    operator          = ? ,  
+                    operatorSectorId  = ? ,         
+                    unitaryValue      = ?  
+                WHERE requestId         = ?'; 
+    
+        $args   = array($ids->serviceId       ,      
+                        $ids->amount          ,     
+                        $ids->sectorId        ,    
+                        $ids->centerId        ,   
+                        $ids->projectId       ,  
+                        $ids->costCenterId    ,         
+                        $ids->referring       ,    
+                        $ids->personId        , 
+                        $ids->operator        ,
+                        $ids->operatorSectorId,      
+                        $ids->unitaryValue    , 
+                        $ids->requestId); 
+    
+        $sqls = SAGU::prepare($sql, $args);
+        
+        if ($ids->serviceId == 21)
+        {
+            $sqlFax = 'UPDATE ccpRequestFax 
+                          SET telephone  = ?,
+                              tariff     = ?,
+                              sended     = ?
+                        WHERE requestId  = ?';
+
+            $args = array($ids->telephone,
+                          $ids->tariff,
+                          $ids->sended,
+                          $ids->requestId);
+
+            $resultFax = $db->execute(SAGU::prepare($sqlFax, $args));
+           
+        }
+
+        for ( $i=0; $i<count($sqls); $i++ )
+        {
+            $result = $db->execute($sqls[$i]);
+        }
+
+        return $result;
+    
+    } 
+
+    public function deleteRequest($requestId)
+    {
+        $request = $this->getRequest($requestId);
+        $db    = $this->getDatabase();
+        if ($request->serviceId == '21')
+        {
+            $sql   = 'DELETE FROM ccpRequestFax
+                        WHERE requestId = ?';
+            $result = $db->execute(SAGU::prepare($sql, $requestId));
+        }
+
+
+        $sql   = 'DELETE FROM ccpRequest
+                        WHERE requestId = ?';
+        $result = $db->execute(SAGU::prepare($sql, $requestId));
+        return $result;
+    }
+
+}
+?>

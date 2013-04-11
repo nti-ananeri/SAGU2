@@ -1,0 +1,291 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for basEmployee table
+ *
+ * @author Armando Taffarel Neto [taffarel@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * Armando Taffarel Neto [taffarel@solis.coop.br]
+ * 
+ * @since
+ * Class created on 22/03/2006
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU Development Team
+ *
+ * \b Copyright \n
+ * Copyright (c) 2005-2007 SOLIS - Cooperativa de Soluções Livres \n
+ * Copyright (c) 2005-2007 UNIVATES - Centro Universitario \n
+ *
+ * \b License \n
+ * Licensed under GPLv2 (for further details read the COPYING file or http://www.gnu.org/licenses/gpl.html )
+ *
+ * \b History \n
+ * See: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to manipulate the basEmployee table
+ **/
+class BusinessHumanResourcesBusSalaryRemittance extends Business
+{
+
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module = is_null($module) ? 'basic' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+    /**
+     * Get data about bank account
+     *
+     * @param $filters (object): Search filters
+     *
+     * @return (array): An array containing the search results
+     **/
+    public function getBankData($bankAccountId)
+    {
+	   $sql = 'SELECT A.bankId,
+	                  A.accountnumber,
+	                  A.accountnumberdigit,
+	                  A.branchNumber,
+	                  A.branchNumberDigit,
+	                  A.assignorCode,
+	                  B.description
+                  FROM finBankAccount A
+                INNER JOIN finBank B
+                  USING(bankId)
+               WHERE A.bankaccountid = ?';
+
+	   $args[] = $bankAccountId;
+
+       $db     = $this->getDatabase();
+       $result = $db->query(SAGU::prepare($sql, $args));
+
+       return $result[0];
+    }
+
+    /**
+     * Get data about default company
+     *
+     * @param $filters (object): Search filters
+     *
+     * @return (array): An array containing the search results
+     **/
+    public function getCompanyData()
+    {
+	   $sql = 'SELECT B.cnpj,
+                      B.currentName,
+                      B.location,
+                      B.number,
+                      B.complement,
+                      C.name,
+                      C.zipcode,
+                      C.stateId
+                  FROM basCompanyConf A
+                INNER JOIN ONLY basLegalPerson B
+                      USING(personId)
+                LEFT JOIN basCity C
+                      USING(cityId)';
+
+       $sql   .= ' WHERE  A.companyId = ?';
+
+	   $args[] = DEFAULT_COMPANY_CONF;
+
+       $db     = $this->getDatabase();
+       $result = $db->query(SAGU::prepare($sql, $args));
+
+       return $result[0];
+    }
+    
+    /**
+     * Update sequence os remittance files
+     *
+     * @param $filters (object): Search filters
+     *
+     * @return (array): An array containing the search results
+     **/
+//     public function updateSequence()
+//     {
+// 
+//        
+//        $sql     = 'UPDATE basConfig
+//                   SET value = ?
+//                   WHERE parameter = \'BANK_REMITTANCE_SEQUENCE_SALARY_CNAB_001\'';
+//                 
+//        $args[] = $result1[0][0]+1;
+// 
+//        $sqls = SAGU::prepare($sql, $args);
+//        for ( $i=0; $i<count($sqls); $i++ )
+//        {
+//            $result[] = $db->execute($sqls[$i]);
+//        }
+// 
+//        return $result1[0][0];
+//     }    
+
+
+    /**
+     *  Get sequence number for remittance
+     *  
+     *  @return (int): A value containing the search results
+     **/
+//      public function getSequense()
+//      {
+//         
+//         $sql     = 'SELECT value
+//                     FROM basConfig
+//                     WHERE parameter = \'BANK_REMITTANCE_SEQUENCE_SALARY_CNAB_001\'';
+//         
+//         $db      = $this->getDatabase();
+//         $result1 = $db->query($sql);
+//         
+//         return $result1[0][0];
+// 
+//      }
+
+    /**
+     * Get the types of accounts
+     *
+     * @param $filters (object): Search filters
+     *
+     * @return (array): An array containing the search results
+     **/
+    public function getAccountTypes()
+    {
+	   $sql = 'SELECT DISTINCT accountType 
+                FROM basEmployee
+                WHERE accountType IS NOT NULL';
+
+       $db      = $this->getDatabase();
+       $result  = $db->query($sql);
+       
+       return $result;
+    }    
+
+    /**
+     * Do a search of employess
+     *
+     * @param $filters (object): Search filters
+     *
+     * @return (array): An array containing the search results
+     **/
+    public function searchEmployeeRemittance($employeeTypeId, $accountType)
+    {
+        $sql = 'SELECT A.clearingHouse,
+                       A.bankId,
+                       A.branchNumber,
+                       A.branchNumberDigit,
+                       A.accountNumber,
+                       A.accountNumberDigit,
+                       B.name,
+                       A.personId,
+                       CASE A.valueHour 
+                            WHEN \''. DB_FALSE . '\' 
+                            THEN sum(round(round(A.salary,2)*100,0)) 
+                            ELSE round((round( sum ( A.salary * A.weeklyhours * 4 ) ::numeric , 2) * 100 ),0)
+                       END as salary
+                  FROM basEmployee A
+        LEFT JOIN ONLY basPhysicalPersonEmployee B
+                 USING (personid)
+             LEFT JOIN basEmployeeType C
+                    ON (A.employeeTypeId = C.employeeTypeId)';
+
+        if ( strlen((string)$employeeTypeId) > 0 )
+        {
+            $where .= ' AND C.employeeTypeId IN (' . $employeeTypeId . ')';
+        }
+        
+        if ( strlen((string)$accountType) > 0 )
+        {
+            $where .= ' AND A.accountType = \'' . $accountType . '\'';
+        }
+        
+        $where .= ' AND A.isActiveAccount = TRUE ';
+
+        unset($result);
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql   .= ' WHERE ' . substr($where, 4) . ' GROUP BY A.clearinghouse, A.bankId, A.branchNumber, A.branchNumberDigit, B.name,
+                       A.personId, A.valueHour, A.salary, A.weeklyHours, A.accountnumber, A.accountnumberdigit ORDER BY B.name ';
+            $db     = $this->getDatabase();
+            $result = $db->query($sql);
+            //$db->close();
+        }
+
+        return $result;
+    }
+
+    /**
+     * Get the total of salary
+     *
+     * @param $filters (object): Search filters
+     *
+     * @return (array): An array containing the search results
+     **/
+    public function getTotalSalary($employeeTypeId, $accountType)
+    {
+
+
+      $sql = 'SELECT CASE A.valueHour 
+                          WHEN \''. DB_FALSE . '\' 
+                          THEN sum(round(round(A.salary,2)*100,0)) 
+                          ELSE round((round( sum ( A.salary * A.weeklyhours * 4 ) ::numeric , 2) * 100 ),0)
+                     END as salary
+                FROM basEmployee A
+                INNER JOIN basEmployeeType B
+                USING(employeeTypeId)';
+       
+//         $sql = 'SELECT sum(round(round(A.salary,2)*100,0)) as salary
+//                 FROM basEmployee A
+//                 INNER JOIN basEmployeeType B
+//                 USING(employeeTypeId)';
+
+        if ( strlen((string)$employeeTypeId) > 0 )
+        {
+            $where .= ' AND B.employeeTypeId IN (' . $employeeTypeId . ')';
+        }
+        
+        if ( strlen((string)$accountType) > 0 )
+        {
+            $where .= ' AND A.accountType = \'' . $accountType . '\'';
+        }
+
+        $where .= ' AND A.isActiveAccount = TRUE ';
+
+        unset($result);
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql   .= ' WHERE ' . substr($where, 4) . ' GROUP BY A.valueHour, A.salary ';
+            $db     = $this->getDatabase();
+            $result = $db->query($sql);
+            //$db->close();
+        }
+
+        return $result[0][0];
+    }
+
+
+
+}
+
+?>

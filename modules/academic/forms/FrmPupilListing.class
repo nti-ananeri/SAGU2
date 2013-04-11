@@ -1,0 +1,459 @@
+<?php
+
+/**
+ * PupilListing form
+ *
+ * @author William Prigol Lopes [william@solis.coop.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * Leovan Tavares da Silva [leovan@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ *
+ * @since
+ * Class created on 25/08/2005
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2005 SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+
+/**
+ * Form to manipulate a pupilListing
+ **/
+class FrmPupilListing extends MForm
+{
+    private $home;
+
+    /**
+     * Class constructor
+     **/
+    function __construct($data)
+    {
+        $module = MIOLO::getCurrentModule();
+        $this->home   = $data->home;
+
+        parent::__construct(_M('Pupil listing', $module));
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+
+        $a = unserialize(urldecode(stripslashes(MIOLO::_request('filter'))));
+        if ( is_array($a) )
+        {
+            $filter = $a;
+        }
+
+        if ( !is_array($filter) )
+        {
+            $filter = array();
+        }
+
+        $toolBar = new MToolBar('toolBar', $MIOLO->getActionURL($module, $action));
+        $toolBar->disableButton('tbBtnNew');
+        $toolBar->disableButton('tbBtnSave');
+        $toolBar->disableButton('tbBtnDelete');
+        $toolBar->disableButton('tbBtnSearch');
+
+        //favoritos
+        $enabledImage  = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-20x20.png');
+        $disabledImage = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-disabled-20x20.png');
+        $url           = $MIOLO->getActionURL($module, $this->home, null, array('function' => 'search', 'event' => 'bookmark'));
+        $toolBar->addButton('tbBtnBookmark', _M('Add to bookmarks', 'basic'), $url, null, true, $enabledImage, $disabledImage);
+
+        if ( MIOLO::_request('event') == 'bookmark' )
+        {
+            $MIOLO->getClass('basic', 'access');
+            access::insert('Pupil listing', $this->home, 'pupilListing-16x16.png', true);
+        }
+        //fim favoritos
+
+        $fields[] = $toolBar;
+
+        $businessPeriod = $MIOLO->getBusiness($module, 'BusPeriod');
+        $periodId       = new MComboBox('periodId', strlen((string)$this->getFormValue('periodId', $data->periodId))>0 ? $this->getFormValue('periodId', $data->periodId) : CURRENT_PERIOD_ID, _M('Period',$module), $businessPeriod->listPeriod() );
+        $periodId->setJsHint(_M('Enter the period code', $module));
+        $fields[]       = $periodId;
+        $validators[]   = new MRequiredValidator('periodId', _M('Period',$module));
+
+        $fields[] = new Separator('');
+
+        $reportOptions = array( array(_M('Number of pupils enrolled by course', $module), 1),
+                                array(_M('Number of pupils not enrolled by course', $module), 2),
+                                array(_M('Number of pupils by course and unit', $module), 3),
+                                //array(_M('Number of pupils by credits number', $module), 4),
+                                array(_M('Number of pupils enrolled by course and discipline', $module), 5),
+                                array(_M('Number of pupils enrolled by offered curricular component and week day', $module), 6),
+                                array(_M('Number of pupils enrolled by course separated by enroll status', $module) . '<i> (' . _M('Contractual movimentations', $module) . ')</i>', 8),
+                                array (_M('Number of pupils by course and curricular component', $module), 9),
+                                array(_M('Number of pupils by course separated by olders and freshman', $module), 7) );
+
+        if ( ! (strlen((string)$reportOption) > 0) )
+        {
+            $reportOption = 1;
+        }
+
+        $reportOption = new MRadioButtonGroup('reportOption', _M('Report option', $module), $reportOptions, $this->getFormValue('reportOption', $reportOption));
+        $reportOption->setShowLabel(false);
+        $fields[] = $reportOption;
+
+        $busFormationLevel = $MIOLO->getBusiness($module, 'BusFormationLevel');
+        $formationLevels   = $busFormationLevel->listFormationLevel();
+
+        $filter = new MMultiSelection('filter', is_array($this->getFormValue('filter', $filter)) ? $this->getFormValue('filter', $filter) : $filter, _M('Formation level', $module), $formationLevels, true, null, 5);
+
+        $fields[]          = $filter;
+
+        $fields[] = new Separator('');
+
+        $fields[] = new MButton('tbBtnPrint', _M('Generate', $module));
+
+        $fields[] = new Separator('');
+
+        $this->setValidators($validators);
+
+        $this->setFields($fields);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+        $this->setClose($MIOLO->getActionURL($module, substr($action, 0, strrpos($action, ':'))));
+    }
+
+    /**
+     * Event triggered when user chooses Delete from the toolbar
+     **/
+    public function tbBtnPrint_click($sender = null)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $optionId = $this->getFormValue('reportOption');
+        $periodId = $this->getFormValue('periodId');
+        $filter   = $this->getFormValue('filter');
+
+        $businessPupilListing = $MIOLO->getBusiness($module, 'BusPupilListing');
+
+        switch ($optionId)
+        {
+            case 1:
+                //pesquisa os dados
+                $pupilListingData = $businessPupilListing->getPupilListingOp1($periodId, $filter);
+                $emails           = $businessPupilListing->getPupilEmailListingOp1($periodId, $filter);
+
+                $filtersSignature->courseId        = NULL;
+                $filtersSignature->periodId        = $periodId;
+                $filtersSignature->formationLevels = $filter;
+
+                $pupilSignature   = $businessPupilListing->getPupilsSignature($filtersSignature);
+
+                //registrar em seção do miolo
+                $session   = $MIOLO->session;
+                $session->setValue('emails', serialize($emails));
+                $session->setValue('pupilSignature', serialize($pupilSignature));
+
+                //cria os atalhos para emails e assinaturas
+                $actionEmail = $MIOLO->getActionURL('basic', 'main:report:emailList', null, array('personId' => $personId));
+
+                $optsSignature = array('event' => 'signatureList',
+                                       'periodId' => $periodId);
+
+                $actionSignature = $MIOLO->getActionURL($module, 'main:report:pupilListing', null, $optsSignature);
+
+                $emailList     = new MOpenWindow('lnk1', _M('E-Mail list', $module), $actionEmail);
+                $signatureList = new MLink('lnk2', _M('Signature list', $module), $actionSignature);
+
+                $div2        = new MDiv('div2', array($emailList, new MSeparator(), $signatureList, new MSeparator()), null, 'align=center');
+
+                $flds[]      = $div2;
+
+                $bsg1        = new BaseGroup('bsg1', null, $flds, 'horizontal');
+                $bsg1->width = '70%';
+                $bsg1->align = 'center';
+                $bsg1->addboxstyle('align', 'center');
+                $div1        = new MDiv('div1', $flds, null, 'align=center');
+                $this->addField($div1);
+                unset($flds);
+
+                //cria a grid
+                $gridPupilListingOp1 = $MIOLO->getUI()->getGrid($module, 'GrdPupilListingOp1', $pupilListingData);
+                $this->addField($gridPupilListingOp1);
+
+                break;
+            case 2:
+                $pupilListingData = $businessPupilListing->getNotEnrolled($periodId, $filter);
+
+                $gridPupilListingOp2 = $MIOLO->getUI()->getGrid($module, 'GrdPupilListingOp2', $pupilListingData);
+
+                $this->addField($gridPupilListingOp2);
+                break;
+            case 3:
+                $pupilListingData    = $businessPupilListing->getPupilListingOp3($filter);
+                $gridPupilListingOp3 = $MIOLO->getUI()->getGrid($module, 'GrdPupilListingOp3', $pupilListingData);
+
+                $this->addField($gridPupilListingOp3);
+                break;
+            case 4:
+                $pupilListingData = $businessPupilListing->getPupilListingOp4($periodId, $filter);
+
+                $totalCredits = 0;
+                $totalPupils  = 0;
+
+                $totalGeneralCredits = 0;
+                $totalGeneralPupils  = 0;
+
+                for ($i = 0; $i < count($pupilListingData); $i++)
+                {
+//                     $gridData[] = array ($pupilListingData[$i][0], $pupilListingData[$i][2], $pupilListingData[$i][6], $pupilListingData[$i][7], $pupilListingData[$i][8]);
+                    $gridData[] = array($pupilListingData[$i][0], $pupilListingData[$i][1], $pupilListingData[$i][2], $pupilListingData[$i][3], $pupilListingData[$i][4], $pupilListingData[$i][5], $pupilListingData[$i][6], $pupilListingData[$i][7], $pupilListingData[$i][8]);
+
+                    $totalCredits += $pupilListingData[$i][7] * $pupilListingData[$i][8];
+                    $totalPupils  += $pupilListingData[$i][8];
+
+                    if ($pupilListingData[$i][0] != $pupilListingData[$i+1][0] || 
+                        $pupilListingData[$i][5] != $pupilListingData[$i+1][5] ||
+                        $pupilListingData[$i+1] == null)
+                    {
+                        $gridData[] = array(null, "<b>TOTAL</b>", null, "<b>" . $totalCredits . "</b>", "<b>" . $totalPupils . "</b>");
+                        $gridPupilListingOp4 = $MIOLO->getUI()->getGrid($module, 'GrdPupilListingOp4', $gridData);
+
+                        //###GRID///is_array($gridData) ? $gridPupilListingOp4->SetScrollHeight(GRID_SCROLL_HEIGHT) : false;
+
+                        $this->addField($gridPupilListingOp4);
+
+                        $totalGeneralCredits += $totalCredits;
+                        $totalGeneralPupils  += $totalPupils;
+
+                        unset($gridData);
+                        $totalCredits = $totalPupils = 0;
+                    }
+                }
+
+                //$gridPupilListingOp4 = $MIOLO->getUI()->getGrid($module, 'GrdPupilListingOp4', $pupilListingData);
+                //$this->addField($gridPupilListingOp4);
+
+                $totalCreditsField = new MText('totalCreditsField', "<b>    " . _M('Credits total') . ": " . $totalGeneralCredits . "</b>");
+                $totalPupilsField  = new MText('totalCreditsField', "<b>    " . _M('Pupils total') . ": " . $totalGeneralPupils . "</b>");
+
+                $vContainer = new MVContainer('vContainer', array($totalCreditsField, $totalPupilsField));
+
+                $this->addField(new MSeparator()); 
+                $this->addField($vContainer);
+
+                break;
+            case 5:
+                $pupilListingData = $businessPupilListing->getPupilListingOp5($periodId, $filter);
+
+                $gridData[] = array("<font size = 2 color = 'RED'><b>" . $pupilListingData[0][0] . "</b></font>", "<font size = 2 color = 'RED'><b>" . $pupilListingData[0][2] . " - " . $pupilListingData[0][6] . "</b></font>", null);
+
+                $totalPupils = 0;
+
+                for ($i = 0; $i < count($pupilListingData); $i++)
+                {
+                    $gridData[] = array ($pupilListingData[$i][7], $pupilListingData[$i][8], $pupilListingData[$i][9]);
+                    $totalPupils += $pupilListingData[$i][9];
+
+                    if ($pupilListingData[$i][0] != $pupilListingData[$i+1][0] ||
+                        $pupilListingData[$i][5] != $pupilListingData[$i+1][5] ||
+                        $pupilListingData[$i+1]  == null)
+                    {
+                        $gridData[]  = array(null, "<b>" . _M("PUPILS TOTAL", $module) ."</b>", "<b>" . $totalPupils . "</b>");
+                        $totalPupils = 0;
+
+                        $gridData[] = array("<font size = 2 color = 'RED'><b>" . $pupilListingData[$i+1][0] . "</b></font>", "<font size = 2 color = 'RED'><b>" . $pupilListingData[$i+1][2] . " - " . $pupilListingData[$i+1][6] . "</b></font>", null);   
+                    }
+                }
+
+                $gridPupilListingOp5 = $MIOLO->getUI()->getGrid($module, 'GrdPupilListingOp5', $gridData);
+
+                //###GRID///is_array($gridData) ? $gridPupilListingOp5->SetScrollHeight(GRID_SCROLL_HEIGHT) : false;
+
+                $this->addField($gridPupilListingOp5);
+                break;
+            case 6:
+                $pupilListingData = $businessPupilListing->getPupilListingOp6($periodId, $filter);
+                $totalPupils = 0;
+
+                $gridData[] = array(null, "<font size = 3 color = 'BLUE'><b>" . $pupilListingData[0][8] . "</b></font>", null);
+
+                $gridData[] = array ("<font size = 2 color = 'RED'><b>" . $pupilListingData[0][0] . "</b></font>", "<font size = 2 color = 'RED'><b>" . $pupilListingData[0][2] . " - " . $pupilListingData[0][6] . "</b></font>", null);
+
+                for ($i = 0; $i < count($pupilListingData); $i++)
+                {
+                    $gridData[] = array($pupilListingData[$i][9], $pupilListingData[$i][10], $pupilListingData[$i][11]);
+                    $totalPupils += $pupilListingData[$i][11];
+
+                    if ($pupilListingData[$i][7] != $pupilListingData[$i+1][7])
+                    {
+                        $key = true;
+                        $gridData[] = array (null, "<b>" . _M('PUPILS TOTAL', $module) . "</b>", "<b>" . $totalPupils . "</b>");
+                        $gridData[] = array(null, "<font size = 3 color = 'BLUE'><b>" . $pupilListingData[$i+1][8] . "</b></font>", null);
+                    }
+
+                    if ($pupilListingData[$i][0] != $pupilListingData[$i+1][0] ||
+                        $pupilListingData[$i][5] != $pupilListingData[$i+1][5] )
+                    {
+                        if ( $key != true )
+                        {
+                            $gridData[] = array (null, "<b>" . _M('PUPILS TOTAL', $module) . "</b>", "<b>" . $totalPupils . "</b>");
+                        }
+                        else
+                        {
+                            $key = false;
+                        }
+
+                        $gridData[] = array ("<font size = 2 color = 'RED'><b>" . $pupilListingData[$i+1][0] . "</b></font>", "<font size = 2 color = 'RED'><b>" . $pupilListingData[$i+1][2] . " - " . $pupilListingData[$i+1][6] . "</b></font>", null);
+                        $totalPupils = 0;
+                    }
+
+                }
+
+                $gridPupilListingOp6 = $MIOLO->getUI()->getGrid($module, 'GrdPupilListingOp6', $gridData);
+
+                //###GRID///is_array($gridData) ? $gridPupilListingOp6->SetScrollHeight(GRID_SCROLL_HEIGHT) : false;
+
+                $this->addField($gridPupilListingOp6);
+                break;
+            case 7:
+                $pupilListingData = $businessPupilListing->getPupilListingOp7($periodId, $filter);
+
+                if ( count($pupilListingData) > 0 )
+                {
+                    foreach ($pupilListingData as $pupilData)
+                    {
+                        $gridData[] = array ($pupilData[0], $pupilData[1], $pupilData[2],  $pupilData[6],  $pupilData[4], $pupilData[7], $pupilData[8], $pupilData[9]);
+                    }
+                }
+
+                $gridPupilListingOp7 = $MIOLO->getUI()->getGrid($module, 'GrdPupilListingOp7', $gridData);
+
+                //###GRID///is_array($gridData) ? $gridPupilListingOp7->SetScrollHeight(GRID_SCROLL_HEIGHT) : false;
+
+                $this->addField($gridPupilListingOp7);
+                break;
+            case 8:
+                $pupilListingData = $businessPupilListing->getPupilListingOp8($periodId, $filter);
+
+                $gridData[] = array ("<font size = 2 color = 'RED'><b>" . $pupilListingData[0][0] . "/" . $pupilListingData[0][1] . "</b></font>", "<font size = 2 color = 'RED'><b>" . $pupilListingData[0][2] . " - " . $pupilListingData[0][4] . "</b></font>", null);
+
+                $totalPupils = 0;
+
+                for ($i = 0; $i < count($pupilListingData); $i++)
+                {
+                    $gridData[] = array($pupilListingData[$i][7], $pupilListingData[$i][8], $pupilListingData[$i][9]);
+                    
+                    $totalPupils += $pupilListingData[$i][9];
+                    
+                    if ($pupilListingData[$i][0] != $pupilListingData[$i+1][0] ||
+                        $pupilListingData[$i][1] != $pupilListingData[$i+1][1] ||
+                        $pupilListingData[$i][3] != $pupilListingData[$i+1][3] ||
+                        $pupilListingData[$i][5] != $pupilListingData[$i+1][5])
+                    {
+                        $gridData[] = array (null, "<b>" . _M('PUPILS TOTAL', $module) . "</b>", "<b>" . $totalPupils . "</b>");
+                        if ( $i+1 < count($pupilListingData) )
+                        {
+                            $gridData[] = array ("<font size = 2 color = 'RED'><b>" . $pupilListingData[$i+1][0] . "/" . $pupilListingData[$i+1][1] . "</b></font>", "<font size = 2 color = 'RED'><b>" . $pupilListingData[$i+1][2] . " - " . $pupilListingData[$i+1][4] . "</b></font>", null);          
+                        }
+                        $totalPupils = 0;    
+                    }
+                    
+                }
+                
+                $gridPupilListingOp8 = $MIOLO->getUI()->getGrid($module, 'GrdPupilListingOp8', $gridData);
+
+                //###GRID///is_array($gridData) ? $gridPupilListingOp8->SetScrollHeight(GRID_SCROLL_HEIGHT) : false;
+
+                $this->addField($gridPupilListingOp8);
+                break;
+            case 9:
+                $pupilListingData = $businessPupilListing->getPupilListingOp9($periodId, $filter);
+                set_time_limit(0);
+
+                $columns[] = "<div style=\"text-align: center;\">" . _M('Offered curricular component id', $module) . "</div>";
+                $columns[] = "<div style=\"text-align: center;\">" . _M('Curricular component id', $module) . "</div>";
+                $columns[] = "<div style=\"text-align: center;\">" . _M('Curricular component', $module) . "</div>";
+                $columns[] = "<div style=\"text-align: center;\">" . _M('Schedule', $module) . "(s)</div>";
+                $columns[] = "<div style=\"text-align: center;\">" . _M('Professor', $module) . "(s)</div>";
+                $columns[] = "<div style=\"text-align: center;\">" . _M('Enrolled', $module) . "</div>";
+                $columns[] = "<div style=\"text-align: center;\">" . _M('Approved', $module) . "</div>";
+                $columns[] = "<div style=\"text-align: center;\">" . _M('Disapproved', $module) . "</div>";
+                $columns[] = "<div style=\"text-align: center;\">" . _M('Desisting', $module) . "</div>";
+                $columns[] = "<div style=\"text-align: center;\">" . _M('Cancelled', $module) . "</div>";
+                
+                if (count($pupilListingData) > 0)
+                {
+                    foreach ($pupilListingData as $plData)
+                    {
+                        /*$gridPupilListingOp9 = $MIOLO->getUI()->getGrid($module, 'GrdPupilListingOp9', $plData->data);
+                        $gridPupilListingOp9->setTitle($plData->title);
+                        $this->addField($gridPupilListingOp9);
+                        
+                        if (strlen((string)$progress) > 50)
+                        {
+                            $progress .= '<br>';
+                        }
+                        
+                        $progress .= '.';
+                        echo "$progress";
+                        flush();*/
+                        
+                        $tableRaw = new MTableRaw($plData->title, $plData->data, $columns);
+                        $tableRaw->setAlternate(true);
+                        $this->addField($tableRaw);
+                        $this->addField(new Separator());
+                    }
+                }
+                
+                break;
+            default:
+                break;
+        }
+        
+    }
+
+    public function signatureList($teste=null)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $session = $MIOLO->session;
+
+        $pupilSignature = $session->IsRegistered('pupilSignature') ? unserialize($session->GetValue('pupilSignature')) : null;
+
+        $periodId = MIOLO::_request('periodId');
+
+        $pupilSignature['periodId'] = $periodId;
+
+        $MIOLO->getClass($module, 'RptSignature');
+        $report = new RptSignature($pupilSignature);
+
+    }
+
+}
+
+?>

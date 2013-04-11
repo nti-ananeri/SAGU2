@@ -1,0 +1,365 @@
+<?php
+/**
+ * Opening account remittance form
+ *
+ * @author Armando Taffarel Neto [taffarel@solis.coop.br]
+ *         Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * Armando Taffarel Neto [taffarel@solis.coop.br]
+ *
+ * @since
+ * Class created on 31/03/2006
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2005 SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+
+/**
+ * Form to employee list
+ **/
+class FrmOpeningAccountRemittance extends MForm
+{
+    private $home;
+    public $employeeTypes;
+    
+    /**
+     * Class constructor
+     **/
+    function __construct($data)
+    {
+
+        $module = MIOLO::getCurrentModule();
+
+        $this->home   = $data->home;
+
+        parent::__construct(_M('Opening account remittance', $module));
+
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+
+
+        $toolBar = new MToolBar('toolBar',$MIOLO->getActionURL($module,$action));
+
+        $toolBar->disableButton('tbBtnNew');
+        $toolBar->disableButton('tbBtnDelete');
+        $toolBar->disableButton('tbBtnPrint');
+        $toolBar->disableButton('tbBtnSave');
+        $toolBar->disableButton('tbBtnSearch');
+
+        //favoritos
+        $enabledImage  = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-20x20.png');
+        $disabledImage = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-disabled-20x20.png');
+        $url           = $MIOLO->getActionURL($module, $this->home, null, array('function' => 'search', 'event' => 'bookmark'));
+        $toolBar->addButton('tbBtnBookmark', _M('Add to bookmarks', 'basic'), $url, null, true, $enabledImage, $disabledImage);
+
+        if ( MIOLO::_request('event') == 'bookmark' )
+        {
+            $MIOLO->getClass('basic', 'access');
+            access::insert('Opening account remittance', $this->home, 'openingAccountRemittance-16x16.png', true);
+        }
+        //fim favoritos
+
+        $fields[] = $toolBar;
+
+        $divError = new MDiv('divError', null, null, 'align=center');
+        $fields[] = $divError;
+        
+        $business = $MIOLO->getBusiness('basic', 'BusEmployeeType');        
+
+        $this->employeeTypes = $business->listEmployeeType();
+
+        foreach ($this->employeeTypes as $key => $employee )
+        {
+            eval('$employeeType' . $key . '= new MCheckBox(\'employeeType' . $key . '\' , ' . $employee[0] . ', \'\', true, \''. $employee[1] . '\');'); 
+            eval('$flds[] = $employeeType' . $key . ';');
+        }
+
+        $bsg1            = new BaseGroup('bsg1', _M('Employee type', $module), $flds, 'vertical');
+        $bsg1->showLabel = true;
+        $bsg1->width     = '43%';
+              
+        $MIOLO->getClass('finance', 'RemittanceOpeningAccount');
+        $roa = new RemittanceOpeningAccount();
+        
+        foreach ( $roa->returnBankInformation() as $key => $bank )
+        {
+            $filters->bankId .= $key . ',';
+        }        
+        $filters->bankId = substr($filters->bankId, 0, strlen((string)$filters->bankId)-1);
+        
+        $business = $MIOLO->getBusiness('finance', 'BusBankAccount');
+        $banks = $business->listBankAccount($filters);
+        
+        if ( count($banks) > 0 )
+        {
+            $bankAccountId = new MSelection('bankAccountId',
+                                    $this->getFormValue('bankAccountId',$data->bankAccountId),
+                                    _M('Bank account',$module),
+                                    $banks);
+            $bankAccountId->setAutoSubmit(true);
+            $flds2[] = $bankAccountId;
+            $validators[] = new RequiredValidator('bankAccountId');
+        }
+        else
+        {
+            $flds2[] = new Separator(_M('No bank account registered for bank @1. Please, register bank account, back on that process and continue.', $module, $filters->bankId));
+        }
+        
+        $business = $MIOLO->getBusiness($module,'BusSalaryRemittance');
+        $data = $business->getBankData($this->getFormValue('bankAccountId'));
+        
+        list (
+                $bankId
+             ) = $data;
+        
+        $fields[] = new MHiddenField('bankId', $bankId ? $bankId : $this->getFormValue('bankId', $data->bankId));
+        $exists = $roa->remittanceExists($bankId);
+       
+
+        if ( $exists )
+        {
+
+            $accepted = SAGU::checkParameter( "BANK_REMITTANCE_SEQUENCE_MCIF_". $bankId);
+
+            if($accepted)
+            {
+                eval ('$dataSequence = BANK_REMITTANCE_SEQUENCE_MCIF_'. $bankId. ';');
+
+                if (  $dataSequence > 0 )
+                {
+                    $dataSequence++;
+                }
+                else
+                {
+                    $dataSequence = 1;
+                }
+            }
+
+            // FIELD - Sequence File
+            $sequenceFile = $dataSequence ? $dataSequence : $this->getFormValue('sequenceFile', $data->sequenceFile);
+            $sequenceFileLabel = new MText('sequenceFileLabel', _M('Sequence file', $module).':');
+            $sequenceFileLabel->setClass('m-caption m-caption-required');
+            $sequenceFileLabel->setWidth(FIELD_CONTAINER_SIZE);
+            $sequenceFile      = new MTextField('sequenceFile', $sequenceFile, '', FIELD_ID_SIZE);
+            $validators[] = new MIntegerValidator('sequenceFile', _M('Sequence file', $module), 'required');
+            $flds2[] = new MHContainer('hctSequenceFile', array($sequenceFileLabel, $sequenceFile));
+
+
+
+        }
+        elseif ( $this->getFormValue('bankAccountId') )
+        {
+            $flds2[] = new MTextLabel('error', _M('Sorry. The remittance is not implemented for the selected bank', $module), null, 'red');
+        }
+        
+        $bsg2            = new BaseGroup('bsg2', _M('Bank informations', $module), $flds2, 'vertical');
+        $bsg2->showLabel = true;
+        $bsg2->width     = '54%';
+
+        $hct1           = new MHContainer('hct1', array($bsg1, $bsg2));
+        $hct1->setFormMode(MControl::FORM_MODE_SHOW_NBSP);
+        $hct1->showLabel = true;
+        $fields[] = $hct1;        
+
+        if ( $exists )
+        {
+            $btn1     = new MButton('btnGenerate', _M('Generate', $module));
+            $fields[] = $btn1;
+        }        
+        
+        $fields[] = new MSeparator('');
+        
+        $this->setFields($fields);
+        $this->setValidators($validators);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+        $this->setClose($MIOLO->getActionURL($module,substr($action,0,strrpos($action,':'))));
+
+    }
+
+    /**
+     * Event triggered when user chooses Generate from the toolbar
+     **/
+    public function btnGenerate_click($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+        $dataForm->sequenceFile = $this->getFormValue('sequenceFile');
+        $dataForm->bankId       = $this->getFormValue('bankId');
+
+        $data->sequenceFile = $dataForm->sequenceFile;
+
+        foreach ($this->employeeTypes as $key => $employee )
+        {
+            $value = $this->getFormValue('employeeType' . $key);
+            if ( strlen((string)$value) > 0 )
+            {
+                $employeeTypeId = $employeeTypeId . ',' . $value;
+            }
+        }
+        if ( strlen((string)$employeeTypeId) > 0 )
+        {
+
+            $MIOLO->getClass('finance', 'RemittanceMCIF001');
+            $rs = new RemittanceMCIF001();
+
+            //file header functions
+            $business = $MIOLO->getBusiness($module,'BusOpeningAccountRemittance');
+                 
+            $data2 = $business->getBankData($this->getFormValue('bankAccountId'));
+            
+            list (
+                    $headerRemittance->accountNumber,
+                    $headerRemittance->accountNumberDigit,
+                    $headerRemittance->branchNumber,
+                    $headerRemittance->branchNumberDigit
+                  ) = $data2;
+                 
+           // $headerRemittance->sequence = $business->updateSequence();
+            $headerRemittance->sequence = $dataForm->sequenceFile;
+
+            $lotControl = 1;
+
+            $fileContent[] = $rs->fileHeader($headerRemittance);
+
+            // detail functions
+            $data1 = $business->searchEmployee(substr($employeeTypeId,1));
+            $data2 = $business->getCompanyData();
+            
+            $clientControl = 0;
+            if ( count($data1) > 0 )
+            {
+                foreach ( $data1 as $value )
+                {
+                    $clientControl++;
+                    
+                    list (
+                            $employeeData->personId,
+                            $employeeData->name,
+                            $employeeData->employeeType,
+                            $employeeData->cpf,
+                            $employeeData->rg,
+                            $employeeData->rgOrgan,
+                            $employeeData->dateBirth,
+                            $employeeData->city,
+                            $employeeData->motherName,
+                            $employeeData->fatherName,
+                            $employeeData->location,
+                            $employeeData->neighborhood,
+                            $employeeData->zipCode,
+                            $employeeData->phone,
+                            $employeeData->country,
+                            $employeeData->sex
+                         ) = $value;
+                        
+                        //adaptação necessário para padrão MCIF
+                        if  ( $employeeData->country == 0 || $employeeData->country == 10 )
+                        {
+                            $employeeData->country = 1;
+                        }
+                        else
+                        {
+                            $employeeData->country = 3;
+                        }
+                        
+                        $employeeData->branchNumber      = $headerRemittance->branchNumber;
+                        $employeeData->branchNumberDigit = $headerRemittance->branchNumberDigit;
+                        $employeeData->sequence    = $clientControl;
+                        $employeeData->bankId      = $dataForm->bankId;
+
+                        $lotControl++;
+                        $fileContent[]             = $rs->detail01($employeeData);
+                        $lotControl++;
+                        $fileContent[]             = $rs->detail02($employeeData);
+                        $lotControl++;
+                        $fileContent[]             = $rs->detail03($employeeData);
+                        
+                        list (
+                                $employeeData->cnpj,
+                                $employeeData->companyName,
+                                $employeeData->companyLocation,
+                                $employeeData->companyNeighborhood,
+                                $employeeData->companyZipcode,
+                                $employeeData->companyPhone
+                             ) = $data2;
+                             
+                        $lotControl++;
+                        $fileContent[]             = $rs->detail05($employeeData);
+                        $lotControl++;
+                        $fileContent[]             = $rs->detail06($employeeData);
+                        $lotControl++;
+                        $fileContent[]             = $rs->detail07($employeeData);
+                        
+                        $fields[] = new MTextLabel($employeeData->personId, $clientControl . ' - ' . $employeeData->personId . ' - ' . $employeeData->name . ' - OK');
+                        $fields[] = new MSeparator();
+                }
+            }
+            else
+            {
+            }
+            
+            
+            $dataConfig->value        = $dataForm->sequenceFile;
+            $dataConfig->moduleConfig = 'BASIC';
+            $dataConfig->parameter    = 'BANK_REMITTANCE_SEQUENCE_MCIF_'.$dataForm->bankId;
+        
+            $businessConfig = $MIOLO->getBusiness('basic', 'BusConfig');
+            $businessConfig->updateConfigValue($dataConfig);
+
+            //trailer functions
+            $lotControl++;
+            $trailerControl->clients = $clientControl;
+            $trailerControl->lines   = $lotControl;
+
+            $fileContent[]             = $rs->fileTrailer($trailerControl);
+            
+            $fileContentC = implode($fileContent, chr(hexdec("\X0D\X0A")));
+            $fileContentC.= chr(hexdec("\X0D\X0A"));        
+
+            $this->addField($fields);
+            SAGU::returnAsFile('mcif-' . date(dmY) . '.txt', $fileContentC, 'text/bb-rem-file');
+        }
+        else
+        {
+            $lblMsg1        = new MText('lblMsg1', _M('Link type not defined', $module));
+            $lblMsg1->color = 'red';
+            $sep1           = new Separator('');
+            $cntErrors      = new MVContainer('cntErrors', array($lblMsg1,$sep1));
+            $this->divError->addControl($cntErrors);
+        }
+
+    }
+
+}
+
+?>

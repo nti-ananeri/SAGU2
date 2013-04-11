@@ -1,0 +1,425 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for finBankAccount table
+ *
+ * @author Rudi Uhrig Neto [rudi@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * Rafael Luís Spengler [rafael@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ *
+ * @since
+ * Class created on 14/12/2005
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to manipulate the BankAccount table
+ **/
+class BusinessFinanceBusBankAccount extends MBusiness
+{
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module = 'finance'; //Esta finance por extenso devido a chamadas do módulo processo seletivo
+
+        return $MIOLO->getDatabase($module);
+    }
+
+    /**
+     * List all records from the table handled by the class
+     *
+     * @param: None
+     *
+     * @returns (array): Return an array with the entire table
+     *
+     **/
+    public function listBankAccount($filters = NULL)
+    {
+        $sql = ' SELECT A.bankAccountId,
+                        A.accountNumber||\'-\'|| COALESCE(A.accountNumberDigit, \'\') 
+                                      ||\': \'|| COALESCE(A.description, \'\')
+                   FROM finBankAccount A ';
+
+        $db = $this->getDatabase();
+        
+        if (strlen((string)$filters->bankId)>0)
+        {
+            $where.= ' AND   bankId IN (?) ';
+            $args[] = $filters->bankId;
+        }
+        if (strlen((string)$where)>0)
+        {
+            $sql.=' WHERE '.substr($where, 5, strlen((string)$where));
+            $sql = SAGU::prepare($sql, $args);
+        }
+        $sql .=' ORDER BY 2, 1 ';
+
+        $return = $db->query($sql);
+        return $return;
+    }
+
+
+    /**
+     * Return a specific record from the database
+     *
+     * @param $paymentPlaceId (integer): Primary key of the record to be retrieved
+     *
+     * @return (object): Return an object of the type handled by the class
+     *
+     **/
+    public function getBankAccount($bankAccountId)
+    {
+        $sql = 'SELECT A.bankAccountId,
+                       A.description,
+                       A.bankId,
+                       A.branchNumber,
+                       A.branchNumberDigit,
+                       A.accountNumber,
+                       A.accountNumberDigit,
+                       A.assignorCode,
+                       A.userName,
+                       TO_CHAR(A.dateTime,\'' . MASK_TIMESTAMP . '\')
+                  FROM finBankAccount A
+                 WHERE A.bankAccountId = ? ';
+
+        $db = $this->getDatabase();
+        $sqls = SAGU::prepare($sql,$bankAccountId);
+
+        $result = $db->query($sqls);
+        //$db->close();
+
+        $bankAccount = new FinBankAccount();
+
+        list ( $bankAccount->bankAccountId,
+               $bankAccount->description,
+               $bankAccount->bankId,
+               $bankAccount->branchNumber,
+               $bankAccount->branchNumberDigit,
+               $bankAccount->accountNumber,
+               $bankAccount->accountNumberDigit,
+               $bankAccount->assignorCode,
+               $bankAccount->userName,
+               $bankAccount->dateTime ) = $result[0];
+
+        return $bankAccount;
+    }
+
+    /**
+     * Do a search on the database table handled by the class
+     *
+     * @param $filters (object): Search filters
+     *
+     * @last modification: William Prigol Lopes [william@solis.coop.br]
+     *                     Make the search capable to get partial words with % in varchar fields
+     *
+     * @return (array): An array containing the search results
+     **/
+    public function searchBankAccount($data)
+    {
+        $sql = 'SELECT A.bankAccountId,
+                       A.description,
+                       A.bankId,
+                       CASE              
+                            WHEN A.branchNumber
+                            is NULL THEN \' \'
+                            ELSE A.branchNumber
+                            END
+                            ||\' - \'||
+                       CASE
+                            WHEN A.branchNumberDigit
+                            is NULL  THEN \' \'
+                            ELSE A.branchNumberDigit
+                            END,
+                        CASE
+                            WHEN A.accountNumber
+                            IS NULL THEN \' \'
+                            ELSE A.accountNumber
+                            END
+                            ||\' - \'||
+                       CASE
+                            WHEN A.accountNumberDigit
+                            IS NULL THEN \' \'
+                            ELSE A.accountNumberDigit
+                            END,
+                        A.assignorCode
+                  FROM  finBankAccount A ';
+
+        $where = '';
+        unset($args);
+
+        if ( strlen((string)$data->bankAccountId) > 0 )
+        {
+            $where .= '    AND   A.bankAccountId = ?';
+            $args[] = $data->bankAccountId;
+        }
+        if ( strlen((string)$data->description) > 0 )
+        {
+            $where .= '    AND   A.description ILIKE ?';
+            $args[] = $data->description.'%';
+        }
+        if ( strlen((string)$data->bankId) > 0 )
+        {
+            $where .= '    AND   A.bankId ILIKE ?';
+            $args[] = $data->bankId.'%';
+        }
+        if ( strlen((string)$data->branchNumber) > 0 )
+        {
+            $where .= '    AND   A.branchNumber ILIKE ?';
+            $args[] = $data->branchNumber.'%';
+        }
+        if ( strlen((string)$data->branchNumberDigit) > 0 )
+        {
+            $where .= '    AND   A.branchNumberDigit ILIKE ?';
+            $args[] = $data->branchNumberDigit.'%';
+        }
+        if ( strlen((string)$data->accountNumber) > 0 )
+        {
+            $where .= '    AND   A.accountNumber ILIKE ?';
+            $args[] = $data->accountNumber.'%';
+        }
+
+        if ( strlen((string)$data->accountNumberDigit) > 0 )
+        {
+            $where .= '    AND   A.accountNumberDigit ILIKE ?';
+            $args[] = $data->accountNumberDigit.'%';
+        }
+        
+        if ( strlen((string)$data->assignorCode) > 0 )
+        {
+            $where .= '    AND   A.assignorCode ILIKE ?';
+            $args[] = $data->assignorCode.'%';
+        }
+
+
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE ' . substr($where,8) .
+                    ' ORDER BY A.description';
+
+            $db = $this->getDatabase();
+            $sqls = SAGU::prepare($sql,$args);
+            $result = $db->query($sqls);
+            //$db->close();
+        }
+        return $result;
+    }
+
+    /**
+     * Insert a new record
+     *
+     * @param $data (object): An object of the type handled by the class
+     *
+     * @return True if succed, otherwise False
+     *
+     **/
+    public function insertBankAccount($data)
+    {
+        $db = $this->getDatabase();
+
+        $sql = 'SELECT NEXTVAL(\'seq_bankaccountid\')';
+        $retval = $db->query($sql);
+
+        unset($bankAccountId);
+        if ( isset($retval) )
+        {
+        
+            $bankAccountId = $retval[0][0];
+            $sql = 'INSERT INTO finBankAccount
+                                (bankAccountId,
+                                 description,
+                                 bankId,
+                                 branchNumber,
+                                 branchNumberDigit,
+                                 accountNumber,
+                                 accountNumberDigit,
+                                 assignorCode)
+                         VALUES (?,?,?,?,?,?,?,?)';
+
+            $args = array($bankAccountId,
+                          $data->description,
+                          $data->bankId,
+                          $data->branchNumber,
+                          $data->branchNumberDigit,
+                          $data->accountNumber,
+                          $data->accountNumberDigit,
+                          $data->assignorCode);
+
+            if ( ! $db->execute(SAGU::prepare($sql,$args)) )
+            {
+                unset($bankAccountId);
+            }
+        }
+        return $bankAccountId;
+
+    }
+
+    /**
+     * Update data from a specific record
+     *
+     * @param $data (object): Data which will replace the old record data
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+    public function updateBankAccount($data)
+    {
+        $sql = 'UPDATE finBankAccount
+                   SET description        = ?,
+                       bankId             = ?,
+                       branchNumber       = ?,
+                       branchNumberDigit  = ?,
+                       accountNumber      = ?,
+                       accountNumberDigit = ?,
+                       assignorCode       = ?
+                 WHERE bankAccountId      = ?';
+
+        $args = array($data->description,
+                      $data->bankId,
+                      $data->branchNumber,
+                      $data->branchNumberDigit,
+                      $data->accountNumber,
+                      $data->accountNumberDigit,
+                      $data->assignorCode,
+                      $data->bankAccountId);
+
+        $db = $this->getDatabase();
+        $result = $db->execute(SAGU::prepare($sql, $args));
+        return $result;
+    }
+
+    /**
+     * Delete a record
+     *
+     * @param $bankAccountId(string): Primary key for deletion
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+    public function deleteBankAccount($bankAccountId)
+    {
+        $sql = 'DELETE FROM finBankAccount
+                      WHERE bankAccountId = ?';
+
+        $args = array($bankAccountId);
+
+        $db = $this->getDatabase();
+        $result = $db->execute(SAGU::prepare($sql,$args));
+        //$this->checkError($db);
+        //$db->close();
+
+        return $result;
+    }
+
+    /**
+     * return the bank id for specific bank account
+     *
+     * @param: $bankAccountId (int): primary key for finBankAccount table
+     *
+     * @return: (int): The respective bank if for this bank account
+     *
+     */
+    public function getBankIdByBankAccountId($bankAccountId)
+    {
+        $sql = ' SELECT bankId
+                   FROM finBankAccount
+                  WHERE bankAccountId = ? ';
+        
+        $args   = array($bankAccountId);
+        $db     = $this->getDatabase();
+        $result = $db->query(SAGU::prepare($sql, $args));
+        return $result[0][0];
+    }
+    
+    /**
+     * set the bank remittance sequence for specific bank remittance, if that does not exists, create a new.
+     *
+     * @param: $bankAccountId (int): primary key for finBankAccount table
+     *         $sequenceFile (int): Value for sequence
+     *
+     * @return: (int): The respective bank if for this bank account
+     *
+     */
+     public function updateBankAccountSequence($bankAccountId, $sequenceFile)
+     {
+        $MIOLO  = MIOLO::getInstance();
+        $module = 'finance'; // Esta finance por extenso devido a chamadas do módulo processo seletivo
+
+        // Try to obtain the sequence number
+        $businessConfig        = $MIOLO->getBusiness('basic', 'BusConfig');
+        $filters->parameter    = 'BANK_REMMITANCE_SEQUENCE_'.$bankAccountId;
+        $filters->moduleConfig = 'finance';
+        $dataConfig            = $businessConfig->searchConfig($filters);
+        $data->value        = $sequenceFile;
+        $data->description  = _M('Parameter used to control the sequences for bank remmitance files for bank account @1', $module, $bankAccountId);
+        $data->type         = 'INT';
+        $data->moduleConfig = 'FINANCE';
+        $data->parameter    = $filters->parameter;
+        
+        if (is_array($dataConfig[0]))
+        {
+            if ($businessConfig->updateConfig($data))
+            {
+                return true;
+            }
+            else
+            {
+                return false;
+            }
+        }
+        else
+        {
+            if ($businessConfig->insertConfig($data))
+            {
+                return true;
+            }
+            else
+            {
+                return false;
+            }
+        }
+    }
+    
+    public function beginTransaction()
+    {
+        $db = $this->getDatabase();
+        $db->execute('BEGIN TRANSACTION');
+    }
+
+    public function commit()
+    {
+        $db = $this->getDatabase();
+        $db->execute('COMMIT');
+    }
+   
+}
+
+?>

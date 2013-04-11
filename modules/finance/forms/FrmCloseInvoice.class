@@ -1,0 +1,540 @@
+<?php
+
+/**
+ * Close invoice form
+ *
+ * @author Eduardo Beal Miglioranza [eduardo@solis.coop.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ *
+ * @since
+ * Class created on 22/12/2005
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2005 SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+
+/**
+ * Form to manipulate a bank account
+ **/
+class FrmCloseInvoice extends MForm
+{
+    private $home;
+
+    /**
+     * Class constructor
+     **/
+    function __construct($data)
+    {
+
+        $module = MIOLO::getCurrentModule();
+        $this->home   = $data->home;
+
+        parent::__construct(_M('Close invoice', $module));
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+
+        $toolBar = new MToolBar('toolBar', $MIOLO->getActionURL($module, $action));
+        
+        $toolBar->disableButton('tbBtnNew');
+        $toolBar->disableButton('tbBtnSave');
+        $toolBar->disableButton('tbBtnDelete');
+        $toolBar->disableButton('tbBtnSearch');
+        $toolBar->disableButton('tbBtnPrint');
+
+        //favoritos
+        $enabledImage  = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-20x20.png');
+        $disabledImage = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-disabled-20x20.png');
+        $url           = $MIOLO->getActionURL($module, $this->home, null, array('function' => 'search', 'event' => 'bookmark'));
+        $toolBar->addButton('tbBtnBookmark', _M('Add to bookmarks', 'basic'), $url, null, true, $enabledImage, $disabledImage);
+
+        if ( MIOLO::_request('event') == 'bookmark' )
+        {
+            $MIOLO->getClass('basic', 'access');
+            access::insert('Close invoice', $this->home, 'closeInvoice-16x16.png', true);
+        }
+        //fim favoritos
+
+        // Pega informações do usuário logado
+        $loginUser  = $MIOLO->GetLogin();
+
+        //busca dados do usuário na base sagu2
+        $business = $MIOLO->getBusiness('basic','BusPerson');
+        $person   = $business->getPersonByMioloUserName($loginUser->id);
+
+        $loginUser->idperson = $person->personId;
+
+        if ( strlen((string)$person->personId) > 0 )
+        {
+            //busca dados do Caixa
+            $business              = $MIOLO->getBusiness($module, 'BusCounter');
+            $busCounterResponsable = $business->getCounterResponsable($person->personId);
+
+            $data->operatorId           = $person->personId;
+            $data->operatorName         = $person->name;
+
+            $data->counterId            = $busCounterResponsable->counterId;
+            $data->responsableId        = $busCounterResponsable->responsableId;
+            $data->responsableName      = $busCounterResponsable->personName;
+            $data->unitDescription      = $busCounterResponsable->unitDescription;
+        }
+
+        $fields[] = $toolBar;
+        
+        $invoiceId = $this->getFormValue('invoiceId', $data->invoiceId) ? $this->getFormValue('invoiceId', $data->invoiceId) : MIOLO::_request('invoiceId', 'GET');
+        $fldInvoiceId    = new MTextLabel('invoiceId', $invoiceId, _M('Invoice id', $module));
+        $fields[] = $fldInvoiceId;
+  
+        // Static information about invoice close type
+        $selData = array(array('I', _M('Integral', $module)),
+                         array('P', _M('Partial', $module))
+                        );
+                        
+        $closeTypeData = $this->getFormValue('closeType') ? $this->getFormValue('closeType') : 'I';                        
+        $closeType = new MSelection('closeType', $closeTypeData, _M('Close type', $module), $selData);
+        $closeType->setAutoSubmit(true);
+        $fields[] = $closeType; 
+        
+            $speciesIdLabel = new MText('speciesIdLabel', _M('Species',$module).':');
+            $speciesIdLabel->setWidth(FIELD_CONTAINER_SIZE);
+            $speciesIdLabel->setClass('m-caption m-caption-required');
+            $flds[]           = $speciesIdLabel;
+
+            $business     = $MIOLO->getBusiness($module,'BusSpecies');
+            $speciesId    = new MSelection ('speciesId', $this->getFormValue('speciesId', strlen((string)$_GET['speciesId'])>0 ? $_GET['speciesId'] : DEFAULT_SPECIE_ID), '', $business->listSpecies());
+            $speciesId->setJsHint( _M('Species',$module) );
+            $speciesId->setAutoSubmit('true');
+            $validators[] = new MIntegerValidator('speciesId', _M('Species', $module), 'required');
+            $flds[]       = $speciesId;
+
+            $hctSpecies   = new MHContainer('hctSpecies', $flds);
+            $hctSpecies->setShowLabel(true);
+            $fields[]     = $hctSpecies;
+            unset($flds);
+
+            // somente para cheques
+            if ( $this->getFormValue('speciesId') == SPECIE_ID_CHECK )
+            {
+                //traz uma lista com os cheques desse título
+                $busCheck = $MIOLO->getBusiness($module, 'BusCheck');
+                $checks   = $busCheck->listInvoiceCheck($invoiceId);
+               
+                if ( count($checks)>0 )
+                {
+                    $resCheck = $busCheck->getCheck($checks[0][0], $invoiceId);
+
+                    $checkIdLabel = new MText('checkIdLabel', _M('Check',$module).':');
+                    $checkIdLabel->setWidth(FIELD_CONTAINER_SIZE);
+                    $flds[]       = $checkIdLabel;
+
+                    $checkId      = new MSelection('checkId', $this->getFormValue('checkId'), '', $checks);
+                    $checkId->addAttribute('onChange', 'setCheckValue(\'' . $resCheck->invoices[0]->value . '\');');
+                    $flds[]       = $checkId;
+                    $validators[] = new MIntegerValidator('checkId', _M('Check', $module), 'required');
+
+                    $flds[] = new MText('txt1', _M('These check will be compensated, that is, will be updated their down date to today date.', $module) );
+
+                    $jsCode = 'function setCheckValue(checkValue) { ';
+                    $jsCode .= '    if ( parseFloat(checkValue) != parseFloat(document.getElementById(\'value\').value) ) {';
+                    $jsCode .= '        document.getElementById(\'closeType\').value = \'P\';';
+                    $jsCode .= '    }';
+                    $jsCode .= '    document.getElementById(\'value\').value = checkValue;';
+                    $jsCode .= '}';
+
+                    $this->page->addJSCode($jsCode);
+                }
+                //se não tiver cheque vinculado, possibilita inserir um novo
+                else
+                {
+                    $businessInvoice = $MIOLO->getBusiness($module, 'BusReceivableInvoice');
+                    $dataInvoice     = $businessInvoice->getInvoice($invoiceId);
+
+                    $checkIdLabel = new MText('checkIdLabel', _M('Check',$module).':');
+                    $checkIdLabel->setWidth(FIELD_CONTAINER_SIZE);
+                    $flds[]       = $checkIdLabel;
+
+                    $ui           = $MIOLO->getUI();
+                    $strCheck     = _M('New check', $module);
+                    $path         = $MIOLO->getActionUrl($module, 'main:register:check', null, array('function' => 'insert', 'invoiceId' => $invoiceId, 'contractPersonId' => $dataInvoice->personId, 'value' => $dataInvoice->value, 'maturityDate' => $dataInvoice->maturityDate, 'balance' => $dataInvoice->balance, 'gotoBack' => urlencode(serialize(array('gotoBackAction' => $_GET['action'], 'gotoBackInvoiceId' => $_GET['invoiceId'], 'gotoBackGoto' => $_GET['goto'], 'showDownDate' => 'false'))) ));
+
+                    $imgPath      = $ui->getImage($module, 'checkWhite.png');
+                    $flds[]       = new MImageLink('imgCheckWhite' . $x, $strCheck, $path, $imgPath);
+
+                    $flds[]       = new MText('txt1', _M('This invoice do not have link with compensated checks. To create a new, click in the image in the side.', $module) );
+                }
+
+                $hctCheck = new MHContainer('hctCheck', $flds);
+                $hctCheck->setShowLabel(false);
+                $fields[] = $hctCheck;
+                unset($flds);
+            }
+
+        // Process fields
+        if ((strlen((string)$closeTypeData)>0) && (strlen((string)$invoiceId)>0))
+        {
+            $businessReceivableInvoice = $MIOLO->getBusiness($module, 'BusReceivableInvoice');
+            if ( $closeTypeData == 'I' )
+            {
+                $dataReceivableInvoice = $businessReceivableInvoice->getReceivableInvoiceValues($invoiceId);
+                $nominalValue          = $dataReceivableInvoice->nominalValue;
+            }
+            else
+            {
+                $nominalValue = $businessReceivableInvoice->getNominalValue($invoiceId);
+            }
+
+            // Caso o usuário tenha seu login no Ldap ou na base corretamente os operatorId e
+            // counterId ou irá aparecer no form campos para o usuário preencher isso.
+            if ( $loginUser->idperson != NULL )
+            {
+                $fields[] = new MHiddenField('operatorId', $this->getFormValue('operatorId', $data->operatorId));
+                $fields[] = new MHiddenField('counterId', $this->getFormValue('counterId', $data->counterId));
+                $fields[] = new MHiddenField('responsableId', $this->getFormValue('responsableId', $data->responsableId)); 
+
+            }
+            else
+            {
+                $operatorIdLabel = new MText('operatorIdLabel', _M('Operator',$module).':');
+                $operatorIdLabel->setWidth(FIELD_CONTAINER_SIZE);
+                $operatorIdLabel->setClass('m-caption m-caption-required');
+                $flds[]          = $operatorIdLabel;
+
+                $operatorId   = new MLookupTextField('operatorId', $this->getFormValue('operatorId',$data->operatorId), _M('',$module), FIELD_ID_SIZE, null, null, 'operatorName', 'basic', 'PhysicalPersonEmployee', null, null, true);
+                $operatorId->setJsHint(_M('Enter the operator id',$module));
+                $validators[] = new MIntegerValidator('operatorId', _M('Operator id', $module), 'required');
+                $flds[]       = $operatorId;
+
+                $operatorName = new MTextField('operatorName', $this->getFormValue('operatorName',$data->operatorName), _M('',$module), FIELD_DESCRIPTION_SIZE);
+                $operatorName->setReadOnly(true);
+                $flds[]       = $operatorName;
+    
+                $hctOperator  = new MHContainer('hctOperator', $flds);
+                $hctOperator->setShowLabel(true);
+                $fields[]     = $hctOperator;
+                unset($flds);
+
+                $counterIdLabel = new MText('counterIdLabel', _M('Counter',$module).':');
+                $counterIdLabel->setWidth(FIELD_CONTAINER_SIZE);
+                $counterIdLabel->setClass('m-caption m-caption-required');
+                $flds[]           = $counterIdLabel;
+
+                $business = $MIOLO->getBusiness($module,'BusCounter');
+                $counterId = new MComboBox('counterId', $this->counterId->value, '', $business->listCounter());
+                $validators[] = new MIntegerValidator('counterId');
+                $counterId->setJsHint( _M('Counter id',$module) );
+                $flds[]      = $counterId;
+                $hctCounter = new MHContainer('hctCounter', $flds);
+                $hctCounter->setShowLabel(true);
+                $fields[]   = $hctCounter;
+                unset($flds);
+
+            }
+
+            if ( $loginUser->idperson != $data->responsableId )
+            {
+                $msg  = _M('Error. You don\'t have permission to access this process! You are need be counter responsible!',$module);
+                $data->invoiceId = $this->getFormValue('invoiceId', $data->invoiceId) ? $this->getFormValue('invoiceId', $data->invoiceId) : MIOLO::_request('invoiceId', 'GET');
+
+                $business = $MIOLO->getBusiness($module , 'BusReceivableInvoice');
+                $data     = $business->getReceivableInvoice($data->invoiceId);
+
+                $opts = array('personId'=>$data->personId, 'event'=>'btnSearch_click');
+                $goto = $MIOLO->getActionURL( $module, 'main', null, $opts);
+
+                $goto = strlen((string)$goto)>0 ? $goto : "self.close()";
+                $caption = _M('Error',$module);
+                
+                $MIOLO->error( $msg, $goto, $caption );
+
+            }
+
+//            $fldNominalValue = new MTextField('nominalValue', $nominalValue, _M('Nominal value', $module), FIELD_MONETARY_SIZE );
+            $fldNominalValue = new MTextField('nominalValue', strlen((string)$this->getFormValue('nominalValue', $data->nominalValue))>0 ? $this->getFormValue('nominalValue', $data->nominalValue) : $dataReceivableInvoice->balance, _M('Nominal value', $module), FIELD_MONETARY_SIZE );
+            $fldNominalValue->setReadOnly(true);
+
+            if ( $closeTypeData == 'P' )
+            {
+                $option = 1;
+                $messagesType =  array( array (_M('@1 entry', 'finance', 1), 1),
+                                    array (_M('@1 entries', 'finance', 2), 2) ); 
+
+                //number Of close entries
+                $numberOfEntriesLabel = new MText('numberOfEntriesLabel', _M('Number of close entries',$module) . ':');
+                $numberOfEntriesLabel->setClass('m-caption m-caption-required');
+                $numberOfEntriesLabel->setWidth(FIELD_CONTAINER_SIZE);
+
+                $numberOfEntries      = $this->GetFormValue('numberOfEntries',$data->numberOfEntries) ? $this->GetFormValue('numberOfEntries',$data->numberOfEntries) : $option;
+                $numberOfEntries      = new MRadioButtonGroup('numberOfEntries', '', $messagesType , $numberOfEntries, null, 'horizontal');
+                $numberOfEntries->SetShowLabel(false);
+                $numberOfEntries->setAutoPostBack(true);
+
+                $hctnumberOfEntries   = new MHContainer('hctnumberOfEntries', array($numberOfEntriesLabel, $numberOfEntries));
+            }
+            else
+            {
+                $numberOfEntries      = new MHiddenField('numberOfEntries', $this->getFormValue('numberOfEntries'));
+            }
+            $fldValueBalanced = new MTextField('valueBalanced', $dataReceivableInvoice->balanceWithPolicies,  _M('Balance', $module), FIELD_MONETARY_SIZE);
+            $fldValueBalanced->setreadOnly(true);
+
+            if ( $closeTypeData == 'I' )
+            {
+                $fldValue        = new MTextField('value', strlen((string)$this->getFormValue('value', $data->value))>0 ? $this->getFormValue('value', $data->value) : $dataReceivableInvoice->balanceWithPolicies,  _M('Payable value', $module), FIELD_MONETARY_SIZE, _M('Considers policies', 'finance'));
+                if ( $this->getFormValue('speciesId') == SPECIE_ID_CHECK )
+                {
+                    $fldValue->setreadOnly(true);
+                }
+
+                $businessDefaultOperations = $MIOLO->getBusiness($module, 'BusDefaultOperations');
+                $dataDefaultOperations     = $businessDefaultOperations->getDefaultOperations();
+                $businessOperation         = $MIOLO->getBusiness($module, 'BusOperation');
+                $dataOperation             = $businessOperation->listOperation('C', true);
+                $fldOperation              = new MSelection('operationId', strlen((string)$this->getFormValue('operationId'))>0 ? $this->getFormValue('operationId') : $dataDefaultOperations->paymentOperation,  _M('Operation (only credit)', $module), $dataOperation, true);
+
+                $comments = new MMultiLineField('comments', $this->getFormValue('comments', defined('DEFAULT_CLOSE_INVOICE_COMMENTS') ? DEFAULT_CLOSE_INVOICE_COMMENTS : ''), _M('Comments', $module), 60, 4, 60);
+
+            }
+
+            else
+            {
+                //se for uma baixa com 1 lançamento
+                if ( $this->getFormValue('numberOfEntries') == 1 || $this->getFormValue('numberOfEntries') == '' )
+                {
+                    $fldValue        = new MTextField('value', strlen((string)$this->getFormValue('value', $data->value))>0 ? $this->getFormValue('value', $data->value) : $dataReceivableInvoice->balanceWithPolicies,  _M('Payable value', $module), FIELD_MONETARY_SIZE, _M('Considers policies', 'finance'));
+                    if ( $this->getFormValue('speciesId') == SPECIE_ID_CHECK )
+                    {
+                        $fldValue->setreadOnly(true);
+                    }
+
+                    $businessDefaultOperations = $MIOLO->getBusiness($module, 'BusDefaultOperations');
+                    $dataDefaultOperations     = $businessDefaultOperations->getDefaultOperations();
+                    $businessOperation         = $MIOLO->getBusiness($module, 'BusOperation');
+                    $dataOperation             = $businessOperation->listOperation('C', true);
+                    $fldOperation              = new MSelection('operationId', strlen((string)$this->getFormValue('operationId'))>0 ? $this->getFormValue('operationId') : $dataDefaultOperations->paymentOperation,  _M('Operation (only credit)', $module), $dataOperation, true);
+
+                    $comments = new MMultiLineField('comments', $this->getFormValue('comments', defined('DEFAULT_CLOSE_INVOICE_COMMENTS') ? DEFAULT_CLOSE_INVOICE_COMMENTS : ''), _M('Comments', $module), 60, 4, 60);
+                }
+                else
+                {
+                    //lançamento 1
+                    $fldValue        = new MTextField('value', strlen((string)$this->getFormValue('value', $data->value))>0 ? $this->getFormValue('value', $data->value) : $dataReceivableInvoice->balanceWithPolicies,  _M('Payable value', $module), FIELD_MONETARY_SIZE, _M('Considers policies', 'finance'));
+                    if ( $this->getFormValue('speciesId') == SPECIE_ID_CHECK )
+                    {
+                        $fldValue->setreadOnly(true);
+                    }
+                    $fldValue->addAttribute('onChange', 'value2.value = Math.round((parseFloat(valueBalanced.value) - parseFloat(this.value))*Math.pow(10,2))/Math.pow(10,2)');
+
+                    $businessDefaultOperations = $MIOLO->getBusiness($module, 'BusDefaultOperations');
+                    $dataDefaultOperations     = $businessDefaultOperations->getDefaultOperations();
+                    $businessOperation         = $MIOLO->getBusiness($module, 'BusOperation');
+                    $dataOperation             = $businessOperation->listOperation('C', true);
+                    $fldOperation              = new MSelection('operationId', strlen((string)$this->getFormValue('operationId'))>0 ? $this->getFormValue('operationId') : $dataDefaultOperations->paymentOperation,  _M('Operation (only credit)', $module), $dataOperation, true);
+
+                    $comments = new MMultiLineField('comments', $this->getFormValue('comments', defined('DEFAULT_CLOSE_INVOICE_COMMENTS') ? DEFAULT_CLOSE_INVOICE_COMMENTS : ''), _M('Comments', $module), 60, 4, 60);
+
+                    //lançamento 2
+                    $fldValue2        = new MTextField('value2', strlen((string)$this->getFormValue('value2', $data->value2))>0 ? $this->getFormValue('value2', $data->value2) : '0.00',  _M('Payable value', $module), FIELD_MONETARY_SIZE, _M('Considers policies', 'finance'));
+                    if ( $this->getFormValue('speciesId') == SPECIE_ID_CHECK )
+                    {
+                        $fldValue2->setreadOnly(true);
+                    }
+
+                    $businessDefaultOperations = $MIOLO->getBusiness($module, 'BusDefaultOperations');
+                    $dataDefaultOperations     = $businessDefaultOperations->getDefaultOperations();
+                    $businessOperation         = $MIOLO->getBusiness($module, 'BusOperation');
+                    $dataOperation             = $businessOperation->listOperation('C', true);
+                    $fldOperation2              = new MSelection('operationId2', strlen((string)$this->getFormValue('operationId2'))>0 ? $this->getFormValue('operationId2') : $dataDefaultOperations->paymentOperation,  _M('Operation (only credit)', $module), $dataOperation, true);
+
+                    $comments2 = new MMultiLineField('comments2', $this->getFormValue('comments2', defined('DEFAULT_CLOSE_INVOICE_COMMENTS') ? DEFAULT_CLOSE_INVOICE_COMMENTS : ''), _M('Comments', $module), 60, 4, 60);
+                }
+            }
+
+            switch ($closeTypeData)
+            {
+                case 'I':
+                    $fldValue->setReadOnly(true);
+                    break;
+                case 'P':
+                    break;
+            }
+            $fields[] = $fldNominalValue;
+            $fields[] = $fldValueBalanced;
+            if ( $closeTypeData == 'P' )
+            {
+                $fields[] = $hctnumberOfEntries;
+            }
+            else
+            {
+                $fields[] = $numberOfEntries;
+            }
+
+            if ( $closeTypeData == 'I' )
+            {
+                $fields[] = $fldValue;
+                $fields[] = $fldOperation;
+                $fields[] = $comments;
+            }
+            else
+            {
+                if ( $this->getFormValue('numberOfEntries') == 1 || $this->getFormValue('numberOfEntries') == '' )
+                {
+                    $fields[] = $fldValue;
+                    $fields[] = $fldOperation;
+                    $fields[] = $comments;
+                }
+                else
+                {
+                    $fields[] = $fldValue;
+                    $fields[] = $fldOperation;
+                    $fields[] = $comments;
+                    $fields[] = $fldValue2;
+                    $fields[] = $fldOperation2;
+                    $fields[] = $comments2;
+                }
+            }            
+        }
+        else
+        {
+            $fields[] = new MHiddenField('value', $this->getFormValue('value'));
+            $fields[] = new MSeparator(_M('Please, select a close type.', $module));
+        }
+
+        // Is counter moviment
+        $data->operation =  'C';
+        $fields[] = new MHiddenField('operation', $this->getFormValue('operation') ?  $this->getFormValue('operation') : $data->operation);
+
+        $fields[] = new MHiddenField('goto', $this->getFormValue('goto') ? $this->getFormValue('goto') : MIOLO::_request('goto', 'GET'));
+        $fields[] = new MSeparator('');
+        $fields[] = new MButton('btnCloseInvoice', _M('Close invoice', $module), 'SUBMIT' );
+        $fields[] = new MSeparator('');
+        
+        $this->setFields($fields);
+
+        if ( count($validators) > 0 )
+        {
+            $this->setValidators($validators);
+        }
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+        $this->setClose($MIOLO->getActionURL($module,substr($action, 0, strrpos($action,':'))));
+        $this->page->onLoad('document.' . $this->name . '.closeType.focus();');
+    }
+
+    /**
+     * Event triggered when the button close invoice is clicked
+     */
+    public function btnCloseInvoice_click($sender = null)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $data   = $this->getTypesData();
+
+        $businessInvoice = $MIOLO->getBusiness($module, 'BusReceivableInvoice');
+        
+        //coloca o comentário do cheque
+        if ( $data->speciesId == SPECIE_ID_CHECK && strlen((string)$data->checkId) > 0 && strlen((string)$data->comments) == 0)
+        {
+            $businessCheck  = $MIOLO->getBusiness($module, 'BusCheck');
+            $check          = $businessCheck->getCheck($data->checkId);
+            $data->comments = _M('Check number', 'finance') . ': ' . $check->checkNumber;
+        }
+        
+        //faz a baixa
+        if ( $businessInvoice->closeInvoice($data) )
+        {
+            //se tiver um cheque faz a baixa dele
+            if ( $data->speciesId == SPECIE_ID_CHECK && strlen((string)$data->checkId) > 0 )
+            {
+                $businessCheck = $MIOLO->getBusiness($module, 'BusCheck');
+                $businessCheck->updateDownDate($data->checkId, date(MASK_DATE_PHP));
+                $businessCheck->updateCheckStatus($data->checkId, 'C');
+            }
+            
+            if ( strlen((string)$this->getFormValue('goto'))>0 )
+            {
+				$businessCounter	= $MIOLO->getBusiness($module,'BusCounter');
+				$counter = $businessCounter->searchCounter($data);
+				$opts = array();
+				if( count($counter) > 0 )
+				{
+					$opts	= array_merge($opts,array( 'printerName'	=>	$counter[0][6] ));
+					$opts	= array_merge($opts,array( 'operatorId'	=>	$counter[0][1] ));
+					$opts	= array_merge($opts,array( 'event'		=>	'submit_button_click'));
+				}
+				$opts = array_merge($opts,array( 'invoiceId'	=>	$this->getFormValue('invoiceId')));
+				$opts = array_merge($opts,array( 'goto'			=>	urlencode($this->getFormValue('goto'))));
+
+                $optsI = array('_invoiceId'=>$data->invoiceId, 'event'=>'submit_button_click');
+                $hrefInternalPrint = $MIOLO->getActionURL($module, "main:document:internalInvoice", null, $optsI);
+
+				$MIOLO->Question( _M('Click @1 to print the internal invoice.', $module, '<a href="' . $hrefInternalPrint . '" target=_blank">' . $data->invoiceId . '</a>') . '<br>' . _M('The invoice was closed successfully', $module).'.'."<br/>"._M('Would you like to authenticate ?',$module), $MIOLO->GetActionURL($module,'main:document:autenticateInvoice',null,$opts),$this->getFormValue('goto'));
+            }
+            else
+            {
+                $MIOLO->Confirmation(_M('The invoice was closed successfully', $module), 'window.opener.location.reload(); self.close();');
+            }
+        }
+        else
+        {
+            $MIOLO->error(_M('Some errors occurred on this process. Please, try again.', $module), 'self.close();');
+        }
+    }
+   
+    /**
+     * Get the types data information
+     */
+    public function getTypesData()
+    {
+        $data->invoiceId       = $this->getFormValue('invoiceId');
+        $data->operationId     = $this->getFormValue('operationId');
+        $data->operationId2    = $this->getFormValue('operationId2');
+        $data->closeType       = $this->getFormValue('closeType');
+        $data->numberOfEntries = $this->getFormValue('numberOfEntries');
+        $data->value           = $this->getFormValue('value');
+        $data->value2          = $this->getFormValue('value2');
+        $data->operation       = $this->getFormValue('operation');
+        $data->speciesId       = $this->getFormValue('speciesId');
+        $data->counterId       = $this->getFormValue('counterId');
+        $data->responsableId   = $this->getFormValue('responsableId');
+        $data->operatorId      = $this->getFormValue('operatorId');
+        $data->comments        = $this->getFormValue('comments');
+        $data->comments2       = $this->getFormValue('comments2');
+        $data->checkId         = $this->getFormValue('checkId');
+
+        return $data;
+    }
+}
+
+?>

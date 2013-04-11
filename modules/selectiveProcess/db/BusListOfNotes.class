@@ -1,0 +1,120 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for sprInscription table
+ *
+ * @author Jamiel Spezia [jamiel@solis.coop.br]
+ *
+ * @version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * Rafael Luís Spengler [rafael@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ *
+ * @since
+ * Class created on 28/11/2005
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br
+ *
+ **/
+
+/**
+ * Class to manipulate the sprInscriptionReport table
+ **/
+class BusinessSelectiveProcessBusListOfNotes extends Business
+{
+
+    /**
+     * Make a connection to the database
+     *
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module = is_null($module) ? 'selectiveProcess' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+    /**
+     * Report of list of notes of candidates
+     *
+     * @param $selectiveProcessId (int): Selective process id
+     *
+     * @return (array): An array containing the search results
+     **/
+    public function orderlyList ($selectiveProcessId)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+
+        $db = $this->getDatabase();
+
+        $selectiveProcessTypeId = ENEM_TYPE_ID;
+
+        $sqlMaximumPoints = 'SELECT maximumPoints 
+                               FROM sprSelectiveProcess 
+                              WHERE selectiveProcessId = ?';
+
+        $maximumPoints    = $db->query(SAGU::prepare($sqlMaximumPoints, $selectiveProcessId));
+
+        $sqlWeight = 'SELECT sum(weightQuestion) * sum(numberQuestions) / count(*)
+                        FROM sprExamOccurrence
+                       WHERE selectiveProcessId = ? 
+                         AND selectiveProcessTypeId = ? ';
+        $weight    = $db->query(SAGU::prepare($sqlWeight, array($selectiveProcessId, $selectiveProcessTypeId)));
+
+       $sql = ' SELECT A.inscriptionId,
+                       substr(B.name, 0, 44),
+                       D.courseId,
+                       D.courseVersion,
+                       C.coursePosition,
+                       round((sum(((E.note*F.weightquestion)*' . $maximumPoints[0][0] . ')/' . $weight[0][0] . '))::numeric, 3) as note,
+                       A.totalPoints
+                  FROM sprInscription A
+        LEFT JOIN ONLY basPerson B
+                    ON ( A.personId = B.personId )
+             LEFT JOIN sprInscriptionOption C
+                    ON ( A.inscriptionId = C.inscriptionId )
+             LEFT JOIN sprCourseOccurrence D
+                    ON ( D.courseOccurrenceId = C.courseOccurrenceId )
+             LEFT JOIN sprNote E
+                    ON ( A.inscriptionId = E.inscriptionId )
+             LEFT JOIN sprExamOccurrence F
+                    ON ( E.examOccurrenceId = F.examOccurrenceId )
+                 WHERE A.selectiveProcessId = ?
+                   AND C.optionNumber = 1
+              GROUP BY A.inscriptionId,
+                       B.name, 
+                       D.courseId, 
+                       D.courseVersion, 
+                       C.coursePosition, 
+                       A.totalPoints
+              ORDER BY B.name, 
+                       A.totalPoints DESC; ';
+
+        $result = $db->query(SAGU::prepare($sql, $selectiveProcessId));
+
+        return $result;
+    }
+}
+
+?>

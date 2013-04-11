@@ -1,0 +1,145 @@
+<?php
+/**
+ *
+ * This file handles the processes associated to finIncentive table
+ 
+ *
+ * @author Armando Taffarel Neto [taffarel@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Armando Taffarel Neto [taffarel@solis.coop.br]
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 29/12/2005
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Form to search the basCenter table
+ */
+class FrmProcessIncentives extends MForm
+{
+    private $module;
+
+    /**
+     * Class constructor
+     */
+    function __construct()
+    {
+        $module = MIOLO::getCurrentModule();
+        parent::__construct(null);
+
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+
+    }
+
+    /**
+     *  Default method to define fields
+     */
+    public function createFields()
+    {
+        $MIOLO                     = MIOLO::getInstance();
+        $module                    = MIOLO::getCurrentModule();
+        $action                    = MIOLO::getCurrentAction();
+        $filters->contractId       = MIOLO::_request('contractId');
+        $filters->learningPeriodId = MIOLO::_request('learningPeriodId');
+
+        if (strlen((string)$filters->contractId) == 0)
+        {
+            $MIOLO->information(_M('Invalid contract', $module), 'javascript:window.close();');
+        }
+
+        $businessContract  = $MIOLO->getBusiness('academic', 'BusContract'); 
+        $filters->personId = $businessContract->getPersonIdByContract($filters->contractId);
+        $businessPerson    = $MIOLO->getBusiness('basic', 'BusPerson');
+        $personName        = $businessPerson->getPersonName($filters->personId);
+
+        if (strlen((string)$personName)>0)
+        {
+            $this->setTitle(_M('Incentives to @1', $module, '<b>['.$filters->personId.' - '.$personName.']</b>'));
+        }
+
+        $grdIncentive      = $MIOLO->getUI()->getGrid($module, 'GrdProcessIncentives', $filters);
+        $businessIncentive = $MIOLO->getBusiness($module, 'BusIncentive');
+        $incentiveData     = $businessIncentive->searchIncentive($filters);
+        if (is_array($incentiveData[0]))
+        {
+            $grdIncentive->setData($incentiveData);
+        }
+        $fields[] = $grdIncentive;
+
+        $sep = new MSeparator('<hr>');
+        $sep->setWidth('98%');
+        $fields[] = $sep;
+
+        $button = new MButton('btnClose', _M('Close window', $module), 'javascript:window.close()');
+        $divButton = new MDiv('divClose', array($button), null, 'align="center"');
+        $fields[] = $divButton;
+
+        $this->setFields($fields);
+        $this->setShowPostButton(false);
+    }
+
+    //
+    // Do a action when buttonProcess is called
+    //
+    public function btnProcess_click()
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        
+        $url = $MIOLO->getActionURL('basic', 'html:scripts:sagu.js');
+        $this->page->scripts->add($url);
+
+
+        $incentiveId      = MIOLO::_request('incentiveId');
+        $learningPeriodId = MIOLO::_request('learningPeriodId');
+        $contractId       = MIOLO::_request('contractId');
+        
+        $businessIncomeForecast = $MIOLO->getBusiness($module, 'BusIncomeForecast');
+        
+        $data->incentiveId      = $incentiveId;
+        $data->learningPeriodId = $learningPeriodId;
+        $data->contractId       = $contractId;
+        $statisticsData = $businessIncomeForecast->processIncentives($data);
+        if ($statisticsData->status == true)
+        {
+            $cols = array(_M('Income forecast id', $module), 
+                          _M('Cost center id', $module), 
+                          _M('Operation', $module),
+                          _M('Maturity date', $module),
+                          _M('Value', $module));
+            $incentiveInfo = new MTableRaw(_M('Income forecasts processed', $module), $statisticsData->processed, $cols);
+            $fields[] = $incentiveInfo;
+            $cols[]   = _M('Reason', $module);
+            $nincentiveInfo = new MTableRaw(_M('Income forecasts not processed', $module), $statisticsData->notProcessed, $cols);
+            $fields[] = $nincentiveInfo;
+            $button   = new MButton('endButton', _M('Close', $module), 'javascript:closeAndReload();');
+            $fields[] = new MDiv('buttonDiv', array($button), null, 'align="center"');
+            $this->setFields($fields);
+        }  
+    } 
+}
+?>

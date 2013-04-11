@@ -1,0 +1,188 @@
+<?php
+
+/**
+ * Human Resources Diverse Consultation form
+ *
+ * @author Armando Taffarel Neto [taffarel@solis.coop.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+ * Armando Taffarel Neto [taffarel@solis.coop.br]
+ *
+ * @since
+ * Class created on 15/08/2006
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2005 SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+
+/**
+ * Form to manipulate a diverse consultation
+ **/
+class FrmDiverseConsultation extends MForm
+{
+    private $home;
+    public $showForm;
+
+    /**
+     * Class constructor
+     **/
+    function __construct($data)
+    {
+        $this->showForm = true;
+        $module = MIOLO::getCurrentModule();
+
+        $this->home   = $data->home;
+
+        parent::__construct(_M('Assorted queries', $module));
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+        
+        $personIdLabel = new MText('personIdLabel', _M('Person id (employee)', $module).':');
+        $personIdLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $field1[]      = $personIdLabel;
+        $field1[]      = new MLookupTextField('personId', $this->getFormValue('personId', $data->personId), '', FIELD_LOOKUPFIELD_SIZE, null, null, array('personName'), 'basic', 'PhysicalPersonEmployee', null, null, true);
+
+        $validators[] = new MIntegerValidator('personId');
+        $personName   = new MTextField('personName', $this->getFormValue('personName', $data->personName), '', FIELD_DESCRIPTION_SIZE);
+        $personName->setReadOnly(true);
+
+        // First group 
+        $field1[]  = $personName;
+        $field1[]  = new MSeparator('');
+        $fields1[] = new MHContainer('container1', $field1);
+        $fields[]  = new MBaseGroup('mbgFilterPerson', _M('Filter for a person', $module), $fields1);
+
+        $fields[] = new MSeparator('');
+        $fields[] = new MButton('btnSearch',_M('Search', $module));
+        $fields[] = new MSeparator('');
+        $this->setShowPostButton(false);
+
+        $this->setFields($fields);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setValidators($validators);
+
+        $this->setClose($MIOLO->getActionURL($module, substr($action, 0, strrpos($action, ':'))));
+        $this->page->onLoad('document.' . $this->name . '.personId.focus();');
+    }
+
+    /**
+     * Event triggered when button search is clicked 
+     */
+     public function btnSearch_click($sender = null)
+     {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+
+        $personId        = $this->getFormValue('personId');
+
+        if (strlen((string)$personId)>0)
+        {
+            $filled['personConsultation'] = $personId;
+        }
+        
+
+        if (count($filled)>1)
+        {
+            $this->addError(_M('More than one search field is filled. Please fill one field by search.', $module));
+        }
+        else
+        {
+            if ( is_array($filled) )
+            {
+                $fkeys = array_keys($filled);
+                if ($fkeys[0] == 'personConsultation')
+                {
+                    eval('$this->'.$fkeys[0].'_click();');
+                }
+            }
+
+        }
+     }
+
+    /**
+     * Event triggered when user chooses New from the toolbar
+     **/
+    public function personConsultation_click($sender = null)
+    {
+        $MIOLO   = MIOLO::getInstance();
+        $module  = MIOLO::getCurrentModule();
+        $action  = MIOLO::getCurrentAction();
+        $filters = $this->getTypesData();
+        
+        $business = $MIOLO->getBusiness($module, 'BusDiverseConsultation');
+        
+        $businessPerson   = $MIOLO->getBusiness('basic', 'BusPerson');
+        $filters->personName = $businessPerson->getPersonName($filters->personId);
+        
+        $ffield1 = new MLink('lnkNewSearch', '', $MIOLO->getActionURL($module, $action), _M('New search', $module));
+        $fields[] = $ffield1;
+        $field = new MDiv('divOptions', $fields, null, 'align=center');
+        $this->addField($field);
+        $field = new Separator('<hr>');
+        $this->addField($field);
+
+        $ffield1 = new MText('titleData', '<b>' . _M('Data for', $module) . ':</b> ' . $filters->personId . ' - ' . $filters->personName);
+        $field = new MDiv('divDescData', $ffield1, null, 'align=center');
+        $this->addField($field);
+        $field = new Separator('<hr>');
+        $this->addField($field);
+        
+        $grdResults = $MIOLO->getUI()->getGrid($module,'GrdDiverseConsultationPerson', $filters);
+        $data = $business->getEmployeeData($filters);
+        $grdResults->setTitle(_M('Wage data', $module));
+        $grdResults->setData($data);
+        $this->addField($grdResults);
+        
+        $field = new Separator('<hr>');
+        $this->addField($field);
+      
+        $grdResults = $MIOLO->getUI()->getGrid($module,'GrdDiverseConsultationIncentive', $filters);
+        $data = $business->getIncentiveData($filters);
+        $grdResults->setTitle(_M('Incentives', $module));
+        $grdResults->setData($data);
+        $this->addField($grdResults);
+    }
+
+
+    /**
+     * Get the data from form and put on a object
+     **/
+    public function getTypesData($sender = null)
+    {
+        $data->personId                 = $this->getFormValue('personId');
+        $data->personName               = $this->getFormValue('personName');
+        return $data;
+    }
+}
+?>

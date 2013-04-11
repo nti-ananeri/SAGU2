@@ -1,0 +1,337 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for basCity table
+ *
+ * @author Daniel Afonso Heisler [daniel@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 10/08/2005
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to manipulate the basCity table
+ **/
+class BusinessBasicBusCity extends Business
+{
+
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module = is_null($module) ? 'basic' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+    /**
+     * List all records from the table handled by the class
+     *
+     * @param: None
+     *
+     * @returns (array): Return an array with the entire table
+     *
+     **/
+    public function listCity($countryId=null, $stateId=null)
+    {
+        $db  = $this->getDatabase();
+
+        $sql = 'SELECT cityId,
+                       name || \' (\' || coalesce(stateid,\'\') || \')\' as name
+                  FROM basCity 
+                WHERE 1 = 1 ';
+
+        if ( strlen((string)$countryId)>0 )
+        {
+            $sql .= 'AND countryId = ? ';
+            $args[] = $countryId;
+        }
+
+        if ( strlen((string)$stateId)>0 )
+        {
+            $sql .= 'AND stateId = ? ';
+            $args[] = $stateId;
+        }
+
+        if ( $showInSelectiveProcess == DB_TRUE )
+        {
+            $sql .= 'AND showInSelectiveProcess = ? ';
+            $args[] = DB_TRUE;
+        }
+
+        $sql .= ' ORDER BY name';
+
+        $ret = $db->query(SAGU::prepare($sql, $args));
+        //$db->close();
+        return $ret;
+    }
+    
+    /**
+     * Return a specific record from the database
+     *
+     * @param $cityId (integer): Primary key of the record to be retrieved
+     *
+     * @return (object): Return an object of the type handled by the class
+     *
+     **/
+    public function getCity($cityId)
+    {
+        $sql = 'SELECT A.cityId,
+                       A.name,
+                       A.zipCode,
+                       A.stateId,
+                       B.name,
+                       A.countryId,
+                       C.name,
+                       A.showInSelectiveProcess,
+                       A.inep,
+                       A.userName,
+                       TO_CHAR(A.dateTime,\'' . MASK_TIMESTAMP . '\'),
+                       A.ipAddress
+                  FROM basCity A
+             LEFT JOIN basState B
+                    ON ( A.stateId = B.StateId )
+             LEFT JOIN basCountry C
+                    ON ( A.countryId = C.countryId )
+                 WHERE A.cityId = ?';
+
+        $db     = $this->getDatabase();
+        $result = $db->query(SAGU::prepare($sql, $cityId));
+        //$db->close();
+
+        $city  = new basCity();
+        list ( $city->cityId,
+               $city->name,
+               $city->zipCode,
+               $city->stateId,
+               $city->stateName,
+               $city->countryId,
+               $city->countryName,
+               $city->showInSelectiveProcess,
+               $city->inep,
+               $city->userName,
+               $city->dateTime,
+               $city->ipAddress ) = $result[0];
+
+        return $city; 
+    }
+
+    /**
+     * Do a search on the database table handled by the class
+     *
+     * @param $filters (object): Search filters
+     *
+     * @return (array): An array containing the search results
+     **/
+    public function searchCity($filters)
+    {
+        $sql = 'SELECT A.cityId,
+                       A.name,
+                       A.zipCode,
+                       A.stateId,
+                       B.name,
+                       A.countryId,
+                       C.name,
+                       A.showInSelectiveProcess,
+                       A.inep,
+                       A.userName,
+                       TO_CHAR(A.dateTime,\'' . MASK_TIMESTAMP . '\'),
+                       A.ipAddress
+                  FROM basCity A
+             LEFT JOIN basState B
+                    ON ( A.stateId = B.StateId )
+             LEFT JOIN basCountry C
+                    ON ( A.countryId = C.countryId ) ' ;
+
+        if ( strlen((string)$filters->cityId) > 0 )
+        {
+            $where .= ' AND A.cityId = ? ';
+            $args[] = $filters->cityId;
+        }
+        if ( strlen((string)$filters->name) > 0 )
+        {
+            $where .= ' AND TO_ASCII(A.name) ILIKE TO_ASCII(?) ';
+            $args[] = $filters->name . '%';
+        }
+        if ( strlen((string)$filters->zipCode) > 0 )
+        {
+            $where .= ' AND A.zipCode = ? ';
+            $args[] = $filters->zipCode;
+        }
+        if ( strlen((string)$filters->stateId) > 0 )
+        {
+            $where .= ' AND A.stateId = ? ';
+            $args[] = $filters->stateId;
+        }
+        if ( strlen((string)$filters->countryId) > 0 )
+        {
+            $where .= ' AND A.countryId = ? ';
+            $args[] = $filters->countryId;
+        }
+
+        if ( $showInSelectiveProcess == DB_TRUE )
+        {
+            $sql .= ' showInSelectiveProcess = ? ';
+            $args[] = DB_TRUE;
+        } 
+        elseif ( $showInSelectiveProcess == DB_FALSE )
+        {
+            $sql .= ' showInSelectiveProcess = ? ';
+            $args[] = DB_FALSE;
+        }
+
+
+        unset($result);
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE ' . substr($where, 4) . ' ORDER BY C.name, 
+                                                               A.stateId,
+                                                               A.name';
+
+            $db     = $this->getDatabase();
+
+            $result = $db->query(SAGU::Prepare($sql,$args));
+            //$db->close();
+        }
+        return $result;
+    }
+
+    /**
+     * Insert a new record
+     *
+     * @param $data (object): An object of the type handled by the class
+     *
+     * @return True if succed, otherwise False
+     *
+     **/
+    public function insertCity($data)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $db    = $this->getDatabase();
+
+        $sql = 'SELECT NEXTVAL(\'seq_cityid\')';
+        $ret = $db->query(SAGU::prepare($sql,null));
+
+        $data->cityId = $ret[0][0];
+
+        $sql = 'INSERT INTO basCity
+                            (cityId,
+                             name,
+                             zipCode,
+                             stateId,
+                             countryId,
+                             showInSelectiveProcess,
+                             inep)
+                     VALUES (?,?,?,?,?,?,?)';
+
+        $args = array( $data->cityId,
+                       $data->name,
+                       $data->zipCode,
+                       $data->stateId,
+                       $data->countryId,
+                       $data->showInSelectiveProcess ? $data->showInSelectiveProcess : DB_FALSE,
+                       $data->inep);
+
+        $result = $db->execute(SAGU::prepare($sql, $args));
+
+        //$db->close();
+        if ( $result )
+        {
+            return $data->cityId;
+        }
+    }
+
+    /**
+     * Update data from a specific record
+     *
+     * @param $data (object): Data which will replace the old record data
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+   public function updateCity($data)
+    {
+        $sql = 'UPDATE basCity   
+                   SET name      = ?,
+                       zipCode   = ?,
+                       stateId   = ?,
+                       countryId = ?,
+                       showInSelectiveProcess = ?,
+                       inep      = ?
+                 WHERE cityId    = ?';
+
+        $res = $this->getCity($data->cityId);
+
+        $args = array( $data->name,
+                       $data->zipCode,
+                       $data->stateId,
+                       $data->countryId,
+                       $data->showInSelectiveProcess ? $data->showInSelectiveProcess : $res->showInSelectiveProcess,
+                       $data->inep,
+                       $data->cityId );
+
+        $db   = $this->getDatabase();
+        $sqls = SAGU::prepare($sql, $args);
+
+        for ( $i=0; $i<count($sqls); $i++ )
+        {
+            $result = $db->execute($sqls[$i]);
+        }
+
+        //$db->close();
+
+        return $result;
+    }
+
+    /**
+     * Delete a record
+     *
+     * @param $cityId (string): Primary key for deletion
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+    public function deleteCity($cityId)
+    {
+        $sql = 'DELETE FROM basCity 
+                      WHERE cityId = ?';
+
+        $db     = $this->getDatabase();
+        $result = $db->execute(SAGU::prepare($sql, $cityId));
+        //$db->close();
+
+        return $result;
+    }
+
+}
+
+?>

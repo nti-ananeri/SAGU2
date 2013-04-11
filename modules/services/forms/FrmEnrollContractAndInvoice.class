@@ -1,0 +1,195 @@
+<?php
+
+/**
+ * Digital password form
+ *
+ * @author Giovani Murilo Dantas Corrêa [gmurilo@isolution.inf.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Giovani Murilo Dantas Corrêa [gmurilo@isolution.inf.br]
+ * Daniel Afonso Heisler [daniel@isolution.inf.br]
+ *
+ * @since
+ * Class created on 19/12/2007
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+
+/**
+ * Form to manipulate an enroll
+ **/
+class FrmEnrollContractAndInvoice extends MForm
+{
+
+    private $postAction;
+
+    /**
+     * Class constructor
+     **/
+    function __construct($postAction)
+    {
+        $MIOLO  = MIOLO::getInstance();
+		$module = 'services';
+        parent::__construct('Impressão de contrato - Passo 3 de 5');
+
+        $this->postAction = $postAction;
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $action = MIOLO::getCurrentAction();
+		$module = 'services';
+		$divMenssage	  = new MDiv('divMenssage','<p style=\'color:black;text-align:justify;text-indent:12px;\'>'._M('Dear pupil',$module).',</p><p style=\'color:black;text-align:justify;text-indent:12px;\'> </p><p style=\'color:black;text-align:justify;text-indent:12px;\'>Você deve selecionar o contrato e pressionar o botão "Visualizar contrato" para imprimir seu contrato e posterior entrega na instituição.</p>',null,'align=justify');
+		$divMenssage->addStyle('text-align','justify');
+		$fields[]	  = $divMenssage;
+		
+		$businessContract = $MIOLO->getBusiness('academic','BusContract');
+        if( !$data->personId ) 
+        {
+            $data->personId =$MIOLO->session->getValue('loginUid') ;
+
+        }
+		$listContract = $businessContract->listContract($data);
+    	
+		$contractId = new MSelection('contractId', $this->getFormValue('contractId', $data->contractId), _M('Contract','academic'), $listContract);
+        
+		$contractId->setAutoPostBack(false);
+        $validators[] = new MRequiredValidator('contractId',_M('Contract','academic'));
+		$fields[] = $contractId;
+ 
+		$fields[]     = new Separator('');
+        //Error container
+        $divError     = new MDiv('divError', $lblMsg, null, 'align=center');
+        $divError->addStyle('text-align', 'center');
+        $fields[]     = $divError;
+        unset($flds);
+        $returnTo = substr($action,0,strrpos($action,':')) . ':contract';
+        $sep1 = new MSeparator();
+        $vars       = array ( 'noDigitalPassword' => 'true');
+        $prevUrl    = $MIOLO->getActionURL($module, $returnTo, null, $vars);
+        
+        $flds[]       = new MButton('btnPrintInvoice', _M('Print invoice', $module), null);
+        $flds[]       = new MButton('btnPrintContract', _M('View contract', $module), null);
+        $flds[]       = new MButton('btnEnd', _M('Fim', $module), null);
+        
+		$flds[]       = new Separator('');
+
+        $divButtons   = new MDiv('divButtons', $flds, null, 'align=center');
+        $divButtons->addStyle('text-align', 'center');
+        $fields[]     = $divButtons;
+
+
+        $this->setFields($fields);
+        $this->setWidth('100%');
+        $this->setValidators($validators);
+        $this->setLabelWidth(100);
+        $this->setShowPostButton(false);
+    }
+
+    /**
+     * Event triggered when user click ok
+     **/
+    public function btnPrintContract_click($sender = null)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $action = MIOLO::getCurrentAction();
+		$module = 'services';
+
+        $cd->contractId         = MIOLO::_request('contractId');
+        $cd->learningPeriodId   = MIOLO::_request('learningPeriodId');
+        $cd->fileType           = MIOLO::_request('radFileType');
+        $cd->situation          = MIOLO::_request('radSituation');
+        set_time_limit(0);
+		$busContract  = $MIOLO->getBusiness('academic','BusContractGraduation');
+		$contract = $busContract->getContract($cd->contractId);
+
+        $business = $MIOLO->getBusiness('services', 'BusEnroll');
+        $businessDocument = $MIOLO->getBusiness('basic', 'BusDocument');
+        $data     = $business->getPhysicalPerson($contract->contract->personId);
+        if(!$data)
+        {
+            unset($business);
+            $business = $MIOLO->getBusiness('basic', 'BusPhysicalPerson');
+            $data     = $business->getPhysicalPerson($personId);
+            $rg = $businessDocument->getDocument($personId, RG_CODE);
+            $cpf = $businessDocument->getDocument($personId, CPF_CODE);
+            $data->contentCPF = strlen((string)$cpf->content) > 0 ? SAGU::convertInCPFFormat($cpf->content) : "" ;
+            $data->contentRG = $rg->content;
+            $data->organRG = $rg->organ;
+            $data->dateExpeditionRG = $rg->dataExpedition;
+        }
+        else
+        {
+            $data->contentCPF = strlen((string)$data->contentCPF) > 0 ? SAGU::convertInCPFFormat($data->contentCPF) : "" ;
+        }
+//        $contract->contract->
+        $contract->contract->workPhone          = $data->workPhone;
+        $contract->contract->cellPhone          = $data->cellPhone;
+        $contract->contract->messagePhone       = $data->messagePhone;
+        $contract->contract->residentialPhone   = $data->residentialPhone;
+        $contract->contract->cityName           = $data->cityName;
+        $contract->contract->neighborhood       = $data->neighborhood;
+        $contract->contract->number             = $data->number;
+        $contract->contract->location           = $data->location;
+        $contract->contract->zipCode            = $data->zipCode;
+        $contract->contract->cpf                = $data->contentCPF;
+        $contract->contract->rg                 = $data->contentRG . ' / '. $data->organRG;
+        $contract->contract->email              = $data->email;
+	    $MIOLO->getClass('services', 'RptContractDocumentServices');
+	    $report = new RptContractDocumentServices($contract);
+    }
+    public function btnPrintInvoice_click($sender = null)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $action = MIOLO::getCurrentAction();
+		$module = 'services';
+        $MIOLO->uses('classes/sagu.class','basic');
+		$data->contractId = MIOLO::_request('contractId');
+        $busEnroll = $MIOLO->getBusiness($module, 'BusEnroll');
+        $invoiceId = $busEnroll->generateInvoice($data->contractId);
+        if($invoiceId)
+        {
+            $opts      = array('event'=>'submit_button_click', 'invoiceId'=>$invoiceId);
+            $page = $MIOLO->getActionURL('finance', "main:process:printInvoice", null, $opts);
+            $this->page->mGoto($page);
+        }
+        else
+        {
+		    $returnTo = substr($action,0,strrpos($action,':')) ;
+		    //$vars       = array ( 'page' => '2');
+			$prevUrl    = $MIOLO->getActionURL($module, $returnTo, null, null);
+            $MIOLO->Information(_M('Não foi possível gerar seu boleto, diríja-se à central de atendimento para correção do mesmo.',$module),$prevUrl);
+        }
+         
+    }
+    public function btnEnd_click($sender = null)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $action = MIOLO::getCurrentAction();
+    	$module = 'services';
+        $MIOLO->uses('classes/sagu.class','basic');
+        $page = $MIOLO->getActionURL('services', "main:pupil", null, null);
+        $this->page->mGoto($page);
+    }
+}
+
+?>

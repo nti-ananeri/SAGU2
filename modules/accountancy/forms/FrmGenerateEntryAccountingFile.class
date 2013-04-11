@@ -1,0 +1,383 @@
+<?php
+/**
+ *
+ * This file handles view of Generate entry accounting file
+ *
+ * @author Armando Taffarel Neto [taffarel@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Armando Taffarel Neto [taffarel@solis.coop.br]
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 17/07/2006
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ */
+class FrmGenerateEntryAccountingFile extends MForm
+{
+    private $home;
+    private $module;
+
+    /**
+     * Class constructor
+     */
+    function __construct($data)
+    {
+        $module = MIOLO::getCurrentModule();
+
+        $this->home   = $data->home;
+
+        parent::__construct(_M('Generate entry accounting file', $module));
+
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+
+    }
+
+    /**
+     *  Default method to define fields
+     */
+    public function createFields()
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+
+        $toolBar = new MToolBar('toolBar',$MIOLO->getActionURL($module,$action));
+        
+        $toolBar->disableButton('tbBtnDelete');
+        $toolBar->disableButton('tbBtnPrint');
+        $toolBar->disableButton('tbBtnSave');
+        $toolBar->disableButton('tbBtnSearch');
+        $toolBar->disableButton('tbBtnNew');
+
+        //favoritos
+        $enabledImage  = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-20x20.png');
+        $disabledImage = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-disabled-20x20.png');
+        $url           = $MIOLO->getActionURL($module, $this->home, null, array('function' => 'search', 'event' => 'bookmark'));
+        $toolBar->addButton('tbBtnBookmark', _M('Add to bookmarks', 'basic'), $url, null, true, $enabledImage, $disabledImage);
+
+        if ( MIOLO::_request('event') == 'bookmark' )
+        {
+            $MIOLO->getClass('basic', 'access');
+            access::insert('Generate entry accounting file', $this->home, 'generateEntryAccountingFile-16x16.png', true);
+        }
+        //fim favoritos
+       
+        $fields[] = $toolBar;
+
+        // date
+        $dateLabel = new MText('dateLabel', _M('Date', $module).':');
+        $dateLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $dateLabel->setClass('m-caption m-caption-required');
+        $date      = new MCalendarField('date', $this->getFormValue('date',$data->date), '', FIELD_DATE_SIZE);
+        $date->setJsHint(_M('Enter the date',$module));
+        $validators[] = new MDATEDMYValidator('date', '', 'required');
+        
+        //partial check box
+        $partialLabel = new MText('partialLabel', _M('Is partial', $module));
+        $partial = new MCheckBox('partial', 'true', '', $this->getFormValue('partial', $data->partial));
+        $fields[] = new MHContainer('hctLimitDate', array($dateLabel, $date, $partialLabel, $partial));
+
+        $fields[] = new MButton('btnGenerate',_M('Generate',$module));
+        $fields[] = new Separator('');
+
+        $this->setFields($fields);
+        $this->setValidators($validators);
+        $this->setLabelWidth(FIELD_CONTAINER_SIZE);
+        $this->setShowPostButton(false);
+        $this->setClose($MIOLO->getActionURL($module, substr($action, 0, strrpos($action, ':'))));
+
+    }
+
+    /**
+     * Event triggered when user chooses Generate button
+     **/
+    public function btnGenerate_click($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+        
+        set_time_limit(0);
+        
+        $filters->date    = $this->getFormValue('date');
+        $filters->partial = $this->getFormValue('partial');
+        
+        $business   = $MIOLO->getBusiness($module, 'BusGenerateEntryAccountingFile');
+        
+        $lot      = substr($filters->date,0,2) . substr($filters->date,3,2);
+        
+        foreach ( $business->getAccountSchemeIds() as $value )
+        {
+            $endOfAccount[$value[0]] = $value[1];
+            $iniOfAccount[$value[0]] = $value[2];
+        }
+        
+        foreach ( $business->getUnitAccountingCode() as $value )
+        {
+            $unitCode[$value[0]] = $value[1];
+        }
+        
+        foreach ( $business->getIncentiveData() as $value )
+        {
+            $incentive[$value[0]][$value[1]][$value[2]] = $value[3];
+        }
+        
+        $previousInvoiceId = -1;
+        $document          = 0;
+        $line              = 0;
+        
+        $entry = $business->getEntryData($filters);
+        
+        if ( is_array($entry) )
+        {
+            foreach ( $entry as $value )
+            {
+                list (
+                        $entryData->invoiceId,
+                        $entryData->personId,
+                        $entryData->personName,
+                        $entryData->courseId,
+                        $entryData->courseName,
+                        $entryData->unitId,
+                        $entryData->entryId,
+                        $entryData->operationId,
+                        $entryData->entryDate,
+                        $entryData->value,
+                        $entryData->costCenterId
+                      ) = $value;
+   
+                $line ++;
+                if ( $line==100 )
+                {
+                  $line              = 1;
+                  $previousInvoiceId = -1; //força troca de documento
+                }
+
+                if ($entryData->invoiceId != $previousInvoiceId)
+                {
+                  $document ++;
+                  $previousInvoiceId = $entryData->invoiceId;
+                }
+                
+                $incentiveCostCenter = $incentive[$entryData->personId][$entryData->courseId][$entryData->operationId];
+                
+                $costCenter = $entryData->costCenterId;
+                
+                $coursePrefix = $iniOfAccount[$entryData->courseId];
+                
+                if ( ! $coursePrefix )
+                {
+                    $msg  = _M('Account scheme for course @1 and unit @2 undefined', $module, $entryData->courseId, $entryData->unitId);
+                    $goto = SAGU::getStackBackUrl();
+                    $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+                    $caption = _M('Error', $module);
+                    $MIOLO->error( $msg, $goto, $caption );           
+                }
+
+                $courseSuffix = $endOfAccount[$entryData->courseId];
+                
+                if ( ! $courseSuffix )
+                {
+                    $msg  = _M('Account scheme for course @1 and unit @2 undefined', $module, $entryData->courseId, $entryData->unitId);
+                    $goto = SAGU::getStackBackUrl();
+                    $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+                    $caption = _M('Error', $module);
+                    $MIOLO->error( $msg, $goto, $caption );           
+                }
+                
+                $unitId = $unitCode[$entryData->unitId];
+
+                if ( ! $unitId )
+                {
+                    $msg  = _M('Accounting code for unit @1 undefined', $module, $entryData->unitId);
+                    $goto = SAGU::getStackBackUrl();
+                    $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+                    $caption = _M('Error', $module);
+                    $MIOLO->error( $msg, $goto, $caption );           
+                }
+                
+                /*************************HARDCODE*********************************/
+                $proad =  '30103' . (($unitId == '01') ? '001' : (substr($unitId,1,1) . '00'));
+                $proen =  '30105' . (($unitId == '01') ? '001' : (substr($unitId,1,1) . '00'));
+                
+                $integration = $business->getIntegrationData($entryData->operationId);
+                
+                if ( is_array($integration) )
+                {	
+                    foreach ( $integration as $value )
+                    {
+                        list (
+                                $integrationData->externalEntryId,
+                                $integrationData->operationTypeId,
+                                $integrationData->debitAccount,
+                                $integrationData->creditAccount,
+                                $integrationData->operationDescription,
+                                $integrationData->debitCostCenter,
+                                $integrationData->creditCostCenter,
+                                $integrationData->userCode,
+                                $integrationData->debitItem,
+                                $integrationData->creditItem,
+                                $integrationData->reversalOperation
+                             ) = $value;
+                             
+                		/*******************************HARDCODE**************************/
+                		$integrationData->debitAccount    = ereg_replace("UU", $unitId, $integrationData->debitAccount);
+                		$integrationData->creditAccount   = ereg_replace("UU", $unitId, $integrationData->creditAccount);
+
+                		$integrationData->debitAccount    = ereg_replace("PPP", $coursePrefix, $integrationData->debitAccount);
+                		$integrationData->creditAccount   = ereg_replace("PPP", $coursePrefix, $integrationData->creditAccount);
+
+                		$integrationData->debitAccount    = ereg_replace("SSSSSSSS", $courseSuffix, $integrationData->debitAccount);
+                		$integrationData->creditAccount   = ereg_replace("SSSSSSSS", $courseSuffix, $integrationData->creditAccount);
+                		
+                		/*******************************HARDCODE**************************/
+            			if ( trim($integrationData->debitCostCenter) == '$ccbolsa' )
+                        {
+                        	$integrationData->debitCostCenter = $incentiveCostCenter;
+                        }
+                        else if (trim($integrationData->creditCostCenter) ==  '$ccbolsa')
+                        {
+                        	$integrationData->creditCostCenter = $incentiveCostCenter;
+                        }
+                        else if (trim($integrationData->debitCostCenter) ==  '$proen')
+                        {
+                            $integrationData->debitCostCenter = $proen;
+                        }
+                        else if (trim($integrationData->debitCostCenter) ==  '$proad')
+                        {
+                            $integrationData->debitCostCenter = $proad;
+                        }
+                        else if (trim($integrationData->creditCostCenter) ==  '$proen')
+                        {
+                            $integrationData->creditCostCenter = $proen;
+                        }
+                        else if (trim($integrationData->creditCostCenter) ==  '$proad')
+                        {
+                            $integrationData->creditCostCenter = $proad;
+                        }
+
+                        $integrationData->debitCostCenter   = ereg_replace("CCCCCCCC", $costCenter, $integrationData->debitCostCenter);
+                        $integrationData->creditCostCenter  = ereg_replace("CCCCCCCC", $costCenter, $integrationData->creditCostCenter);
+                        
+						/*******************************HARDCODE**************************/
+                		if ($integrationData->userCode)
+                        {
+    						$ccusto_debito  = $integrationData->debitCostCenter; //IDA: trampa para manter compatibilidade
+    						$ccusto_credito = $integrationData->creditCostCenter; //IDA: trampa para manter compatibilidade
+    						$codigo_campus  = $unitId; //IDA: trampa para manter compatibilidade
+
+                            eval($integrationData->userCode);
+                            
+                            $integrationData->debitAccount = $conta_debito; //VOLTA: trampa para manter compatibilidade
+                        }
+
+                        $value   = $entryData->value;
+
+                        if ($value<0)
+                        {
+                            $value *= (-1);
+
+                			if ($historico_usuario) //vem do eval logo acima
+                			{
+                				$integrationData->operationDescription = $historico_usuario;
+                			}
+                			else
+                			{
+        						$integrationData->operationDescription = _M('Reversal', $module) . ' ' . $integrationData->operationDescription;
+                			}
+        		            if ($integrationData->reversalOperation)
+        		            {
+        		                $integrationData->operationDescription = $integrationData->reversalOperation;
+        		            }
+
+                            ACCOUNTING::commuteAccounts($integrationData->debitAccount, $integrationData->creditAccount, $integrationData->debitCostCenter, $integrationData->creditCostCenter, $limbo1, $limbo2);
+
+                            if ($integrationData->operationTypeId == 'C')
+                            {
+                                $integrationData->operationTypeId  = 'D';
+                                $integrationData->externalEntryId  = '101';
+                            }
+                            else
+                            {
+                                if ($integrationData->operationTypeId == 'D')
+                                {
+                                    $integrationData->operationTypeId  = 'C';
+                                    $integrationData->externalEntryId  = '102';
+                                }
+                            }
+                        }
+
+                        /*******************************HARDCODE**************************/    
+                        $integrationData->operationDescription = $entryData->invoiceId . ': Vlr ' . 
+                                                                 $integrationData->operationDescription;
+                                                                     
+                        $content[] = ACCOUNTING::writeToSigaFile(
+                                                                    $integrationData->externalEntryId,
+                                                                    $integrationData->operationTypeId,
+                                                                    $integrationData->debitAccount,
+                                                                    $integrationData->creditAccount,
+                                                                    $integrationData->operationDescription,
+                                                                    $value,
+                                                                    $integrationData->debitCostCenter,
+                                                                    $integrationData->creditCostCenter,
+                                                                    $lot,
+                                                                    $document,
+                                                                    $line,
+                                                                    $integrationData->debitItem,
+                                                                    $integrationData->creditItem
+                                                                 );
+                    }
+                }
+            }
+ 		}
+ 		       
+		if (is_array($content))
+		{
+			$business->updateEntries($filters);
+			
+			$fileContent = implode(chr(13) . chr(10), $content);
+	        $fileContent.= chr(13) . chr(10);
+	    }
+        
+        if (strlen((string)$fileContent)>0)
+        {
+            SAGU::returnAsFile(str_replace('/', '', $filters->date) . '.txt', $fileContent, 'text/accounting-file');
+        }
+        else
+        {
+            $url = $MIOLO->getActionURL(MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+            $MIOLO->information(_M('No entries found to process', $module), $url);
+        }
+
+
+    }
+
+}
+
+?>

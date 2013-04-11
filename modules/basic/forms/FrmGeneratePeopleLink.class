@@ -1,0 +1,353 @@
+<?php
+/**
+ * Generate people link form
+ *
+ * @author Daniel Afonso Heisler [daniel.heisler@gmail.com]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * Armando Taffarel Neto [taffarel@solis.coop.br]
+ *
+ * @since
+ * Class created on 29/01/2008
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2005 SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+
+/**
+ * Form to employee list
+ **/
+class FrmGeneratePeopleLink extends MForm
+{
+    private $home;
+    
+    /**
+     * Class constructor
+     **/
+    function __construct($data)
+    {
+
+        $module = MIOLO::getCurrentModule();
+
+        $this->home   = $data->home;
+
+        parent::__construct(_M('Generate people link', $module));
+
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+
+
+        $toolBar = new MToolBar('toolBar',$MIOLO->getActionURL($module,$action));
+
+        $toolBar->disableButton('tbBtnNew');
+        $toolBar->disableButton('tbBtnDelete');
+        $toolBar->disableButton('tbBtnPrint');
+        $toolBar->disableButton('tbBtnSave');
+        $toolBar->disableButton('tbBtnSearch');
+
+        //favoritos
+        $enabledImage  = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-20x20.png');
+        $disabledImage = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-disabled-20x20.png');
+        $url           = $MIOLO->getActionURL($module, $this->home, null, array('function' => 'search', 'event' => 'bookmark'));
+        $toolBar->addButton('tbBtnBookmark', _M('Add to bookmarks', 'basic'), $url, null, true, $enabledImage, $disabledImage);
+
+        if ( MIOLO::_request('event') == 'bookmark' )
+        {
+            $MIOLO->getClass('basic', 'access');
+            access::insert('Generate people link', $this->home, 'generatePeopleLink-16x16.png', true);
+        }
+        //fim favoritos
+
+        $fields[] = $toolBar;
+        
+        $fields[] = new MSeparator();
+        $divError = new MDiv('divError', null, null, 'align=center');
+        $fields[] = $divError;
+
+        //tipo de pessoa
+        $professor = new MCheckBox('professor', 'P', '', true, _M('Professor', $module));
+        $flds[]    = $professor;
+        
+        $employee  = new MCheckBox('employee',  'E', '', true, _M('Employee', $module));
+        $flds[]    = $employee;
+
+        $student   = new MCheckBox('student',   'S', '', true, _M('Student', $module));
+        $flds[]    = $student;
+
+        $bsg1            = new BaseGroup('bsg1', _M('Link type', $module), $flds, 'vertical');
+        $bsg1->showLabel = true;
+        $bsg1->width     = '100%';
+        unset($flds);
+
+        if ( MODULE_ACADEMIC_INSTALLED == 'YES' )
+        {
+            $businessPeriod = $MIOLO->getBusiness('academic', 'BusPeriod');
+            $periodId       = new MComboBox('periodId', $this->periodId->value, _M('Period','academic'), $businessPeriod->listPeriod(), true );
+            $flds[]         = $periodId;
+            $validators[]   = new MRequiredValidator('periodId');
+        }
+
+        //situação        
+        $normal    = new MCheckBox('actives',     'A', '', true,  _M('Actives', $module));
+        $flds[]    = $normal;
+        
+        $vacation  = new MCheckBox('inactives',   'I', '', false,  _M('Inactives', $module));
+        $flds[]    = $vacation;
+        
+        $bsg3            = new BaseGroup('bsg3', _M('Situation', $module), $flds, 'vertical');
+        $bsg3->showLabel = true;
+        $bsg3->width     = '48%';
+        unset($flds, $flds1, $flds2, $flds3, $hct1, $hct2, $hct3);
+
+        $hct3   = new MVContainer('hct3', array($bsg1));
+        $hct3->showLabel = true;
+        $hct3->width     = '49%';
+//        $flds[] = $hct1;
+
+        $hct4           = new MHContainer('hct4', array($hct3, $bsg3));
+        $hct4->setFormMode(MControl::FORM_MODE_SHOW_NBSP);
+        $hct4->showLabel = true;
+        $fields[] = $hct4;
+        
+        $fields[] = new MSeparator('');
+        
+        $btn1[]   = new MButton('btnGenerate', _M('Generate', $module));
+        $div1     = new MDiv('div1', $btn1, null, 'align=center');
+        $fields[] = $div1;
+        
+        $fields[] = new MSeparator('');
+        
+        $this->setFields($fields);
+        if ( count($validators)>0 )
+        {
+            $this->setValidators($validators);
+        }
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+        $this->setClose($MIOLO->getActionURL($module,substr($action,0,strrpos($action,':'))));
+
+    }
+
+    /**
+     * Event triggered when user chooses Next from the toolbar
+     **/
+    public function btnGenerate_click($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+        
+        $data = $this->getTypesData();
+        
+        if ( $this->checkValidators($data) )
+        {
+            $business = $MIOLO->getBusiness($module, 'BusPersonLink');
+
+            // professores
+            if ( strlen((string)$data->professor)>0 )
+            {
+                if ( strlen((string)$data->actives)>0 && strlen((string)$data->inactives)>0 )
+                {
+                    $situation = 'ALL';
+                }
+                elseif ( strlen((string)$data->actives)>0 )
+                {
+                    $situation = 'ACTIVE';
+                }
+                elseif ( strlen((string)$data->inactives)>0 )
+                {
+                    $situation = 'INACTIVE';
+                }
+                if ( strlen((string)$data->periodId)>0 )
+                {
+                    $professors = $business->listProfessors($data->periodId, $situation);
+                }
+            }
+
+            // funcionarios
+            if ( strlen((string)$data->employee)>0 )
+            {
+                if ( strlen((string)$data->actives)>0 && strlen((string)$data->inactives)>0 )
+                {
+                    $situation = 'ALL';
+                }
+                elseif ( strlen((string)$data->actives)>0 )
+                {
+                    $situation = 'ACTIVE';
+                }
+                elseif ( strlen((string)$data->inactives)>0 )
+                {
+                    $situation = 'INACTIVE';
+                }
+                if ( strlen((string)$data->periodId)>0 )
+                {
+                    $employees = $business->listEmployees($data->periodId, $situation);
+                }
+            }
+
+            // alunos
+            if ( strlen((string)$data->student)>0 )
+            {
+                if ( strlen((string)$data->actives)>0 && strlen((string)$data->inactives)>0 )
+                {
+                    $situation = 'ALL';
+                }
+                elseif ( strlen((string)$data->actives)>0 )
+                {
+                    $situation = 'ACTIVE';
+                }
+                elseif ( strlen((string)$data->inactives)>0 )
+                {
+                    $situation = 'INACTIVE';
+                }
+                if ( strlen((string)$data->periodId)>0 )
+                {
+                    $students = $business->listStudents($data->periodId, $situation);
+                }
+            }
+
+            if ( count($professors)>0 ||  count($students)>0 || count($employees)>0)
+            {
+                //professores
+                if ( count($professors)>0 )
+                {
+                   $okProfessor = $business->insertMultimpleLinks($professors, $data->periodId, DEFAULT_LINK_PROFESSOR);
+                   if ( $okProfessor != false )
+                   {
+                       $msg = _M('@1 @2 inserted by success', $module, $okProfessor, _M('professors', $module)) . '!<br>';
+                   }
+                   else
+                   {
+                       $msg = _M('@1 @2 inserted by success', $module, _M('Professors', $module), _M('not', $module)) . '!<br>';
+                   }
+                }
+                //employees
+                if ( count($employees)>0 )
+                {
+                   $okEmployees = $business->insertMultimpleLinks($employees, $data->periodId, DEFAULT_LINK_EMPLOYEE);
+                   if ( $okProfessor != false )
+                   {
+                       $msg .= _M('@1 @2 inserted by success', $module, $okEmployees, _M('employees', $module)) . '!<br>';
+                   }
+                   else
+                   {
+                       $msg .= _M('@1 @2 inserted by success', $module, _M('Employees', $module), _M('not', $module)) . '!<br>';
+                   }
+                }
+                //studentes
+                if ( count($students)>0 )
+                {
+                   $okStudents = $business->insertMultimpleLinks($students, $data->periodId, DEFAULT_LINK_STUDENT);
+                   if ( $okStudents != false )
+                   {
+                       $msg .= _M('@1 @2 inserted by success', $module, $okStudents, _M('students', $module)) . '!<br>';
+                   }
+                   else
+                   {
+                       $msg .= _M('@1 @2 inserted by success', $module, _M('Students', $module), _M('not', $module)) . '!<br>';
+                   }
+                }
+
+                $caption = _M('Information', $module);
+                $MIOLO->information($msg, $MIOLO->getActionURL( $module, $action));
+
+            }
+            else
+            {
+                $lblMsg1        = new MText('lblMsg1', _M('No data found', $module));
+                $lblMsg1->color = 'red';
+                $sep1           = new Separator('');
+                $cntErrors      = new MVContainer('cntErrors', array($lblMsg1,$sep1));
+                $this->divError->addControl($cntErrors);
+            }
+        }
+
+    }
+
+    /**
+     * Event triggered when user click save or next button
+     **/
+    public function checkValidators($data)
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+
+
+        if ( strlen((string)$data->professor) == 0 &&
+             strlen((string)$data->employee) == 0 &&
+             strlen((string)$data->student) == 0
+           )
+        {
+            $lblMsg1        = new MText('lblMsg1', _M('Link type not defined', $module) . '!');
+            $lblMsg1->color = 'red';
+            $sep1           = new Separator('');
+            $cntErrors      = new MVContainer('cntErrors', array($lblMsg1,$sep1));
+            $this->divError->addControl($cntErrors);
+            return false;
+        }
+
+        if ( strlen((string)$data->actives) == 0 &&
+             strlen((string)$data->inactives) == 0
+           )
+        {
+            $lblMsg1        = new MText('lblMsg1', _M('Situation not defined', $module) . '!');
+            $lblMsg1->color = 'red';
+            $sep1           = new Separator('');
+            $cntErrors      = new MVContainer('cntErrors', array($lblMsg1,$sep1));
+            $this->divError->addControl($cntErrors);
+            return false;
+        }
+
+        return true;
+    }
+
+    public function getTypesData()
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+        
+        $filters->professor = $this->getFormValue('professor');
+        $filters->student   = $this->getFormValue('student');
+        $filters->employee  = $this->getFormValue('employee');
+        $filters->actives   = $this->getFormValue('actives');
+        $filters->inactives = $this->getFormValue('inactives');
+        $filters->periodId  = $this->getFormValue('periodId');
+
+        return $filters;
+    }
+
+}
+
+?>

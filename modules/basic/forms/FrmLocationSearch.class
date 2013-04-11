@@ -1,0 +1,213 @@
+<?php
+
+/**
+ *
+ * This file handles the connection and actions for basLocation table
+ *
+ * @author Daniel Afonso Heisler [daniel@solis.coop.br] 
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 02/08/2005
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Form to search the basLocation table
+ */
+class FrmLocationSearch extends MForm
+{
+    private $home;
+    private $module;
+
+    /**
+     * Class constructor
+     */
+    function __construct($data)
+    {
+        $this->module = 'basic';
+        $module = $this->module;
+
+        $this->home   = $data->home;
+
+        parent::__construct(_M('Search',$module));
+
+        // hide the 'Submit' button
+        $this->setShowPostButton(false);
+
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+
+    }
+
+    /**
+     *  Default method to define fields
+     */
+    public function createFields()
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $toolBar = new MToolBar('toolBar',$MIOLO->getActionURL($module,$action));
+//        $toolBar->disableButton('tbBtnSearch');
+        $toolBar->disableButton('tbBtnSave');
+        $toolBar->disableButton('tbBtnDelete');
+//        $toolBar->disableButton('tbBtnPrint');
+
+        //favoritos
+        $enabledImage  = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-20x20.png');
+        $disabledImage = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-disabled-20x20.png');
+        $url           = $MIOLO->getActionURL($module, $this->home, null, array('function' => 'search', 'event' => 'bookmark'));
+        $toolBar->addButton('tbBtnBookmark', _M('Add to bookmarks', 'basic'), $url, null, true, $enabledImage, $disabledImage);
+
+        if ( MIOLO::_request('event') == 'bookmark' )
+        {
+            $MIOLO->getClass('basic', 'access');
+            access::insert('Location', $this->home, 'location-16x16.png', true);
+        }
+        //fim favoritos
+
+        $fields[] = $toolBar;
+
+        $limbo    = new MHiddenField('limbo', '');
+        $fields[] = $limbo;
+
+        /*
+         * MLookupTextField class constructor prototype:
+         *
+         * function __construct($name = '', $value     = '',       $label   = '', $size         = 10,
+         *                      $hint = '', $validator = null,     $related = '', $module       = '',
+         *                      $item = '', $event     = 'filler', $filter  = '', $autocomplete = false)
+         */
+        $zipCodeS = new MLookupTextField('zipCodeS', $this->zipCodeS->value, _M('Zip code',$module), FIELD_ZIPCODE_SIZE, null, null,
+            'locationNameS,countryIdS,countryNameS,stateIdS,stateNameS,cityIdS,cityNameS,neighborhoodIdS,neighborhoodNameS',
+            $module, 'Location', null, null, true);
+        $fields[] = $zipCodeS;
+        $validators[] = new MRangeValidator('zipCodeS', '', '00000000', '99999999', 'i', 'optional');
+//        $validators[] = new MCepValidator('zipCodeS');
+
+        $locationNameS = new MTextField('locationNameS', $this->nameS->value, _M('Location name',$module), FIELD_DESCRIPTION_SIZE);
+        $locationNameS->setJsHint(_M('Enter the location name',$module));
+        $fields[] = $locationNameS;
+
+        /*
+         * MLookupTextField class constructor prototype:
+         *
+         * function __construct($name = '', $value     = '',       $label   = '', $size         = 10,
+         *                      $hint = '', $validator = null,     $related = '', $module       = '',
+         *                      $item = '', $event     = 'filler', $filter  = '', $autocomplete = false)
+         */
+
+        $cityLabel = new MText('cityLabel', _M('City',$module) . ':');
+        $cityLabel->setWidth(FIELD_CONTAINER_SIZE);
+        //cityLabel->setClass('m-caption m-caption-required');
+
+        $cityIdS = new MLookupTextField('cityIdS', $this->cityIdS->value, '', FIELD_LOOKUPFIELD_SIZE, null, null,
+            'cityNameS,stateIdS,stateNameS,countryIdS,countryNameS,limbo',
+            $module, 'City', null, null, true);
+        $cityIdS->setJsHint(_M('Enter the city code',$module));
+        $validators[] = new MIntegerValidator('cityIdS');
+
+        $cityNameS = new MTextField('cityNameS', $this->cityNameS->value, '', FIELD_DESCRIPTION_SIZE);
+        $cityNameS->setJsHint(_M('Enter the city name',$module));
+
+        $hctCity = new MHContainer('hctCity', array($cityLabel, $cityIdS, $cityNameS));
+        $fields[]  = $hctCity;
+
+        $stateIdS = new MHiddenField('stateIdS', '');
+        $fields[] = $stateIdS;
+
+        $stateNameS = new MTextField('stateNameS', $this->stateNameS->value, _M('State',$module), FIELD_DESCRIPTION_SIZE);
+        $stateNameS->setJsHint(_M('Enter the state name',$module));
+        $stateNameS->setReadOnly(true);
+        $fields[] = $stateNameS;
+
+        $countryIdS = new MHiddenField('countryIdS', '');
+        $fields[] = $countryIdS;
+
+        $countryNameS = new MTextField('countryNameS', $this->countryNameS->value, _M('Country',$module), FIELD_DESCRIPTION_SIZE);
+        $countryNameS->setJsHint(_M('Enter the country name',$module));
+        $countryNameS->setReadOnly(true);
+        $fields[] = $countryNameS;
+
+        /*
+         * MLookupTextField class constructor prototype:
+         *
+         * function __construct($name = '', $value     = '',       $label   = '', $size         = 10,
+         *                      $hint = '', $validator = null,     $related = '', $module       = '',
+         *                      $item = '', $event     = 'filler', $filter  = '', $autocomplete = false)
+         */
+
+        $neighborhoodLabel = new MText('neighborhoodLabel', _M('Neighborhood',$module) . ':');
+        $neighborhoodLabel->setWidth(FIELD_CONTAINER_SIZE);
+        //requerid field
+        //neighborhoodLabel->setClass('m-caption m-caption-required');
+
+        //se for search  manter  $this->neighborhoodIdS->value
+        $neighborhoodIdS = new MLookupTextField('neighborhoodIdS', $this->neighborhoodIdS->value, '', FIELD_LOOKUPFIELD_SIZE, null, null,
+            'neighborhoodNameS',
+            $module, 'Neighborhood', null, null, true);
+        $neighborhoodIdS->setJsHint(_M('Enter the neighborhood code',$module));
+        $validators[] = new MIntegerValidator('neighborhoodIdS');
+
+        $neighborhoodNameS = new MTextField('neighborhoodNameS', $this->neighborhoodNameS->value, '', FIELD_DESCRIPTION_SIZE);
+        $neighborhoodNameS->setJsHint(_M('Enter the neighborhood name',$module));
+
+        $hctNeighborhood = new MHContainer('hctNeighborhood', array($neighborhoodLabel, $neighborhoodIdS, $neighborhoodNameS));
+        $fields[]  = $hctNeighborhood;
+
+        $fields[] = new MButton('btnSearch',_M('Search',$module));
+
+        $this->setFields($fields);
+
+        // get filters values
+        $filters->zipCode          = $this->zipCodeS->value;
+        $filters->name             = $this->locationNameS->value;
+        $filters->cityId           = $this->cityIdS->value;
+        $filters->cityName         = $this->cityNameS->value;
+        $filters->neighborhoodId   = $this->neighborhoodIdS->value;
+        $filters->neighborhoodName = $this->neighborhoodNameS->value;
+
+        $grdResults = $MIOLO->getUI()->getGrid($module,'GrdLocationSearch',$filters);
+        $business = $this->manager->getBusiness($module,'BusLocation');
+        $data = $business->searchLocation($filters);
+        $grdResults->setData($data);
+
+        //###GRID///is_array($data) ? $grdResults->SetScrollHeight(GRID_SCROLL_HEIGHT) : false;
+
+        $this->addField($grdResults);  
+        $this->setValidators($validators);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+
+        if ( $this->isSubmitted() )
+        {
+            $this->page->onLoad('document.' . $this->name . '.zipCodeS.focus();');
+        }
+
+    }
+
+}
+
+?>

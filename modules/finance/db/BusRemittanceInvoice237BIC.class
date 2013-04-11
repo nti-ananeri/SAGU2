@@ -1,0 +1,182 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions in Remittences File table
+ *
+ * @author Giovani Murilo Dantas Corrêa [gmurilo@isolution.inf.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Daniel Afonso Heisler [daniel@isolution.inf.br]
+ * 
+ * @since
+ * Class created on 03/01/2008
+ *
+ * \b @organization \n
+ * iSolution - Soluções em TI \n
+ * The iSolution development team
+ *
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to manipulate the Remittence Files
+ **/
+class BusinessFinanceBusRemittanceInvoice237BIC extends Business
+{
+    private $db;
+    private $ntitles;
+    private $tvalue;
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $this->db = $MIOLO->getDatabase($module, 'finance');
+    }
+
+    /**
+     * Get header
+     * @author: Giovani Murilo Dantas Correa [gmurilo@isolution.inf.br]
+     * 
+     *
+    **/
+   
+    /**
+    * Get the company information needed for invoices
+    *
+    * @param: $companyId (int): Object containing the company identification
+    *
+    * @return: Return an object with information.
+    *
+    */
+    function getCompanyData($companyId)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+
+        $sql = ' SELECT B.name,
+                        B.cnpj
+                   FROM 
+                        basCompanyConf A INNER JOIN
+                        basLegalPerson B USING ( personId )
+                  WHERE companyId = ? ';
+
+        $args = array($companyId);
+
+        $ret = $this->db->query(SAGU::prepare($sql, $args));
+        $return->name = $ret[0][0];
+        $return->cnpj = $ret[0][1];
+        return $return;
+    }
+
+   /** 
+    * Bank account information
+    * 
+    * @param $bankAccountId (int): Primary key for bank account information
+    *
+    * @return: Return the bank account information
+    *
+    */
+    public function getBankAccountData($bankAccountId, $bankContractId )
+    {
+        $sql = ' SELECT 
+                    assignorCode,
+                    remittanceSequence
+                   FROM finBankAccount INNER JOIN ONLY
+                        finBankAccountContract USING ( bankAccountId )
+                  WHERE bankAccountId = ? AND
+                        bankContractId = ? ';
+        
+        $args = array($bankAccountId, $bankContractId);
+
+        $ret = $this->db->query(SAGU::prepare($sql, $args));
+
+        list ( $return->assignorCode, $return->remittanceSequence ) = $ret[0];
+        $this->db->execute(SAGU::prepare('UPDATE finBankAccountContract SET remittanceSequence = (remittanceSequence::integer+1) WHERE bankAccountId = ? AND bankContractId = ?', $args));
+
+        return $return;
+    }
+
+    /**
+      *
+      */
+    public function listDetails($data)
+    {
+        $sql = '
+        SELECT
+            C.collectionBranch,
+            C.wallet,
+            D.accountNumber,
+            D.accountNumberDigit,
+            A.invoiceId,
+            E.isFineInPercent,
+            CASE 
+                WHEN E.isFineInPercent THEN 
+                  E.fine::numeric(14,2)
+                ELSE
+                  E.fine::numeric(14,2)
+            END as fine,
+            A.bankInvoiceId,
+            TO_CHAR(A.maturityDate,\'ddmmyy\'),
+            balance(A.invoiceId)::numeric(14,2) as value,
+            TO_CHAR(A.emissionDate, \'ddmmyy\'),
+            CASE
+                WHEN ismonthlyinterestinpercent THEN
+                    ((balance(A.invoiceId)::numeric(14,2)*(E.monthlyinterest/100))/30)::numeric(14,2)
+                ELSE
+                    E.monthlyinterest
+            END as monthlyinterest,
+            TO_CHAR(A.maturityDate-E.daystodiscount, \'ddmmyy\') as discountLimitDate,
+            E.discount::numeric(14,2) as discount,
+            B.name,
+            returnTextAsInteger(F.content) as cpf,
+            COALESCE(B.location, \'\') || \' N.\' || COALESCE(B.number, \'S/N\')  as fullAddress,
+            D.branchNumber,
+            B.neighborhood,
+            CASE WHEN B.zipcode IS NULL OR B.zipCode = \'65000000\' THEN \'65065470\' ELSE B.zipcode END,
+            G.name as cityName,
+            G.stateId
+        FROM
+            ONLY finReceivableInvoice A INNER JOIN
+            ONLY basPhysicalPerson B ON ( B.personId = A.personId ) INNER JOIN
+            ONLY basCity G ON ( G.cityId = B.cityId ) INNER JOIN
+            ONLY finBankAccountContract C ON ( C.bankAccountId = A.bankAccountId AND C.bankContractId = A.bankContractId ) INNER JOIN
+            ONLY finBankAccount D ON ( D.bankAccountId = A.bankAccountId ) INNER JOIN
+            ONLY finPolicy E ON ( E.policyId = A.policyId ) LEFT JOIN
+            ONLY basDocument F ON ( F.personId = A.personId AND F.documentTypeId = ' . CPF_CODE . ' ) 
+        WHERE
+            A.bankAccountId = ' . $data->bankAccountId. ' AND A.bankContractId = '. $data->bankContractId. '
+            AND A.emissionDate = now()::date-2
+            AND A.remittanceField IS NULL ';
+        if ( strlen((string)$data->beginDate) == 0 )
+        {
+            $data->beginDate = date(MASK_DATE_PHP);
+        }
+        if ( strlen((string)$data->endDate) == 0 )
+        {
+            $data->endDate = date(MASK_DATE_PHP);
+        }
+
+        $sql .= ' AND A.maturityDate BETWEEN TO_DATE(?, \''. MASK_DATE . '\') AND  TO_DATE(?, \''. MASK_DATE . '\') ';
+        $args[] = $data->beginDate;
+        $args[] = $data->endDate;
+        $sql = SAGU::prepare($sql,$args);
+        $result = $this->db->query($sql);
+        return $result;
+    }
+}
+?>

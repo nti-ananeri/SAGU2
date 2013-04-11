@@ -1,0 +1,536 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for finInvoice table
+ *
+ * @author Armando Taffarel Neto [taffarel@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Armando Taffarel Neto [taffarel@solis.coop.br]
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 13/12/2005
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Form to search the finInvoice table
+ */
+class FrmInvoice extends MForm
+{
+    public  $module;
+    public  $filters;
+    public  $data;
+
+    /**
+     *  Default method to define fields
+     */
+    public function createInvoiceFields($data)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+        $toolBar = new MToolBar('toolBar',$MIOLO->getActionURL($module,$action));
+        
+        if ( $function == 'insert' )
+        {
+            $toolBar->disableButton('tbBtnDelete');
+            $toolBar->disableButton('tbBtnPrint');
+        }
+        elseif ( $function == 'delete' )
+        {
+            $toolBar->disableButton('tbBtnSave');
+        }
+       
+        $flds[] = $toolBar; 
+        $spacing = new MText('spacing', '-');
+        $balance = null;
+        if ( in_array($function, array('update', 'delete')) )
+        {
+            $fields[] = new MSeparator('');
+            $invoiceId = MIOLO::_request('invoiceId') ? MIOLO::_request('invoiceId') : MIOLO::_request('invoiceId', 'GET');
+            $business = $MIOLO->getBusiness($module, 'BusInvoice');
+            $isAccounted = $business->testIsAccounted($invoiceId) ? true : false;
+            $balance = $business->getInvoiceBalance($invoiceId);
+            if ($isAccounted == true || $balance == SAGU::formatNumber('0') )
+            {
+                $warningText = new MText('warningText', _M('This invoice has accounted, some fields cannot be modified', $module), 'red');
+                $flds[] = new MDiv('warningDiv', $warningText, null, 'align="center"');
+            }
+            $invoiceIdH  = new MHiddenField('invoiceId', $this->getFormValue('invoiceId', $invoiceId) ? $this->getFormValue('invoiceId', $invoiceId) : MIOLO::_request('invoiceId', 'GET'));
+            $invoiceIdLabel = new MText('invoiceIdLabel', _M('Invoice id', $module).':');
+            $invoiceIdLabel->setWidth(FIELD_CONTAINER_SIZE);
+            $invoiceIdLabel->setClass('m-caption m-caption-required');
+            $invoiceId_ =  new MText('invoiceId', $data->invoiceId);
+            $fields[] = new MHContainer('hctInvoiceId', array($invoiceIdLabel, $invoiceId_, $invoiceIdH));
+
+        }
+        $limbo = new MHiddenField('limbo', '');
+        $fields[] = $limbo;
+        // person
+        $personLabel = new MText('personLabel', _M('Person',$module).':');
+        $personLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $personLabel->setClass('m-caption m-caption-required');
+        
+        if ($function == 'insert')
+        {
+            $personId = new MLookupTextField('personId', $this->getFormValue('personId',$data->personId), null, FIELD_LOOKUPFIELD_SIZE, null, null, array('personId', 'contractId', 'personName', 'courseId', 'courseName', 'courseVersion', 'unitId', 'limbo', 'accountSchemeId', 'accountSchemeDescription', 'costCenterId', 'costCenterDescription'), 'finance', 'PersonContract', null, array('personId' => 'personId'), true);
+            /*$personId = new MLookupTextField('personId', $data->personId ? $data->personId : $this->getFormValue('personId',$data->personId), null,FIELD_ID_SIZE, null, null,
+            'personName',
+            'basic', 'Person', null, null, true);*/
+            $personId->setJsHint(_M('Select the person id', $module));
+            $validators[] = new MIntegerValidator('personId',_M('Person',$module), 'required');
+        
+            $personName = new MTextField('personName', $this->getFormValue('personName',$data->personName), null, FIELD_DESCRIPTION_SIZE);
+            $personName->setReadOnly(true);
+             
+            $hctPerson  = new MHContainer('hctPerson', array($personLabel, $personId, $personName));
+            $hctPerson->setShowLabel(true);
+            $fields[]   = $hctPerson;
+        }
+        else
+        {
+            $businessPerson = $MIOLO->getBusiness('basic', 'BusPerson');
+            $dataPerson     = $businessPerson->getPersonName($data->personId);  
+            $personIdLabel  = new MText('personIdLabel', _M('Person id', $module).':');
+            $personIdLabel->setWidth(FIELD_CONTAINER_SIZE);
+            $personIdLabel->setClass('m-caption m-caption-required');
+            $personName     = new MTextField('personName', $dataPerson, null, FIELD_DESCRIPTION_SIZE);
+            $personId       = new MTextField('personId', $this->getFormValue('personId',$data->personId));
+            $personId->setReadOnly(true);
+            $personName->setReadOnly(true);
+            $fields[]       = new MHContainer('hctPersonId', array($personIdLabel, $personId, $spacing, $personName));
+        }
+
+        if ( $isAccounted  || $balance == SAGU::formatNumber('0') )
+        {
+            if (MODULE_ACADEMIC_INSTALLED == 'YES')
+            {
+                unset($fld);
+                $contractLabel = new MText('contractLabel', _M('Contract', $module) . ':');
+                $contractLabel->setWidth(FIELD_CONTAINER_SIZE);
+
+                $contractId  = new MLookupTextField('contractId', $this->getFormValue('contractId', $data->contractId), null, FIELD_LOOKUPFIELD_SIZE, null, null, array('personId', 'personName', 'courseId', 'courseName', 'courseVersion', 'unitId', 'unitDescription', 'accountSchemeId', 'accountSchemeDescription', 'costCenterId', 'costCenterDescription'), 'finance', 'Contract', null, array('personId' => 'personId', 'courseId' => 'courseId', 'courseVersion'=> 'courseVersion', 'unitId' => 'unitId'), true);
+                $contractId->setJsHint(_M('Enter the contract code',$module));
+                $validators[] = new MIntegerValidator('contractId', _M('Contract id', $module), 'optional');
+
+                $courseId = new MLookupTextField('courseId', $this->getFormValue('courseId',$data->courseId), null,FIELD_ID_SIZE, null, null, array('courseVersion','courseName','accountSchemeId','accountSchemeDescription','costCenterId','costCenterDescription','unitId'), $module, 'CourseAccountSchemeCostCenter', null, array('courseId' => 'courseId', 'courseVersion' => 'courseVersion', 'unitId' => 'unitId'), ($function == 'update') ? false:true);
+                $courseId->setJsHint(_M('Select the course id', $module));
+                $validators[] = new MRequiredValidator('courseId',_M('Course',$module));
+                $courseVersion = new MTextField('courseVersion', $this->getFormValue('courseVersion',$data->courseVersion), null,FIELD_ID_SIZE);
+                $validators[] = new MRequiredValidator('courseVersion',_M('Course version',$module), 'required');   
+                $couseVersionDescription = new MText('couseVersionDescription',_M('Version',$module));
+                $courseName = new MTextField('courseName', $this->getFormValue('courseName',$data->courseName), null, FIELD_DESCRIPTION_SIZE);
+                $courseName->setReadOnly(true);
+                $hctCourse = new MHContainer('hctCourse', array($contractLabel, $contractId, $courseId, $couseVersionDescription, $courseVersion, $courseName));
+                $hctCourse->setShowLabel(true);
+                $fields[]   = $hctCourse;       
+            }                
+            $businessPeriod = $MIOLO->getBusiness('academic','BusPeriod');
+            if ( is_null($this->getFormValue('periodId', $data->periodId)) ||
+                 strlen((string)$this->getFormValue('periodId', $data->periodId)) == 0 )
+            {
+                $periodIdValue = CURRENT_PERIOD_ID;
+            }
+            else
+            {
+                $periodIdValue = $this->getFormValue('periodId', $data->periodId);
+            }
+            $periodIdLabel = new MText('periodIdLabel', _M('Period',$module).':');
+            $periodIdLabel->setWidth(FIELD_CONTAINER_SIZE);
+            $periodIdLabel->setClass('m-caption m-caption-required');
+    
+            $periodId = new MSelection('periodId', $periodIdValue, null , $businessPeriod->listPeriod(), true );
+            $fields[] = new MHContainer('hctPeriod', array ($periodIdLabel, $periodId));
+            $validators[] = new MRequiredValidator('periodId');
+            // Account Scheme
+            $accountSchemeLabel       = new MText('accountSchemeLabel', _M('Account scheme',$module).':');
+            $accountSchemeLabel->setWidth(FIELD_CONTAINER_SIZE);
+            $accountSchemeLabel->setClass('m-caption m-caption-required');
+            $accountSchemeId          = new MTextField('accountSchemeId', $this->getFormValue('accountSchemeId',$data->accountSchemeId));
+            $accountSchemeId->setReadOnly(true);
+            $businessAccountScheme    = $MIOLO->getBusiness('accountancy', 'BusAccountScheme');
+            $dataAccountScheme        = $businessAccountScheme->getAccountScheme($data->accountSchemeId);
+            $accountSchemeDescription = new MTextField('accountSchemeName', $dataAccountScheme->description, null, FIELD_DESCRIPTION_SIZE);
+            $accountSchemeDescription->setReadOnly(true);
+            $hctAccountScheme         = new MHContainer('hctAccountScheme', array($accountSchemeLabel, $accountSchemeId, $spacing, $accountSchemeDescription));
+            $fields[]                 = $hctAccountScheme;
+            
+            // Cost center
+            $costCenterLabel       = new MText('costCenterLabel', _M('Cost center',$module).':');
+            $costCenterLabel->setWidth(FIELD_CONTAINER_SIZE);
+            $costCenterLabel->setClass('m-caption m-caption-required');
+            $costCenterId          = new MTextField('costCenterId',$this->getFormValue('costCenterId', $data->costCenterId));
+            $costCenterId->setReadOnly(true);
+            $businessCostCenter    = $MIOLO->getBusiness('accountancy', 'BusCostCenter');
+            $dataCostCenter        = $businessCostCenter->getCostCenter($data->costCenterId);
+            $costCenterDescription = new MTextField('costCenterDescription', $dataCostCenter->description, null, FIELD_DESCRIPTION_SIZE);
+            $costCenterDescription->setReadOnly(true);
+            $hctCostCenter         = new MHContainer('hctCostCenter', array($costCenterLabel, $costCenterId, $spacing, $costCenterDescription));
+            $fields[]              = $hctCostCenter;
+            
+            // Unit
+            $unitLabel    = new MText('unitLabel', _M('Unit',$module).':');
+            $unitLabel->setWidth(FIELD_CONTAINER_SIZE);
+
+            $businessUnit    = $MIOLO->getBusiness('basic','BusUnit');
+            $dataUnit        = $businessUnit->getUnit($data->unitId);
+            $unitIdLabel     = new MText('unitIdLabel', _M('Unit id', $module));
+            $unitIdLabel->setWidth(FIELD_CONTAINER_SIZE);
+            $unitIdLabel->setClass('m-caption m-caption-required');
+            $unitId          = new MTextField('unitId', $this->getFormValue('unitId',$data->unitId));
+            $unitId->setReadOnly(true);
+            $unitDescription = new MTextField('unitDescription', $dataUnit->description, null, FIELD_DESCRIPTION_SIZE);
+            $unitDescription->setReadOnly(true);
+ 
+            $hctUnit         = new MHContainer('hctUnit', array($unitLabel, $unitId, $spacing, $unitDescription));
+            $fields[]        = $hctUnit;            
+        } 
+        else
+        {
+            if (MODULE_ACADEMIC_INSTALLED == 'YES')
+            {
+                unset($fld);
+                $contractLabel = new MText('contractLabel', _M('Contract', $module) . ':');
+                $contractLabel->setWidth(FIELD_CONTAINER_SIZE);
+
+                $contractId  = new MLookupTextField('contractId', $this->getFormValue('contractId', $data->contractId), null, FIELD_LOOKUPFIELD_SIZE, null, null, array('personId', 'personName', 'courseId', 'courseName', 'courseVersion', 'unitId', 'unitDescription', 'accountSchemeId', 'accountSchemeDescription', 'costCenterId', 'costCenterDescription'), 'finance', 'Contract', null, array('personId' => 'personId', 'courseId' => 'courseId', 'courseVersion'=> 'courseVersion', 'unitId' => 'unitId'), true);
+                $contractId->setJsHint(_M('Enter the contract code',$module));
+                $validators[] = new MIntegerValidator('contractId', _M('Contract id', $module), 'optional');
+
+                $courseId = new MLookupTextField('courseId', $this->getFormValue('courseId',$data->courseId), null,FIELD_ID_SIZE, null, null, array('courseVersion','courseName','accountSchemeId','accountSchemeDescription','costCenterId','costCenterDescription','unitId'), $module, 'CourseAccountSchemeCostCenter', null, array('courseId' => 'courseId', 'courseVersion' => 'courseVersion', 'unitId' => 'unitId'), ($function == 'update') ? false:true);
+                $courseId->setJsHint(_M('Select the course id', $module));
+                $validators[] = new MRequiredValidator('courseId',_M('Course',$module));
+                $courseVersion = new MTextField('courseVersion', $this->getFormValue('courseVersion',$data->courseVersion), null,FIELD_ID_SIZE);
+                $validators[] = new MRequiredValidator('courseVersion',_M('Course version',$module), 'required');   
+                $couseVersionDescription = new MText('couseVersionDescription',_M('Version',$module));
+                $courseName = new MTextField('courseName', $this->getFormValue('courseName',$data->courseName), null, FIELD_DESCRIPTION_SIZE);
+                $courseName->setReadOnly(true);
+                $hctCourse = new MHContainer('hctCourse', array($contractLabel, $contractId, $courseId, $couseVersionDescription, $courseVersion, $courseName));
+                $hctCourse->setShowLabel(true);
+                $fields[]   = $hctCourse;       
+            }                
+            $businessPeriod = $MIOLO->getBusiness('academic','BusPeriod');
+            if ( is_null($this->getFormValue('periodId', $data->periodId)) ||
+                 strlen((string)$this->getFormValue('periodId', $data->periodId)) == 0 )
+            {
+                $periodIdValue = CURRENT_PERIOD_ID;
+            }
+            else
+            {
+                $periodIdValue = $this->getFormValue('periodId', $data->periodId);
+            }
+            $periodIdLabel = new MText('periodIdLabel', _M('Period',$module).':');
+            $periodIdLabel->setWidth(FIELD_CONTAINER_SIZE);
+            $periodIdLabel->setClass('m-caption m-caption-required');
+    
+            $periodId = new MSelection('periodId', $periodIdValue, null , $businessPeriod->listPeriod(), true );
+            $fields[] = new MHContainer('hctPeriod', array ($periodIdLabel, $periodId));
+            $validators[] = new MRequiredValidator('periodId');
+
+            // account scheme
+            $accountSchemeLabel = new MText('accountSchemeLabel', _M('Account scheme',$module).':');
+            $accountSchemeLabel->setWidth(FIELD_CONTAINER_SIZE);
+            $accountSchemeLabel->setClass('m-caption m-caption-required');
+            $accountSchemeId    = new MLookupTextField('accountSchemeId', $this->getFormValue('accountSchemeId',$data->accountSchemeId), null,FIELD_ID_SIZE, null, null,
+                'accountSchemeDescription',
+                'accountancy', 'AccountScheme', null, array('courseId'=>'courseId', 'courseVersion'=>'courseVersion', 'unitId'=> 'unitId'), true);
+            $accountSchemeId->setJsHint(_M('Select the account scheme id', $module));
+            $validators[]       = new MRequiredValidator('accountSchemeId',_M('Account scheme',$module), 'required');        
+            $accountSchemeDescription = new MTextField('accountSchemeDescription', $this->getFormValue('accountSchemeDescription',$data->accountSchemeDescription), null, FIELD_DESCRIPTION_SIZE);
+            $accountSchemeDescription->setReadOnly(true);
+            $hctAccountScheme   = new MHContainer('hctAccountScheme', array($accountSchemeLabel, $accountSchemeId, $accountSchemeDescription));
+            $hctAccountScheme->setShowLabel(true);
+            $fields[]   = $hctAccountScheme;
+            
+            // cost center
+            $costCenterLabel = new MText('costCenterLabel', _M('Cost center',$module).':');
+            $costCenterLabel->setWidth(FIELD_CONTAINER_SIZE);
+            $costCenterLabel->setClass('m-caption m-caption-required');
+            $costCenterId = new MLookupTextField('costCenterId',$this->getFormValue('costCenterId',$data->costCenterId), null,FIELD_ID_SIZE, null, null,
+                'costCenterDescription',
+                'accountancy', 'CostCenter', null, array('courseId'=>'courseId', 'courseVersion'=>'courseVersion', 'unitId'=> 'unitId'), true);
+            $costCenterId->setJsHint(_M('Select the cost center id', $module));
+            $validators[] = new MRequiredValidator('costCenterId',_M('Cost center',$module), 'required');                
+            $costCenterDescription = new MTextField('costCenterDescription',$this->getFormValue('costCenterDescription',$data->costCenterDescription), null, FIELD_DESCRIPTION_SIZE);
+            $costCenterDescription->setReadOnly(true);
+            $hctCostCenter = new MHContainer('hctCostCenter', array($costCenterLabel, $costCenterId, $costCenterDescription));
+            $hctCostCenter->setShowLabel(true);
+            $fields[]   = $hctCostCenter;
+            
+            // unit
+            $unitLabel = new MText('unitLabel', _M('Unit',$module).':');
+            $unitLabel->setWidth(FIELD_CONTAINER_SIZE);
+            $unitLabel->setClass('m-caption m-caption-required');
+            $business = $MIOLO->getBusiness('basic','BusUnit');
+            $unitId = new MSelection('unitId', $this->getFormValue('unitId',$data->unitId), '', $business->listUnit());
+            $unitId->setJsHint( _M('Choose the unit',$module) );
+            $validators[] = new MRequiredValidator('unitId',_M('Unit',$module));
+
+            $hctUnit = new MHContainer('hctUnit', array($unitLabel, $unitId, $unitDescription));
+            $hctUnit->setShowLabel(true);
+            $fields[]   = $hctUnit;
+        }
+        
+        // Parcel number
+        $parcelNumberLabel = new MText('parcelNumberLabel', _M('Parcel number',$module).':');
+        $parcelNumberLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $parcelNumberLabel->setClass('m-caption m-caption-required');
+
+        $parcelNumber = new MTextField('parcelNumber', $this->getFormValue('parcelNumber',$data->parcelNumber), '', FIELD_ID_SIZE);
+        $parcelNumber->setJsHint(_M('Enter the parcels number', $module));
+        $validators[] = new MIntegerValidator('parcelNumber',_M('Parcel number',$module), 'required');
+
+        $hctParcelNumber = new MHContainer('hctParcelNumber', array($parcelNumberLabel, $parcelNumber));
+        $hctParcelNumber->setShowLabel(true);
+        $fields[]   = $hctParcelNumber;
+
+        // Emission date
+        $emissionDateLabel = new MText('emissionDateLabel', _M('Emission date',$module).':');
+        $emissionDateLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $emissionDateLabel->setClass('m-caption m-caption-required');
+        
+	    $data->emissionDate = strlen((string)$data->emissionDate) > 0 ? $data->emissionDate : date(MASK_DATE_PHP); 
+        $emissionDate = new MCalendarField('emissionDate', $this->getFormValue('emissionDate',$data->emissionDate), '', FIELD_DATE_SIZE);
+        $emissionDate->setJsHint(_M('Enter the emission date',$module));
+        $validators[] = new MDATEDMYValidator('emissionDate', _M('Emission date',$module), 'required');
+        $hctEmissionDate = new MHContainer('hctEmissionDate', array($emissionDateLabel, $emissionDate));
+        $hctEmissionDate->setShowLabel(true);
+        $fields[]   = $hctEmissionDate;
+
+        // Maturity date
+        $maturityDateLabel = new MText('maturityDateLabel', _M('Maturity date',$module).':');
+        $maturityDateLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $maturityDateLabel->setClass('m-caption m-caption-required');
+        $maturityDate = new MCalendarField('maturityDate', $this->getFormValue('maturityDate',$data->maturityDate), '', FIELD_DATE_SIZE);
+        $maturityDate->setJsHint(_M('Enter the maturity date',$module));
+        $validators[] = new MDATEDMYValidator('maturityDate', _M('Maturity date',$module), 'required');
+        $hctMaturityDate = new MHContainer('hctMaturityDate', array($maturityDateLabel, $maturityDate));
+        $hctMaturityDate->setShowLabel(true);
+        $fields[]   = $hctMaturityDate;
+      
+        // Valor 
+        $valueLabel   = new MText('valueLabel', _M('Value',$module).':');
+        $valueLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $valueLabel->setClass('m-caption m-caption-required');
+        $value        = new MTextField('value', SAGU::formatNumber($this->getFormValue('value',$data->value)), '', FIELD_MONETARY_SIZE );
+        $value->setJsHint(_M('Enter the value',$module));
+        $validators[] =   new MFloatValidator('value', _M('Value', $module), FLOAT_SEPARATOR, REAL_ROUND_VALUE, 'required');
+        $hctValue     = new MHContainer('hctValue', array($valueLabel, $value));
+        $fields[]     = $hctValue;
+      
+        // Policy 
+        $policyLabel = new MText('policyLabel', _M('Policy', $module). ':');
+        $policyLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $policyLabel->setClass('m-caption m-caption-required');
+        $policyId    = new MLookupTextField('policyId', 
+                                            $this->getFormValue('policyId', $data->policyId), 
+                                            null, 
+                                            FIELD_ID_SIZE, 
+                                            null, 
+                                            null,
+                                            array('policyDescription', 'limbo', 'operationId', 'limbo', 'limbo', 'limbo', 'limbo','limbo', 'limbo', 'limbo','limbo', 'operationDescription', 'incomeSourceId', 'incomeSourceDescription' ),
+                                            'finance', 
+                                            'Policy', 
+                                            null, 
+                                            null, 
+                                            ( $function == 'update' ? false : true ) );
+                                         
+        $policyId->setJsHint(_M('Select the policy id', $module));
+        $validators[] = new MIntegerValidator('policyId',_M('Policy', $module), 'required');
+        $policyDescription = new MTextField('policyDescription', $this->getFormValue('policyDescription',$data->policyDescription), null, FIELD_DESCRIPTION_SIZE);
+        $policyDescription->setReadOnly(true);
+        $hctPolicy = new MHContainer('hctPolicy', array($policyLabel, $policyId, $policyDescription));
+        $hctPolicy->setShowLabel(true);
+        $fields[]   = $hctPolicy;
+
+        if ( $function == 'update' )
+        {        
+            // Bank Invoice
+            /*$bankInvoiceIdLabel = new MText('bankInvoiceIdLabel', _M('Invoice bank id',$module).':');
+            $bankInvoiceIdLabel->setWidth(FIELD_CONTAINER_SIZE);
+            $bankInvoiceIdLabel->setClass('m-caption m-caption-required');*/
+            $bankInvoiceId      = new MHiddenField('bankInvoiceId', $this->getFormValue('bankInvoiceId',$data->bankInvoiceId) ? $this->getFormValue('bankInvoiceId',$data->bankInvoiceId) : $data->bankInvoiceId, null, 20);
+            /*$validators[] = new MIntegerValidator('bankInvoiceId',_M('Invoice bank id',$module), 'required');
+            $hctBankInvoiceId   = new MHContainer('hctBankInvoiceId', array($bankInvoiceIdLabel, $bankInvoiceId));*/
+            $fields[]   = $bankInvoiceId;
+        }  
+
+        // Automatic debit
+        $messagesType =  SAGU::listTrueFalse(1); 
+        $automaticDebitLabel = new MText('automaticDebitLabel', _M('Automatic debit',$module).':');
+        $automaticDebitLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $automaticDebitLabel->setClass('m-caption m-caption-required');
+        $automaticDebit = $this->GetFormValue('automaticDebit', $data->automaticDebit ? $data->automaticDebit : f );
+        $automaticDebit = new MRadioButtonGroup('automaticDebit', '', $messagesType, $automaticDebit, null, 'horizontal');
+        $automaticDebit->SetShowLabel(false);
+
+        $hctAutomaticDebit = new MHContainer('hctCloseInvoice', array($automaticDebitLabel, $automaticDebit));
+        $fields[]  = $hctAutomaticDebit; 
+ 
+
+        // Comments        
+        $commentsLabel = new MText('commentsLabel', _M('Comments',$module).':');
+        $commentsLabel->setWidth(FIELD_CONTAINER_SIZE);
+        
+        $comments = new MMultiLineField('comments', $this->getFormValue('comments',$data->comments), '', 40, 4, 80);
+        $comments->setJsHint(_M('Comments',$module));
+        $hctComments = new MHContainer('hctComments', array($commentsLabel, $comments));
+        $fields[]   = $hctComments;
+
+        // Income Source
+        $incomeSourceLabel = new MText('incomeSourceLabel', _M('Income source',$module).':');
+        $incomeSourceLabel->setWidth(FIELD_CONTAINER_SIZE);        
+        $incomeSourceLabel->setClass('m-caption m-caption-required');
+        $incomeSourceId  = new MLookupTextField('incomeSourceId', 
+                                               strlen((string)$this->getFormValue('incomeSourceId'))>0 ? $this->getFormValue('incomeSourceId') : $data->incomeSourceId,
+                                               null,
+                                               FIELD_ID_SIZE,
+                                               null,
+                                               null,
+                                               'incomeSourceDescription',
+                                               'finance',
+                                               'IncomeSource',
+                                               null,
+                                               null,
+                                               true);
+        $incomeSourceId->setJsHint(_M('Select the income source id', $module));
+        $validators[]    = new MIntegerValidator('incomeSourceId', _M('Income source',$module), 'required');
+        $incomeSourceDescription = new MTextField('incomeSourceDescription', $this->getFormValue('incomeSourceDescription',$data->incomeSourceDescription), null, FIELD_DESCRIPTION_SIZE);
+        $incomeSourceDescription->setReadOnly(true);
+        $hctIncomeSource = new MHContainer('hctIncomeSource', array($incomeSourceLabel, $incomeSourceId, $incomeSourceDescription));
+        $hctIncomeSource->setShowLabel(true);
+        $fields[]        = $hctIncomeSource;
+        
+        // bank account
+        $business = $MIOLO->getBusiness($module, 'BusBankAccount');
+        $bankAccountLabel = new MText('bankAccountLabel', _M('Bank account',$module).':');
+        $bankAccountLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $bankAccountLabel->setClass('m-caption m-caption-required');
+        $bankAccountsList = $business->listBankAccount();
+        if( !is_array($bankAccountsList) )
+        {
+            $msg  = _M('Don\'t have any bank account insert in database. Please register a bank account first !',$module);
+            $opts   = array('event' => 'tbBtnInsert');
+            $goto = $MIOLO->getActionURL($module, 'main:register:bankAccount', null, $opts);
+            $caption = _M('Error', $module);
+            $MIOLO->error( $msg, $goto, $caption );
+        }
+	     $data->bankAccountId = MIOLO::_REQUEST('bankAccountId') ? MIOLO::_REQUEST('bankAccountId') : $data->bankAccountId;
+	     $bankAccountId = new MComboBox('bankAccountId',
+                                       strlen((string)$this->getFormValue('bankAccountId',$data->bankAccountId)) > 0 ? $this->getFormValue('bankAccountId',$data->bankAccountId) : DEFAULT_BANK_ACCOUNT_ID,
+                                       '', $bankAccountsList);
+
+        $bankAccountId->setJsHint(_M('Bank account id', $module).':');
+		$bankAccountId->setAutoPostBack(true);
+        $validators[] = new MIntegerValidator('bankAccountId', _M('Bank account',$module), 'required');
+//        $bankAccountId->setAutoSubmit(true);
+        $hctBankAccount = new MHContainer('hctBankAccount', array($bankAccountLabel, $bankAccountId));
+        $hctBankAccount->setShowLabel(true);
+        $fields[]   = $hctBankAccount;
+
+		//Bank Contract 
+		$businessBankAccountContract = $MIOLO->getBusiness('finance', 'BusBankAccountContract');
+		$dataBankAccountContract     = $businessBankAccountContract->listBankAccountContract(strlen((string)$this->getFormValue('bankAccountId',$data->bankAccountId)) > 0 ? $this->getFormValue('bankAccountId',$data->bankAccountId) : DEFAULT_BANK_ACCOUNT_ID);
+		$bankContractIdLabel  = new MText('bankContractIdLabel', _M('Bank contract', 'finance').':');
+		$bankContractIdLabel->setWidth(FIELD_CONTAINER_SIZE);
+		$bankContractIdLabel->setClass('m-caption m-caption-required');
+        $bankContractId       = new Mselection('bankContractId', strlen((string) $this->getFormValue('bankContractId', $data->bankContractId) ) > 0 ? $this->getFormValue('bankContractId', $data->bankContractId) : DEFAULT_BANK_CONTRACT_ID , '', $dataBankAccountContract, false);
+
+        $hctBankAccountContract      = new MHContainer('hctBankAccountContract', array($bankContractIdLabel, $bankContractId));
+        $hctBankAccountContract->setShowLabel(true);
+
+        $fields[]                 = $hctBankAccountContract;
+        
+		$validators[] = new MIntegerValidator('bankContractId', _M('Bank contract',$module), 'required');
+
+		$messageInvoiceLabel   = new MText('messageInvoiceLabel', _M('Invoice message', $module).':');
+		$messageInvoiceLabel->setWidth(FIELD_CONTAINER_SIZE);
+		$messageInvoice        = new MTextField('messageInvoice', $this->getFormValue('messageInvoice',$data->messageInvoice), '', FIELD_DESCRIPTION_SIZE);
+		$fields[]      = new MHContainer('hctMessageInvoice', array($messageInvoiceLabel, $messageInvoice));
+
+        // Sector Id
+        $sectorIdLabel  = new MText('sectorIdLabel', _M('Sector id', $module).':');
+        $sectorIdLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $businessSector = $MIOLO->getBusiness('basic', 'BusSector');
+        $sectors        = $businessSector->listSector();
+        $sectorId       = new MComboBox('sectorId', $this->getFormValue('sectorId', $data->sectorId), '', $sectors);
+        $hctSector      = new MHContainer('hctSector', array($sectorIdLabel, $sectorId));
+        $hctSector->setShowLabel(true);
+        $fields[]       = $hctSector;
+
+        $flds[] = new MBaseGroup('invoiceGroup', _M('Invoice', $module), $fields, 'vertical');
+        unset($fields);
+
+        // Entry 
+        if( $function == 'insert' )
+        {
+            // Operation
+            $operationLabel = new MText('operationLabel', _M('Operation id', $module).':');
+            $operationLabel->setWidth(FIELD_CONTAINER_SIZE);
+            $operationLabel->setClass('m-caption m-caption-required');
+            $operationId = new MLookupTextField('operationId', $data->operationId ?  $data->operationId : $this->getFormValue('operationId',$data->operationId), '', FIELD_ID_SIZE, null, null, 'operationDescription', $module, 'Operation', null, null, true);
+            $operationId->setJsHint(_M('Enter the operation id',$module));
+            $validators[] = new MIntegerValidator('operationId', _M('Operation id', $module), 'required');
+            $operationDescription = new MTextField('operationDescription', $this->getFormValue('operationDescription',$data->operationDescription), '', FIELD_DESCRIPTION_SIZE);
+            $operationDescription->setReadOnly(true);
+            $fields[] = new MHContainer('hctOperation', array($operationLabel, $operationId, $operationDescription));
+        
+            // Entry date
+            $data->entryDate = strlen((string)$data->entryDate) > 0 ? $data->entryDate : date(MASK_DATE_PHP); 
+            $entryDateLabel = new MText('entryDateLabel', _M('Entry date', $module).':');
+            $entryDateLabel->setWidth(FIELD_CONTAINER_SIZE);
+            $entryDateLabel->setClass('m-caption m-caption-required');
+            
+            // Nome do field esta com entryDate1 porque inexplicavelmente nao funciona com o nome entryDate
+            $entryDate = new MCalendarField('entryDate1', $this->getFormValue('entryDate',$data->entryDate), '', FIELD_DATE_SIZE);
+            $entryDate->setJsHint(_M('Enter the entry date',$module));
+
+            $validators[] = new MDATEDMYValidator('entryDate1', _M('Entry date',$module), 'required');
+            $fields[] = new MHContainer('hctEntryDate', array($entryDateLabel, $entryDate));
+
+            // Comments
+            $entryCommentsLabel = new MText('entryCommentsLabel', _M('Comments', $module).':');
+            $entryCommentsLabel->setWidth(FIELD_CONTAINER_SIZE);
+            $entryComments = new MMultiLineField('entryComments', $data->comments ? $data->comments : $this->getFormValue('entryComments',$data->entryComments), '', 40, 2, 40);
+            $entryComments->setJsHint(_M('Enter the comments',$module));
+            $fields[] = new MHContainer('hctEntryComments', array($entryCommentsLabel, $entryComments));
+       
+            // Bank return code
+            $bankReturnCodeLabel = new MText('bankReturnCodeLabel', _M('Bank return id', $module).':');
+            $bankReturnCodeLabel->setWidth(FIELD_CONTAINER_SIZE);
+            $bankReturnCode = new MTextField('bankReturnCode', $this->getFormValue('bankReturnCode', $data->bankReturnCode), '', 20);
+            $bankReturnCode->setJsHint(_M('Enter the bank return code', $module));
+            $fields[] = new MHContainer('hctBankReturnCode', array($bankReturnCodeLabel, $bankReturnCode));
+            
+            $flds[] = new MBaseGroup('entryGroup', _M('Entry', $module), $fields, 'vertical');
+            unset($fields);
+        }
+        
+        $this->addFields($flds);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setValidators($validators);
+    }
+}
+?>

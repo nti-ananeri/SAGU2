@@ -1,0 +1,287 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for acdScheduleProfessor table
+ *
+ * @author Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 26/09/2005
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to manipulate the acdScheduleProfessor table
+ **/
+class BusinessAcademicBusScheduleProfessorUnion extends Business
+{
+
+    public $db;
+
+    function __construct()
+    {
+        $this->db = $this->getDatabase();
+    }
+
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module = is_null($module) ? 'academic' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+    public function searchScheduleProfessorUnion($filters)
+    {
+        $sql = 'SELECT  DISTINCT M.primaryScheduleProfessorId,
+                        M.secondaryScheduleProfessorId,
+                        D.classId,
+                        F.curricularComponentId,
+                        F.curricularComponentVersion,
+                        F.shortName,
+                        I.description,
+                        H.beginHour,
+                        H.endHour,
+                        H.description,
+                        K.description,
+                        E.turnId,
+                        E.courseId,
+                        E.courseVersion,
+                        J.description, 
+                        J.room,
+                        L.description
+                    FROM 
+                        acdScheduleProfessorUnion M INNER JOIN
+                        acdScheduleProfessor A ON (A.scheduleProfessorId = M.secondaryScheduleProfessorId) INNER JOIN
+                        acdSchedule B ON ( A.scheduleId = B.scheduleId ) INNER JOIN ONLY
+                        basPhysicalPerson C ON ( A.professorId = C.personId ) INNER JOIN
+                        acdGroup D ON ( B.groupId = D.groupId ) INNER JOIN
+                        acdCurriculum E ON ( D.curriculumId = E.curriculumId ) INNER JOIN
+                        acdCurricularComponent F ON ( E.curricularComponentId = F.curricularComponentId AND E.curricularComponentVersion = F.curricularComponentVersion ) INNER JOIN
+                        acdLearningPeriod G ON ( D.learningPeriodId = G.learningPeriodId ) INNER JOIN
+                        acdScheduleLearningPeriod H ON ( B.scheduleLearningPeriodId = H.scheduleLearningPeriodId ) INNER JOIN
+                        basTurn I ON ( I.turnId = H.turnId ) INNER JOIN
+                        insPhysicalResource J ON ( B.physicalResourceId = J.physicalResourceId AND B.physicalResourceVersion = J.physicalResourceVersion) INNER JOIN 
+                        basWeekDay K ON ( K.weekDayId = B.weekDayId ) INNER JOIN
+                        basUnit L ON ( L.unitId = E.unitId )
+                WHERE 
+                1=1 ';
+        if ( strlen((string)$filters->professorId) > 0 )
+        {
+            $sql .= ' AND A.professorId = ? ';
+            $args[] = $filters->professorId;
+        }
+        if ( strlen((string)$filters->physicalResourceId) > 0 )
+        {
+            $sql .= ' AND J.physicalResourceId = ? ';
+            $args[] = $filters->physicalResourceId;
+        }
+        if ( strlen((string)$filters->physicalResourceVersion) > 0 )
+        {
+            $sql .= ' AND J.physicalResourceVersion = ? ';
+            $args[] = $filters->physicalResourceVersion;
+        }
+
+        if ( strlen((string)$filters->curricularComponentId) > 0 )
+        {
+            $sql .= ' AND E.curricularComponentId = ? ';
+            $args[] = $filters->curricularComponentId;
+
+        }
+
+        if ( strlen((string)$filters->curricularComponentVersion) > 0 )
+        {
+            $sql .= ' AND E.curricularComponentVersion = ? ';
+            $args[] = $filters->curricularComponentVersion;
+
+        }
+        if ( strlen((string)$filters->periodId) > 0 )
+        {
+            $sql .= ' AND G.periodId = ? ';
+            $args[] = $filters->periodId;
+        }
+        else
+        {
+            $sql .= ' AND G.periodId = ? ';
+            $args[] = CURRENT_PERIOD_ID;
+        }
+
+        if ( strlen((string)$filters->turnId) )
+        {
+            $sql .= ' AND E.turnId = ? ';
+            $args[] = $filters->turnId;
+        }
+
+        if ( strlen((string)$filters->unitId) )
+        {
+            $sql .= ' AND L.unitId = ? ';
+            $args[] = $filters->unitId;
+        }
+        if( count($args) > 0 )
+        {
+            $result = $this->db->query(SAGU::prepare($sql,$args));
+            return $result;
+        }
+        
+
+    }
+
+    public function listScheduleProfessorUsingFilters($filters)
+    {
+        $sql = 'SELECT  A.scheduleProfessorId,
+                        D.classId || \' - \' || K.description || \'  \' || H.beginHour || \' - \' || H.endHour
+                        --,
+                       -- F.curricularComponentId,
+                       -- F.curricularComponentVersion,
+                       -- F.shortName,
+                       -- I.description,
+                       -- H.beginHour,
+                       -- H.endHour,
+                       -- H.description,
+                       -- K.description,
+                       -- E.turnId,
+                       -- E.courseId,
+                       -- E.courseVersion,
+                       -- J.description, 
+                       -- J.room,
+                       -- L.description
+                    FROM 
+                        acdScheduleProfessor A INNER JOIN 
+                        acdSchedule B ON ( A.scheduleId = B.scheduleId ) INNER JOIN ONLY
+                        basPhysicalPerson C ON ( A.professorId = C.personId ) INNER JOIN
+                        acdGroup D ON ( B.groupId = D.groupId ) INNER JOIN
+                        acdCurriculum E ON ( D.curriculumId = E.curriculumId ) INNER JOIN
+                        acdCurricularComponent F ON ( E.curricularComponentId = F.curricularComponentId AND E.curricularComponentVersion = F.curricularComponentVersion ) INNER JOIN
+                        acdLearningPeriod G ON ( D.learningPeriodId = G.learningPeriodId ) INNER JOIN
+                        acdScheduleLearningPeriod H ON ( B.scheduleLearningPeriodId = H.scheduleLearningPeriodId ) INNER JOIN
+                        basTurn I ON ( I.turnId = H.turnId ) INNER JOIN
+                        insPhysicalResource J ON ( B.physicalResourceId = J.physicalResourceId AND B.physicalResourceVersion = J.physicalResourceVersion) INNER JOIN 
+                        basWeekDay K ON ( K.weekDayId = B.weekDayId ) INNER JOIN
+                        basUnit L ON ( L.unitId = E.unitId )
+                WHERE 1 = 1 ';
+        if ( strlen((string)$filters->professorId) > 0 )
+        {
+            $sql .= ' AND A.professorId = ? ';
+            $args[] = $filters->professorId;
+        }
+
+        if ( strlen((string)$filters->curricularComponentId) > 0 )
+        {
+            $sql .= ' AND E.curricularComponentId = ? ';
+            $args[] = $filters->curricularComponentId;
+
+        }
+
+        if ( strlen((string)$filters->curricularComponentVersion) > 0 )
+        {
+            $sql .= ' AND E.curricularComponentVersion = ? ';
+            $args[] = $filters->curricularComponentVersion;
+
+        }
+        
+        if ( strlen((string)$filters->periodId) > 0 )
+        {
+            $sql .= ' AND G.periodId = ? ';
+            $args[] = $filters->periodId;
+        }
+        else
+        {
+            $sql .= ' AND G.periodId = ? ';
+            $args[] = CURRENT_PERIOD_ID;
+        }
+
+        if ( strlen((string)$filters->turnId) )
+        {
+            $sql .= ' AND E.turnId = ? ';
+            $args[] = $filters->turnId;
+        }
+
+        if ( strlen((string)$filters->unitId) )
+        {
+            $sql .= ' AND L.unitId = ? ';
+            $args[] = $filters->unitId;
+        }
+
+        $result = $this->db->query(SAGU::prepare($sql,$args));
+        return $result;
+    }
+
+    public function insertScheduleProfessorUnion($data)
+    {
+        $this->db->execute('BEGIN TRANSACTION');
+        $sql[] = 'DELETE FROM acdScheduleProfessorUnion WHERE primaryScheduleProfessorId = '.$data->primaryScheduleProfessorId;
+        foreach($data->secondaryScheduleProfessorId as $item => $value)
+        {
+            $sqlX = 'INSERT INTO acdScheduleProfessorUnion (primaryScheduleProfessorId, secondaryScheduleProfessorId) VALUES (?,?)';
+            $sql[] = SAGU::prepare($sqlX,array($data->primaryScheduleProfessorId, $value));
+        }
+        foreach($sql as $item => $value)
+        {
+            $ok = $this->db->execute($value);
+        }
+
+        if ( $ok )
+        {
+            $this->db->execute('COMMIT');
+        }
+        else
+        {
+            $this->db->execute('ROLLBACK');
+        }
+        return $ok;
+    }
+
+    public function deleteScheduleProfessorUnion($data)
+    {
+        $ok = false;
+        $sql = 'DELETE FROM acdScheduleProfessorUnion WHERE 1=1 ';
+
+        if ( strlen((string)$data->primaryScheduleProfessorId) > 0 )
+        {
+            $sql .= ' AND primaryScheduleProfessorId = ?';
+            $args[] = $data->primaryScheduleProfessorId;
+        }
+
+        if( strlen((string)$data->secondaryScheduleProfessorId) > 0 )
+        {
+            $sql .= ' AND secondaryScheduleProfessorId = ?';
+            $args[] = $data->secondaryScheduleProfessorId;
+        }
+        
+        if( count($args) > 0 )
+        {
+            $ok = $this->db->execute(SAGU::prepare($sql,$args));
+        }
+        return $ok;
+    }
+}
+?>

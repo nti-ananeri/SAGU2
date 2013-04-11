@@ -1,0 +1,269 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for finVoucherMessages table
+ *
+ * @author Armando Taffarel Neto [taffarel@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * Armando Taffarel Neto [taffarel@solis.coop.br]
+ * 
+ * @since
+ * Class created on 02/01/2006
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to manipulate the finVoucherMessages table
+ **/
+class BusinessFinanceBusVoucherMessages extends MBusiness
+{
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module = is_null($module) ? 'finance' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+    /**
+     * List all records from the table handled by the class
+     *
+     * @param: None
+     *
+     * @returns (array): Return an array with the entire table
+     *
+     **/
+    public function listVoucherMessages()
+    {
+    }
+
+     /**
+     * Used for verify if do uses insert or update function to save Voucher Massages
+     * This function is used on Generic Voucher Payment. 
+     *
+     * @author Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+     *
+     * @param $voucherMessagesId (integer): Primary key of the record to be retrieved
+     *
+     * @return (object): Return true or false if execute correctly
+     *
+     **/
+    public function saveVoucherMessages($data)
+    {
+        $returnData = $this->getVoucherMessages($data->operationId);
+        // Faz verificação se ele deve fazer um insert ou um update na base de dados, se o dado já existe ele 
+        // entra no insert se não no update.
+        if( $returnData->operationId == $data->operationId ) 
+        {
+            $ok = $this->updateVoucherMessages($data);
+        }
+        else
+        {
+            $ok = $this->insertVoucherMessages($data);
+        }
+
+        return $ok;
+
+    }
+
+    /**
+     * Return a specific record from the database
+     *
+     * @param $voucherMessagesId (integer): Primary key of the record to be retrieved
+     *
+     * @return (object): Return an object of the type handled by the class
+     *
+     **/
+    public function getVoucherMessages($operationId)
+    {
+        $sql = '    SELECT A.operationId,
+                           B.description,
+                           A.title,
+                           A.message,
+                           A.userName,
+                           TO_CHAR(A.dateTime,\'' . MASK_TIMESTAMP . '\')
+                      FROM finVoucherMessages A
+                INNER JOIN finOperation B
+                     USING (operationId)
+                     WHERE A.operationId = ?';
+  
+        $db = $this->getDatabase();
+        $result = $db->query(SAGU::prepare($sql, $operationId));
+
+        $voucherMessages = new FinVoucherMessages();
+
+        list ( $voucherMessages->operationId,
+               $voucherMessages->operationDescription,
+               $voucherMessages->title,
+               $voucherMessages->message,
+               $voucherMessages->userName,
+               $voucherMessages->dateTime ) = $result[0];
+
+        return $voucherMessages; 
+    }
+
+    /**
+     * Do a search on the database table handled by the class
+     *
+     * @param $filters (object): Search filters
+     *
+     * @last modification: William Prigol Lopes [william@solis.coop.br]
+     *
+     *
+     * @return (array): An array containing the search results
+     **/
+    public function searchVoucherMessages($data)
+    {
+        $sql = 'SELECT A.operationId,
+                        B.description,
+                        A.title,
+                        A.message
+                 FROM finVoucherMessages A
+                 INNER JOIN finOperation B
+                         ON (A.operationId = B.operationId) ';
+
+        $where = '';
+        unset($args);
+        if ( strlen((string)$data->operationId) > 0 )
+        {
+            $where .= '    AND   A.operationId = ?';
+            $args[] = $data->operationId;
+        }
+        if ( strlen((string)$data->title) > 0 )
+        {
+            $where .= '    AND   A.title ILIKE ?';
+            $args[] = $data->title.'%';
+        }
+        if ( strlen((string)$data->message) > 0 )
+        {
+            $where .= '    AND   A.message ILIKE ?';
+            $args[] = $data->message.'%';
+        }        
+
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE ' . substr($where,8) .
+                    ' ORDER BY B.description';
+
+            $db = $this->getDatabase();
+            $result = $db->query(SAGU::prepare($sql,$args));
+          //  $db->close();
+        }
+
+        return $result;
+    }
+
+    /**
+     * Insert a new record
+     *
+     * @param $data (object): An object of the type handled by the class
+     *
+     * @return True if succed, otherwise False
+     *
+     **/
+    public function insertVoucherMessages($data)
+    {
+        $db = $this->getDatabase();
+
+        $sql = 'INSERT INTO finVoucherMessages
+                            (operationId,
+                            title,
+                            message)
+                     VALUES (?,?,?)';
+
+        $args = array( $data->operationId,
+                         $data->title,
+                         $data->message);
+        
+        $db     = $this->getDatabase();
+        $result = $db->execute(SAGU::prepare($sql, $args));
+
+        return $result;
+    }
+
+    /**
+     * Update data from a specific record
+     *
+     * @param $data (object): Data which will replace the old record data
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+    public function updateVoucherMessages($data)
+    {
+        $sql = 'UPDATE finVoucherMessages
+                   SET title = ?,
+                       message = ? 
+                 WHERE operationId  = ?';
+
+        $args = array($data->title,
+                        $data->message,
+                        $data->operationId);
+
+        $db = $this->getDatabase();
+        $sqls = SAGU::prepare($sql,$args);
+        for ( $i=0; $i<count($sqls); $i++ )
+        {
+            $result = $db->execute($sqls[$i]);
+        }
+        //$this->checkError($db);
+        //$db->close();
+
+        return $result;
+    }
+
+    /**
+     * Delete a record
+     *
+     * @param $voucherMessagesId (string): Primary key for deletion
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+    public function deleteVoucherMessages($operationId)
+    {
+        $sql = 'DELETE FROM finVoucherMessages
+                      WHERE operationId = ?';
+
+        $args = array($operationId);
+
+        $db = $this->getDatabase();
+        $result = $db->execute(SAGU::prepare($sql,$args));
+        //$this->checkError($db);
+        //$db->close();
+
+        return $result;
+    }
+
+}
+
+?>

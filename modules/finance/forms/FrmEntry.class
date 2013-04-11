@@ -1,0 +1,544 @@
+<?php
+
+/**
+ * Entry form
+ *
+ * @author Armando Taffarel Neto [taffarel@solis.coop.br]
+ *         William Prigol Lopes [william@solis.coop.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * Armando Taffarel Neto [taffarel@solis.coop.br]
+ *
+ * @since
+ * Class created on 05/01/2006
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2005 SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+
+/**
+ * Form to manipulate a voucher messages
+ **/
+class FrmEntry extends MForm
+{
+    public $data;
+
+    /**
+     * Class constructor
+     **/
+    function __construct()
+    {
+
+        $module = MIOLO::getCurrentModule();
+
+        if ( MIOLO::_request('function') == 'insert' )
+        {
+            parent::__construct(_M('Insert', $module));
+        }
+        else
+        {
+            parent::__construct(_M('Update', $module));
+        }
+
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+    }
+
+
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+        $event    = MIOLO::_request('event');
+
+        $toolBar = new MToolBar('toolBar',$MIOLO->getActionURL($module,$action));
+
+        if ( $function == 'insert' )
+        {
+            $toolBar->disableButton('tbBtnDelete');
+            $toolBar->disableButton('tbBtnPrint');
+            $data->invoiceId = MIOLO::_request('invoiceId');
+            if (strlen((string)$data->invoiceId)>0)
+            {
+                $businessReceivableInvoice = $MIOLO->getBusiness($module, 'BusReceivableInvoice');
+                $data->costCenterId        = $businessReceivableInvoice->getReceivableInvoiceCostCenter($data->invoiceId);
+            }
+        }
+        elseif ( $function == 'delete' )
+        {
+            $toolBar->disableButton('tbBtnSave');
+        }
+        $fields[] = $toolBar;
+
+        if ( in_array($function, array('update', 'delete')) )
+        {
+            $entryId = MIOLO::_request('entryId');
+            $business = $MIOLO->getBusiness($module, 'BusEntry');
+            $fields[]  = new MHiddenField('entryId', $this->getFormValue('entryId', $entryId));        
+            $data      = $business->getEntry($entryId);
+        }
+
+        if ($function == 'update')
+        {
+ 
+
+            if ($data->isAccounted == DB_TRUE)
+            {
+                $info     = new MText('warningText', _M('This entry has accounted, some data are blocked to edit', $module), 'red');
+                $infoDiv  = new MDiv('warningDiv', $info, null, 'align="center"');
+                $fields[] = $infoDiv;
+            }    
+            
+            // Entry id
+            $fields[]  = new MTextLabel('entryId', $entryId, _M('Entry id', $module));
+
+            // Get invoice information
+            $businessInvoice         = $MIOLO->getBusiness($module, 'BusReceivableInvoice');
+            $dataInvoice             = $businessInvoice->getInvoice($data->invoiceId);
+            $businessPerson          = $MIOLO->getBusiness('basic', 'BusPerson');
+            $dataInvoice->personName = $businessPerson->getPersonName($dataInvoice->personId);
+
+            // Spacing
+            $spacing     = new MText('spacing', ' - ');   
+            
+            // Invoice
+            $invoiceIdLabel = new MText('invoiceIdLabel', _M('Invoice id', $module).':');
+            $invoiceIdLabel->setWidth(FIELD_LABEL_SIZE);
+            $invoiceIdLabel->setClass('m-caption m-caption-required');
+            $invoiceId      = new MText('invoiceId', $data->invoiceId);
+            $fields[]       = new MHContainer('hctInvoice', array($invoiceIdLabel, $invoiceId ));
+            
+            // Person 
+            $personLabel = new MText('personIdLabel', _M('Person id', $module).':');
+            $personLabel->setWidth(FIELD_LABEL_SIZE);
+            $personLabel->setClass('m-caption m-caption-required');
+            $personId    = new MText('personId', $dataInvoice->personId);
+            $personName  = new MText('personName', $dataInvoice->personName);
+            $hctPerson   = new MHContainer('hctPerson', array($personLabel, $personId, $spacing, $personName));
+            $hctPerson->setShowLabel(true);
+            $fields[]    = $hctPerson;
+
+            // Operation
+            if ($data->isAccounted == DB_TRUE)
+            {
+                $businessOperation    = $MIOLO->getBusiness($module, 'BusOperation');
+                $dataOperation        = $businessOperation->getOperation($data->operationId);
+                $operationLabel       = new MText('operationLabel', _M('Operation id', $module).':');
+                $operationLabel->setWidth(FIELD_LABEL_SIZE);
+                $operationLabel->setClass('m-caption m-caption-required');
+                $operationId          = new MText('operationId', $data->operationId);
+                $operationDescription = new MText('operationDescription', $dataOperation->description);
+                $fields[]             = new MHContainer('hctOperation', array($operationLabel, $operationId, $spacing, $operationDescription));
+            }
+            else
+            {
+                $operationLabel       = new MText('operationLabel', _M('Operation id', $module).':');
+                $operationLabel->setWidth(FIELD_LABEL_SIZE);
+                $operationLabel->setClass('m-caption m-caption-required');
+                $operationId          = new MLookupTextField('operationId', $this->getFormValue('operationId',$data->operationId), '', FIELD_ID_SIZE, null, null, 'operationDescription', $module, 'Operation', null, null, true);
+                $operationId->setJsHint(_M('Enter the operation id',$module));
+                $validators[]         = new MIntegerValidator('operationId', _M('Operation id', $module), 'required');
+                $operationDescription = new MTextField('operationDescription', $this->getFormValue('operationDescription',$data->operationDescription), '', FIELD_DESCRIPTION_SIZE);
+                $operationDescription->setReadOnly(true);
+                $fields[]             = new MHContainer('hctOperation', array($operationLabel, $operationId, $operationDescription));
+            }
+            
+            // Entry date
+            if ($data->isAccounted == DB_TRUE)
+            {
+                $entryDateLabel = new MText('entryDateLabel', _M('Entry date', $module).':');
+                $entryDateLabel->setWidth(FIELD_LABEL_SIZE);
+                $entryDateLabel->setClass('m-caption m-caption-required');
+                $entryDate      = new MText('entryDate', $data->entryDate);
+                $fields[] = new MHContainer('hctEntryDate', array($entryDateLabel, $entryDate));
+            }
+            else
+            {
+                $entryDateLabel = new MText('entryDateLabel', _M('Entry date', $module).':');
+                $entryDateLabel->setWidth(FIELD_LABEL_SIZE);
+                $entryDateLabel->setClass('m-caption m-caption-required');
+                $entryDate      = new MCalendarField('entryDate', $this->getFormValue('entryDate',$data->entryDate), '', FIELD_DATE_SIZE);
+                $entryDate->setJsHint(_M('Enter the entry date',$module));
+                $validators[] = new MDATEDMYValidator('entryDate', _M('Entry date', $module), 'optional');
+                $fields[] = new MHContainer('hctEntryDate', array($entryDateLabel, $entryDate));
+            }
+
+            // Value
+            if ($data->isAccounted == DB_TRUE)
+            {
+                $valueLabel = new MText('valueLabel', _M('Value', $module).':');
+                $valueLabel->setWidth(FIELD_LABEL_SIZE);
+                $valueLabel->setClass('m-caption m-caption-required');
+                $value = new MText('value', SAGU::formatNumber($data->value));
+                $fields[] = new MHContainer('hctValue', array($valueLabel, $value));
+            }
+            else
+            {
+                $valueLabel = new MText('valueLabel', _M('Value', $module).':');
+                $valueLabel->setWidth(FIELD_LABEL_SIZE);
+                $valueLabel->setClass('m-caption m-caption-required');
+                $value = new MTextField('value', SAGU::formatNumber($this->getFormValue('value',$data->value)), '', FIELD_MONETARY_SIZE);
+                $fields[] = new MHContainer('hctValue', array($valueLabel, $value));
+            }
+           
+            // Cost center
+            if ($data->isAccounted == DB_TRUE)
+            {
+                $businessCostCenter = $MIOLO->getBusiness('accountancy', 'BusCostCenter');
+                $dataCostCenter     = $businessCostCenter->getCostCenter($data->costCenterId);
+                $costCenterIdLabel = new MText('costCenterIdLabel', _M('Cost center id', $module).':');
+                $costCenterIdLabel->setWidth(FIELD_LABEL_SIZE);
+                $costCenterIdLabel->setClass('m-caption m-caption-required');
+                $costCenterId = new MText('costCenterId', $data->costCenterId);
+                $costCenterDescription = new MText('costCenterDescription', $this->getFormValue('costCenterDescription',$dataCostCenter->description));
+                $fields[] = new MHContainer('hctCostCenter', array($costCenterIdLabel, $costCenterId, $spacing, $costCenterDescription));
+            }
+            else
+            {
+                $costCenterIdLabel = new MText('costCenterIdLabel', _M('Cost center id', $module).':');
+                $costCenterIdLabel->setWidth(FIELD_LABEL_SIZE);
+                $costCenterIdLabel->setClass('m-caption m-caption-required');
+                $costCenterId = new MLookupTextField('costCenterId', $this->getFormValue('costCenterId',$data->costCenterId), '', FIELD_ID_SIZE, null, null, 'costCenterDescription', 'accountancy', 'CostCenter', null, null, true);
+                $costCenterId->setJsHint(_M('Enter the cost center code', $module));
+                $validators[] = new MRequiredValidator('costCenterId', _M('Cost center id', $module), 'required');
+                $costCenterDescription = new MTextField('costCenterDescription', $this->getFormValue('costCenterDescription',$data->costCenterDescription), '', FIELD_DESCRIPTION_SIZE);
+                $costCenterDescription->setReadOnly(true);
+                $fields[] = new MHContainer('hctCostCenter', array($costCenterIdLabel, $costCenterId, $costCenterDescription));
+            }
+
+
+            // Comments
+            $commentsLabel = new MText('commentsLabel', _M('Comments', $module).':');
+            $commentsLabel->setWidth(FIELD_LABEL_SIZE);
+            $comments = new MMultiLineField('comments', $this->getFormValue('comments',$data->comments), '', 40, 4, 80);
+            $comments->setJsHint(_M('Enter the comments', $module));
+            $fields[] = new MHContainer('hctMessage', array($commentsLabel, $comments));
+           
+            // Bank return code
+            $bankReturnCodeLabel = new MText('bankReturnCodeLabel', _M('Bank return id', $module).':');
+            $bankReturnCodeLabel->setWidth(FIELD_LABEL_SIZE);
+            $bankReturnCode = new MText('bankReturnCode', $data->bankReturnCode);
+            $fields[] = new MHContainer('hctBankReturnCode', array($bankReturnCodeLabel, $bankReturnCode));
+
+            $fields[] = new MTextLabel('lastModification', '[' . $data->userName . ' - ' . $data->dateTime . ']', _M('Last modification',$module));
+
+            $fields[] = new Separator('');
+
+            $this->page->onLoad('document.' . $this->name . '.comments.focus();');
+        }
+        else
+        {
+            // Invoice
+            $invoiceIdLabel = new MText('invoiceIdLabel', _M('Invoice id', $module).':');
+            $invoiceIdLabel->setWidth(FIELD_LABEL_SIZE);
+            $invoiceIdLabel->setClass('m-caption m-caption-required');
+            $invoiceId      = new MLookupTextField('invoiceId',
+                                                   $this->getFormValue('invoiceId', $data->invoiceId), 
+                                                   '',
+                                                   FIELD_ID_SIZE, 
+                                                   null, 
+                                                   null, 
+                                                   'personId, personName, limbo, limbo, limbo, limbo, limbo, limbo, limbo, limbo, limbo',
+                                                   $module, 
+                                                   'Invoice', 
+                                                   null, 
+                                                   array('personId' => 'personId'), 
+                                                   true);
+            
+
+                    
+            
+            $invoiceId->setJsHint(_M('Enter the invoice id', $module));
+            $validators[]   = new MIntegerValidator('invoiceId', _M('Invoice id', $module), 'required');
+            $fields[]       = new MHContainer('hctInvoice', array($invoiceIdLabel, $invoiceId ));
+     
+            $fields[]       = new MHiddenField('limbo', $this->getFormValue('limbo', $data->limbo));
+
+            // person 
+            $personLabel = new MText('personIdLabel', _M('Person id', $module).':');
+            $personLabel->setWidth(FIELD_LABEL_SIZE);
+            $personLabel->setClass('m-caption m-caption-required');
+            $personId = new MLookupTextField('personId', $this->getFormValue('personId', $data->personId), null, FIELD_ID_SIZE, null, null,
+                'personName',
+                'basic', 'Person', null, null, true);
+            $personId->setJsHint(_M('Select the person id', $module));
+            $validators[] = new MIntegerValidator('personId',_M('Person id', $module), 'required');
+            
+            $personName = new MTextField('personName', $this->getFormValue('personName',$data->personName), null, FIELD_DESCRIPTION_SIZE);
+            $personName->setReadOnly(true);
+            
+            $hctPerson = new MHContainer('hctPerson', array($personLabel, $personId, $personName));
+            $hctPerson->setShowLabel(true);
+            $fields[]   = $hctPerson;
+
+            // Operation
+            $operationLabel = new MText('operationLabel', _M('Operation id', $module).':');
+            $operationLabel->setWidth(FIELD_LABEL_SIZE);
+            $operationLabel->setClass('m-caption m-caption-required');
+            $operationId    = new MLookupTextField('operationId', $this->getFormValue('operationId',$data->operationId), '', FIELD_ID_SIZE, null, null, 'operationDescription', $module, 'Operation', null, null, true);
+            $operationId->setJsHint(_M('Enter the operation id',$module));
+            $validators[] = new MIntegerValidator('operationId', _M('Operation id', $module), 'required');
+            $operationDescription = new MTextField('operationDescription', $this->getFormValue('operationDescription',$data->operationDescription), '', FIELD_DESCRIPTION_SIZE);
+            $operationDescription->setReadOnly(true);
+            $fields[] = new MHContainer('hctOperation', array($operationLabel, $operationId, $operationDescription));
+            
+            // Entry date
+            $entryDateLabel = new MText('entryDateLabel', _M('Entry date', $module).':');
+            $entryDateLabel->setWidth(FIELD_LABEL_SIZE);
+            $entryDateLabel->setClass('m-caption m-caption-required');
+            $entryDate      = new MCalendarField('entryDate', $this->getFormValue('entryDate',$data->entryDate) ? $this->getFormValue('entryDate', $data->entryDate) : date(MASK_DATE_PHP), '', FIELD_DATE_SIZE);
+            $entryDate->setJsHint(_M('Enter the entry date',$module));
+            $validators[] = new MDATEDMYValidator('entryDate', _M('Entry date', $module), 'optional');
+            $fields[] = new MHContainer('hctEntryDate', array($entryDateLabel, $entryDate));
+            
+            // Value
+            $valueLabel = new MText('valueLabel', _M('Value', $module).':');
+            $valueLabel->setWidth(FIELD_LABEL_SIZE);
+            $valueLabel->setClass('m-caption m-caption-required');
+            $value = new MTextField('value', SAGU::formatNumber($this->getFormValue('value',$data->value)), '', FIELD_MONETARY_SIZE);
+            $value->setJsHint(_M('Enter the value',$module));
+            $validators[] =    new MFloatValidator('value', _M('Value', $module), FLOAT_SEPARATOR, REAL_ROUND_VALUE, 'required');
+            $fields[] = new MHContainer('hctValue', array($valueLabel, $value));
+           
+            // Cost center
+            $costCenterIdLabel = new MText('costCenterIdLabel', _M('Cost center id', $module).':');
+            $costCenterIdLabel->setWidth(FIELD_LABEL_SIZE);
+            $costCenterIdLabel->setClass('m-caption m-caption-required');
+            $costCenterId = new MLookupTextField('costCenterId', $data->costCenterId ? $data->costCenterId : $this->getFormValue('costCenterId',$data->costCenterId), '', FIELD_ID_SIZE, null, null, 'costCenterDescription', 'accountancy', 'CostCenter', null, null, true);
+            $costCenterId->setJsHint(_M('Enter the cost center code', $module));
+            $validators[] = new MRequiredValidator('costCenterId', _M('Cost center id', $module), 'required');
+            $costCenterDescription = new MTextField('costCenterDescription', $this->getFormValue('costCenterDescription',$data->costCenterDescription), '', FIELD_DESCRIPTION_SIZE);
+            $costCenterDescription->setReadOnly(true);
+            $fields[] = new MHContainer('hctCostCenter', array($costCenterIdLabel, $costCenterId, $costCenterDescription));
+
+            // Comments
+            $commentsLabel = new MText('commentsLabel', _M('Comments', $module).':');
+            $commentsLabel->setWidth(FIELD_LABEL_SIZE);
+            $comments = new MMultiLineField('comments', $this->getFormValue('comments',$data->comments), '', 40, 2, 40);
+            $comments->setJsHint(_M('Enter the comments',$module));
+            $fields[] = new MHContainer('hctMessage', array($commentsLabel, $comments));
+           
+            $fields[] = new Separator('');
+            $this->page->onLoad('document.' . $this->name . '.invoiceId.focus();');
+        }
+        
+        $goto = MIOLO::_request('goto') ? MIOLO::_request('goto') : MIOLO::_request('goto', 'GET');
+        if (strlen((string)$goto)>0)
+        {
+            $fields[] = new MHiddenField('goto', $goto);
+        }
+
+        $this->setFields($fields);
+        $this->setValidators($validators);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+        $this->setClose($MIOLO->getActionURL($module,substr($action,0,strrpos($action,':'))));        
+    }
+
+    /**
+     * Event triggered when user chooses New from the toolbar
+     **/
+    public function tbBtnNew_click($sender = null)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $data = $this->getTypesData();
+        $vars = get_object_vars($data);
+    }
+
+    /**
+     * Event triggered when user chooses Delete from the toolbar
+     **/
+    public function tbBtnDelete_click($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+        $MIOLO->getClass('accountancy', 'accountancy');
+        $data   = $this->getTypesData();
+        $goto = MIOLO::_request('goto') ? MIOLO::_request('goto') : MIOLO::_request('goto', 'GET');
+        $ok = ACCOUNTANCY::getAccountLimitDate($data->entryDate);
+
+        if ( $ok == DB_FALSE)
+        {
+            $msg  = _M('Operation not allowed. Date of limit exceeded for this operation !',$module);
+
+            $opts = array('entryIdS'=>$data->entryId,
+                          'invoiceId'=>$data->invoiceId);
+            $goto =$MIOLO->getActionURL($module, $this->getFormValue('goto'), null, $opts);
+            if (!$goto)
+            {
+                $goto = SAGU::getStackBackUrl();
+            }
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Error',$module);
+            $MIOLO->error( $msg, $goto, $caption );
+        }
+
+        $opts   = array('event'=>'tbBtnDelete_confirm',
+                        'function'=>'delete',
+                        'entryId'=>MIOLO::_request('entryId'),
+                        'goto'=>urlencode($goto));
+                        
+        $gotoYes = $MIOLO->getActionURL( $module, $action, null, $opts );
+        $gotoNo  = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+        $msg     = MSG_CONFIRM_RECORD_DELETE;
+        $caption = _M('Question',$module);
+        $MIOLO->question($msg, $gotoYes, $gotoNo);
+    }
+
+    /**
+     * Event triggered when user chooses Yes from the Delete prompt dialog
+     **/
+    public function tbBtnDelete_confirm($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+        $MIOLO->getClass('finance', 'finance');
+        $goto = MIOLO::_request('goto') ? MIOLO::_request('goto') : MIOLO::_request('goto', 'GET');
+
+        $business = $MIOLO->getBusiness($module, 'BusEntry');
+        $ok = $business->deleteEntry($this->entryId->value, true);
+        
+        if ( $ok )
+        {
+            $msg  = MSG_RECORD_DELETED;
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Information',$module);
+            $MIOLO->information($msg, $goto);
+        }
+        else
+        {
+            $msg  = _M('Error executing requested operation.',$module);
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Error',$module);
+            $MIOLO->error( $msg, $goto, $caption );
+        }
+    }
+
+    /**
+     * Event triggered when user chooses Save from the toolbar
+     **/
+    public function tbBtnSave_click($sender=NULL)
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+        $MIOLO->getClass('accountancy', 'accountancy');
+        $goto = MIOLO::_request('goto') ? MIOLO::_request('goto') : MIOLO::_request('goto', 'GET');
+        
+        $data     = $this->getTypesData();
+        $business = $MIOLO->getBusiness($module, 'BusEntry');
+
+        $ok = ACCOUNTANCY::getAccountLimitDate($data->entryDate);
+
+        if ( $ok == DB_FALSE)
+        {
+            if ($function == 'update')
+            {
+                $ok = $business->updateEntryComments($data);
+                $msg = MSG_RECORD_UPDATED;
+            }
+            else
+            {
+                $msg  = _M('Operation not allowed. Date of limit exceeded for this operation !',$module);
+                $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+                $caption = _M('Error',$module);
+                $MIOLO->error( $msg, $goto, $caption );
+            }
+        }
+        else
+        {
+
+            if ( $function == 'update' )
+            {
+                $ok  = $business->updateEntry($data);
+                $msg = MSG_RECORD_UPDATED;
+            }
+            else
+            {
+                $ok  = $business->insertEntry($data);
+                $msg = MSG_RECORD_INSERTED;
+            }
+        }
+        if ( $ok )
+        {
+            $opts = array('entryIdS'=>$data->entryId,
+                          'invoiceId'=>$data->invoiceId);
+
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL( $module, $action, null, $opts);
+            if ( $function == 'update' )
+            {
+                $MIOLO->information($msg, $goto);
+            }
+            else
+            {
+                $opts    = array('event'=>'tbBtnNew_click',
+                                 'function'=>'insert',
+                                 'goto_'=>$this->getFormValue('goto'),
+                                 'invoiceId'=>$data->invoiceId);
+
+                $gotoYes = $MIOLO->getActionURL($module, $action, null, $opts);
+                $MIOLO->question($msg, $gotoYes, $goto);
+            }
+        }
+        else
+        {
+            $msg  = _M('Error executing requested operation.',$module);
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Error',$module);
+            $MIOLO->error( $msg, $goto, $caption );
+        }
+    }
+
+    /**
+     * Method to gather all information from the form fields
+     * and put them on a database compatible object
+     **/
+    public function getTypesData()
+    {
+        $data = new FinEntry();
+        $vars = get_object_vars($data);
+        foreach ( $vars as $var => $value )
+        {
+            if ( $this->$var && $var != 'creationType' )
+            {
+                eval('$data->' . $var . ' = $this->' . $var . '->value;');
+            }
+        }
+        $data->creationType = 'M';
+        return $data;
+    }
+}
+
+?>

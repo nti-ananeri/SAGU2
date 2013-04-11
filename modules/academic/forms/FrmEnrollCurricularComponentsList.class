@@ -1,0 +1,362 @@
+<?php
+
+/**
+ * Professors with daily delayed document form
+ *
+ * @author Daniel Afonso Heisler [daniel@isolution.inf.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Daniel Afonso Heisler [daniel@isolution.inf.br]
+ * Giovani Murilo Dantas Corrêa [gmurilo@isolution.inf.br]
+ *
+ * @since
+ * Class created on 22/07/2008
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2008 iSolution \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+
+/**
+ * Form to manipulate a report
+ **/
+class FrmEnrollCurricularComponentsList extends MForm
+{
+    private $home;
+    private $enrollData;
+
+    /**
+     * Class constructor
+     **/
+    function __construct($data)
+    {
+        $module = MIOLO::getCurrentModule();
+        $this->home   = $data->home;
+        $this->enrollData   = unserialize(urldecode(stripslashes(MIOLO::_request('enrollData'))));
+        parent::__construct(_M('Curricular component selection', $module));
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        if (($f = $this->page->request('cpaint_function')) != "") 
+        {
+            $this->manager->getTheme()->clearContent();
+            $this->$f($this->page->request('cpaint_argument'));
+            $this->page->generateMethod = 'generateAJAX';
+        }
+        else
+        {
+            $this->defineFields();
+            $this->eventHandler();
+        }
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function defineFields()
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+        $event    = MIOLO::_request('event');
+
+        $busPeriod    = $MIOLO->getBusiness($module, 'BusPeriod');
+        $periodValue  = $this->getFormValue('periodId',$this->enrollData->periodId) ? $this->getFormValue('periodId',$this->enrollData->periodId) : CURRENT_PERIOD_ID;
+        $periodId     = new MSelection('periodId', $periodValue,  _M('Period', 'academic'), $busPeriod->listPeriod());
+//        $periodId->addAttribute('onchange', 'getCurricularComponents()');
+
+        $validators[] = new MRequiredValidator('periodId', _M('Period','academic'), 'required');
+        $fields[]     = new MHContainer('hctPeriod', array ( $periodId ),  _M('Period', 'academic'));
+
+        //Cabeçalho do formulário
+
+        $courseData->courseId        = $this->enrollData->contractCourseId;
+        $courseData->courseVersion   = $this->enrollData->contractCourseVersion;
+        $courseData->courseName      = $this->enrollData->contractCourseName;
+        $courseData->turnDescription = $this->enrollData->turnDescription;
+
+        if (strlen((string)$this->enrollData->contractId) > 0)
+        {
+            $fields[] = new MHiddenField('contractId', $this->enrollData->contractId );
+            if (strlen((string)$this->enrollData->classId) > 0 )
+            {
+                $classId = new MTextField('classId', $this->getFormValue('classId', $this->enrollData->classId), _M('Class id',$module), FIELD_LOOKUPFIELD_SIZE, null, null, array('className_', 'contractCourseId', 'contractCourseVersion', 'contractCourseName', 'limbo', 'turnDescription' ), $module, 'ClassCourse', null, array('courseId' => 'contractCourseId', 'courseVersion' => 'contractCourseVersion'), true);
+                $classId->setReadOnly(true);
+                $className = new MTextField('className_', $this->getFormValue('className_', $this->enrollData->className), _M('Class name', $module), FIELD_DESCRIPTION_SIZE);
+                $className->setReadOnly(true);
+    
+                $hctClass = new MHContainer('hctClass', array( $classId, $className));
+                $headerFields[] = $hctClass;
+            }
+
+            $txtContractId = new MTextField('txtContractId', $this->getFormValue('txtContractId', $this->enrollData->contractId), _M('Contract id',$module), FIELD_ID_SIZE);
+            $txtContractId->setReadOnly(true); 
+           
+            $txtPersonId = new MTextField('txtPersonId', $this->getFormValue('txtPersonId', $this->enrollData->contractPersonId), _M('Person id',$module), FIELD_ID_SIZE);
+            $txtPersonId->setReadOnly(true);
+            $txtPersonName = new MTextField('txtPersonName', $this->getFormValue('txtPersonName', $this->enrollData->contractPersonName), _M('Person name',$module), FIELD_DESCRIPTION_SIZE);
+            $txtPersonName->setReadOnly(true);
+
+            $cntLine1 = new MHContainer('cntLine1', array($txtPeriodId, $txtContractId, $txtPersonId, $txtPersonName));
+            
+            $headerFields[] = $cntLine1;
+        }
+        else if ( strlen((string)$this->enrollData->classId) > 0 )
+        {
+
+            $classId = new MTextField('classId', $this->getFormValue('classId', $this->enrollData->classId), _M('Class id',$module), FIELD_LOOKUPFIELD_SIZE, null, null, array('className_', 'contractCourseId', 'contractCourseVersion', 'contractCourseName', 'limbo', 'turnDescription' ), $module, 'ClassCourse', null, array('courseId' => 'contractCourseId', 'courseVersion' => 'contractCourseVersion'), true);
+            $classId->setReadOnly(true);
+            $className = new MTextField('className_', $this->getFormValue('className_', $this->enrollData->className), _M('Class name', $module), FIELD_DESCRIPTION_SIZE);
+            $className->setReadOnly(true);
+
+            $hctClass = new MHContainer('hctClass', array( $classId, $className));
+            $headerFields[] = $hctClass;
+        }
+       
+        $txtCourseId = new MTextField('txtCourseId', strlen((string)$contract->courseId) ? $contract->courseId : $courseData->courseId, _M('Course id',$module), FIELD_ID_SIZE);
+        $txtCourseId->setReadOnly(true);
+        $txtCourseVersion = new MTextField('txtCourseVersion', strlen((string)$contract->courseVersion) ? $contract->courseVersion : $courseData->courseVersion, _M('Course version',$module), FIELD_ID_SIZE);
+        $txtCourseVersion->setReadOnly(true);
+        $txtCourseName = new MTextField('txtCourseName', strlen((string)$contract->courseName) ? $contract->courseName : $courseData->courseName, _M('Course name',$module), FIELD_DESCRIPTION_SIZE);
+        $txtCourseName->setReadOnly(true);
+        $txtCourseTurnDescription = new MTextField('txtCourseTurnDescription', strlen((string)$contract->turnDescription) ? $contract->turnDescription : $courseData->turnDescription, _M('Turn',$module), FIELD_DESCRIPTION_SIZE);
+        $txtCourseTurnDescription->setReadOnly(true);
+
+        $cntLine2 = new MHContainer('cntLine2', array($txtCourseId, $txtCourseVersion, $txtCourseName, $txtCourseTurnDescription));
+        
+        $headerFields[] = $cntLine2;
+
+        $cntHeaderInfo = new MBaseGroup('cntHeaderInfo', _M('Enroll details', $module), $headerFields, 'vertical');
+
+        $fields[] = $cntHeaderInfo;
+
+        $selCoursed    = new MSelection('selCoursed', $this->getFormValue('selCoursed', 'f'), _M('Coursed', $module), SAGU::listYesNo());
+        $selBlocked    = new MSelection('selBlocked', $this->getFormValue('selBlocked', 't'), _M('Blocked', $module), SAGU::listYesNo());
+        $selNonCoursed = new MSelection('selNonCoursed', $this->getFormValue('selNonCoursed', 'f'), _M('Unavailable', $module), SAGU::listYesNo());
+        $selFree       = new MSelection('selFree', $this->getFormValue('selFree', 't'), _M('Free', $module), SAGU::listYesNo());
+        $selCoursing   = new MSelection('selCoursing', $this->getFormValue('selCoursing', 't'), _M('Coursing', $module), SAGU::listYesNo());
+
+        $btnLoadCurriculum = new MButton('btnLoadCurriculum', _M('Filter', $module), 'getCurricularComponents()');
+
+        $cntViewOptions = new MBaseGroup('cntViewOptions', _M('Filtering options', $module), array($selCoursed, $selBlocked, $selNonCoursed, $selFree, $selEnrolled, $selCoursing, $btnLoadCurriculum), 'horizontal' );
+
+        $fields[] = $cntViewOptions;
+
+        if ( $this->enrollData->courseType == 'SERIAL' )
+        {
+            //Bloco das disciplinas do curriculo do curso
+            if ( ! ($selNonCoursed->value == 't' ||
+                    $selFree->value       == 't' ||
+                    $selBlocked->value    == 't' ||
+                    $selCoursed->value    == 't' ||
+                    $selEnrolled->value   == 't' ||
+                    $selCoursing->value   == 't') )
+            {
+                $this->addError(_M('At least one of the filters must be selected.',$module));
+                return;
+            }
+            else
+            {
+                $business                    = $MIOLO->getBusiness($module, 'BusEnroll');
+                $businessCurricularComponent = $MIOLO->getBusiness($module, 'BusCurricularComponent');
+                $businessCurriculum          = $MIOLO->getBusiness($module, 'BusCurriculum');
+                $this->enrollData->selNonCoursed    = $selNonCoursed;
+                $this->enrollData->selFree          = $selFree;
+                $this->enrollData->selBlocked       = $selBlocked;
+                $this->enrollData->selCoursed       = $selCoursed;
+                $this->enrollData->selEnrolled      = $selEnrolled;
+                $this->enrollData->selCoursing      = $selCoursing;                
+                //Matrícula seriada individual
+                if (strlen((string)$this->enrollData->contractId) > 0)
+                {
+                    $fields[] = $this->individualEnrollSerie();
+                }
+                //Matricula seriada para turmas
+                else
+                {
+                   //$fields[] = $this->classEnrollSerie();
+                }
+                $btnNext = new MButton('btnNext', _M('Next', $module) . ' >>');
+            }
+        }
+        
+        // Ajax calls
+        $this->page->addScript('x/x_core.js');
+        $this->page->addScript('cpaint/cpaint.inc.js');
+        $this->page->addScript('m_lookup_ajax.js');
+        SAGU::importJsSerialize($this);
+        $url = str_replace('&amp;', '&',$this->manager->getCurrentURL());
+        $code = '
+            function getCurricularComponents() 
+            {
+                info = new Object();
+                info.periodId =xGetElementById(\'periodId\').value;
+                info.selCoursed = xGetElementById(\'selCoursed\').value;
+                info.selBlocked = xGetElementById(\'selBlocked\').value;
+                info.selNonCoursed = xGetElementById(\'selNonCoursed\').value;
+                info.selFree = xGetElementById(\'selFree\').value;
+                info.selCoursing = xGetElementById(\'selCoursing\').value;
+
+                cpaint_call("' . $url . '", "POST", "ajax_getCurricularComponents",  php_serialize(info), returnGetCurricularComponents, "TEXT");
+            } 
+            
+            function returnGetCurricularComponents (result) 
+            {
+                xGetElementById(\'divContent\').innerHTML = result;
+            }
+        ';  
+        $this->page->AddJsCode($code);
+
+        $fields[] = new Separator('');
+        $fields[] = new MDiv('divContent', null);
+
+        $sep1       = new MSeparator();
+        $sep2       = new MSeparator();
+
+        $dataY->contractCourseId = $this->enrollData->courseId;
+        $dataY->contractCourseVersion = $this->enrollData->courseVersion;
+        $dataY->contractCourseName = $this->enrollData->courseName;
+        if ( $this->enrollData->classId_ )
+        {
+            $dataY->classId_ = $this->enrollData->classId_;
+        }
+        $dataY->contractId = $this->enrollData->contractId;
+        $dataY->turnDescription = $this->enrollData->turnDescription;
+        $dataY->parcelsNumber = $this->enrollData->parcelsNumber;
+        $dataY->contractPersonId = $this->enrollData->contractPersonId;
+        $dataY->contractPersonName = $this->enrollData->contractPersonName;
+        
+        $vars       = array ( 'enrollData' => urlencode(serialize($dataY)) );
+        $returnTo   = substr($action,0,strrpos($action,':')) . ':enrollNew';
+        $prevUrl    = $MIOLO->getActionURL($module, $returnTo, null, $vars);
+        $btnPrev    = new MButton('btnPrev', '<< ' . _M('Previous', $module), $prevUrl);
+
+        $currentUrl = str_replace('&amp;', '&', $this->manager->getCurrentURL());
+        
+ 
+        if (isset($btnNext))
+        {
+            $arrayButtons = array($sep1, $btnPrev, $btnNext, $sep2);
+        }
+        else
+        {
+            $arrayButtons = array($sep1, $btnPrev, $sep2);
+        }
+        $cntButtons = new MDiv('cntButtons', $arrayButtons, null, 'align=center');
+
+        $fields[] = $cntButtons;
+
+        $this->setFields($fields);
+        $this->setValidators($validators);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+        $this->setClose($MIOLO->getActionURL($module,substr($action,0,strrpos($action,':'))));
+    }
+
+    function ajax_getCurricularComponents ($go)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+        $data   = unserialize(stripslashes($go[0]));
+        foreach ( $this->enrollData as $item => $value )
+        {
+            if ( !isset($data->$item) && strlen((string)$value) > 0 )
+            {
+                $data->$item = $value;
+            }
+        }
+
+    }
+    public function individualEnrollSerie()
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+        if ( ! ($this->enrollData->selNonCoursed->value == 't' ||
+                $this->enrollData->selFree->value       == 't' ||
+                $this->enrollData->selBlocked->value    == 't' ||
+                $this->enrollData->selCoursed->value    == 't' ||
+                $this->enrollData->selEnrolled->value   == 't' ||
+                $this->enrollData->selCoursing->value   == 't') )
+        {
+            $this->addError(_M('At least one of the filters must be selected.',$module));
+            return;
+        }
+
+        $db = $MIOLO->getBusiness($module, 'BusEnrollNew');  
+        //Turmas matriculadas
+        if ( strlen((string)$this->enrollData->classId) == 0 )
+        {
+            $this->enrollData->classId  = $db->getClassPupil($this->enrollData);
+        }
+        else
+        {
+            $classId[] = $this->enrollData->classId;
+            unset($this->enrollData->classId);
+            $this->enrollData->classId = $classId;
+        }
+        //Disciplinas ainda não cursadas ou reprovadas pelo aluno
+        $disciplinasFaltantes   = $db->getContractCurricularNotCoursed($this->enrollData);
+        //Disciplinas reprovadas pelo aluno
+        $disciplinasReprovadas  = $db->getContractCurricularDisapproved($this->enrollData);
+        //Disciplinas em que o aluno está matriculado
+        $disciplinasMatriculadas= $db->getContractCurricularEnrolled($this->enrollData);
+        //Disciplinas ja cursadas pelo aluno
+        $disciplinasAprovadas   = $db->getContractCurricularApproved($this->enrollData);
+        //Disciplinas oferecidas
+        $disciplinas            = $db->getGroups($this->enrollData);
+        //Monta os objetos apenas das disciplinas oferecidas com (codigo e versao)
+        
+        if ( count($disciplinas) > 0 )
+        {
+            foreach( $disciplinas as $item => $obj )
+            {
+                unset($gp);
+                if ( $obj->curriculumTypeId == ACD_CURRICULUM_TYPE_OPTATIVE && strlen((string)$obj->masterCurriculumId) > 0 )
+                {
+                    unset($obj2, $dataOld);
+                    $dataOld->curriculumId          = $obj->masterCurriculumId;
+                    $obj2 = $db->getCurriculumInfo($dataOld);
+                    $gp->curricularComponentId      = $obj2->curricularComponentId;
+                    $gp->curricularComponentVersion = $obj2->curricularComponentVersion;
+                    $disciplinas[$item]->curriculumId  = $obj2->curriculumId;
+                }
+                else
+                {
+                    $gp->curricularComponentId = $obj->curricularComponentId;
+                    $gp->curricularComponentVersion = $obj->curricularComponentVersion;
+                }
+                $groups[] = $gp; 
+            }
+        }
+        else
+        {
+            $groups[] = NULL;
+        }
+
+        //Verifica se tem disciplinas que faltam ser cursadas
+        MIOLO::vd($disciplinasFaltantes);
+        if ( count($disciplinasFaltantes) > 1 )
+        {
+            foreach($disciplinasFaltantes as $obj)
+            {
+            }
+        }
+        return (new Separator());
+    }
+}
+
+?>

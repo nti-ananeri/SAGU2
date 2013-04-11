@@ -1,0 +1,341 @@
+<?php
+
+/**
+ * Long term short term process form
+ *
+ * @author William Prigol Lopes [william@solis.coop.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ *
+ * @since
+ * Class created on 07/12/2005
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2005 SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+
+/**
+ * Form to control income forecast generation
+ **/
+class FrmRemittanceInvoice748 extends MForm
+{
+    private $home;
+    /**
+     * Class constructor
+     **/
+    function __construct($data)
+    {
+        $module = MIOLO::getCurrentModule();
+        $this->home   = $data->home;
+
+        parent::__construct(_M('Sicredi', $module));
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+    }
+
+   /**
+    * Default method to define fields
+    */
+    public function createFields()
+    {
+        $MIOLO   = MIOLO::getInstance();
+        $module  = MIOLO::getCurrentModule();
+        $action  = MIOLO::getCurrentAction();
+
+        $toolBar = new MToolBar('toolBar', $MIOLO->getActionURL($module, $action));
+
+        $toolBar->disableButton('tbBtnNew');
+        $toolBar->disableButton('tbBtnSave');
+        $toolBar->disableButton('tbBtnDelete');
+        $toolBar->disableButton('tbBtnSearch');
+        $toolBar->disableButton('tbBtnPrint');
+
+
+        //favoritos
+        $enabledImage  = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-20x20.png');
+        $disabledImage = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-disabled-20x20.png');
+        $url           = $MIOLO->getActionURL($module, $this->home, null, array('function' => 'search', 'event' => 'bookmark'));
+        $toolBar->addButton('tbBtnBookmark', _M('Add to bookmarks', 'basic'), $url, null, true, $enabledImage, $disabledImage);
+
+        if ( MIOLO::_request('event') == 'bookmark' )
+        {
+            $MIOLO->getClass('basic', 'access');
+            access::insert('Remittance invoice for Sicredi', $this->home, 'remittanceInvoice748-16x16.png', true);
+        }
+        //Fim favoritos
+
+        // Bank account info
+        $businessBankAccount = $MIOLO->getBusiness($module, 'BusBankAccount');
+        $data->bankAccountId = $this->getFormValue('bankAccountId', $data->bankAccountId);
+        $data->bankId        = 748;
+        $dataBankAccount     = $businessBankAccount->listBankAccount($data);
+
+        // Verify if the specific bank account is registered
+        if (is_array($dataBankAccount[0]) )
+        {
+            // FIELD - Bank account id
+            $field = new MSelection('bankAccountId', $this->getFormValue('bankAccountId', $data->bankAccountId), _M('Bank account id', $module), $dataBankAccount);
+            $field->setAutoSubmit(true);
+            $fields[] = $field;
+            $validators[] = new MRequiredValidator('bankAccountId', _M('Bank account id', $module));
+        }
+        else
+        {
+            $fields[] = new Separator(_M('No bank account registered. Please, register bank account, back on that process and continue.', $module));
+            $fields[] = new MHiddenField('bankAccountId', $this->getFormValue('bankAccountId', $data->bankAccountId));
+        }
+
+        $bankAccountId = $this->getFormValue('bankAccountId', $data->bankAccountId);
+        if (strlen((string)$bankAccountId)>0)
+        {
+            $bankId = $businessBankAccount->getBankIdByBankAccountId($bankAccountId);
+            if (strlen((string)$bankId)>0)
+            {
+                $MIOLO->getClass($module, 'RemittanceInvoice');
+                if (remittanceInvoice::remittanceExists($bankId))
+                {
+                    eval('  if (BANK_REMITTANCE_SEQUENCE_'.$bankAccountId.' > 0)
+                            {
+                                $dataSequence = BANK_REMITTANCE_SEQUENCE_'. $bankAccountId. ';
+                                $dataSequence++;
+                            }
+                            else
+                            {
+                                $dataSequence = 1;
+                            }
+                         ');
+
+                    // FIELD - Sequence File
+                    $sequenceFile = $dataSequence ? $dataSequence : $this->getFormValue('sequenceFile', $data->sequenceFile);
+                    $sequenceFileLabel = new MText('sequenceFileLabel', _M('Sequence file', $module).':');
+                    $sequenceFileLabel->setWidth(FIELD_CONTAINER_SIZE);
+                    $sequenceFile      = new MTextField('sequenceFile', $sequenceFile, '', FIELD_ID_SIZE);
+                    $field1[] = new MHContainer('hctSequenceFile', array($sequenceFileLabel, $sequenceFile));
+
+                    $businessCompany = $MIOLO->getBusiness('basic', 'BusCompany');
+                    $dataCompany = $businessCompany->listCompany();
+
+                    // FIELD - Company
+                    if (is_array($dataCompany[0]))
+                    {
+                        $companyIdLabel = new MText('companyIdLabel', _M('Company id', $module).':');
+                        $companyIdLabel->setWidth(FIELD_CONTAINER_SIZE);
+                        $companyId = new MSelection('companyId', $this->getFormValue('companyId', $data->companyId) ? $this->getFormValue('companyId', $data->companyId) : DEFAULT_COMPANY_CONF, '', $dataCompany);
+                        $field1[] = new MHContainer('hctCompanyId', array($companyIdLabel, $companyId));
+                    }
+                    else
+                    {
+                        $field1[] = new Separator(_M('No company registered. Please, register company to back in this process and continue.', $module), $dataCompany);
+                        $field1[] = new MHiddenField('companyId', $this->getFormValue('companyId', $data->companyId));
+                    }
+
+                    // FIELD - Income source
+                    $businessIncomeSource = $MIOLO->getBusiness($module, 'BusIncomeSource');
+                    $dataIncomeSource     = $businessIncomeSource->listIncomeSource();
+                    $incomeSourceLabel    = new MText('incomeSourceLabel', _M('Income source', $module).':');
+                    $incomeSourceLabel->setWidth(FIELD_CONTAINER_SIZE);
+                    $incomeSource         = new MMultiSelection('incomeSourceId', is_array($this->getFormValue('incomeSourceId', $data->incomeSourceId)) ? $this->getFormValue('incomeSourceId', $data->incomeSourceId) : array($this->getFormValue('incomeSourceId', $data->incomeSourceId)), '', $dataIncomeSource, true, null, 5);
+                    $field1[] = new MHContainer('hctIncomeSource', array($incomeSourceLabel, $incomeSource));
+
+                    // FIELD - Policy
+                    $businessPolicy = $MIOLO->getBusiness($module, 'BusPolicy');
+                    $dataPolicy     = $businessPolicy->listPolicy();
+
+                    $policyIdLabel = new MText('policyIdLabel', _M('Policy id', $module).':');
+                    $policyIdLabel->setWidth(FIELD_CONTAINER_SIZE);
+                    $policyIdLabel->setClass('m-caption m-caption-required');
+                    $policyId      = new MMultiSelection('policyId', is_array($this->getFormValue('policyId', $data->policyId)) ? $this->getFormValue('policyId', $data->policyId) : array($this->getFormValue('policyId', $data->policyId)), '', $dataPolicy, true, null, 5);
+                    $field1[] = new MHContainer('hctPolicyId', array($policyIdLabel, $policyId));
+                    $validators[] = new MRequiredValidator('policyId', _M('Policy id', $module));
+
+                    // FIELD - Maturity Date
+                    $initialMaturityDateLabel = new MText('initialMaturityDateLabel', _M('Initial maturity date', $module).':');
+                    $initialMaturityDateLabel->setWidth(FIELD_CONTAINER_SIZE);
+                    $initialMaturityDateLabel->setClass('m-caption m-caption-required');
+                    $initialMaturityDate = new MCalendarField('initialMaturityDate', $this->getFormValue('initialMaturityDate', $data->initialMaturityDate), '', FIELD_DATE_SIZE);
+                    $validators[] = new MDATEDMYValidator('initialMaturityDate', _M('Initial maturity date', $module), 'required');
+
+                    $finalMaturityDateLabel = new MText('finalMaturityDateLabel', _M('Final maturity date', $module).':');
+                    $finalMaturityDateLabel->setWidth(FIELD_CONTAINER_SIZE);
+                    $finalMaturityDateLabel->setClass('m-caption m-caption-required');
+                    $finalMaturityDate = new MCalendarField('finalMaturityDate', $this->getFormValue('finalMaturityDate', $data->finalMaturityDate), '', FIELD_DATE_SIZE);
+                    $validators[] = new MDATEDMYValidator('finalMaturityDate', _M('Final maturity date', $module), 'required');
+                    $field1[] = new MHContainer('hctMaturityDate', array($initialMaturityDateLabel, $initialMaturityDate, $finalMaturityDateLabel, $finalMaturityDate));
+
+                    // FIELD - Instructions
+                    $instructions = array( array(_M('Invoice register', $module), 1),
+                                           array(_M('Order to close',   $module), 2)
+                                         );
+
+                    $instructionsFieldLabel = new MText('instructionsFieldLabel', _M('Instruction', $module).':');
+                    $instructionsFieldLabel->setWidth(FIELD_CONTAINER_SIZE);
+                    $instructionsField = new MRadioButtonGroup('instruction', '', $instructions, is_null($this->getFormValue('instructions', $data->instructions)) ? 1 : $this->getFormValue('instructions', $data->instructions) , null, 'horizontal');
+                    $instructionsField->setShowLabel(false);
+
+                    $field11[] = new MHContainer('hctInstructionsField', array($instructionsFieldLabel, $instructionsField));
+
+                    // FIELD - Is post invoice
+                    $isPostInvoiceFieldLabel = new MText('isPostInvoice', _M('Post invoice', $module).':');
+                    $isPostInvoiceFieldLabel->setWidth(FIELD_CONTAINER_SIZE);
+                    $isPostInvoice = array( array(_M('Yes - Pupil', $module), 1),
+                                            array(_M('No - Company', $module), 2)
+                                          );
+
+                    $isPostInvoiceField = new MRadioButtonGroup('isPostInvoice', '', $isPostInvoice, is_null($this->getFormValue('isPostInvoice', $data->isPostInvoice)) ? 1 : $this->getFormValue('isPostInvoice', $data->isPostInvoice), null, 'horizontal');
+                    $isPostInvoiceField->setShowLabel(false);
+
+                    $field11[] = new MHContainer('hctIsPostInvoice', array($isPostInvoiceFieldLabel, $isPostInvoiceField));
+
+                    // FIELD - Resend invoices
+                    $resendInvoicesFieldLabel = new MText('resendInvoices', _M('Resend invoices', $module).':');
+                    $resendInvoicesFieldLabel->setWidth(FIELD_CONTAINER_SIZE);
+                    $resendInvoicesField = new MRadioButtonGroup('resendInvoices', '', SAGU::listYesNo(1), is_null($this->getFormValue('resendInvoices', $data->resendInvoices)) ? DB_FALSE : $this->getFormValue('resendInvoices', $data->resendInvoices), null, 'horizontal');
+                    $resendInvoicesField->setShowLabel(false);
+                    $field11[] = new MHContainer('hctResendInvoices', array($resendInvoicesFieldLabel, $resendInvoicesField));
+                    $field1[] = new MVContainer('vctRadio', $field11);
+                    $fieldbg1[] = new MVContainer('hctBase1', $field1);
+                    
+                    // Main information -> FIELD1 (Base group)
+                    $fields[] = new MBaseGroup('mbgMainInformation', _M('Remittance basic information', $module), $fieldbg1);
+
+                    // FIELD - Defaulter limit date
+                    $defaulterLimitDateLabel = new MText('defaulterLimitDateLabel', _M('Defaulter limit date', $module).':');
+                    $defaulterLimitDateLabel->setWidth(FIELD_CONTAINER_SIZE);
+                    $defaulterLimitDateLabel->setClass('m-caption m-caption-required');
+                    $defaulterLimitDate      = new MCalendarField('defaulterLimitDate', $this->getFormValue('defaulterLimitDate', $data->defaulterLimitDate), '', FIELD_DATE_SIZE);
+                    $field2[]                = new MHContainer('hctDefaulterLimitDate', array($defaulterLimitDateLabel, $defaulterLimitDate));
+                    $validators[] = new MDATEDMYValidator('defaulterLimitDate', _M('Defaulter limit date', $module), 'required');
+
+                    // FIELD - Messages type
+                    $messagesType = array( array(_M('Normal', $module), 1),
+                                           array(_M('Defaulter', $module), 2)
+                                         );
+
+                    $messagesTypeFieldLabel = new MText('messagesTypeLabel', _M('Message type', $module).':');
+                    $messagesTypeFieldLabel->setWidth(FIELD_CONTAINER_SIZE);
+                    $messagesTypeField = new MRadioButtonGroup('messagesType', '', $messagesType, is_null($this->getFormValue('messagesType', $data->messagesType)) ?  1 : $this->getFormValue('messagesType', $data->messagesType), null, 'horizontal');
+                    $messagesTypeField->setShowLabel(false);
+
+                    $field2[]  = new MHContainer('hctMessagesType', array($messagesTypeFieldLabel, $messagesTypeField));
+                    $field2[]  = new MHContainer('hctDaysToProtest', array($daysToProtestLabel, $daysToProtest));
+                    $fields2[] = new MVContainer('hctInvoicesWithRegister', $field2);
+                    $fields[]  = new MBaseGroup('invoicesWithRegister', _M('Remittance with register information', $module), $fields2);
+                }
+                else
+                {
+                    $fields[] = new MSeparator(_M('Sorry, this bank do not have support to generate remittances. Please, select other bank.', $module));
+                }
+            }
+            else
+            {
+                $fields[] = new MSeparator(_M('Please, register a bank for this account to follow this process.', $module));
+            }
+        }
+        else
+        {
+            $fields[] = new MSeparator(_M('Please, select a bank to continue this process.', $module));
+        }
+
+        $this->setFields($fields);
+        $this->setValidators($validators);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setClose($MIOLO->getActionURL($module, substr($action, 0, strrpos($action, ':'))));
+    }
+
+   /**
+    * Event triggered when user set new from the toolbar
+    */
+    public function submit_button_Click($sender = null)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $data   = $this->getTypesData();
+
+        $businessBankAccount = $MIOLO->getBusiness($module, 'BusBankAccount');
+
+        $MIOLO->getClass($module, 'RemittanceInvoice748');
+        $invoiceData = new RemittanceInvoice748($data);
+
+        if (is_array($invoiceData->statisticsData->invoice[0]))
+        {
+            $cols = array(_M('Invoice id', $module), _M('Person name', $module), _M('Value', $module), _M('Collection type', $module));
+            
+            $tableRaw = new MTableRaw(_M('Details for remittance bank @1', $module, '748'), $invoiceData->statisticsData->invoice, $cols, true);
+            $tableRaw->setAlternate(true);
+            $tableRaw->addAttribute('width=\"100%\"');
+            
+            $this->addField($tableRaw);
+            $this->addField(new MHiddenField('fileId', $this->getFormValue('fileId', $invoiceData->statisticsData->fileId)));
+            if (strlen((string)$invoiceData->statisticsData->fileData))
+            {
+                $this->addField(new MHiddenField('hiddenFileName', urlencode($invoiceData->statisticsData->fileName)));
+                $this->addField(new MSeparator('<hr>'));
+                $this->addField(new MButton('btnFile', _M('Get file', $module)));
+                $this->addField(new MSeparator(''));
+            }
+            $this->setShowPostButton(false);
+        }
+    }
+
+   /**
+    * Handle a action when button 'btnFile' is clicked
+    *
+    * @param: No parameters needed
+    *
+    * @return: No return
+    */
+    public function btnFile_click()
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+
+        $fileContent = SAGUFile::getFileBody($this->getFormValue('fileId'));
+        SAGU::returnAsFile($this->getFormValue('hiddenFileName'), $fileContent, 'text/remittance-748');
+    }
+
+   /**
+    * Get the data from form and returns as a object
+    */
+    public function getTypesData()
+    {
+        $data->bankAccountId       = $this->getFormValue('bankAccountId');
+        $data->sequenceFile        = $this->getFormValue('sequenceFile');
+        $data->companyId           = $this->getFormValue('companyId');
+        $data->incomeSourceId      = $this->getFormValue('incomeSourceId');
+        $data->defaulterLimitDate  = $this->getFormValue('defaulterLimitDate');
+        $data->initialMaturityDate = $this->getFormValue('initialMaturityDate');
+        $data->finalMaturityDate   = $this->getFormValue('finalMaturityDate');
+        $data->initialEmissionDate = $this->getFormValue('initialEmissionDate');
+        $data->finalEmissionDate   = $this->getFormValue('finalEmissionDate');
+        $data->policyId            = $this->getFormValue('policyId');
+        $data->messagesType        = $this->getFormValue('messagesType');
+        $data->instruction         = $this->getFormValue('instruction');
+        $data->isPostInvoice       = $this->getFormValue('isPostInvoice');
+        $data->resendInvoices      = $this->getFormValue('resendInvoices');
+        $data->daysToProtest       = $this->getFormValue('daysToProtest');
+        return $data;
+    }
+}
+
+?>

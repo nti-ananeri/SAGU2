@@ -1,0 +1,199 @@
+<?php
+
+/**
+ * Form For Authentication Printer
+ *
+ * @author Giovani Murilo Dantas Corrêa [gmurilo@isolution.inf.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Daniel Afonso Heisler [daniel@isolution.inf.br]
+ *
+ * @since
+ * Class created on 09/11/2007
+ *
+ * \b Organization: \n
+ * iSolution - Soluções em TI \n
+ * The iSolution Development Team
+ *
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+
+class FrmAutenticateInvoice extends MForm
+{
+
+    private $module;
+
+
+    /**
+     * Class constructor
+     **/
+    function __construct()
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $this->module = $module;
+
+
+        parent::__construct(_M('Autenticate invoice', $module));
+
+        // hide the 'Submit' button
+        // $this->setShowPostButton(false);
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+    }
+
+   /**
+    * Default method to define fields
+   **/
+    public function createFields()
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $data->invoiceId = strlen((string)$data->invoiceId)>0 ? $data->invoiceId : MIOLO::_request('_invoiceId', 'GET');
+        $data->printerName = strlen((string)$data->printerName)> 0 ? $data->printerName : MIOLO::_request('_printerName','GET');
+        $goto     = MIOLO::_request('goto') ? MIOLO::_request('goto') : MIOLO::_request('goto', 'GET');
+        $loginUser  = $MIOLO->GetLogin();
+        if($loginUser->id != null)
+        {
+            //busca dados do usuário na base sagu2
+            $business = $MIOLO->getBusiness('basic','BusPerson');
+            $user = $business->getPersonByMioloUserName($loginUser->id);
+        }
+
+        if (strlen((string)$data->invoiceId)>0)
+        {
+            $invoiceIdLabel   = new MText('invoiceIdLabel', _M('Invoice id', $module).':');
+            $invoiceIdLabel->setWidth(FIELD_CONTAINER_SIZE);
+            $invoiceId_        = new MTextLabel('invoiceIdLabel', $data->invoiceId);
+            $invoiceIdHidden  = new MHiddenField('invoiceId', $data->invoiceId);
+            $invoiceId = new MHContainer('hctInvoiceId', array($invoiceIdLabel, $invoiceId_, $invoiceIdHidden));
+        }
+        else
+        {
+            // Invoice id
+            $invoiceId    = new MTextField('invoiceId', $this->getFormValue('invoiceId', $data->invoiceId), _M('Invoice id', $module), FIELD_ID_SIZE);
+            $validators[] = new MIntegerValidator('invoiceId');
+        }
+        if ( strlen((string)$data->printerName) > 0 )
+        {
+            $printerNameLabel   = new MText('printerNameLabel', _M('Printer name', $module).':');
+            $printerNameLabel->setWidth(FIELD_CONTAINER_SIZE);
+            $printerName_        = new MTextLabel('printerName_', $data->printerName);
+            $printerNameHidden  = new MHiddenField('printerName', $data->printerName);
+            $printerNameHct = new MHContainer('hctprinterName', array($printerNameLabel, $printerName_, $printerNameHidden));
+        }
+        else if(strlen((string)$user->personId) > 0)
+        {
+            $businessCounter = $MIOLO->getBusiness($module,'BusCounter');
+            $data->responsableId = $user->personId;
+            $printerName = $businessCounter->searchCounter($data);
+            if(count($printerName) >= 1)
+            {
+                $businessCounter = $MIOLO->getBusiness($module,'BusCounter');
+                $options = $businessCounter->listPrinters();
+                $printerNameHct = new MComboBox('printerName',$printerName[0][6],_M('Printer name',$module),$options);
+            }
+        }
+        else
+        {
+            $businessCounter = $MIOLO->getBusiness($module,'BusCounter');
+            $options = $businessCounter->listPrinters();
+            $printerNameHct = new MComboBox('printerName','',_M('Printer name',$module),$options);
+        }
+    
+        $fields[] = $invoiceId;
+        if ( $printerNameHct )
+        {
+            $fields[] = $printerNameHct;
+        }
+        $submitButton = new MButton('submit_button', _M('Submit', $module), 'SUBMIT');
+        $hct[] = $submitButton;
+        if (strlen((string)$goto)>0)
+        {
+            $backButton = new MButton('backButton', _M('Back', $module), $goto);
+            $hct[] = $backButton;
+        }
+
+        $fields[] = new Separator('');
+        $fields[] = new MHContainer('hctButtons', $hct);
+        
+        $this->setFields($fields);
+        if ( count($validators)>0 )
+        {
+            $this->setValidators($validators);
+        }
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setClose($MIOLO->getActionURL($module, substr($action, 0, strrpos($action, ':'))));
+        $this->setShowPostButton(false);
+        
+        $this->page->onLoad('document.'.$this->name.'.invoiceId.focus();');
+     }
+
+    /**
+     * Event used when submit_button is clicked
+     */
+    public function submit_button_click($sender = null)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $data->invoiceId = MIOLO::_request('invoiceId') ? MIOLO::_request('invoiceId') : MIOLO::_request('invoiceId', 'GET');
+        $data->printerName = MIOLO::_request('printerName') ? MIOLO::_request('printerName') : MIOLO::_request('printerName', 'GET');
+        $business    = $MIOLO->getBusiness($module, 'BusInvoice');
+        $businessEntry    = $MIOLO->getBusiness($module, 'BusEntry');
+        $businessCounter =  $MIOLO->getBusiness($module, 'BusCounter');
+        $businessOperation = $MIOLO->getBusiness($module, 'BusDefaultOperations');
+        $defaultOperations = $businessOperation->getDefaultOperations();
+        $businessCompany = $MIOLO->getBusiness('basic', 'BusCompany');
+        $company = $businessCompany->getCompany(DEFAULT_COMPANY_CONF);
+
+        $printerName = $businessCounter->listPrinters($data->printerName);
+        $printerName = $printerName[0][1];
+        $data->entryDate = date('d/m/Y');
+        $data->operationId = $defaultOperations->paymentOperation;
+        $entry     = $businessEntry->searchEntry($data);
+        $invoice = $business->getInvoice($data->invoiceId);
+        $path = $this->manager->getConf('home.logs');
+        $path = explode('/',$path);
+        array_pop($path);
+        $path = implode('/',$path).'/invoices';
+        if (!is_dir($path))
+        {
+            @mkdir($path, 777);
+        }
+        $file    = $path . '/' . $invoice->invoiceId . '.tmp';
+        if ( file_exists($file) )
+        {
+            unlink($file);
+        }
+        $fp = fopen($file, 'w');
+        $ln = $company->acronym . ' ' . $entry[0][10] . ' '.$data->invoiceId.' R$ '.substr(round($entry[0][5],2),0,9) . ' ' . substr(strtoupper(md5($company->acronym.$entry[0][11] . $invoice->invoiceId . substr(round($entry[0][5],2),0,9) . '_educareprevinirofuturo')),0,8);
+        fwrite($fp,$ln);
+        fwrite($fp,"\n");
+        fclose($fp);
+        if(strlen((string)$printerName)>0)
+        {
+            $printer = strtolower($printerName);
+            shell_exec('lp -d '.$printer.' -o cpi=12 -o lpi=8 -o page-left=72 '.$file);
+        }
+        $msg = _M('Autentication was send for printer @1 @2 Would you like to resend ?',$module,$printerName,'<br>');
+        $opts = array('invoiceId'=>$data->invoiceId,'printerName'=>$printerName);
+        $gotoYes =    $MIOLO->GetActionURL($module,$action,null,$opts);
+        $gotoNo     =    $MIOLO->GetActionURL($module,'&personId='.$invoice->personId);
+        $event = "";
+        $MIOLO->Question($msg, $gotoYes, $gotoNo, 'submit_button_click','btnSearch_click');
+    }
+}
+
+?>

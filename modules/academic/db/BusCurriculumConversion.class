@@ -1,0 +1,402 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for basPupilListing table
+ *
+ * @author Leovan Tavares da Silva [leovan] [leovan@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * Leovan Tavares da Silva [leovan@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 20/01/2006
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+
+class BusinessAcademicBusCurriculumConversion extends Business
+{
+    public $db;
+
+    /**
+     * Define the connection to be used
+     * 
+     * @param this method has no parameters
+     *
+     * @return nothing
+     **/
+    public function __construct()
+    {
+        $this->db = $this->getDatabase();
+    }
+
+    public function beginTransaction()
+    {
+        $this->db->execute('BEGIN TRANSACTION');
+    }
+
+    public function commitTransaction()
+    {
+        $this->db->execute('COMMIT');
+    }
+
+    public function rollbackTransaction()
+    {
+        $this->db->execute('ROLLBACK');
+    }
+
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic', 'sagu');
+        $module = is_null($module) ? 'academic' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+    
+    /**
+     *  Return the contracts list filtering by course and person data
+     * 
+     * @param $courseId (int): Identification of course
+     * @param $courseVersion (int): Identification of courseVersion
+     * @param $unitId (int): Identification of unit
+     * @param $turnId: Identification of turn
+     * @param $personId (int): Identification of person
+     *
+     * @return (array): Array containing the results.
+     */
+     public function getContractsByData($courseId, $courseVersion, $unitId, $turnId, $personId = null, $opt = null)
+     {
+        $args = array($courseId, $courseVersion, $unitId, $turnId);
+
+        $sql = 'SELECT contractId,
+                       personId,
+                       getPersonName(personId) as personName
+                  FROM acdContract
+                 WHERE courseId      = ?
+                   AND courseVersion = ?
+                   AND unitId        = ?
+                   AND turnId        = ?';
+
+        if ( $personId != null )
+        {
+            $sql   .= ' AND personId = ?';
+            $args[] = $personId;
+        }
+
+        $sql .= ' ORDER BY 3';
+
+        $result = $this->db->query(SAGU::prepare($sql, $args));
+
+        // $opt == 1 significa apenas contratos ativos
+
+        if ( $opt == 1 )
+        {
+            if ( count($result) > 0 )
+            {
+                foreach ( $result as $row )
+                {
+                    $sql = " SELECT A.contractId,
+                                    B.personId,
+                                    getPersonName(B.personId) as personName,
+                                    A.stateContractId
+                                 FROM ( SELECT contractId,
+                                               stateContractId
+                                          FROM acdMovementContract
+                                         WHERE contractId = ?
+                                      ORDER BY stateTime DESC
+                                         LIMIT 1 ) AS A
+                           INNER JOIN acdContract B
+                                   ON (B.contractId = A.contractId)
+                                WHERE A.stateContractId NOT IN (" . CONTRACT_STATUSCONTRACTID_OUT . ", " . STATE_CONTRACT_ID_LOCKED . ")
+                             ORDER BY 3";
+
+                    $query = $this->db->query(SAGU::prepare($sql, $row[0]));
+
+                    if ( count($query) > 0 )
+                    {
+                        $return[] = $query[0];
+                    }
+                }
+            }
+        }
+        else
+        {
+            $return = $result;
+        }
+
+        return $return;
+     }
+
+    /**
+     *  Return the list of enrolls filtered by a contract id
+     * 
+     * @param $contractId (int): Identification of contract
+     *
+     * @return (array): Array containing the results.
+     */
+    public function getContractEnrolls($contractId)
+    {
+        $sql = "SELECT 
+                        A.enrollId,
+                        A.curriculumId,
+                        B.curricularComponentId,
+                        B.curricularComponentVersion,
+                        C.name,
+                        C.shortName,
+                        C.lessonNumberHours,
+                        C.academicNumberHours,
+                        C.practiceHours
+                  FROM 
+                        acdEnroll A INNER JOIN
+                        acdCurriculum B ON ( B.curriculumId = A.curriculumId ) INNER JOIN
+                        acdCurricularComponent C ON ( C.curricularComponentId = B.curricularComponentId AND
+                                                      C.curricularComponentVersion = B.curricularComponentVersion )
+                 WHERE 
+                        A.contractId = ? ";
+                   
+        $args = array($contractId);
+          
+        $result = $this->db->query(SAGU::prepare($sql, $args));
+          
+        return $result;
+    }
+
+    public function getContractEnrollsApproved($contractId)
+    {
+        $sql = "SELECT 
+                        A.enrollId,
+                        A.curriculumId,
+                        B.curricularComponentId,
+                        B.curricularComponentVersion,
+                        C.name,
+                        C.shortName,
+                        C.lessonNumberHours,
+                        C.academicNumberHours,
+                        C.practiceHours,
+                        C.lessoncredits
+                  FROM 
+                        acdEnroll A INNER JOIN
+                        acdCurriculum B ON ( B.curriculumId = A.curriculumId ) INNER JOIN
+                        acdCurricularComponent C ON ( C.curricularComponentId = B.curricularComponentId AND
+                                                      C.curricularComponentVersion = B.curricularComponentVersion )
+                 WHERE 
+                        A.contractId = ? 
+                    AND A.statusId IN ( " . implode(",", array(ENROLL_STATUS_APPROVED_INEXAM, ENROLL_STATUS_APPROVED, ENROLL_STATUS_EXCUSED)) . " )";
+                   
+        $args = array($contractId);
+        $result = $this->db->query(SAGU::prepare($sql, $args));
+          
+        return $result;
+    }
+    public function getCurriculumLink2 ( $contractId, $curriculumId )
+    {
+        $sql = " SELECT ?::integer as curriculumId, verifyequivalentcurriculum ( ?::integer, ?::integer ) as curriculumLinkId ";
+        $args = array ( $curriculumId, $contractId, $curriculumId );
+        $sql = SAGU::prepare($sql, $args);
+        return $this->db->query($sql);
+
+    }
+    /**
+     *  Sets the grades and frequency data
+     * 
+     * @param $enrollId (int): Identification of enroll
+     * @param $note (int): pupil note
+     * @param $examNote (int): pupil exam note
+     * @param $finalNote (int): pupil final note
+     * @param $frequency (double): pupil frequency
+     * @param $desisting (boolean): flag to inform if pupil gives up
+     *
+     * @return (boolean): true if the query is executed with success and false if not
+     */
+    public function getCurriculumLink($curriculumId, $courseId, $courseVersion, $unitId, $turnId)
+    {
+        $args = array($curriculumId, $courseId, $courseVersion, $unitId, $turnId);
+        
+        $sql = "    SELECT A.curriculumId,
+                           A.curriculumLinkId
+                      FROM acdcurriculumlink A
+                INNER JOIN acdcurriculum B
+                        ON (A.curriculumLinkId = B.curriculumId)
+                     WHERE A.curriculumId = ?::integer
+                       AND B.courseId = ?
+                       AND B.courseVersion = ?::integer
+                       AND B.unitId = ?::integer
+                       AND B.turnId = ?::integer ";
+
+        $result = $this->db->query(SAGU::prepare($sql, $args));
+
+        if ( count ( $result ) == 0 )
+        {
+ 
+            $sql = "    SELECT A.curriculumLinkId,
+                               A.curriculumId
+                          FROM acdcurriculumlink A
+                            INNER JOIN acdcurriculum B
+                            ON (A.curriculumId = B.curriculumId)
+                         WHERE A.curriculumLinkId = ?::integer
+                            AND B.courseId = ?
+                            AND B.courseVersion = ?::integer
+                            AND B.unitId = ?::integer
+                            AND B.turnId = ?::integer ";
+
+            $result = $this->db->query(SAGU::prepare($sql, $args));
+        }
+
+
+        if ( count ( $result ) == 0 )
+        {
+            $sql = ' SELECT 
+                        A.curriculumId,
+                        B.curriculumId as curriculumLinkId
+                     FROM 
+                        acdCurriculum A INNER JOIN
+                        acdCurriculum B ON ( A.curricularComponentId = B.curricularComponentId ) INNER JOIN
+                        acdCurricularComponent C ON ( C.curricularComponentId = A.curricularComponentId AND
+                                                      C.curricularComponentVersion = A.curricularComponentVersion ) INNER JOIN
+                        acdCurricularComponent D ON ( D.curricularComponentId = B.curricularComponentId AND
+                                                      ( (D.lessonNumberHours*0.75) <= C.lessonNumberHours OR
+                                                        (C.lessonNumberHours*0.75) <= D.lessonNumberHours )
+                                                      )
+                     WHERE
+                        A.curriculumId = ?::integer AND
+                        B.courseId = ? AND
+                        B.courseVersion = ?::integer AND
+                        B.unitId = ?::integer AND
+                        B.turnId = ?::integer ';
+            $result = $this->db->query(SAGU::prepare($sql, $args));
+        }
+
+        return $result;
+    }
+
+    public function updateEnrollCurriculumId($enrollId, $curriculumId)
+    {
+        $args = array($curriculumId, $enrollId);
+        
+        $sql = "UPDATE acdenroll
+                   SET curriculumId = ?
+                 WHERE enrollId = ? ";
+        
+        $sqls = SAGU::prepare($sql, $args);
+
+        $result = true;
+        for ( $i=0; $i<count($sqls) && $result; $i++ )
+        {
+            $result = $this->db->execute($sqls[$i]);
+        }
+
+        return $result;
+    }
+    
+    public function updateContractCourseData($contractId, $courseId, $courseVersion, $unitId, $turnId)
+    {
+        $args = array($courseId, $courseVersion, $unitId, $turnId, $contractId);
+        
+        $sql = "UPDATE acdcontract
+                   SET courseId = ?,
+                       courseVersion = ?,
+                       unitId = ?,
+                       turnId = ?
+                 WHERE contractId = ?";
+        
+        $sqls = SAGU::prepare($sql, $args);
+
+        $result = true;
+        for ( $i=0; $i<count($sqls) && $result; $i++ )
+        {
+            $result = $this->db->execute($sqls[$i]);
+        }
+              
+        return $return;
+    }
+
+    public function updateEnrollContracId($enrollId, $contractId)
+    {
+        $args = array($contractId, $enrollId);
+        
+        $sql = "UPDATE acdenroll
+                   SET contractId = ?
+                 WHERE enrollId   = ? ";
+        
+        $sqls = SAGU::prepare($sql, $args);
+
+        $result = true;
+        for ( $i=0; $i<count($sqls) && $result; $i++ )
+        {
+            $result = $this->db->execute($sqls[$i]);
+        }
+
+        return $result;
+    }
+
+    public function checkSameContractToCourse($contractId, $courseId, $courseVersion, $unitId, $turnId)
+    {
+        $sql = '    SELECT AA.personId,
+                           AB.name
+                      FROM acdContract AA
+           INNER JOIN ONLY basPhysicalPerson AB
+                        ON (AA.personId = AB.personId)
+                     WHERE AA.personId = ( SELECT A.personId
+                                             FROM acdContract A
+                                            WHERE A.contractId = '.$contractId.' )
+                       AND AA.courseId      = \''.$courseId.'\'
+                       AND AA.courseVersion = '.$courseVersion.'
+                       AND AA.unitId        = '.$unitId.'
+                       AND AA.turnId        = '.$turnId.'';
+
+        $result = $this->db->query($sql);
+
+        return $result;
+    }
+
+    function closePupilInClass($contractId)
+    {
+        $sql = 'UPDATE acdClassPupil
+                   SET endDate    = date(now())
+                 WHERE contractId = ?';
+
+        $result = $this->db->execute(SAGU::prepare($sql, $contractId));
+
+        return $result;
+    }
+
+    function openPupilInClass($contractId, $classId)
+    {
+        $sql = 'INSERT INTO acdClassPupil ( classId, 
+                                            contractid, 
+                                            begindate )
+                                   VALUES ( ?, ?, date(now()) )';
+
+        $result = $this->db->execute(SAGU::prepare($sql, array($classId, $contractId)));
+
+        return $result;
+    }
+}
+?>

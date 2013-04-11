@@ -1,0 +1,253 @@
+<?php
+
+/**
+ *
+ * This file handles the connection and actions for finInvoice table
+ *
+ * @author Giovani Murilo Dantas Corrêa [gmurilo@isolution.inf.br] 
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Daniel Afonso Heisler [daniel@isolution.inf.br]
+ *
+ * @since
+ * Class created on 28/01/2008
+ *
+ * \b @organization \n
+ * iSolution - Soluções em TI \n
+ * The iSolution Development Team
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to manipulate the Invoice table
+ **/
+$MIOLO = MIOLO::getInstance();
+$MIOLO->uses('db/BusInvoice.class','finance');
+
+class BusinessFinanceBusAgreementTerm extends BusinessFinanceBusInvoice  
+{
+	
+	public function getInvoices($filters)
+	{
+        $sql = "SELECT
+                    TO_CHAR( A.dateTime, 'dd/mm/yyyy HH24:MI'),
+                    A.ipaddress,
+                    TRIM(A.userName),
+                    A.agreementId,
+                    B.invoiceType,
+                    C.invoiceId,
+                    C.personId,
+                    E.name,
+                    COALESCE((SELECT sum(value) FROM ONLY finEntry WHERE invoiceId = C.invoiceId AND operationId IN (SELECT operationId FROM finOperation WHERE operationGroupId = 'P')),0) as pagamento,
+                    COALESCE((SELECT sum(value) FROM ONLY finEntry WHERE invoiceId = C.invoiceId AND operationId IN (SELECT operationId FROM finOperation WHERE operationGroupId = 'N')),0) as valorGerado,
+                    COALESCE((SELECT sum(value) FROM ONLY finEntry WHERE invoiceId = C.invoiceId AND operationId IN (SELECT operationId FROM finOperation WHERE operationGroupId = 'D')),0) as desconto,
+                    COALESCE((SELECT sum(value) FROM ONLY finEntry WHERE invoiceId = C.invoiceId AND operationId IN (SELECT operationId FROM finOperation WHERE operationGroupId = 'I')),0) as incentivo,
+                    COALESCE((SELECT sum(value) FROM ONLY finEntry WHERE invoiceId = C.invoiceId AND operationId IN (SELECT operationId FROM finOperation WHERE operationGroupId = 'J')),0) as juros,
+                    COALESCE((SELECT value FROM ONLY finEntry WHERE invoiceId = C.invoiceId AND operationId = ".DEFAULT_OPERATIONID_FROM_CLOSE_ALL_INVOICES." ), 0 ) as valorAberto,
+                    getIncomeSourceDescription(C.incomeSourceId),
+                    A.balance,
+                    A.balancewithpolicies,
+                    A.parcelsnumber,
+                    A.inputvalue,
+                    A.maturitydateinput,
+                    A.discount,
+                    ROUND((A.discount*(A.balanceWithPolicies-A.balance))/100, " . REAL_ROUND_VALUE . "),
+                    D.content,
+                    COALESCE(F.name, 'O PROPRIO'),
+                    G.content,
+                    F.personId,
+                    TO_CHAR( C.maturityDate , '" . MASK_DATE . "'),
+                    TO_CHAR((SELECT max(entryDate) FROM ONLY finEntry WHERE invoiceId = C.invoiceId AND operationId IN (SELECT operationId FROM finOperation WHERE operationGroupId = 'P')), '" . MASK_DATE . "'),
+                    CASE WHEN ( C.maturityDate = A.maturityDateInput ) AND invoiceType = 'O' THEN 'ENTRADA' ELSE (C.parcelNumber-1)::varchar END as parcelNumber,
+                    E.location,
+                    E.neighborhood,
+                    E.zipcode,
+                    E.complement,
+                    H.name,
+                    H.stateId,
+                    E.email,
+                    E.residentialPhone,
+                    E.cellPhone,
+                    E.number
+                FROM
+                    finAgreementHistory A INNER JOIN
+                    finAgreementHistoryParcels B ON ( A.agreementId = B.agreementId ) INNER JOIN
+                    ONLY finInvoice C ON ( B.invoiceId = C.invoiceId ) LEFT JOIN
+                    basDocument D ON (D.personId = C.personId AND D.documentTypeId = " . DEFAULT_DOCUMENT_TYPE_ID_CPF . ") LEFT JOIN
+                    ONLY basPhysicalPerson E ON ( E.personId = D.personId ) LEFT JOIN
+                    ONLY basPhysicalPerson F ON ( F.personId = E.responsableLegalId ) LEFT JOIN
+                    basDocument G ON ( G.personId = E.responsableLegalId AND G.documentTypeId = " . DEFAULT_DOCUMENT_TYPE_ID_CPF . ")  LEFT JOIN
+                    basCity H ON ( H.cityId = E.cityId ) ";
+        if( count($filters)  > 0 )
+        {
+            if ( strlen((string)$filters->agreementId) > 0 )
+            {
+                $where .=   " AND A.agreementId = ?::integer ";
+                $args[] = $filters->agreementId;
+            }
+            if ( strlen((string)$filters->personId) > 0 )
+            {
+                $where .= " AND C.personId = ?::integer ";
+                $args[] = $filters->personId;
+            }
+        }
+            $sql .= " WHERE 1=1 ".$where;
+            $sql .= " GROUP BY
+                    A.dateTime,
+                    A.ipaddress,
+                    A.userName,
+                    A.agreementId,
+                    B.invoiceType,
+                    C.invoiceId,
+                    C.personId,
+                    C.incomeSourceId,
+                    A.balance,
+                    A.balancewithpolicies,
+                    A.parcelsnumber,
+                    A.inputvalue,
+                    A.maturitydateinput,
+                    A.discount,
+                    D.content,
+                    E.personId,
+                    F.personId,
+                    G.content,
+                    F.name,
+                    E.name,
+                    C.maturityDate,
+                    C.parcelNumber,
+                    E.location,
+                    E.neighborhood,
+                    E.zipcode,
+                    E.complement,
+                    H.name,
+                    H.stateId,
+                    E.email,
+                    E.residentialPhone,
+                    E.cellPhone,
+                    E.number
+                ORDER BY
+                    C.maturityDate";
+            //die('<pre>'.SAGU::prepare($sql,$args));
+            $result = $this->db->query(SAGU::prepare($sql,$args));
+            for($x = 0; $x < count($result); $x++)
+            {
+                unset($obj);
+                list(   $obj->dateTime, 
+                        $obj->ipAddress, 
+                        $obj->userName, 
+                        $obj->agreementId,
+                        $obj->invoiceType,
+                        $obj->invoiceId,
+                        $obj->personId,
+                        $obj->personName,
+                        $obj->pagamento,
+                        $obj->valorGerado,
+                        $obj->descontoTitulo,
+                        $obj->incentivo,
+                        $obj->jurosTitulo,
+                        $obj->aberto,
+                        $obj->origem,
+                        $obj->saldo,
+                        $obj->saldoComPoliticas,
+                        $obj->parcelas,
+                        $obj->entrada,
+                        $obj->dataEntrada,
+                        $obj->desconto,
+                        $obj->descontoPercentual,
+                        $obj->cpf,
+                        $obj->responsableName,
+                        $obj->responsableCpf,
+                        $obj->responsableId,
+                        $obj->dataVencimento,
+                        $obj->dataBaixa,
+                        $obj->parcelNumber,
+                        $obj->location,
+                        $obj->neighborhood,
+                        $obj->zipcode,
+                        $obj->complement,
+                        $obj->city,
+                        $obj->state,
+                        $obj->email,
+                        $obj->phone,
+                        $obj->cellPhone,
+                        $obj->number) = $result[$x];
+                $obj->descontoTitulo = SAGU::formatNumber($obj->descontoTitulo);
+                $obj->valorGerado = SAGU::formatNumber($obj->valorGerado);
+                $obj->aberto    = SAGU::formatNumber($obj->aberto);
+                $obj->pagamento = SAGU::formatNumber($obj->pagamento);
+                $obj->incentivo = SAGU::formatNumber($obj->incentivo);
+                $obj->jurosTitulo     = SAGU::formatNumber($obj->jurosTitulo);
+                $resultado[] = $obj;
+            }
+            
+            return $resultado;
+    }
+    
+    public function getAgreementParcels($filters)
+    {
+            $sql = 'SELECT DISTINCT 
+                        TO_CHAR(A.datetime::date, \''. MASK_DATE .'\'), 
+                        A.agreementId,  
+                        D.personId, 
+                        D.name, 
+                        A.balanceWithPolicies, 
+                        A.inputValue, 
+                        A.discount, 
+                        A.parcelsNumber, 
+                        getAgreementParcelsValue(agreementId), 
+                        A.username, 
+                        max(comments), 
+                        getAgreementParcels(agreementId) 
+                    FROM 
+                        finAgreementHistory A INNER JOIN 
+                        finAgreementHistoryParcels B USING (agreementid) INNER JOIN 
+                        ONLY finInvoice C USING (invoiceid) INNER JOIN 
+                        ONLY basPhysicalPerson D USING (personid) 
+                    WHERE B.invoiceType = \'O\'';
+            if ( strlen((string)$filters->beginDate) > 0 && strlen((string)$filters->endDate) > 0 )
+            {
+                $sql .= ' AND A.dateTime::date BETWEEN TO_DATE(?,\''. MASK_DATE .'\') AND TO_DATE(?,\''. MASK_DATE .'\')';
+                $args[] = $filters->beginDate;
+                $args[] = $filters->endDate;
+            }
+            else if ( strlen((string)$filters->beginDate) > 0 )
+            {
+                $sql .= ' AND A.dateTime::date BETWEEN TO_DATE(?, \''. MASK_DATE .'\') AND now()::date';
+                $args[] = $filters->beginDate;
+            }
+            else if ( strlen((string)$filters->endDate) > 0 )
+            {
+                $sql .= ' AND A.dateTime::date BETWEEN now()::date AND TO_DATE(?,\''. MASK_DATE .'\')';
+                $args[] = $filters->endDate;
+            }
+            //else 
+            //{
+              //  $sql .= ' AND A.dateTime::date = now()::date ';
+           // }
+            if ( strlen((string)$filters->personId) > 0 )
+            {
+                $sql .= ' AND D.personId = ?';
+                $args[] = $filters->personId;
+            }
+            if ( strlen((string)$filters->personName) > 0 )
+            {
+                $sql .= ' AND TO_ASCII(D.name) ILIKE TO_ASCII(?)';
+                $args[] = $filters->personName.'%';
+            }
+            if( strlen((string)$filters->personName) > 0 || strlen((string)$filters->personId)  > 0 ) 
+            {
+                $sql .= 'GROUP BY 1,2,3,4,5,6,7,8,9,10,12';
+                $result = $this->db->query(SAGU::prepare($sql, $args));
+            }
+            return $result;
+    }
+}
+?>

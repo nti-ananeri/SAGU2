@@ -1,0 +1,184 @@
+<?
+/**
+*
+* @author Giovani Murilo Dantas Correa [gmurilo@isolution.inf.br]
+*
+* $version: $Id$
+*
+* \b Maintainers \n
+* Daniel Afonso Heisler [daniel@isolution.inf.br]
+*
+* @since
+* Class created on 23/03/2009
+*
+* \b Organization: \n
+* iSolution - Soluções de Internet \n
+* The iSolution TEAM
+*
+* \b CopyLeft: \n
+* CopyLeft (L) 2007 iSolution - Soluções de Internet \n
+*
+* \b License \n
+* Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+*
+* \b History \n
+* See history in CVS repository: http://isolution.inf.br   
+*
+**/
+set_time_limit(0);        
+$MIOLO = MIOLO::getInstance();
+
+define('FPDF_FONTPATH', $MIOLO->getModulePath('basic', '/classes/fpdf/font/'));
+$MIOLO->Uses('classes/fpdf/pdf.php', 'basic');
+
+class RptScheduleReport extends PDF
+{
+    public $module = 'academic';
+
+    public function __construct($filters = NULL)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $this->useUserInfo = false;
+        $this->title = strtoupper(_M('Semester schedule', 'academic'));
+        $this->businessScheduleReport = $MIOLO->getBusiness($this->module, 'BusScheduleReport');
+        $dbWeek = $MIOLO->getBusiness('basic', 'BusWeekDay');
+        $f->description = '%';
+        $this->weekDays = $dbWeek->searchWeekDay($f);
+        $groups = $this->businessScheduleReport->searchGroup($filters);
+        $this->groups = $groups;
+        parent::__construct();
+        $this->addPage('P', 'mm', 'A4');
+        $this->aliasNbPages();
+        $this->criaReport($filters);
+		$this->output();
+    }
+    
+    public function headerReport()
+    {
+        
+    }
+
+    public function criaReport($filters)
+    {
+        $this->fontSizeBody = 8;
+        if(count($this->groups) == 0 )
+        {
+            $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->fontSizeBody);
+            $this->SetFillColor(255,0,0);
+            $this->cell($this->psize, $this->lsize, _M('No data found to process', 'finance'), null, null, 'C', 1);
+            $this->output();
+            return;
+        }
+        foreach ( $this->groups as $periodo => $turnos )
+        {
+            //periodo
+            $this->SetFillColor(180,180,180);
+            $this->setFont(DEFAULT_REPORT_FONT, 'BI', $this->fontSizeBody);
+            $this->cell($this->psize, $this->lsize, _M('Semester', 'academic') . ': ' . $periodo, 1, NULL, 'C', 1);
+            $this->ln();
+
+            foreach ( $turnos as $turno => $periodos )
+            {
+                // Turno
+                $this->SetFillColor(220,220,220);
+                $this->setFont(DEFAULT_REPORT_FONT, 'BI', $this->fontSizeBody);
+                $this->cell($this->psize, $this->lsize, _M('Turn', 'basic') . ': ' . $turno, 1, NULL, 'R', 1);
+                $this->ln();
+                $this->ln();
+
+                foreach ( $periodos as $periodo => $turmas )
+                {
+                    foreach ( $turmas as $turma => $groups )
+                    {
+                        if ( $this->y+($this->lsize*(count($groups)+1)) > $this->PageBreakTrigger )
+                        {
+                            $this->addPage('P', 'mm', 'A4');
+                        }
+                        //turma
+                        $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->fontSizeBody);
+                        $this->cell($this->psize / 8, $this->lsize, NULL );
+                        $this->cell($this->psize / 4, $this->lsize, _M('Period', 'academic') . ': ' . $periodo, 1, NULL, 'C');
+                        $this->cell($this->psize / 4, $this->lsize, _M('Turn', 'basic') . ': ' . $turno, 1, NULL, 'C');
+                        $this->cell($this->psize / 4, $this->lsize, _M('Class', 'academic') . ': ' . $turma, 1, NULL, 'C');
+                        $this->ln();
+                        $this->cell(60, $this->lsize*2, _M('Curricular component', 'academic'), 1, NULL, 'C');
+                        $this->cell(10, $this->lsize*2, _M('CH', 'academic'), 1, NULL, 'C');
+                        $y = $this->y;
+                        $x = $this->x;
+                        $this->cell($this->psize-130, $this->lsize, _M('Schedule', 'academic'), 1, NULL, 'C');
+                        $this->ln();
+                        $this->cell(70, $this->lsize, '');
+                        foreach ( $this->weekDays as $item => $days )
+                        {
+                            $this->cell(($this->psize-130)/count($this->weekDays), $this->lsize, $days[2], 1, NULL, 'C');
+                        }
+                        $this->ln();
+                        $this->setY($y);
+                        $this->cell(($this->psize-130)+70, $this->lsize*2, '');
+                        $this->cell(40, $this->lsize*2, _M('Professor', 'academic'), 1, NULL, 'C');
+                        if ( strlen((string)$filters->printWithoutTotals) == DB_TRUE )
+                        {
+                            $this->cell(20, $this->lsize*2, _M('Room', 'academic'), 1, NULL, 'C');
+//                                $this->cell(10, $this->lsize*2, _M('Vacant', 'academic'), 1, NULL, 'C');
+                        }
+                        else
+                        {
+                            $this->cell(10, $this->lsize*2, _M('Room', 'academic'), 1, NULL, 'C');
+                            $this->cell(10, $this->lsize*2, _M('Vacant', 'academic'), 1, NULL, 'C');
+                        }
+                        $this->ln();
+                        
+                        foreach ( $groups as $groupId => $groupInfo )
+                        {
+                        //disciplina
+                        /* 
+                           $groupInfo->disciplina ( varchar )
+                           $groupInfo->vagas ( varchar )
+                           $groupInfo->cancelada ( bool )
+                           $groupInfo->horarios ( array )
+                           $groupInfo->professor ( array ) 
+                        */
+                            $this->setFont(DEFAULT_REPORT_FONT, '', (strlen((string)$groupInfo->disciplina)/.5) <= 60 ? $this->fontSizeBody : ceil(60/(strlen((string)$groupInfo->disciplina)/3.95)) );
+                            $this->cell(60, $this->lsize, $groupInfo->disciplina, 1, NULL, 'L');
+                            $this->setFont(DEFAULT_REPORT_FONT, '', $this->fontSizeBody);
+                            $this->cell(10, $this->lsize, $groupInfo->ch, 1, NULL, 'C');
+                            $professor = implode(', ', $groupInfo->professor);
+                            foreach ( $this->weekDays as $item => $days )
+                            {
+                                $hr = '';
+                                foreach ( $groupInfo->horarios as $horarios => $horario )
+                                {
+                                    if ( $days[2] == $horarios )
+                                    {
+                                        $hr = implode('/', $horario);
+                                    }
+                                }
+                                $this->setFont(DEFAULT_REPORT_FONT, '', (strlen((string)$hr)/.5) <= (($this->psize-130)/count($this->weekDays)) ? $this->fontSizeBody : ceil((($this->psize-130)/count($this->weekDays))/(strlen((string)$hr)/4.0)) );
+                                $this->cell(($this->psize-130)/count($this->weekDays), $this->lsize, $hr, 1, NULL, 'C' );
+                            }
+                            $this->setFont(DEFAULT_REPORT_FONT, '', (strlen((string)$professor)/.5) <= 40 ? $this->fontSizeBody : ceil(40/(strlen((string)$professor)/3.7)) );
+                            $this->cell(40, $this->lsize, $professor, 1, NULL, 'L');
+                            $room = implode(', ', $groupInfo->room);
+                            if ( strlen((string)$filters->printWithoutTotals) == DB_TRUE )
+                            {
+                                $this->setFont(DEFAULT_REPORT_FONT, '', (strlen((string)$room)/.5) <= 20  ? $this->fontSizeBody : ceil(20/(strlen((string)$room)/4.8)) );
+                                $this->cell(20, $this->lsize, $room, 1, NULL, 'C');
+//                                $this->cell(10, $this->lsize, $groupInfo->vagas, 1, NULL, 'R');
+                            }
+                            else
+                            {
+                                $this->setFont(DEFAULT_REPORT_FONT, '', (strlen((string)$room)/.5) <= 10  ? $this->fontSizeBody : ceil(10/(strlen((string)$room)/4.8)) );
+                                $this->cell(10, $this->lsize, $room, 1, NULL, 'C');
+                                $this->cell(10, $this->lsize, $groupInfo->vagas, 1, NULL, 'R');
+                            }
+                            $this->ln();
+                        }
+                        $this->ln();
+                    }
+                }
+            }
+        }
+    }
+
+}
+?>

@@ -1,0 +1,183 @@
+<?php
+/**
+ *
+ *
+ * @author Armando Taffarel Neto [taffarel@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * Armando Taffarel Neto [taffarel@solis.coop.br]
+ * 
+ * @since
+ * Class created on 27/06/2006
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ **/
+class BusinessFinanceBusSummarizedHistory extends Business
+{
+    function BusinessFinanceBusSummarizedHistory()
+    {
+        $this->db = $this->getDatabase();
+    }
+
+
+
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module = is_null($module) ? 'finance' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+    
+    /**
+     * Do a search on the database table handled by the class
+     *
+     * @param $filters (object): Search filters
+     *
+     * @return (array): An array containing the search results
+     **/
+    public function searchSummarizedHistory($filters)
+    {
+        $sql = 'SELECT A.courseId,
+                       (SELECT description FROM basUnit WHERE unitId = A.unitId) as unitDescription,
+                       (SELECT name FROM acdCourse WHERE courseId = A.courseId) as courseName,
+                       round(sum(CASE WHEN 
+                                     (SELECT operationTypeId FROM finOperation WHERE operationId = B.operationId) = \'C\'
+                                     THEN B.value * -1
+                                     ELSE B.value
+                                 END), ' . REAL_ROUND_VALUE . ')
+                FROM ONLY finInvoice A
+                     INNER JOIN (SELECT invoiceId,
+                                        operationId,
+                                        value
+                                 FROM finEntry
+                                 WHERE ';
+                                 
+        if ( is_array($filters->operation) )
+        {
+            foreach ( $filters->operation as $value )
+            {
+                $where .= ' OR operationId = ? ';
+                $args[] = $value;
+            }
+            
+            $sql .= '(' . substr($where, 3) . ') AND ';
+        }
+        
+        $sql .= '    entryDate >= TO_DATE(?, \'' . MASK_DATE . '\') AND
+                     entryDate <= TO_DATE(?, \'' . MASK_DATE . '\')) as B
+                 USING(invoiceId)';
+
+        if ( strlen((string)$filters->beginDate) > 0 )
+        {
+            $args[] = $filters->beginDate;
+        }
+        if ( strlen((string)$filters->endDate) > 0 )
+        {
+            $args[] = $filters->endDate;
+        }
+        
+        unset($result);
+        if ( strlen((string)$sql) > 0 )
+        {
+            $sql   .= ' GROUP BY A.courseId, unitDescription, courseName ORDER BY A.courseId::int';
+            
+            $db     = $this->getDatabase();
+            $result = $db->query(SAGU::prepare($sql, $args));
+        }
+
+        return $result;
+    }
+
+    /**
+     * Do a search on the database table handled by the class
+     *
+     * @param $filters (object): Search filters
+     *
+     * @return (array): An array containing the search results
+     **/
+    public function searchSummarizedHistoryAccord($filters)
+    {
+    
+        $MIOLO = MIOLO::getInstance();
+
+        $sql = 'SELECT A.invoiceId,
+                       A.personId,
+                       (SELECT name FROM ONLY basPerson WHERE personId = A.personId) AS personName,
+                       round(sum(B.value), ' . REAL_ROUND_VALUE . ')
+                FROM ONLY finInvoice A
+                    INNER JOIN (SELECT invoiceId,
+                                       value
+                                FROM finEntry
+                                WHERE entryDate >= TO_DATE(?,\'' . MASK_DATE . '\') AND
+                                      entryDate <= TO_DATE(?,\'' . MASK_DATE . '\') AND
+                                      bankReturnCode > 0) AS B
+                        USING(invoiceId)
+                WHERE A.incomeSourceId = ' . ACCORD_INCOME_SOURCE_ID ;
+
+        if ( strlen((string)$filters->beginDate) > 0 )
+        {
+            $args[] = $filters->beginDate;
+        }
+        if ( strlen((string)$filters->endDate) > 0 )
+        {
+            $args[] = $filters->endDate;
+        }
+        
+        unset($result);
+        if ( strlen((string)$sql) > 0 )
+        {
+            $sql   .= ' GROUP BY A.invoiceId, A.personId' ;
+            
+            $db     = $this->getDatabase();
+            $result = $db->query(SAGU::prepare($sql, $args));
+        }
+
+        if ( is_array($result) )
+        {
+            foreach ( $result as $key => $value )
+            {
+                $str = new MLink('invoiceIdAccord_' . $key, $value[0], $MIOLO->getActionURL($module, 'main:diverseConsultation', null, array('invoiceId' => $value[0], 'event' => 'btnSearch_click')));
+                $result[$key][0] = $str->generate();
+                
+                $str = new MLink('invoiceIdAccord_' . $key, $value[1], $MIOLO->getActionURL($module, 'main:diverseConsultation', null, array('personId' => $value[1], 'event' => 'btnSearch_click')));
+                $result[$key][1] = $str->generate();
+            }
+        }
+        
+        return $result;
+    }
+
+
+}
+
+?>

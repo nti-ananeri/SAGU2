@@ -1,0 +1,606 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for course changes
+ *
+ * @author Daniel Afonso Heisler [daniel@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 26/01/2007
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+
+/**
+ * Class to change a pupil course
+ **/
+class BusinessAcademicBusCourseChange extends Business
+{
+
+    var $db;
+
+    function BusinessAcademicBusCourseChange()
+    {
+        $this->db = $this->getDatabase();
+    }
+
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic', 'sagu');
+        $module = is_null($module) ? 'academic' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+    
+    public function beginTransaction()
+    {
+        return $this->db->execute('BEGIN TRANSACTION');
+    }
+    
+    public function commitTransaction()
+    {
+        return $this->db->execute('COMMIT');
+    }   
+
+    public function rollbackTransaction()
+    {
+        return $this->db->execute('ROLLBACK');
+    }   
+
+    /**
+     * Generate a new contract and close the first contract
+     *
+     * @param $data (object): Data to be filtered
+     *
+     * @return (object): Return an object of the type handled by the class
+     *
+     **/
+    public function internalTransference($data)
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $busCurriculumConversion = $MIOLO->getBusiness($module, 'BusCurriculumConversion');
+        $BusInternalExploitation = $MIOLO->getBusiness($module, 'BusInternalExploitation');
+
+        $db       = $MIOLO->getBusiness($module, 'BusContract');
+        $contract = $db->getContract($data->contractId);
+        if ( strlen((string)$data->stateTime) == 0 )
+        {
+            $timeStamp = date(MASK_TIMESTAMP_PHP);
+        }
+        else
+        {
+            $timeStamp = $data->stateTime;
+        }
+ 
+        if ( $contract->courseId == $data->courseId && 
+             $contract->unitId == $data->unitId && 
+             $contract->courseVersion == $data->courseVersion )
+        {
+            //Efetua a conversao de curriculum e lança uma movimentacao contratual falando que houve uma conversao de curriculum
+            $this->beginTransaction();
+            $contractEnrolls = $busCurriculumConversion->getContractEnrolls($data->contractId);
+            if ( is_array($contractEnrolls) && ( count($contractEnrolls) > 0 ) )
+            {
+                foreach ( $contractEnrolls as $key1 => $value1 )
+                {
+                    $curriculumLink = $busCurriculumConversion->getCurriculumLink2( $data->contractId, $value1[1] );
+                    
+                    //em caso de erro na pesquisa de disciplins equivalentes
+                    if ( count($busCurriculumConversion->getErrors()) > 0 )
+                    {
+                        $error = _M('Error getting equivalences list',$module) . ': ' . '<br>' . $busCurriculumConversion->getErrors();
+                        throw new Exception($error);
+                    }
+                    //se a disciplina for equivalente para conversao
+                    if ( $curriculumLink[0][1] > 0 )
+                    {
+                        $busCurriculumConversion->updateEnrollCurriculumId($value1[0], $curriculumLink[0][1]);
+                    }
+                }
+            }
+            if ( $contract->turnId != $data->turnId )
+            {
+                //Muda o turno do contrato do aluno
+                $sql = 'UPDATE acdContract SET turnId = ?::integer WHERE contractId = ?::integer ';
+                $args = array ( $data->turnId, $data->contractId );
+                $ok = $this->db->execute(SAGU::prepare($sql,$args));
+                if ( $ok )
+                {
+                    //Tira o aluno da turma
+                    $sql = 'UPDATE acdClassPupil SET endDate = TO_DATE(?, \''. MASK_TIMESTAMP . '\')  WHERE contractId = ?';
+                    $args = array ( $timeStamp, $data->contractId );
+                    $ok = $this->db->execute(SAGU::prepare($sql,$args));
+
+                    //Cancela as disciplinas em que o aluno esta matriculado no periodo
+                    $sql = 'UPDATE acdEnroll SET statusId = '.ENROLL_STATUS_CANCELLED.', datecancellation = TO_TIMESTAMP(\''.$timeStamp.'\', \''. MASK_TIMESTAMP . '\')::date, hourcancellation =  TO_TIMESTAMP(\''.$timeStamp.'\', \''. MASK_TIMESTAMP . '\')::time WHERE contractId = '.$data->contractId.' AND groupId IN ( SELECT groupId FROM acdGroup INNER JOIN acdLearningPeriod USING ( learningPeriodId ) WHERE periodId = \''.$data->periodId.'\' ) AND statusId = '.ENROLL_STATUS_ENROLLED;
+                    $ok = $this->db->execute($sql);
+
+                    //Verifica se o aluno tem movimentacao contratual de acordo com os parametros
+                    $sql = 'SELECT count(*) > 0 FROM acdMovementContract WHERE contractId = ?::integer AND stateContractId = ?::integer AND stateTime = TO_TIMESTAMP(?, \'' . MASK_TIMESTAMP . '\') AND ?::integer > 0 ';
+                    $args = array(  $data->contractId,
+                                STATE_CONTRACT_ID_INTERNAL_TRANSFER_FROM,
+                                $timeStamp,
+                                $data->learningPeriodId );
+                    $ret = $this->db->query(SAGU::prepare($sql, $args));
+                    if ( $ret[0][0] == DB_FALSE )
+                    {
+                        //Se nao existe a movimentacao contratual insere
+                        $sql  = 'INSERT INTO acdMovementContract
+                                     ( contractId,
+                                       stateContractId,
+                                       stateTime,
+                                       learningPeriodId)
+                              VALUES ( ?, ?, TO_TIMESTAMP(?, \'' . MASK_TIMESTAMP . '\'), ? )';
+                        $ok   = $this->db->execute(SAGU::prepare($sql, $args));
+                        
+                        //Verifica se existe o complemento
+                        $sql = 'SELECT count(*) > 0 FROM acdMovementContractComplement WHERE contractId = ?::integer AND stateContractId = ?::integer AND stateTime = TO_TIMESTAMP(?, \'' . MASK_TIMESTAMP . '\') AND stateContractFieldId = ?::integer AND value = ? ';
+                        $args = array( $data->contractId,
+                                           STATE_CONTRACT_ID_INTERNAL_TRANSFER_FROM,
+                                           $timeStamp,
+                                           INTERNAL_TRANSFER_FROM_COURSE_FIELD_ID,
+                                           _M('Turn', $module) . ' ( ' . $contract->turnDescription . ' -> ' . $data->turnDescription . ' ) ' );
+                        $ret = $this->db->query(SAGU::prepare($sql, $args));
+                        if ( $ret[0][0] == DB_FALSE )
+                        {
+                            //Insere o complemento
+                            $sql = 'INSERT INTO acdMovementContractComplement
+                                        (contractId,
+                                         stateContractId,
+                                         stateTime,
+                                         stateContractFieldId,
+                                         value)
+                                    VALUES ( ?, ?, TO_TIMESTAMP(?, \'' . MASK_TIMESTAMP . '\'), ?, ? )';
+                            $ok = $this->db->execute(SAGU::prepare($sql, $args));
+                        }
+                    }
+                }
+            }
+        }
+        else
+        {
+            $contractEnrolls = $busCurriculumConversion->getContractEnrollsApproved($data->contractId);
+            //$contractEnrolls[][0] - enrollId;  $contractEnrolls[][1] - curriculumId
+
+            // verificar se ja nao existe um contrato desta
+            // pessoa no curso, versao de curso, turno e unidade especificados
+            $sql = ' SELECT contractId
+                   FROM acdContract A
+                  WHERE A.personId      = ?
+                    AND A.courseId      = ?
+                    AND A.courseVersion = ?
+                    AND A.turnId        = ?
+                    AND A.unitId        = ? ';
+
+            $args = array( $contract->personId,
+                       $data->courseId,
+                       $data->courseVersion,
+                       $data->turnId,
+                       $data->unitId );
+
+            $result   = $this->db->query(SAGU::prepare($sql, $args));
+
+            $this->beginTransaction();
+            //Tira o aluno da turma
+            $sql = 'UPDATE acdClassPupil SET endDate = TO_TIMESTAMP(?, \''. MASK_TIMESTAMP . '\')::date WHERE contractId = ?::integer ';
+            $args = array ( $timeStamp, $data->contractId );
+            $ok = $this->db->execute(SAGU::prepare($sql,$args));
+
+            //Cancela as disciplinas em que o aluno esta matriculado no periodo
+            $sql = 'UPDATE acdEnroll SET statusId = '.ENROLL_STATUS_CANCELLED.', datecancellation = TO_TIMESTAMP(\''.$timeStamp.'\', \''. MASK_TIMESTAMP . '\')::date, hourcancellation =  TO_TIMESTAMP(\''.$timeStamp.'\', \''. MASK_TIMESTAMP . '\')::time WHERE contractId = '.$data->contractId.' AND groupId IN ( SELECT groupId FROM acdGroup INNER JOIN acdLearningPeriod USING ( learningPeriodId ) WHERE periodId = \''.$data->periodId.'\' ) AND statusId = '.ENROLL_STATUS_ENROLLED;
+            $ok = $this->db->execute($sql);
+            
+            /*$sql = 'UPDATE acdEnroll SET statusId = ?::integer, datecancellation = TO_TIMESTAMP(?, \''. MASK_TIMESTAMP . '\')::date, hourcancellation =  TO_TIMESTAMP(?, \''. MASK_TIMESTAMP . '\')::time WHERE contractId = ?::integer AND groupId IN ( SELECT groupId FROM acdGroup INNER JOIN acdLearningPeriod USING ( learningPeriodId ) WHERE periodId = ? ) AND statusId = ?::integer ';
+            $args = array (ENROLL_STATUS_CANCELLED, $timeStamp, $timeStamp, $data->contractId, $data->periodId, ENROLL_STATUS_ENROLLED );
+            $ok  = $this->db->execute(SAGU::prepare($sql, $data->contractId));*/
+
+            if ( count($result) > 0 )
+            {
+                $contractId         = $result[0][0];
+                $ok                 = true;
+                $newContractCreated = false;
+            }
+            else
+            {
+                $newContractCreated = true;
+                //pega a sequencia do novo contrato
+                $sql        = 'SELECT NEXTVAL(\'seq_contractId\')';
+                $db         = $this->getDatabase();
+                $retVal     = $db->query($sql);
+                $contractId = $retVal[0][0];
+
+                //insere o novo contrato
+                $sql  = 'INSERT INTO acdContract
+                                 (contractId,
+                                  personId,
+                                  courseId,
+                                  courseVersion,
+                                  turnId,
+                                  unitId,
+                                  formationDate,
+                                  formationPeriodId,
+                                  conclusionDate,
+                                  emendsDate,
+                                  diplomaDate,
+                                  inscriptionSelectiveProcId,
+                                  maturityDay,
+                                  isListener,
+                                  isRequestAcademicDegree,
+                                  globalAverage,
+                                  obs,
+                                  parcelsNumber)
+                          VALUES (?, ?, ?, ?, ?, ?, 
+                                  TO_DATE(?,\'' . MASK_DATE .'\'),
+                                  ?,
+                                  TO_DATE(?,\'' . MASK_DATE .'\'),
+                                  TO_DATE(?,\'' . MASK_DATE .'\'),
+                                  TO_DATE(?,\'' . MASK_DATE .'\'),
+                                  ?, ?, ?, ?, ?, ?, ? )';
+
+                $args = array( $contractId,
+                           $contract->personId,
+                           $data->courseId,
+                           $data->courseVersion,
+                           $data->turnId,
+                           $data->unitId,
+                           $contract->formationDate,
+                           $contract->formationPeriodId,
+                           $contract->conclusionDate,
+                           $contract->emendsDate,
+                           $contract->diplomaDate,
+                           $contract->inscriptionSelectiveProcId,
+                           $contract->maturityDay,
+                           $contract->isListener,
+                           $contract->isRequestAcademicDegree,
+                           $contract->globalAverage,
+                           $contract->obs,
+                           $contract->parcelsNumber );
+
+                $ok   = $this->db->execute(SAGU::prepare($sql, $args));
+
+            }
+
+            if ( ! $ok )
+            {
+                $this->addError(_M('A new contract could not be created.', $module));
+            }
+            else
+            {
+                // equivalências
+                if ( is_array($contractEnrolls) && ( count($contractEnrolls) > 0 ) )
+                {
+                    foreach ( $contractEnrolls as $key1 => $value1 )
+                    {
+                        //pesquisa por disciplinas equivalentes para conversão
+                        $curriculumLink = $busCurriculumConversion->getCurriculumLink2( $contractId, $value1[1] );
+                        //em caso de erro na pesquisa de disciplins equivalentes
+                        if ( count($busCurriculumConversion->getErrors()) > 0 )
+                        {
+                            $error = _M('Error getting equivalences list',$module) . ': ' . '<br>' . $busCurriculumConversion->getErrors();
+                            throw new Exception($error);
+                        }
+                        //se a disciplina for equivalente para conversao
+                        if ( $curriculumLink[0][1] > 0 )
+                        {
+                            if ( $contract->courseId != $data->courseId || $contract->courseVersion != $data->courseVersion || $contract->unitId != $data->unitId )
+                            {
+                                unset($dataE);
+                                $dataE->contractId = $contractId;
+                                $dataE->exploitationEnrollId = $value1[0];
+                                unset($ret);
+                                $ret = $BusInternalExploitation->searchInternalExploitation($dataE);
+                                if ( strlen((string)$ret[0][0]) == 0 )
+                                {
+                                    $dataE->curriculumId = $curriculumLink[0][1];
+                                    $dataE->exploitationNumberHours = $value1[6];
+                                    $dataE->exploitationCredits = $value1[9];
+                                    $dataE->periodId = $data->periodId;
+                                    $BusInternalExploitation->insertInternalExploitation($dataE);
+                                }
+                            }
+                        }
+                    }
+                }
+                $sql = 'SELECT count(*) > 0 FROM acdMovementContract WHERE contractId = ?::integer AND stateContractId IN (SELECT stateContractId FROM acdStateContract WHERE inouttransition = ? ) ';
+                $args = array ( $contractId, DB_IN );
+                $ret = $this->db->query(SAGU::prepare($sql, $args));
+                if ( $ret[0][0] == DB_FALSE )
+                {
+                    //insere a movimentação de entrada na instituição
+                    $sql  = 'INSERT INTO acdMovementContract
+                                     ( contractId,
+                                       stateContractId,
+                                       reasonId,
+                                       stateTime,
+                                       learningPeriodId )
+                          SELECT \'' . $contractId . '\',
+                                 stateContractId,
+                                 reasonId,
+                                 stateTime,
+                                 learningPeriodId
+                            FROM acdMovementContract
+                           WHERE contractId = \'' . $data->contractId . '\'
+                             AND stateContractId IN ( SELECT stateContractId
+                                                        FROM acdStateContract
+                                                       WHERE inouttransition = \'' . DB_IN . '\')
+                        ORDER BY stateTime
+                           LIMIT 1';
+                    $ok   = $this->db->execute($sql);
+                }
+                else
+                {
+                    $ok = true;
+                }
+
+                if ( ! $ok )
+                {
+                    throw new Exception(_M('Contract of origin has no contractual handling input in the institution.', $module));
+                }
+                else
+                {
+                    //inserir a movimentacao contratual de transferência interna para o novo curso
+                    $sql = 'SELECT count(*) > 0 FROM acdMovementContract WHERE contractId = ?::integer AND stateContractId = ?::integer AND stateTime = TO_TIMESTAMP(?, \'' . MASK_TIMESTAMP . '\') AND ?::integer > 0 ';
+                    $args = array(  $contractId,
+                                STATE_CONTRACT_ID_INTERNAL_TRANSFER_FROM,
+                                $timeStamp,
+                                $data->learningPeriodId );
+                    $ret = $this->db->query(SAGU::prepare($sql, $args));
+                    if ( $ret[0][0] == DB_FALSE )
+                    {
+                        $sql  = 'INSERT INTO acdMovementContract
+                                         ( contractId,
+                                           stateContractId,
+                                           stateTime,
+                                           learningPeriodId)
+                                  VALUES ( ?, ?, TO_TIMESTAMP(?, \'' . MASK_TIMESTAMP . '\'), ? )';
+                        $ok   = $this->db->execute(SAGU::prepare($sql, $args));
+                    }
+                    else                    
+                    {
+                        $sql = 'UPDATE acdMovementContract SET learningPeriodId = ?::integer WHERE contractId = ?::integer AND stateContractId = ?::integer AND stateTime = TO_TIMESTAMP(?, \'' . MASK_TIMESTAMP . '\')';
+                        $args = array(  $data->learningPeriodId,
+                                    $contractId,
+                                    STATE_CONTRACT_ID_INTERNAL_TRANSFER_FROM,
+                                    $timeStamp);
+                        $ok   = $this->db->execute(SAGU::prepare($sql, $args));
+                    }   
+                    if ( ! $ok )
+                    {
+                        throw new Exception(_M('Could not insert movement for the old contract.', $module));
+                    }
+                    else
+                    {
+                       $sql = 'SELECT count(*) > 0 FROM acdMovementContract WHERE contractId = ?::integer AND stateContractId = ?::integer AND reasonId = ?::integer AND stateTime = TO_TIMESTAMP(?, \'' . MASK_TIMESTAMP . '\') AND ?::integer > 0 ';
+                        $args = array( $data->contractId,
+                                        STATE_CONTRACT_ID_INTERNAL_TRANSFER_TO,
+                                        $data->reasonId,
+                                        $timeStamp,
+                                        $data->learningPeriodId );
+                        $ret = $this->db->query(SAGU::prepare($sql, $args));
+                        if ( $ret[0]    [0] == DB_FALSE )
+                        {
+                            //insere a movimentacao de fechamento do contrato antigo
+                            $sql  = 'INSERT INTO acdMovementContract
+                                                (contractId,
+                                                stateContractId,
+                                                reasonId,
+                                                stateTime,
+                                                learningPeriodId)
+                                        VALUES ( ?, ?, ?, TO_TIMESTAMP(?, \'' . MASK_TIMESTAMP . '\'), ? )';
+                            $ok   = $this->db->execute(SAGU::prepare($sql, $args));
+                        }
+                        else    
+                        {
+                            $ok = true;
+                        }
+    
+                        if ( $ok )
+                        {
+                            $busStateContractField = $MIOLO->getBusiness($module, 'BusStateContractField');
+    
+                            $movTo = $busStateContractField->getStateContractField(INTERNAL_TRANSFER_TO_COURSE_FIELD_ID);
+                            $movFrom = $busStateContractField->getStateContractField(INTERNAL_TRANSFER_FROM_COURSE_FIELD_ID);
+                            if ( (strlen((string)$movTo->stateContractFieldId) > 0) && (strlen((string)$movFrom->stateContractFieldId) > 0) )
+                            {
+                                $sql = 'SELECT count(*) > 0 FROM acdMovementContractComplement WHERE contractId = ?::integer AND stateContractId = ?::integer AND stateTime = TO_TIMESTAMP(?, \'' . MASK_TIMESTAMP . '\') AND stateContractFieldId = ?::integer AND value = ? ';
+                                $args = array( $data->contractId,
+                                           STATE_CONTRACT_ID_INTERNAL_TRANSFER_TO,
+                                           $timeStamp,
+                                           INTERNAL_TRANSFER_TO_COURSE_FIELD_ID,
+                                           $data->courseName);
+
+                                $ret = $this->db->query(SAGU::prepare($sql, $args));
+                                if ( $ret[0][0] == DB_FALSE )
+                                {
+                                    $sql = 'INSERT INTO acdMovementContractComplement
+                                                    (contractId,
+                                                    stateContractId,
+                                                    stateTime,
+                                                    stateContractFieldId,
+                                                    value)
+                                             VALUES ( ?, ?, TO_TIMESTAMP(?, \'' . MASK_TIMESTAMP . '\'), ?, ? )';
+                                    $ok = $this->db->execute(SAGU::prepare($sql, $args));
+                                }
+                                else
+                                {
+                                    $ok = true;
+                                }
+    
+                                if (! $ok)
+                                {
+                                    throw new Exception(_M('Could not insert movement complement for the old contract.', $module));
+                                }
+                                else
+                                {
+                                    $sql = 'SELECT count(*) > 0 FROM acdMovementContractComplement WHERE contractId = ?::integer AND stateContractId = ?::integer AND stateTime = TO_TIMESTAMP(?, \'' . MASK_TIMESTAMP . '\') AND stateContractFieldId = ?::integer AND value = ? ';
+        
+                                    $args = array( $contractId,
+                                               STATE_CONTRACT_ID_INTERNAL_TRANSFER_FROM,
+                                               $timeStamp,
+                                               INTERNAL_TRANSFER_FROM_COURSE_FIELD_ID,
+                                               $data->contractCourseName);
+                                    $ret = $this->db->query(SAGU::prepare($sql, $args));
+                                    if ( $ret[0][0] == DB_FALSE )
+                                    {
+                                        $sql = 'INSERT INTO acdMovementContractComplement
+                                                    (contractId,
+                                                    stateContractId,
+                                                    stateTime,
+                                                    stateContractFieldId,
+                                                    value)
+                                        VALUES ( ?, ?, TO_TIMESTAMP(?, \'' . MASK_TIMESTAMP . '\'), ?, ? )';
+                                        $ok = $this->db->execute(SAGU::prepare($sql, $args));
+                                    }
+                                    else
+                                    {
+                                        $ok = true;
+                                    }
+    
+                                    if (! $ok)
+                                    {
+                                        throw new Exception(_M('Could not insert movement complement for the new contract.', $module));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if ( strlen((string)$data->classId) > 0 )
+        {
+            $sql = 'SELECT count(*)> 0 FROM acdClassPupil WHERE classId = ? AND contractId = ?::integer AND beginDate = TO_TIMESTAMP(?, \'' . MASK_TIMESTAMP . '\')::date ';
+            $args = array ( $data->classId, $contract->contractId, $timeStamp );
+            $ret = $this->db->query(SAGU::prepare($sql,$args));
+            if ( $ret[0][0] == 0 )
+            {
+                $sql = 'INSERT INTO acdClassPupil ( classId, contractId, beginDate ) VALUES ( ?, ?::integer, TO_TIMESTAMP(?, \''.MASK_TIMESTAMP.'\')::date )';
+            }
+            else
+            {
+                $sql = 'UPDATE acdClassPupil SET endDate = NULL WHERE classId = ? AND contractId = ?::integer AND beginDate = TO_TIMESTAMP(?, \'' . MASK_TIMESTAMP . '\')::date ';
+            }
+            $ok = $this->db->execute(SAGU::prepare($sql, $args));
+            if ( ! $ok )
+            {
+                throw new Exception(_M('Occured some errors trying to enroll the class pupils. Please, verify if all the registers are correctly done', $module));
+            }
+            if ( $data->periodId == CURRENT_PERIOD_ID )
+            {
+                $sql = 'SELECT 
+                            curriculumId 
+                        FROM 
+                            acdEnroll A INNER JOIN 
+                            acdGroup B ON ( A.groupId = B.groupId ) INNER JOIN
+                            acdLearningPeriod C ON ( C.learningPeriodId = B.learningPeriodId AND C.periodId = ? )
+                        WHERE 
+                            contractId = ?::integer 
+                        AND ';
+                $args = array ( $data->periodId, $data->contractId );
+
+            }
+        }
+        $ok ? $this->commitTransaction() : $this->rollbackTransaction();
+
+        return $ok;
+    }
+
+    /**
+     * Close the contract
+     *
+     * @param $data (object): Data to be filtered
+     *
+     * @return (object): Return an object of the type handled by the class
+     *
+     **/
+    public function externalTransference($data)
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+
+        $timeStamp = date(MASK_TIMESTAMP_PHP);
+
+        $this->beginTransaction();
+
+        //inserir a movimentacao contratual de transferência externa para o novo curso
+        $sql  = 'INSERT INTO acdMovementContract
+                             ( contractId,
+                               stateContractId,
+                               stateTime,
+                               learningPeriodId,
+                               reasonId)
+                      VALUES ( ?, ?, TO_TIMESTAMP(?, \'' . MASK_TIMESTAMP . '\'), ?, ? )';
+        $args = array(  $data->contractId,
+                        STATE_CONTRACT_ID_EXTERNAL_TRANSFER_TO,
+                        $timeStamp,
+                        $data->learningPeriodId,
+                        $data->reasonId );
+
+        $ok = $this->db->execute(SAGU::prepare($sql, $args));
+
+        $sql = 'UPDATE acdClassPupil
+                   SET endDate    = date(now())
+                 WHERE contractId = ?';
+
+        $ok2 = $this->db->execute(SAGU::prepare($sql, $data->contractId));
+
+        if ( $ok && $ok2 && count($data->fc) > 0 )
+        {
+            foreach ( $data->fc as $aa )
+            {
+                $sql = 'INSERT INTO acdMovementContractComplement
+                                    (contractId,
+                                     stateContractId,
+                                     stateTime,
+                                     stateContractFieldId,
+                                     value)
+                             VALUES ( ?, ?, TO_TIMESTAMP(?, \'' . MASK_TIMESTAMP . '\'), ?, ? )';
+
+                $args = array( $data->contractId,
+                               STATE_CONTRACT_ID_EXTERNAL_TRANSFER_TO,
+                               $timeStamp,
+                               $aa->stateContractFieldId,
+                               $aa->value);
+
+                $ok = $this->db->execute(SAGU::prepare($sql, $args));
+            }
+        }
+
+        $ok ? $this->commitTransaction() : $this->rollbackTransaction();
+
+        return $ok;
+    }
+
+}
+
+?>

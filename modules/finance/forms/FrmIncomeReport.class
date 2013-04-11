@@ -1,0 +1,216 @@
+<?php
+/**
+ *
+ * @author Giovani Murilo Dantas Corrêa [gmurilo@isolution.inf.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Daniel Afonso Heisler [daniel@isolution.inf.br]
+ *
+ * @since
+ * Class created on 19/06/2009
+ *
+ * \b Organization: \n
+ * iSolution - Solucoes em TI \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2008 iSolution \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ **/
+
+class FrmIncomeReport extends MForm
+{
+    private $home;
+    private $module;
+
+    /**
+     * Class constructor
+     */
+    function __construct($data)
+    {
+        $module = MIOLO::getCurrentModule();
+
+        $this->home   = $data->home;
+
+        parent::__construct(_M('Income report', $module));
+
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+
+    }
+
+    /**
+     *  Default method to define fields
+     */
+    public function createFields()
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $toolBar = new MToolBar('toolBar',$MIOLO->getActionURL($module,$action));
+        $toolBar->hideButton('tbBtnDelete');
+        $toolBar->hideButton('tbBtnSave');
+        $toolBar->hideButton('tbBtnSearch');
+        $toolBar->hideButton('tbBtnNew');
+
+        //favoritos
+        $enabledImage  = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-20x20.png');
+        $disabledImage = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-disabled-20x20.png');
+        $url           = $MIOLO->getActionURL($module, $this->home, null, array('function' => 'search', 'event' => 'bookmark'));
+        $toolBar->addButton('tbBtnBookmark', _M('Add to bookmarks', 'basic'), $url, null, true, $enabledImage, $disabledImage);
+
+        if ( MIOLO::_request('event') == 'bookmark' )
+        {
+            $MIOLO->getClass('basic', 'access');
+            access::insert('Income Report', $this->home, 'incomeReport-16x16.png', true);
+        }
+        //fim favoritos
+       
+        $fields[] = $toolBar;
+
+        $businessPeriod = $MIOLO->getBusiness('academic','BusPeriod');
+        if ( is_null($this->getFormValue('periodId', $data->periodId)) ||
+             strlen((string)$this->getFormValue('periodId', $data->periodId)) == 0 )
+        {
+            $periodIdValue = CURRENT_PERIOD_ID;
+        }
+        else
+        {
+            $periodIdValue = $this->getFormValue('periodId', $data->periodId);
+        }
+
+        $periodIdLabel = new MText('periodIdLabel', _M('Period',$module).':');
+        $periodIdLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $periodIdLabel->setClass('m-caption m-caption-required');
+
+        $periodId = new MSelection('periodId', $periodIdValue, null , $businessPeriod->listPeriod(), true );
+        $fields[] = new MHContainer('hctPeriod', array ($periodIdLabel, $periodId));
+        $validators[] = new MRequiredValidator('periodId');
+
+        //MES e ANO
+        $monthLabel   = new MText('monthlabel', _M('Month', $module) . '/' . _M('Year', $module));
+        $monthLabel->setClass('m-caption m-caption-required');
+        $monthLabel->setWidth(FIELD_CONTAINER_SIZE);
+
+        $month        = new MMultiSelection('month', strlen((string)$this->getFormValue('month'))>0 ? $this->getFormValue('month') : array(date('n')), '', SAGU::listMonths());
+        $validators[] = new MRequiredValidator('month', _M('Month', $module), 'required');
+
+        $year         = new MTextField('year', strlen((string)$this->getFormValue('year'))>0 ? $this->getFormValue('year') : date('Y'), null, 6);
+        $validators[] = new MIntegerValidator('year', _M('Year', $module), 'required');
+
+        $fields[]     = new MHContainer('hctMonth', array($monthLabel, $month, $year));
+
+        $businessIncomeSource = $MIOLO->getBusiness($module, 'BusIncomeSource');
+        $dataIncomeSource     = $businessIncomeSource->listIncomeSource();
+        $incomeSourceLabel    = new MText('incomeSourceLabel', _M('Income source', $module).':');
+        $incomeSourceLabel->setClass('m-caption m-caption-required');
+        $incomeSourceLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $incomeSource         = new MMultiSelection('incomeSourceId', is_array($this->getFormValue('incomeSourceId', $data->incomeSourceId)) ? $this->getFormValue('incomeSourceId', $data->incomeSourceId) : array($this->getFormValue('incomeSourceId', $data->incomeSourceId)), '', $dataIncomeSource, true, null, 5);
+        $fields[] = new MHContainer('hctIncomeSource', array($incomeSourceLabel, $incomeSource));
+        
+        $validators[]   = new MRequiredValidator('incomeSourceId', _M('Income source', $module), 'required');
+
+        if (MODULE_ACADEMIC_INSTALLED == 'YES')
+        {
+            // Course
+            $courseLabel   = new MText('courseLabel', _M('Course',$module) . ':');
+            $courseLabel->setWidth(FIELD_CONTAINER_SIZE);
+            //$courseLabel->setClass('m-caption m-caption-required');
+            $courseId = new MLookupTextField('courseId', $this->getFormValue('courseId',$data->courseId), _M('Code',$module), FIELD_LOOKUPFIELD_SIZE, null, null, array('limbo', 'courseName'), 'academic', 'CourseOccurrence', null, array('courseId' => 'courseId'), true);
+            $courseId->setJsHint(_M('Enter the course code',$module));
+            $courseName = new MTextField('courseName', $this->getFormValue('courseName',$data->courseName), _M('Name',$module), FIELD_DESCRIPTION_SIZE);
+            $courseName->setReadOnly(true);
+
+            $hctCourse = new MHContainer('hctCourse', array($courseLabel, $courseId, $courseName));
+            $hctCourse->setShowLabel(false);
+            $fields[]  = $hctCourse;
+        }    
+
+        $dataFieldsSelect[0] = 'Ano';
+        $dataFieldsSelect[1] = 'Mês (numérico)';
+        $dataFieldsSelect[2] = 'Descrição do mês';
+        $dataFieldsSelect[3] = 'Código da origem';
+        $dataFieldsSelect[4] = 'Descrição da origem';
+        $dataFieldsSelect[5] = 'Código do Curso';
+        $dataFieldsSelect[6] = 'Nome do curso';
+        $dataFieldsSelect[7] = 'Total de Títulos (Receita Prevista)';
+        $dataFieldsSelect[8] = 'Valor Líquido (Receita Prevista)';
+        $dataFieldsSelect[9] = 'Valor Bruto (Receita Prevista)';
+        $dataFieldsSelect[10]= 'Descontos (Receita Prevista)';
+        $dataFieldsSelect[11]= 'Incentivos (Receita Prevista)';
+        $dataFieldsSelect[12]= 'Total de Títulos (Receita Realizada)';
+        $dataFieldsSelect[13]= 'Valor Líquido (Receita Realizada)';
+        $dataFieldsSelect[14]= 'Valor Bruto (Receita Realizada)';
+        $dataFieldsSelect[15]= 'Descontos (Receita Realizada)';
+        $dataFieldsSelect[16]= 'Incentivos (Receita Realizada)';
+        $dataFieldsSelect[17]= 'Juros (Receita Realizada)';
+        $dataFieldsSelect[18]= 'Total de Títulos (Receita Não Realizada)';
+        $dataFieldsSelect[19]= 'Valor Líquido (Receita Não Realizada)';
+        $dataFieldsSelect[20]= 'Valor Bruto (Receita Não Realizada)';
+        $dataFieldsSelect[21]= 'Descontos (Receita Não Realizada)';
+        $dataFieldsSelect[22]= 'Incentivos (Receita Não Realizada)';
+        $dataFieldsSelect[23]= '% Inadimplência (Receita Não Realizada)';
+
+        $fieldsSelectLabel    = new MText('fieldsSelectLabel', _M('Fields', 'basic').':');
+        $fieldsSelectLabel->setClass('m-caption m-caption-required');
+        $fieldsSelectLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $fieldsSelect   = new MMultiSelection('fieldsSelect', is_array($this->getFormValue('fieldsSelect', $data->fieldsSelect)) ? $this->getFormValue('fieldsSelect', $data->fieldsSelect) : array($this->getFormValue('fieldsSelect', $data->fieldsSelect)), '', $dataFieldsSelect, false, null, 5);
+        $fields[] = new MHContainer('hctFieldsSelect', array($fieldsSelectLabel, $fieldsSelect));
+        
+        $validators[]   = new MRequiredValidator('fieldsSelect', _M('Fields', $module), 'required');
+
+        $groupByLabel = new MTextLabel('groupByLabel', _M('Group by',$module) . ':');
+        $groupByLabel->setWidth(FIELD_CONTAINER_SIZE);
+
+        unset($flds);        
+        $groupByCourse          = new MCheckBox('groupByCourse', true, null, $this->getFormValue('groupByCourse', $data->groupByCourse),_M('Course', $module));
+        $flds[] = $groupByCourse;
+        $groupByIncomeSource    = new MCheckBox('groupByIncomeSource', true, null, $this->getFormValue('group2', $data->groupByIncomeSource),_M('Income source', $module));
+        $flds[] = $groupByIncomeSource;
+        $hctGroupBy = new MHContainer('hctGroupBy', $flds);
+        $hctGroupBy->setShowLabel(false);
+
+        $fields[] = new MHContainer('hctGroup', array ( $groupByLabel, $hctGroupBy ) );
+        
+        $fields[] = new MHiddenField('limbo', $limbo);
+
+
+        $this->setFields($fields);
+        $this->setValidators($validators);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+        $this->setClose($MIOLO->getActionURL($module, substr($action, 0, strrpos($action, ':'))));
+
+    }
+
+    function tbBtnPrint_click($sender = null)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $data->periodId   = $this->periodId->value;
+        $data->year       = $this->year->value;
+        $data->month      = $this->month->value;
+        $data->incomeSourceId = $this->incomeSourceId->value;
+        $data->courseId     = $this->courseId->value;
+        $data->fieldsSelect = $this->fieldsSelect->value;
+        $data->groupByCourse = $this->getFormValue('groupByCourse');
+        $data->groupByIncomeSource = $this->getFormValue('groupByIncomeSource');
+        $class = 'RptIncomeReport';
+        $MIOLO->getClass($module, $class);
+        $report = new $class($data);
+
+        $this->page->setAction($MIOLO->getActionURL($module, $action));
+    }
+
+}
+
+?>

@@ -1,0 +1,68 @@
+<?php
+
+class BusinessServicesBusFrequency extends Business
+{
+
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic', 'sagu');
+        $module = is_null($module) ? 'academic' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+    public function getContractAcademicCalendar($contractId, $learningPeriodId)
+    {
+        $sql = 'SELECT A.enrollId,
+                       C.groupId,
+                       C.curriculumId,
+                       D.curricularComponentId,
+                       D.curricularComponentVersion,
+                       getCurricularComponentName(D.curricularComponentId) as curricularComponent,
+                       D.semester,
+                       TO_CHAR(A.frequencyDate,\'' . 'dd/mm' . '\') as frequencyDate,
+                       SUM(A.frequency),
+                       E.weekDayId,
+                       SUM(G.numberHoursLessons),
+                       max(H.content),
+                       getGroupOfferedHours(C.groupId)
+                  FROM acdFrequenceEnroll A
+            INNER JOIN acdEnroll B
+                    ON ( A.enrollId = B.enrollId )
+            INNER JOIN acdGroup C
+                    ON ( B.groupId = C.groupId )
+            INNER JOIN acdCurriculum D
+                    ON ( C.curriculumId = D.curriculumId )
+            INNER JOIN acdSchedule E
+                    ON ( A.scheduleId = E.scheduleId )
+            INNER JOIN acdLearningPeriod F
+                    ON ( F.learningPeriodId = C.learningPeriodId )
+            INNER JOIN acdScheduleLearningPeriod G
+                    ON (     F.learningPeriodId = G.learningPeriodId 
+                         AND G.scheduleLearningPeriodId = E.scheduleLearningPeriodId)
+             LEFT JOIN acdFrequenceContent H
+                    ON (     H.scheduleId     = A.scheduleId
+                         AND H.occurrenceDate = A.frequencyDate
+                         AND H.turnId         = A.turnId )
+                 WHERE C.learningPeriodId = ?
+                   AND B.contractId       = ?
+              GROUP BY C.groupId,
+                       C.curriculumId,
+                       D.curricularComponentId,
+                       D.curricularComponentVersion,
+                       D.semester,
+                       A.frequencyDate,
+                       E.weekDayId,
+                       A.enrollId
+              ORDER BY A.frequencyDate'; 
+
+        $args   = array ( $learningPeriodId, $contractId );
+        $db     = $this->getDatabase();
+        $result = $db->query(SAGU::prepare($sql, $args));
+
+        return $result;
+    }
+
+}
+?>

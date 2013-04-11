@@ -1,0 +1,167 @@
+<?php
+/**
+ *
+ * This file handles view of monthly income per course
+ *
+ * @author Daniel Afonso Heisler [daniel.heisler@isolution.inf.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Armando Taffarel Neto [taffarel@solis.coop.br]
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 03/06/2008
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ */
+class FrmMonthlyIncomePerCourse extends MForm
+{
+    private $home;
+    private $module;
+
+    /**
+     * Class constructor
+     */
+    function __construct($data)
+    {
+        $module = MIOLO::getCurrentModule();
+
+        $this->home   = $data->home;
+
+        parent::__construct(_M('Monthly income per course', $module));
+
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+
+    }
+
+    /**
+     *  Default method to define fields
+     */
+    public function createFields()
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $toolBar = new MToolBar('toolBar',$MIOLO->getActionURL($module,$action));
+        $toolBar->hideButton('tbBtnDelete');
+        $toolBar->hideButton('tbBtnSave');
+        $toolBar->hideButton('tbBtnSearch');
+        $toolBar->hideButton('tbBtnNew');
+
+        //favoritos
+        $enabledImage  = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-20x20.png');
+        $disabledImage = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-disabled-20x20.png');
+        $url           = $MIOLO->getActionURL($module, $this->home, null, array('function' => 'search', 'event' => 'bookmark'));
+        $toolBar->addButton('tbBtnBookmark', _M('Add to bookmarks', 'basic'), $url, null, true, $enabledImage, $disabledImage);
+
+        if ( MIOLO::_request('event') == 'bookmark' )
+        {
+            $MIOLO->getClass('basic', 'access');
+            access::insert('Monthly income per course', $this->home, 'monthlyIncomePerCourse-16x16.png', true);
+        }
+        //fim favoritos
+       
+        $fields[] = $toolBar;
+
+        //MES e ANO
+        $monthLabel   = new MText('monthlabel', _M('Month', $module) . '/' . _M('Year', $module));
+        $monthLabel->setClass('m-caption m-caption-required');
+        $monthLabel->setWidth(FIELD_CONTAINER_SIZE);
+
+        $month        = new MSelection('month', strlen((string)$this->getFormValue('month'))>0 ? $this->getFormValue('month') : date('n'), '', SAGU::listMonths());
+        $validators[] = new MRequiredValidator('month', _M('Month', $module), 'required');
+
+        $year         = new MTextField('year', strlen((string)$this->getFormValue('year'))>0 ? $this->getFormValue('year') : date('Y'), null, 6);
+        $validators[] = new MRequiredValidator('year', _M('Year', $module), 'required');
+
+        $fields[]     = new MHContainer('hctMonth', array($monthLabel, $month, $year));
+
+        //OPERACAO
+        $business = $MIOLO->getBusiness($module, 'BusOperation');
+
+        //OPERACAO (valores default )
+        if ( !is_array($this->getFormValue('operations')) )
+        {
+            $data->operations = array();
+
+            //RETORNOS DOS BANCOS
+            if ( strlen((string)BANK_PAYMENT_OPERATION_ID)>0 )
+            {
+                $data->operations[] = BANK_PAYMENT_OPERATION_ID;
+            }
+
+            //PAGAMENTOS
+            $filter->operationGroupId = PAYMENT_OPERATION_GROUP_ID;
+            $group = $business->searchOperation($filter);
+            unset($filter);
+
+            if ( count($group) )
+            {
+                foreach ( $group as $operation )
+                {
+                    $data->operations[] = $operation[0];
+                }
+            }
+        }
+
+        //OPERACAO
+        $operationLabel = new MText('operationLabel', _M('Operation', $module));
+        $operationLabel->setClass('m-caption m-caption-required');
+        $operationLabel->setWidth(FIELD_CONTAINER_SIZE);
+
+        $operations     = new MMultiSelection('operations',  is_array($this->getFormValue('operations')) ? $this->getFormValue('operations') : $data->operations, '', $business->listOperation('C', true), true, null, 10);
+        $validators[]   = new MRequiredValidator('operations', _M('Operation', $module), 'required');
+
+        $fields[]       = new MHContainer('hctOperation', array($operationLabel, $operations));
+
+        $this->setFields($fields);
+        $this->setValidators($validators);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+        $this->setClose($MIOLO->getActionURL($module, substr($action, 0, strrpos($action, ':'))));
+
+    }
+
+    function tbBtnPrint_click($sender = null)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $data->year       = $this->year->value;
+        $data->month      = $this->month->value;
+        $data->operations = $this->operations->value;
+
+        $MIOLO->uses('classes/RptMonthlyIncomePerCourseReport.class', $module);
+        $report = new RptMonthlyIncomePerCourseReport($data);
+
+        $this->page->setAction($MIOLO->getActionURL($module, $action));
+    }
+
+}
+
+?>

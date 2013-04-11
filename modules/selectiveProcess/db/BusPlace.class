@@ -1,0 +1,288 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for sprPlace table
+ *
+ * @author Daniel Afonso Heisler [daniel@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 22/08/2005
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to manipulate the sprPlace table
+ **/
+class BusinessSelectiveProcessBusPlace extends Business
+{
+
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module = is_null($module) ? 'selectiveProcess' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+    /**
+     * List all records from the table handled by the class
+     *
+     * @param: None
+     *
+     * @returns (array): Return an array with the entire table
+     *
+     **/
+    public function listPlace()
+    {
+        $db  = $this->getDatabase();
+        $sql = 'SELECT placeId,
+                       description
+                  FROM sprPlace
+              ORDER BY description';
+        $ret = $db->query($sql);
+        //$db->close();
+        return $ret;
+    }
+
+    /**
+     * Return a specific record from the database
+     *
+     * @param $placeId (integer): Primary key of the record to be retrieved
+     *
+     * @return (object): Return an object of the type handled by the class
+     *
+     **/
+    public function getPlace($placeId)
+    {
+        $sql = 'SELECT A.placeId,
+                       A.description,
+                       A.shortDescription,
+                       coalesce(C.zipCode, B.zipCode) as zipCode,
+                       A.cityId,
+                       B.name,
+                       A.location,
+                       A.complement,
+                       A.neighborhood,
+                       A.userName,
+                       TO_CHAR(A.dateTime,\'' . MASK_TIMESTAMP . '\'),
+                       A.ipAddress,
+                       A.personId
+                  FROM sprPlace A
+             LEFT JOIN basCity B
+                 USING (cityId)
+             LEFT JOIN basLocation C
+                 USING (cityId)
+                 WHERE A.placeId = ?';
+
+        $db     = $this->getDatabase();
+        $result = $db->query(SAGU::prepare($sql, $placeId));
+        //$db->close();
+
+        $place = new sprPlace();
+        list ( $place->placeId,
+               $place->description,
+               $place->shortDescription,
+               $place->zipCode,
+               $place->cityId,
+               $place->cityName,
+               $place->location,
+               $place->complement,
+               $place->neighborhood,
+               $place->userName,
+               $place->dateTime,
+               $place->ipAddress,
+               $place->personId ) = $result[0];
+
+        return $place;
+    }
+    
+    /**
+     * Do a search on the database table handled by the class
+     *
+     * @param $filters (object): Search filters
+     *
+     * @return (array): An array containing the search results
+     **/
+    public function searchPlace($filters)
+    {
+       $sql = 'SELECT A.placeId,
+                      A.description,
+                      A.shortDescription,
+                      A.cityId,
+                      B.name,
+                      A.location,
+                      A.complement,
+                      A.neighborhood,
+                      A.personId,
+                      CASE WHEN C.shortName <> \'\'
+                           THEN C.shortName
+                           ELSE C.name
+                      END
+                 FROM sprPlace A
+            LEFT JOIN basCity B
+                USING (cityId)
+      INNER JOIN ONLY basLegalPerson C
+                   ON (C.personId = A.personId) ';
+
+        if ( strlen((string)$filters->placeId) > 0 )
+        {
+            $where .= ' AND A.placeId = ? ';
+            $args[] = $filters->placeId;
+        }
+        if ( strlen((string)$filters->description) > 0 )
+        {
+            $where .= ' AND TO_ASCII(A.description) ILIKE TO_ASCII(?) ';
+            $args[] = $filters->description . '%';
+        }
+        if ( strlen((string)$filters->shortDescription) > 0 )
+        {
+            $where .= ' AND TO_ASCII(A.shortDescription) ILIKE TO_ASCII(?) ';
+            $args[] = $filters->shortDescription . '%';
+        }
+        if ( strlen((string)$filters->cityId) > 0 )
+        {
+            $where .= ' AND A.cityId = ? ';
+            $args[] = $filters->cityId;
+        }
+
+        unset($result);
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE ' . substr($where, 4) . ' ORDER BY A.description';
+            $db = $this->getDatabase();
+
+            $result = $db->query(SAGU::prepare($sql, $args));
+            //$db->close();
+        }
+
+        return $result;
+    }
+
+    /**
+     * Insert a new record
+     *
+     * @param $data (object): An object of the type handled by the class
+     *
+     * @return True if succed, otherwise False
+     *
+     **/
+    public function insertPlace($data)
+    {
+        $sql = 'INSERT INTO sprPlace
+                            (description,
+                             shortDescription,
+                             cityId,
+                             location,
+                             complement,
+                             neighborhood,
+                             personId)
+                     VALUES (?,?,?,?,?,?,?)';
+
+        $db     = $this->getDatabase();
+        $args   = array ( $data->description,
+                          $data->shortDescription,
+                          $data->cityId,
+                          $data->location,
+                          $data->complement,
+                          $data->neighborhood,
+                          $data->personId );
+        $result = $db->execute(SAGU::prepare($sql, $args));
+        //$db->close();
+
+        return $result;
+    }
+
+    /**
+     * Update data from a specific record
+     *
+     * @param $data (object): Data which will replace the old record data
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+    public function updatePlace($data)
+    {
+        $sql = 'UPDATE sprPlace
+                   SET description      = ?,
+                       shortDescription = ?,
+                       cityId           = ?,
+                       location         = ?,
+                       complement       = ?,
+                       neighborhood     = ?,
+                       personId         = ?
+                 WHERE placeId          = ?';
+
+        $args = array( $data->description,
+                       $data->shortDescription,
+                       $data->cityId,
+                       $data->location,
+                       $data->complement,
+                       $data->neighborhood,
+                       $data->personId,
+                       $data->placeId );
+
+        $db   = $this->getDatabase();
+        $sqls = SAGU::prepare($sql, $args);
+
+        for ( $i=0; $i<count($sqls); $i++ )
+        {
+            $result = $db->execute($sqls[$i]);
+        }
+
+        //$db->close();
+
+        return $result;
+    }
+
+    /**
+     * Delete a record
+     *
+     * @param $placeId (string): Primary key for deletion
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+    public function deletePlace($placeId)
+    {
+        $sql = 'DELETE FROM sprPlace
+                      WHERE placeId = ?';
+
+        $db     = $this->getDatabase();
+        $result = $db->execute(SAGU::prepare($sql, $placeId));
+        //$db->close();
+
+        return $result;
+    }
+
+}
+
+?>

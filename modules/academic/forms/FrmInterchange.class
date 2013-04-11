@@ -1,0 +1,445 @@
+<?php
+
+/**
+ * Interchange form
+ *
+ * @author Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ *
+ * @since
+ * Class created on 19/09/2005
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2005 SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+
+/**
+ * Form to manipulate a interchange
+ **/
+class FrmInterchange extends MForm
+{
+
+    /**
+     * Class constructor
+     **/
+    function __construct()
+    {
+
+        $module = MIOLO::getCurrentModule();
+
+        if ( MIOLO::_request('function') == 'insert' )
+        {
+            parent::__construct(_M('Insert', $module));
+        }
+        else
+        {
+            parent::__construct(_M('Update', $module));
+        }
+
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+
+        $toolBar = new MToolBar('toolBar',$MIOLO->getActionURL($module,$action));
+
+        if ( $function == 'insert' )
+        {
+            $toolBar->disableButton('tbBtnDelete');
+            $toolBar->disableButton('tbBtnPrint');
+        }
+        elseif ( $function == 'delete' )
+        {
+            $toolBar->disableButton('tbBtnSave');
+        }
+        $fields[] = $toolBar;
+
+        if ( in_array($function,array('update','delete')) )
+        {
+            $interchangeId = $_GET['interchangeId'] ? $_GET['interchangeId'] : $_POST['interchangeId'];
+            $fields[] = new MTextLabel('interchangeId', $interchangeId, _M('Interchange id',$module));
+            $fields[] = new MHiddenField('interchangeId', $interchangeId);
+            $business = $MIOLO->getBusiness($module,'BusInterchange');
+            $data = $business->getInterchange($interchangeId);
+            
+            $doComplete = !$this->page->isPostBack();
+        }
+        else
+        {
+            $doComplete = true;
+        }
+
+        $personLabel = new MText('personLabel', _M('Person',$module) . ':');
+        $personLabel->setClass('m-caption m-caption-required');
+        $personLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $flds[]                = $personLabel;
+
+        $personId     = new MLookupTextField('personId', $this->getFormValue('personId', $data->personId), '', FIELD_LOOKUPFIELD_SIZE, null, null, array('contractId', 'personId', 'personName', 'contractCourseId', 'contractCourseName', 'contractCourseVersionS'), $module, 'PersonContract', null, null, $doComplete);
+        $flds[]       = $personId;
+        $validators[] = new MIntegerValidator('personId', _M('Person', $module), 'required');
+
+        $personName = new MTextField('personName', $this->getFormValue('personName',$data->personName), '', FIELD_DESCRIPTION_SIZE);
+        $personName->setReadOnly(true);
+        $flds[]             = $personName;
+
+        $hctPerson = new MHContainer('hctContract', $flds);
+        $hctPerson->setShowLabel(true);
+        $fields[]  = $hctPerson;
+        unset($flds);
+
+        $contractLabel = new MText('contractLabel', _M('Contract',$module) . ':');
+        $contractLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $flds[]                = $contractLabel;
+
+        $limbo = new MHiddenField('limbo', '');
+        $fields[] = $limbo;
+
+        $teste = $this->getFormValue('contractId', $data->contractId);
+
+        $contractId = new MLookupTextField('contractId', $this->getFormValue('contractId', $data->contractId), '', FIELD_LOOKUPFIELD_SIZE, null, null, array('limbo', 'limbo', 'contractCourseId', 'contractCourseName', 'contractCourseVersion'/*, 'contractTurnId', 'limbo', 'contractUnitId'*/), $module, 'Contract', null, array('personId' => 'personId'), $doComplete);
+    
+        $contractId->setJsHint(_M('Enter the contract code',$module));
+        $validators[] = new MIntegerValidator('contractId', _M('Contract',$module), 'optional');
+        $flds[]           = $contractId;
+    
+        $contractCourseId = new MTextField('contractCourseId', $this->getFormValue('contractCourseId',$data->contractCourseId), '', FIELD_ID_SIZE);
+        $contractCourseId->setReadOnly(true);
+        $flds[]           = $contractCourseId;
+    
+        $contractCourseVersion = new MTextField('contractCourseVersion', $this->getFormValue('contractCourseVersion',$data->contractCourseVersion), '', FIELD_ID_SIZE);
+        $contractCourseVersion->setReadOnly(true);
+        $flds[]                = $contractCourseVersion;
+    
+        $contractCourseName = new MTextField('contractCourseName', $this->getFormValue('contractCourseName',$data->contractCourseName), '', FIELD_DESCRIPTION_SIZE);
+        $contractCourseName->setReadOnly(true);
+        $contractCourseName->setJsHint(_M('Description',$module));
+        $flds[]             = $contractCourseName;
+    
+        $hctContract = new MHContainer('hctContract', $flds);
+        $hctContract->setShowLabel(true);
+        $fields[]    = $hctContract;
+        unset($flds);
+
+        $business           = $MIOLO->getBusiness($module,'BusInterchangeType');
+        $interchangeTypeId = new MComboBox('interchangeTypeId', $this->getFormValue('interchangeTypeId', $data->interchangeTypeId), _M('Interchange type id',$module), $business->listInterchangeType());
+        $interchangeTypeId->setJsHint(_M('Enter the interchange type code',$module));
+
+        $fields[]           = $interchangeTypeId;
+        $validators[] = new MRequiredValidator('interchangeTypeId', _M('Interchange type id',$module));
+
+        $interchangeTypeComplement = new MTextField('interchangeTypeComplement', $this->getFormValue('interchangeTypeComplement', $data->interchangeTypeComplement), _M('Interchange type complement',$module), FIELD_DESCRIPTION_SIZE);
+        $interchangeTypeComplement->setJsHint(_M('Enter the interchange type',$module));
+        $fields[] = $interchangeTypeComplement;
+    
+        $activityInterchange = new MTextField('activityInterchange', $this->getFormValue('activityInterchange', $data->activityInterchange), _M('Activity carried through',$module), FIELD_DESCRIPTION_SIZE);
+        $activityInterchange->setJsHint(_M('Enter the activity realized',$module));
+        $fields[] = $activityInterchange;
+
+        $beginDate = new MCalendarField('beginDate', $this->getFormValue('beginDate', $data->beginDate), _M('Begin date',$module), FIELD_DATE_SIZE);
+        $beginDate->setJsHint(_M('Enter the begin date', $module));
+        $fields[] = $beginDate;
+        $beginDate->setValidator(new MDATEDMYValidator('beginDate', _M('Begin date',$module), 'required'));
+
+        $endDate = new MCalendarField('endDate', $this->getFormValue('endDate', $data->endDate), _M('End date',$module), FIELD_DATE_SIZE);
+        $endDate->setJsHint(_M('Enter the end date', $module));
+        $endDate->setValidator(new MDATEDMYValidator('endDate', _M('End date',$module), 'required'));
+        $fields[] = $endDate;
+
+        //Country
+        $originCountryLabel = new MText('originCountryLabel', _M('Origin country', $module) . ':');
+        $originCountryLabel->setClass('m-caption m-caption-required');
+        $originCountryLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $flds[] = $originCountryLabel;
+
+        $originCountryId = new MLookupTextField('originCountryId', $this->getFormValue('originCountryId',$data->originCountryId), _M('Origin country id',$module), FIELD_LOOKUPFIELD_SIZE, null, null, 'originCountryName', 'basic', 'Country', null, null, true);
+        $flds[] = $originCountryId;
+        $validators[] = new MIntegerValidator('originCountryId', _M('Origin country id',$module), 'required');
+
+        $originCountryName = new MTextField('originCountryName', $this->getFormValue('originCountryName',$data->originCountryName), _M('Origin country name',$module), FIELD_DESCRIPTION_SIZE);
+        $originCountryName->setJsHint(_M('Enter the country name',$module));
+        $originCountryName->setReadOnly(true);
+        $flds[] = $originCountryName;
+        
+        $hctOriginCountry = new MHContainer('hctOriginCountry', $flds);
+        $hctOriginCountry->setShowLabel(false);
+        $fields[] = $hctOriginCountry;
+        unset($flds);
+
+        $originInstitutionLabel = new MText('originInstitutionLabel', _M('Origin institution', $module) . ':');
+        $originInstitutionLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $flds[] = $originInstitutionLabel;
+
+        $originInstitutionId = new MLookupTextField('originInstitutionId', $this->getFormValue('originInstitutionId',$data->originInstitutionId), _M('Origin institution id',$module), FIELD_LOOKUPFIELD_SIZE, null, null, 'originInstitutionName', 'basic', 'LegalPersonInstitution', null, array('countryId' => 'originCountryId'), true);
+        $flds[] = $originInstitutionId;
+        $validators[] = new MIntegerValidator('originInstitutionId', _M('Origin institution id',$module), 'optional');
+
+        $originInstitutionName = new MTextField('originInstitutionName', $this->getFormValue('originInstitutionName', $data->originInstitutionName), _M('Origin institution name',$module), FIELD_DESCRIPTION_SIZE);
+        $originInstitutionName->setJsHint(_M('Enter the origin institution name',$module));
+        $originInstitutionName->setReadOnly(true);
+        $flds[] = $originInstitutionName;
+        
+        $hctOriginInstitution = new MHContainer('hctOriginInstitution', $flds);
+        $hctOriginInstitution->setShowLabel(false);
+        $fields[] = $hctOriginInstitution;
+        unset($flds);
+
+        $destinationCountryLabel = new MText('destinationCountryLabel', _M('Destination country', $module) . ':');
+        $destinationCountryLabel->setClass('m-caption m-caption-required');
+        $destinationCountryLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $flds[] = $destinationCountryLabel;
+
+        $destinationCountryId = new MLookupTextField('destinationCountryId', $this->getFormValue('destinationCountryId',$data->destinationCountryId), _M('Destination country id',$module), FIELD_LOOKUPFIELD_SIZE, null, null, 'destinationCountryName', 'basic', 'Country', null, null, true);
+        $flds[] = $destinationCountryId;
+        $validators[] = new MIntegerValidator('destinationCountryId', _M('Destination country id',$module), 'required');
+
+        $destinationCountryName = new MTextField('destinationCountryName', $this->getFormValue('destinationCountryName',$data->destinationCountryName), '', FIELD_DESCRIPTION_SIZE);
+        $destinationCountryName->setJsHint(_M('Enter the country name',$module));
+        $destinationCountryName->setReadOnly(true);
+        $flds[] = $destinationCountryName;
+        
+        $hctDestinationCountry = new MHContainer('hctDestinationCountry', $flds);
+        $hctDestinationCountry->setShowLabel(false);
+        $fields[] = $hctDestinationCountry;
+        unset($flds);
+
+        $destinationInstitutionLabel = new MText('destinationInstitutionLabel', _M('Destination institution', $module) . ':');
+        $destinationInstitutionLabel->setClass('m-caption m-caption-required');
+        $destinationInstitutionLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $flds[] = $destinationInstitutionLabel;
+
+        $destinationInstitutionId = new MLookupTextField('destinationInstitutionId', $this->getFormValue('destinationInstitutionId',$data->destinationInstitutionId), _M('Destination institution id',$module), FIELD_LOOKUPFIELD_SIZE, null, null, 'destinationInstitutionName', 'basic', 'LegalPersonInstitution', null, array('countryId' => 'destinationCountryId'), true);
+        $flds[] = $destinationInstitutionId;
+        $validators[] = new MIntegerValidator('destinationInstitutionId', _M('Destination institution',$module), 'required');
+
+        $destinationInstitutionName= new MTextField('destinationInstitutionName', $this->getFormValue('destinationInstitutionName',$data->destinationInstitutionName), _M('Destination institution name',$module), FIELD_DESCRIPTION_SIZE);
+        $destinationInstitutionName->setJsHint(_M('Enter the destination institution name',$module));
+        $destinationInstitutionName->setReadOnly(true);
+        $flds[] = $destinationInstitutionName;
+        
+        $hctDestinationInstitution = new MHContainer('hctDestinationInstitution', $flds);
+        $hctDestinationInstitution->setShowLabel(false);
+        $fields[] = $hctDestinationInstitution;
+        unset($flds);
+
+        $isRemuneratedLabel = new MText('isRemuneratedLabel', _M('Is it remunerated',$module).'?');
+        $isRemuneratedLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $isRemuneratedLabel->setClass('m-caption m-caption-required');
+
+        $isRemunerated = strlen((string)$this->getFormValue('isRemunerated', $data->isRemunerated)) > 0 ? $this->getFormValue('isRemunerated', $data->isRemunerated) : DB_FALSE;
+        $isRemunerated = new MRadioButtonGroup('isRemunerated', null, SAGU::listTrueFalse(1), $isRemunerated, null, 'horizontal');
+        $isRemunerated->setShowLabel(false);
+
+        $hctIsRemunerated = new MHContainer('hctIsRemunerated', array($isRemuneratedLabel, $isRemunerated));
+        $fields[] = $hctIsRemunerated;
+
+        if ( $function == 'update' )
+        {
+            $fields[] = new MTextLabel('lastModification', '[' . $data->userName . ' - ' . $data->dateTime . ']', _M('Last modification',$module));
+        }
+        
+        $fields[] = new Separator('');
+
+        $this->page->onLoad('document.' . $this->name . '.personId.focus();');
+        $this->setFields($fields);
+        if ( isset($validators) )
+        {
+            $this->setValidators($validators);
+        }
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+        $this->setClose($MIOLO->getActionURL($module,substr($action,0,strrpos($action,':'))));
+
+    }
+
+    /**
+     * Event triggered when user chooses New from the toolbar
+     **/
+    public function tbBtnNew_click($sender=NULL)
+    {
+        /*
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $data = $this->getTypesData();
+        $vars = get_object_vars($data);
+
+        foreach ( $vars as $var => $value )
+        {
+            $this->$var->value = $this->getFormValue($var . 'S','');
+        }
+        */
+    }
+
+    /**
+     * Event triggered when user chooses Delete from the toolbar
+     **/
+    public function tbBtnDelete_click($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $data   = $this->getTypesData();
+        $opts   = array('event'    => 'tbBtnDelete_confirm',
+                        'function' => 'delete',
+                        'interchangeId' => MIOLO::_request('interchangeId'));
+
+        $gotoYes = $MIOLO->getActionURL( $module, $action, null, $opts );
+
+        // This return the primary key to the search form so that user
+        // can see the record he would delete
+        $opts   = array('interchangeId' => MIOLO::_request('interchangeId'));
+        $goto    = SAGU::getStackBackUrl();
+        $gotoNo  = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+
+        $caption = _M('Question',$module);
+        $MIOLO->question(MSG_CONFIRM_RECORD_DELETE, $gotoYes, $gotoNo);
+    }
+
+    /**
+     * Event triggered when user chooses Yes from the Delete prompt dialog
+     **/
+    public function tbBtnDelete_confirm($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $business = $MIOLO->getBusiness($module, 'BusInterchange');
+        $ok = $business->deleteInterchange($this->interchangeId->value);
+
+
+
+        if ( $ok )
+        {
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Information',$module);
+            $MIOLO->information(MSG_RECORD_DELETED, $goto);
+        }
+        else
+        {
+            $msg  = _M('Error executing requested operation.',$module);
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Error',$module);
+            $MIOLO->error( $msg, $goto, $caption );
+        }
+    }
+
+    /**
+     * Event triggered when user chooses Save from the toolbar
+     **/
+    public function tbBtnSave_click($sender=NULL)
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+
+        $data     = $this->getTypesData();
+        $business = $MIOLO->getBusiness($module, 'BusInterchange');
+
+
+        if ( $function == 'update' )
+        {
+            $ok  = $business->updateInterchange($data);
+            $msg = MSG_RECORD_UPDATED;
+        }
+        else
+        {
+            $ok  = $business->insertInterchange($data);
+
+
+            $msg = MSG_RECORD_INSERTED;
+        }
+
+        if ( $ok )
+        {
+            // This returns the primary key data to the search form
+            // so that the user can see the inserted/updated record.
+            $opts = array('interchangeIdS' => $data->interchangeId);
+
+            if ( $function == 'update' )
+            {
+                $caption = _M('Information', $module);
+                $MIOLO->information($msg, $MIOLO->getActionURL( $module, $action, null, $opts));
+            }
+            else
+            {
+                unset($opts);
+                $goto = SAGU::getStackBackUrl();
+                $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL( $module, $action, null, $opts);
+                $opts = array('function'=>'insert');
+
+                $gotoYes = $MIOLO->getActionURL($module, $action, null, $opts);
+                $caption = _M('Question',$module);
+                $MIOLO->question($msg, $gotoYes, $goto);
+            }
+        }
+        else
+        {
+            $msg  = _M('Error executing requested operation.',$module);
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Error',$module);
+            $MIOLO->error( $msg, $goto, $caption );
+        }
+    }
+
+    /**
+     * Method to gather all information from the form fields
+     * and put them on a database compatible object
+     **/
+    public function getTypesData()
+    {
+        $data = new AcdInterchange();
+        $data->interchangeId             = $this->interchangeId->value;
+        $data->personId                  = $this->personId->value;
+        $data->contractId                = $this->contractId->value;
+        $data->interchangeTypeId         = $this->interchangeTypeId->value;
+        $data->interchangeTypeComplement = $this->interchangeTypeComplement->value;
+        $data->activity                  = $this->activityInterchange->value;
+        $data->beginDate                 = $this->beginDate->value;
+        $data->endDate                   = $this->endDate->value;
+        $data->originCountryId           = $this->originCountryId->value;
+        $data->originInstitutionId       = $this->originInstitutionId->value;
+        $data->destinationCountryId      = $this->destinationCountryId->value;
+        $data->destinationInstitutionId  = $this->destinationInstitutionId->value;
+        $data->isRemunerated             = $this->isRemunerated->value;
+
+        return $data;
+    }
+
+}
+
+?>

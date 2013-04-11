@@ -1,0 +1,234 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for basAccess table
+ *
+ * @author Daniel Afonso Heisler [daniel@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 30/01/2006
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to manipulate the basAccess table
+ **/
+class BusinessBasicBusAccess extends Business
+{
+
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module = is_null($module) ? 'basic' : $module;
+
+        $business  = $MIOLO->getBusiness('basic','BusConfig');
+        $constants = $business->getModuleValues('basic');
+        if ( count($constants)>0 )
+        {
+            foreach ( $constants as $cnt )
+            {
+                define($cnt[0],$cnt[1]);
+            }
+        }
+
+        return $MIOLO->getDatabase($module);
+    }
+
+    /**
+     * Do a search on the database table handled by the class
+     *
+     * @param $filters (object): Search filters
+     *
+     * @return (array): An array containing the search results
+     **/
+    public function searchAccess($filters)
+    {
+
+        $db  = $this->getDatabase();
+
+        $sql = 'SELECT login,
+                       moduleAccess,
+                       label,
+                       image,
+                       handler,
+                       count(*)
+                  FROM basAccess ' ;
+
+        if ( strlen((string)$filters->login) > 0 )
+        {
+            $where .= ' AND UPPER(login) = UPPER(?) ';
+            $args[] = $filters->login;
+        }
+
+        $filters->isBookmark = $filters->isBookmark == true ? DB_TRUE : DB_FALSE;
+
+        if ( strlen((string)$filters->isBookmark) > 0 )
+        {
+            $where .= ' AND isBookmark = ? ';
+            $args[] = $filters->isBookmark;
+        }
+
+        if ( strlen((string)$filters->handler) > 0 )
+        {
+            $where .= ' AND handler ILIKE ? ';
+            $args[] = $filters->handler;
+        }
+
+        if ( strlen((string)$filters->moduleAccess) > 0 )
+        {
+            $where .= ' AND moduleAccess ILIKE ? ';
+            $args[] = $filters->moduleAccess;
+        }
+
+        unset($result);
+        if ( strlen((string)$filters->moduleAccess) > 0 || strlen((string)$filters->login) > 0 )
+        {
+
+            $sql .= '    WHERE ' . substr($where, 4) . 
+                    ' GROUP BY login,
+                               moduleAccess,
+                               label,
+                               image,
+                               handler
+                      ORDER BY login,
+                               count(*) DESC,
+                               moduleAccess,
+                               label
+                         LIMIT ';
+
+            if ( $filters->isBookmark == DB_TRUE )
+            {
+                $sql .= BOOKMARK_LIMIT;
+            }
+            else
+            {
+                $sql .= MORE_VISITED_LIMIT;
+            }
+
+            $result = $db->query(SAGU::Prepare($sql, $args));
+
+        }
+        return $result;
+    }
+
+    /**
+     * Insert a new record
+     *
+     * @param $data (object): An object of the type handled by the class
+     *
+     * @return True if succed, otherwise False
+     *
+     **/
+    public function insertAccess($data)
+    {
+
+        $db  = $this->getDatabase();
+
+        $sql = 'INSERT INTO basAccess
+                            (login,
+                             moduleAccess,
+                             label,
+                             image,
+                             handler,
+                             isBookmark)
+                     VALUES (?,?,?,?,?,?)';
+
+        $data->isBookmark = strlen((string)$data->isBookmark)>0 ? DB_TRUE : DB_FALSE;
+
+        $args = array( 
+                       $data->login,
+                       $data->moduleAccess,
+                       $data->label,
+                       $data->image,
+                       $data->handler,
+                       $data->isBookmark
+                     );
+
+        if ( $data->isBookmark == DB_TRUE )
+        {
+            $res = $this->searchAccess($data);
+
+            if ( count($res) == 0 )
+            {
+                $result = $db->execute(SAGU::prepare($sql, $args, false));
+            }
+        }
+        else
+        {
+            $result = $db->execute(SAGU::prepare($sql, $args, false));
+        }
+
+        //$db->close();
+
+        return $result;
+    }
+
+    /**
+     * Delete a record
+     *
+     * @param $login (string): User login for deletion
+     * @param $module (string): User module for deletion
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+    public function deleteAccess($login, $moduleAccess=NULL, $isBookmark=false)
+    {
+
+        $db  = $this->getDatabase();
+
+        $sql = 'DELETE FROM basAccess
+                      WHERE login ILIKE ? ';
+        $args[] = $login;
+
+        $isBookmark = $isBookmark == true ? DB_TRUE : DB_FALSE;
+
+        if ( strlen((string)$moduleAccess)>0 )
+        {
+            $sql .= ' AND moduleAccess ILIKE ?';
+            $args[] = $moduleAccess;
+        }
+
+        if ( strlen((string)$isBookmark)>0 )
+        {
+            $sql .= ' AND isBookmark = ?';
+            $args[] = $isBookmark;
+        }
+
+        $result = $db->execute(SAGU::prepare($sql, $args));
+
+        return $result;
+    }
+
+}
+
+?>

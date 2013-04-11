@@ -1,0 +1,262 @@
+<?php
+
+/**
+ *
+ * This file handles the connection and actions for finCloseCounter table
+ *
+ * @author Armando Taffarel Neto [taffarel@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * Armando Taffarel Neto [taffarel@solis.coop.br]
+ * 
+ * @since
+ * Class created on 02/01/2006
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Form to search the finCloseCounter table
+ */
+class FrmCloseCounterSearch extends MForm
+{
+    private $home;
+    private $module;
+
+    /**
+     * Class constructor
+     */
+    function __construct($data)
+    {
+        $this->module = 'finance';
+        $module = $this->module;
+
+        $this->home   = $data->home;
+
+        parent::__construct(_M('Search',$module));
+
+        // hide the 'Submit' button
+        $this->setShowPostButton(false);
+
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+
+    }
+
+    /**
+     *  Default method to define fields
+     */
+    public function createFields()
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $toolBar = new MToolBar('toolBar',$MIOLO->getActionURL($module,$action));
+//        $toolBar->disableButton('tbBtnSearch');
+        $toolBar->disableButton('tbBtnSave');
+        $toolBar->disableButton('tbBtnDelete');
+        $toolBar->disableButton('tbBtnPrint');
+
+        //favoritos
+        $enabledImage  = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-20x20.png');
+        $disabledImage = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-disabled-20x20.png');
+        $url           = $MIOLO->getActionURL($module, $this->home, null, array('function' => 'search', 'event' => 'bookmark'));
+        $toolBar->addButton('tbBtnBookmark', _M('Add to bookmarks', 'basic'), $url, null, true, $enabledImage, $disabledImage);
+
+        if ( MIOLO::_request('event') == 'bookmark' )
+        {
+            $MIOLO->getClass('basic', 'access');
+            access::insert('Close counter', $this->home, 'closeCounter-16x16.png', true);
+        }
+
+        //fim favoritos
+
+        $fields[] = $toolBar;
+        
+        $limbo = new MHiddenField('limbo', '');
+        $fields[] = $limbo;
+
+        // Pega informações do usuário logado
+        $loginUser  = $MIOLO->GetLogin();
+        if($loginUser->idperson != NULL)
+        {
+            //busca dados do usuário na base sagu2
+            $business = $MIOLO->getBusiness('basic','BusPerson');
+            $user = $business->getPerson($loginUser->idperson);
+            //busca dados do Caixa 
+            $business = $MIOLO->getBusiness($module,'BusCounter');
+            $busCounterResponsable = $business->getCounterResponsable($loginUser->idperson);
+        }    
+        $data->operatorIdS = null;
+        // seta as informação nas variáveis do form.
+        if (is_object($user))
+        {
+            $data->operatorIdS   = $user->personId;
+            $data->operatorNameS = $user->name;
+        }
+        if (is_object($busCounterResponsable) )
+        {
+            $data->counterIdS            = $busCounterResponsable->counterId; 
+            $data->responsableNameS      = $busCounterResponsable->personName;
+            $data->unitDescriptionS      = $busCounterResponsable->unitDescription;
+        }
+
+        $operatorIdLabelS = new MText('operatorIdLabelS', _M('Operator',$module).':');
+        $operatorIdLabelS->setWidth(FIELD_CONTAINER_SIZE);
+//        $bankLabel->setClass('m-caption m-caption-required');
+        $flds[]           = $operatorIdLabelS;
+        $operatorIdS = new MLookupTextField('operatorIdS', $this->getFormValue('operatorIdS',$data->operatorIdS), _M('',$module), FIELD_ID_SIZE,
+                             null, null, 'operatorNameS', 'basic', 'PhysicalPerson', null, null, true);
+        $validators[] = new MIntegerValidator('operatorIdS');
+        $operatorIdS->setJsHint(_M('Enter the operator id',$module));
+        $flds[]           = $operatorIdS;
+
+        $operatorNameS = new MTextField('operatorNameS', $this->getFormValue('operatorNameS',$data->operatorNameS), _M('',$module), FIELD_DESCRIPTION_SIZE);
+        $operatorNameS->setReadOnly(true);
+        $flds[]             = $operatorNameS;
+
+        $hctOperatorS = new MHContainer('hctOperatorS', $flds);
+        $hctOperatorS->setShowLabel(true);
+        $fields[]  = $hctOperatorS;
+        unset($flds);
+        
+        $counterIdLabelS = new MText('counterIdLabelS', _M('Counter',$module).':');
+        $counterIdLabelS->setWidth(FIELD_CONTAINER_SIZE);
+        $flds[]           = $counterIdLabelS;
+
+        $counterIdS = new MLookupTextField('counterIdS', $this->getFormValue('counterIdS',$data->counterIdS), _M('',$module), FIELD_ID_SIZE,
+                 null, null, 'limbo, responsableNameS, limbo, unitDescriptionS', $module, 'Counter', null, null, true);
+        $validators[] = new MIntegerValidator('counterIdS');
+        $counterIdS->setJsHint(_M('Enter the counter code',$module));
+        $flds[]      = $counterIdS;
+
+        $responsableNameS = new MTextField('responsableNameS', $this->getFormValue('responsableNameS',$data->responsableNameS), _M('',$module), FIELD_DESCRIPTION_SIZE);
+        $responsableNameS->setReadOnly(true);
+        $flds[]            = $responsableNameS;
+
+        $hctCounterS = new MHContainer('hctCounterS', $flds);
+        $hctCounterS->setShowLabel(true);
+        $fields[]  = $hctCounterS;
+        unset($flds);
+
+
+        $unitDescriptionLabelS = new MText('unitDescriptionLabelS', _M('Unit description',$module).':');
+        $unitDescriptionLabelS->setWidth(FIELD_CONTAINER_SIZE);
+        $flds[]           = $unitDescriptionLabelS;
+
+
+        $unitDescriptionS = new MTextField('unitDescriptionS', $this->getFormValue('unitDescriptionS',$data->unitDescriptionS), _M('',$module), FIELD_DESCRIPTION_SIZE);
+        $unitDescriptionS->setReadOnly(true);
+        $flds[]            = $unitDescriptionS;
+
+        $hctUnitS = new MHContainer('hctUnitS', $flds);
+        $hctUnitS->setShowLabel(true);
+        $fields[]  = $hctUnitS;
+        unset($flds);
+
+        $valueLabelS = new MText('valueLabelS', _M('Value',$module).':');
+        $valueLabelS->setWidth(FIELD_CONTAINER_SIZE);
+        $flds[]           = $valueLabelS;
+
+        $valueS = new MTextField('valueS', $this->getFormValue('valueS',$data->valueS), _M('',$module), FIELD_MONETARY_SIZE);
+        $validators[] =  new MFloatValidator('valueS', '', FLOAT_SEPARATOR, REAL_ROUND_VALUE, 'optional');
+        $valueS->setJsHint(_M('Enter the value',$module));
+        $flds[] = $valueS;
+
+        $hctValueS = new MHContainer('hctValueS', $flds);
+        $fields[]  = $hctValueS;
+        unset($flds);   
+       
+        $registerDateLabelS = new MText('registerDateLabelS', _M('Register date',$module).':');
+        $registerDateLabelS->setWidth(FIELD_CONTAINER_SIZE);
+        $flds[]           = $registerDateLabelS;
+ 
+        $registerDateS = new MCalendarField('registerDateS', $this->getFormValue('registerDateS',$data->registerDateS), _M('',$module), FIELD_DATE_SIZE);
+        $registerDateS->setJsHint(_M('Enter the register date',$module));
+        $validators[] = new MDATEDMYValidator('registerDateS', '', 'optional');
+        $flds[] = $registerDateS;
+
+        $hctRegisterDateS = new MHContainer('hctRegisterDateS', $flds);
+        $fields[]  = $hctRegisterDateS;
+        unset($flds);     
+
+        $business = $MIOLO->getBusiness($module,'BusOperation');
+        //pega mensagem de débito ou crédito  | 0 para Selection e 1 para RadioBottonGroup
+        $messagesTypeS = $business->listOperationTypeId(1);
+         /*
+         * MRadioButtonGroup class constructor prototype:
+         *
+         * function __construct( $name = '',
+         *                   $label = '',
+         *                   $options = '',
+         *                   $default = false,
+         *                   $hint = '',
+         *                   $disposition = 'vertical',
+         *                   $border = 'none' )
+         */
+
+        // get Yes and No for Radio Button
+//        $messagesType =  SAGU::radioButtonGroupYesNo();
+        $operationLabelS = new MText('operationLabelS', _M('Operation',$module).':');
+        $operationLabelS->setWidth(FIELD_CONTAINER_SIZE);
+
+        $operationS = $this->GetFormValue('operationS',$data->operationS);
+        $operationS = new MRadioButtonGroup('operationS', '', $messagesTypeS, $operationS, null, 'horizontal');  
+        $operationS->SetShowLabel(false);
+
+        $hctOperationS = new MHContainer('hctOperationS', array($operationLabelS, $operationS));
+        $fields[]  = $hctOperationS;
+
+//        $operationS = new MSelection('operationS', $this->getFormValue('operationS',$data->operationS), _M('Operation type',$module), $opts, true);
+//        $operationS->setJsHint(_M('Select the operation',$module));
+//        $flds[] = $operationS;
+//        $hctOperationS = new MHContainer('hctOperationS', $flds);
+//        $fields[]  = $hctOperationS;
+//        unset($flds);         
+
+        $fields[] = new MButton('btnSearch',_M('Search',$module));
+        $this->setFields($fields);
+        $this->setValidators($validators);
+
+
+        // get filters values
+        $filters->operatorId     = $this->operatorIdS->value;
+        $filters->counterId      = $this->counterIdS->value;
+        $filters->value          = $this->valueS->value;
+        $filters->registerDate   = $this->registerDateS->value;
+        $filters->operation      = $this->operationS->value;        
+
+        $grdResults = $MIOLO->getUI()->getGrid($module,'GrdCloseCounterSearch',$filters);
+        $business = $this->manager->getBusiness($module,'BusCloseCounter');
+        $data = $business->searchCloseCounter($filters);
+        $grdResults->setData($data);
+        //###GRID///is_array($data) ? $grdResults->SetScrollHeight(GRID_SCROLL_HEIGHT) : false;
+        $this->addField($grdResults);
+        $this->page->onLoad('document.' . $this->name . '.operatorIdS.focus();');
+
+    }
+
+}
+
+?>

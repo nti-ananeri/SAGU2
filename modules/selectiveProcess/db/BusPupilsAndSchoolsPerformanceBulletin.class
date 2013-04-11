@@ -1,0 +1,171 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for Pupils and schools' performance bulletin table
+ *
+ * @author Rafael Luís Spengler [rafael@solis.coop.br] 
+ *
+ * @version: $Id$
+ * 
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * Rafael Luís Spengler [rafael@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 08/12/2005
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to manipulate the sprPupilsAndSchoolsPerformanceBulletinPupilsData table
+ **/
+class BusinessSelectiveProcessBusPupilsAndSchoolsPerformanceBulletin extends Business
+{
+
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module = is_null($module) ? 'selectiveProcess' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+    /**
+     * Do a search on the database table handled by the class
+     *
+     * @param $filters (object): Search filters
+     *
+     * @return (array): An array containing the search results
+     **/
+    public function searchSchools($filters)
+    {
+        $sql = 'SELECT  E.institutionIdHs AS personId,
+                        F.name,
+                        count (A.personId)
+                   FROM sprInscription A
+             INNER JOIN sprInscriptionOption B
+                     ON ( A.inscriptionId = B.inscriptionId )
+             INNER JOIN sprCourseOccurrence C
+                     ON ( B.courseOccurrenceId = C.courseOccurrenceId )
+             INNER JOIN sprCourseVacant D
+                     ON ( C.courseVacantId = D.courseVacantId )
+	 LEFT JOIN ONLY basPhysicalPersonStudent E
+                     ON ( E.personId = A.personId )
+         LEFT JOIN ONLY basLegalPerson F
+                     ON ( F.personId = E.institutionIdHs )
+                  WHERE B.optionNumber = 1
+                    AND B.coursePosition <= D.vacant ';
+
+
+        if ( strlen((string)$filters->selectiveProcessId) > 0 )
+        {
+            $where .= ' AND A.selectiveProcessId = ? ';
+            $args[] = $filters->selectiveProcessId;
+        }
+
+        if ( strlen((string)$filters->personId) > 0 )
+        {
+            $where .= ' AND F.personId = ? ';
+            $args[] = $filters->personId;
+        }
+
+        unset($result);
+        if ( strlen((string)$where) > 0 )
+        {
+            $db = $this->getDatabase();
+            $sql .= $where . ' GROUP BY E.institutionIdHs, F.name
+	                       ORDER BY F.name ';
+
+            $result = $db->query(SAGU::prepare($sql, $args));
+            //$db->close();
+        }
+
+        return $result;
+    }
+
+    public function pupilsData ($filters)
+    {
+        $sql = ' SELECT DISTINCT E.personId,
+                                 E.name,
+                                 I.shortName,
+                                 D.unitId,
+                                 I.courseId,
+                                 J.courseVersion,
+                                 E.residentialphone,
+                                 E.workphone,
+                                 E.cellphone,
+                                 A.totalPoints,
+                                 A.isClassified,
+                                 getUnitDescription(D.unitId) as unit
+                            FROM sprInscription A
+                      INNER JOIN sprInscriptionOption B
+                              ON ( A.inscriptionId = B.inscriptionId )
+                       LEFT JOIN sprCourseOccurrence C
+                              ON (B.courseOccurrenceId = C.courseOccurrenceId)
+                      INNER JOIN basUnit D
+                              ON ( C.unitId = D.unitId )
+                  LEFT JOIN ONLY basPhysicalPersonStudent E
+                              ON ( A.personId = E.personId )
+                      INNER JOIN sprCourseVacant G
+                              ON ( C.courseVacantId = G.courseVacantId )
+                      INNER JOIN acdCourse I
+                              ON ( C.courseId = I.courseId)
+                      INNER JOIN acdCourseVersion J
+                              ON ( I.courseId = J.courseId )
+                           WHERE A.selectiveProcessId = ?
+                             AND B.optionNumber = 1
+                             AND B.coursePosition <= G.vacant ';
+
+        if ( strlen((string)$filters->selectiveProcessId) > 0 )
+        {
+            $args[] = $filters->selectiveProcessId;
+        }
+        if ( strlen((string)$filters->personId) > 0 )
+        {
+            $where .= ' AND E.institutionIdHs = ? ';
+            $args[] = $filters->personId;
+        }
+
+        if ( strlen((string)$filters->institutionIdHs) > 0 )
+        {
+            $where .= ' AND E.institutionIdHs = ? ';
+            $args[] = $filters->institutionIdHs;
+        }
+
+        unset($result);
+        if ( strlen((string)$where) > 0 )
+        {
+            $db = $this->getDatabase();
+            $sql .= $where . ' ORDER BY E.name ';
+
+            $result = $db->query(SAGU::prepare($sql, $args));
+        }
+        return $result;
+    }
+}
+
+?>

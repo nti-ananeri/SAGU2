@@ -1,0 +1,281 @@
+<?php
+
+/**
+ * PupilListing form
+ *
+ * @author William Prigol Lopes [william@solis.coop.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * Leovan Tavares da Silva [leovan@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ *
+ * @since
+ * Class created on 25/08/2005
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2005 SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+
+/**
+ * Form to manipulate a pupilListing
+ **/
+class FrmPupilListingNew extends MForm
+{
+    private $home;
+
+    /**
+     * Class constructor
+     **/
+    function __construct($data)
+    {
+        $module = MIOLO::getCurrentModule();
+        $this->home   = $data->home;
+
+        parent::__construct(_M('Other pupil listing', $module));
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+
+        $a = unserialize(urldecode(stripslashes(MIOLO::_request('filter'))));
+        if ( is_array($a) )
+        {
+            $filter = $a;
+        }
+
+        if ( !is_array($filter) )
+        {
+            $filter = array();
+        }
+
+        $toolBar = new MToolBar('toolBar', $MIOLO->getActionURL($module, $action));
+        $toolBar->disableButton('tbBtnNew');
+        $toolBar->disableButton('tbBtnSave');
+        $toolBar->disableButton('tbBtnDelete');
+        $toolBar->disableButton('tbBtnSearch');
+
+        //favoritos
+        $enabledImage  = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-20x20.png');
+        $disabledImage = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-disabled-20x20.png');
+        $url           = $MIOLO->getActionURL($module, $this->home, null, array('function' => 'search', 'event' => 'bookmark'));
+        $toolBar->addButton('tbBtnBookmark', _M('Add to bookmarks', 'basic'), $url, null, true, $enabledImage, $disabledImage);
+
+        if ( MIOLO::_request('event') == 'bookmark' )
+        {
+            $MIOLO->getClass('basic', 'access');
+            access::insert('Other pupil listing', $this->home, 'pupilListing-16x16.png', true);
+        }
+        //fim favoritos
+
+        $fields[] = $toolBar;
+
+        $businessPeriod = $MIOLO->getBusiness($module, 'BusPeriod');
+        $periodId       = new MComboBox('periodId', strlen((string)$this->getFormValue('periodId', $data->periodId))>0 ? $this->getFormValue('periodId', $data->periodId) : CURRENT_PERIOD_ID, _M('Period',$module), $businessPeriod->listPeriod() );
+        $periodId->setJsHint(_M('Enter the period code', $module));
+        $fields[]       = $periodId;
+        $validators[]   = new MRequiredValidator('periodId', _M('Period',$module));
+
+        //Course
+        $courseLabel   = new MText('courseLabel', _M('Course', $module) . ':');
+        $courseLabel->setWidth(FIELD_CONTAINER_SIZE);
+
+        $courseId      = new MLookupTextField('courseId', $this->getFormValue('courseId'), '', FIELD_LOOKUPFIELD_SIZE, null, null, 'courseVersion, courseName, unitId, unitDescription, turnId, turnDescription', $module, 'CourseOccurrence', null, array('courseId' => 'courseId'), !$this->page->isPostBack());
+        $courseId->setJsHint(_M('Enter the course code', $module));
+
+        $courseName    = new MTextField('courseName', $this->getFormValue('courseName', $data->courseName), '', FIELD_DESCRIPTION_SIZE);
+        $courseName->setReadOnly(true);
+        $courseName->setJsHint(_M('Course name',$module));
+
+        $courseVersion = new MTextField('courseVersion', $this->getFormValue('courseVersion', $data->courseVersion), '', FIELD_ID_SIZE);
+        $courseVersion->setJsHint(_M('Course version code',$module));
+
+        $hctCourse     = new MHContainer('hctCourse', array($courseLabel, $courseId, $courseVersion, $courseName));
+        $hctCourse->setShowLabel(true);
+        $fields[]      = $hctCourse;
+
+        //Turn
+        $business = $MIOLO->getBusiness('basic', 'BusTurn');
+        $turnId = new MComboBox( 'turnId',
+                                    $this->GetFormValue('turnId',$data->turnId),
+                                    _M('Turn',$module),
+                                    $business->listTurn());
+        //$validators[] = new MRequiredValidator('turnId');
+        $fields[] = $turnId;
+
+        //Unit
+        $business = $MIOLO->getBusiness('basic', 'BusUnit');
+        $unitId = new MComboBox('unitId',
+                                    $this->GetFormValue('unitId',$data->unitId),
+                                    _M('Unit',$module),
+                                    $business->listUnit());
+        //$validators[] = new MRequiredValidator('unitId');
+        $fields[] = $unitId;
+
+        //Semester
+        $semester = new MTextField('semester', $this->getFormValue('semester', $data->semester), _M('Semester or year',$module), 10, _M('Year when it is an annual course otherwise, semester', $module));
+        $semester->setJsHint(_M('Enter the year or the semester', $module));
+        //$validators[] = new MRegExpValidator('semester', '', '(^-?[0-9][0-9]*$)');
+        //$validators[] = new MRequiredValidator('semester', _M('Semester',$module), 'required');
+        $fields[] = $semester;
+        //Curricular component
+        $curricularComponentLabel = new MText('curricularComponentLabel', _M('Curricular component',$module) . ':');
+        $curricularComponentLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $flds[]                   = $curricularComponentLabel;
+
+        $curricularComponentId = new MLookupTextField('curricularComponentId', $this->getFormValue('curricularComponentId', $data->curricularComponentId), _M('Code',$module), FIELD_LOOKUPFIELD_SIZE, null, null, array('curricularComponentName'), $module, 'CurricularComponent', null, array('curricularComponentId' => 'curricularComponentId'), true);
+        $flds[]                = $curricularComponentId;
+       // $validators[]          = new MRequiredValidator('curricularComponentId', _M('Curricular component',$module));
+
+        $curricularComponentName = new MTextField('curricularComponentName', $this->getFormValue('curricularComponentName', $data->curricularComponentName), _M('Name',$module), FIELD_DESCRIPTION_SIZE);
+        $curricularComponentName->setReadOnly(true);
+        $flds[]                  = $curricularComponentName;
+        //$fields[] = $curricularComponentName;
+
+        $hctCurricularComponent = new MHContainer('hctCurricularComponent', $flds);
+        $hctCurricularComponent->setShowLabel(false);
+        $fields[]  = $hctCurricularComponent;
+        unset($flds);
+
+        //Class
+        $classLabel = new MText('classLabel', _M('Class','academic') . ':');
+        $classLabel->setWidth(FIELD_CONTAINER_SIZE);
+
+        $classId    = new MLookupTextField('classId', $this->getFormValue('classId', $data->classId), _M('Class id','academic'), FIELD_LOOKUPFIELD_SIZE, null, null, array('classNameS'), 'academic', 'Class', null, null, true);
+        $classNameS = new MTextField('classNameS', $this->getFormValue('classNameS'), _M('Class name', 'academic'), FIELD_DESCRIPTION_SIZE);
+        $hctClass   = new MHContainer('hctClass', array($classLabel, $classId, $classNameS));
+        $hctClass->setShowLabel(false);
+        $fields[]   = $hctClass;
+
+	//Moviment contract
+	$stateContractLabel= new MText('stateContractLabel', _M('State contract',$module) . ':');
+        $stateContractLabel->setWidth(FIELD_CONTAINER_SIZE);
+        //$stateContractLabel->setClass('m-caption m-caption-required');
+        $flds[] = $stateContractLabel;
+
+	$stateContractId = new MLookupTextField('stateContractId', $this->getFormValue('stateContractId', $data->stateContractId), '', FIELD_LOOKUPFIELD_SIZE, null, null, 'stateDescription', $module, 'StatesContract', null, null, true);
+        $stateContractId->setJsHint(_M('State contract id',$module));
+        $flds[] = $stateContractId;
+
+	$stateDescription = new MTextField('stateDescription', $this->stateDescription->value, '', FIELD_DESCRIPTION_SIZE);
+        $stateDescription->setReadOnly(true);
+        $stateDescription->setJsHint(_M('State contract description',$module));
+        $flds[] = $stateDescription;
+
+	$hctStateContract = new MHContainer('hctStateContract', $flds);
+        $hctStateContract->setShowLabel(true);
+	unset($flds);
+        $fields[]    = $hctStateContract;
+
+        $fields[] = new Separator('');
+
+        $reportOptions = array( array(_M('Number of freshmen by course/turn', $module), 1),
+                                array(_M('Number of pupils', $module), 2),
+                                array(_M('Number of pupils grouped by class', $module), 3),
+                                array(_M('Number of pupils enrolled by course and discipline', $module), 4),
+				array(_M('Number of pupils by state contract', $module), 5)
+                              );
+
+
+        $reportOption = new MRadioButtonGroup('reportOption', _M('Report option', $module), $reportOptions, strlen((string)$this->getFormValue('reportOption', $reportOption)) > 0 ? $this->getFormValue('reportOption',$reportOption) : 1 );
+        $reportOption->setShowLabel(false);
+        $fields[] = $reportOption;
+
+        $busFormationLevel = $MIOLO->getBusiness($module, 'BusFormationLevel');
+        $formationLevels   = $busFormationLevel->listFormationLevel();
+
+        $filter = new MMultiSelection('formationLevelId', is_array($this->getFormValue('formationLevelId', $filter)) ? $this->getFormValue('formationLevelId', $filter) : $filter, _M('Formation level', $module), $formationLevels, true, null, 5);
+
+        $fields[]          = $filter;
+
+        $fields[] = new Separator('');
+
+        //$fields[] = new MButton('tbBtnPrint', _M('Generate', $module));
+
+        //$fields[] = new Separator('');
+
+        $this->setValidators($validators);
+
+        $this->setFields($fields);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+        $this->setClose($MIOLO->getActionURL($module, substr($action, 0, strrpos($action, ':'))));
+    }
+
+    /**
+     * Event triggered when user chooses Delete from the toolbar
+     **/
+    public function tbBtnPrint_click($sender = null)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $filter->optionId                   = $this->getFormValue('reportOption');
+        $filter->periodId                   = $this->getFormValue('periodId');
+        $filter->courseId                   = $this->getFormValue('courseId');
+        $filter->courseName                 = $this->getFormValue('courseName');
+        $filter->courseVersion              = $this->getFormValue('courseVersion');
+        $filter->turnId                     = $this->getFormValue('turnId');
+        $filter->unitId                     = $this->getFormValue('unitId');
+        $filter->semester                   = $this->getFormValue('semester');
+        $filter->curricularComponentId      = $this->getFormValue('curricularComponentId');
+        $filter->classId                    = $this->getFormValue('classId');
+        $filter->className                  = $this->getFormValue('classNameS');
+	$filter->stateContractId	    = $this->getFormValue('stateContractId');
+        //$filter->formationLevelId         = $this->getFormValue('formationLevelId');
+        $busPupilListingNew = $MIOLO->getBusiness($module,'BusPupilListingNew');
+        $data = $busPupilListingNew->getPupilListing($filter);
+
+        switch ($filter->optionId)
+        {
+            case 1:
+                $reportX = 'RptNumberOfFreshmenByCourseTurn';
+                break;
+            case 2:
+		$reportX = 'RptNumberOfPupils';
+                break;
+            case 3:
+		$reportX = 'RptNumberOfPupilsGroupedByClass';
+                break;
+            case 4:
+		$reportX = 'RptNumberOfPupilsByCourseAndCurricularComponent';
+                break;
+	    case 5:
+		$reportX = 'RptNumberOfPupilsByStateContract';
+                break;
+            default:
+                break;
+        }
+        $MIOLO->getClass($module,$reportX);
+        $report = new $reportX($data,$filter);
+    }
+
+}
+
+?>

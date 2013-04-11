@@ -1,0 +1,409 @@
+<?php
+
+/**
+ * Selective process results form
+ *
+ * @author Rafael Luís Spengler [rafael@solis.coop.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * Rafael Luís Spengler [rafael@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 26/12/2005
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2005 SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+
+/**
+ * Form to manipulate inscription reports
+ **/
+class FrmSelectiveProcessResults extends MForm
+{
+    private $home;
+    
+    var $business;
+    
+    /**
+     * Class constructor
+     **/
+    function __construct($data)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $this->business = $MIOLO->getBusiness($module, 'BusSelectiveProcessResults');
+        $this->home   = $data->home;
+
+        parent::__construct(_M('Selective process results', $module));
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+
+        $this->setAction('main');
+
+        $MIOLO          = MIOLO::getInstance();
+        $module         = MIOLO::getCurrentModule();
+        $action         = MIOLO::getCurrentAction();
+        $function       = MIOLO::_request('function');
+        $event          = MIOLO::_request('event');
+        $cityExam       = MIOLO::_request('cityExam');
+        $classification = MIOLO::_request('classification');
+        $unit           = MIOLO::_request('unit');
+        $workPhone      = MIOLO::_request('workPhone');
+        $cityExam       = MIOLO::_request('cityExam');
+        $cityExam       = MIOLO::_request('cityExam');
+        $cityExam       = MIOLO::_request('cityExam');
+
+        $toolBar = new MToolBar('toolBar', $MIOLO->getActionURL($module, $action));
+        $toolBar->disableButton('tbBtnNew');
+        $toolBar->disableButton('tbBtnSave');
+        $toolBar->disableButton('tbBtnDelete');
+        $toolBar->disableButton('tbBtnSearch');
+
+        if ($function == 'print')
+        {
+            $toolBar->disableButton('tbBtnPrint');
+        }
+
+        //favoritos
+        $enabledImage  = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-20x20.png');
+        $disabledImage = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-disabled-20x20.png');
+        $url           = $MIOLO->getActionURL($module, $this->home, null, array('event' => 'bookmark'));
+        $toolBar->addButton('tbBtnBookmark', _M('Add to bookmarks', 'basic'), $url, null, true, $enabledImage, $disabledImage);
+
+        if ( MIOLO::_request('event') == 'bookmark' )
+        {
+            $MIOLO->getClass('basic', 'access');
+            access::insert('Selective Process Results ', $this->home, 'selectiveProcessResults-16x16.png', true);
+        }
+        //fim favoritos
+
+        $fields[] = $toolBar;
+
+        if ((strlen((string)$function) == 0) || ($function == null))
+        {
+            $flds[] = new Separator('');
+            $business           = $MIOLO->getBusiness($module, 'BusSelectiveProcess');
+            $selectiveProcessId = new MSelection('selectiveProcessId', $this->getFormValue('selectiveProcessId', $data->selectiveProcessId), _M('Selective process',$module), $business->listSelectiveProcess());
+            $selectiveProcessId->setJsHint(_M('Enter the selective process code',$module));
+            $selectiveProcessId->setAutoPostBack(true);
+            $validators[]       = new MRequiredValidator('selectiveProcessId'); 
+            $flds[]             = $selectiveProcessId;
+            $flds[] = new Separator('');
+
+            $reportOptions = array( 
+                                    array(_M('Classification summary',   $module), 1),
+                                    array(_M('Greater/minor note',       $module), 2),
+                                    array(_M('Exams average per course', $module), 3),
+                                    array(_M('General exams average',    $module), 4),
+                                    array(_M('Conference list',          $module), 5)
+                                   );
+
+            $reportOption = new MRadioButtonGroup('reportOption', _M('Report option', $module), $reportOptions, $this->getFormValue('reportOption', $data->reportOption));
+            $validators[] = new MRequiredValidator('reportOption');
+            $reportOption->setShowLabel(false);
+            $reportOption->setAutoPostBack(true);
+            $flds[] = $reportOption;
+
+            $reportOption = $this->getFormValue('reportOption');
+
+            if ( strlen((string)$reportOption)>0 && strlen((string)$selectiveProcessId->value)>0 )
+            {
+                if ( $reportOption == 1 )
+                {
+                    $query = $this->business->classificationSummary($selectiveProcessId->value);
+
+                    $desclassified = 0;
+                    $classified    = 0;
+                    $surplus       = 0;
+                    for ($i = 0; $i < count($query); $i++)
+                    {
+                        switch ( $query[$i][5] )
+                        {
+                            case 1: $desclassified += $query[$i][4];
+                                    break;
+                            case 2: $classified += $query[$i][4];
+                                    break;
+                            case 3: $surplus += $query[$i][4];
+                        }
+
+                        if ( $query[$i][0] != $query[$i+1][0] || $query[$i][3] != $query[$i+1][3] )
+                        {
+                            $totalCourse = $classified + $surplus + $desclassified;
+
+                            $percClassified = SAGU::calcNumber('('. SAGU::formatNumber($classified) . ' / ' . SAGU::formatNumber($totalCourse) .') * 100', true ) . '%';;
+                            $percSurplus = SAGU::calcNumber('('. SAGU::formatNumber($surplus) . ' / ' . SAGU::formatNumber($totalCourse) .') * 100', true ) . '%';;
+                            $percDesclassified = SAGU::calcNumber('('. SAGU::formatNumber($desclassified) . ' / ' . SAGU::formatNumber($totalCourse) .') * 100', true ) . '%';;
+
+                            $percTotalCourse = '100,00%';
+
+                            $gridData[] = array( $query[$i][0],
+                                                 $query[$i][1],
+                                                 $query[$i][2],
+                                                 $query[$i][3],
+                                                 $classified,
+                                                 $percClassified,
+                                                 $surplus,
+                                                 $percSurplus,
+                                                 $desclassified,
+                                                 $percDesclassified,
+                                                 $totalCourse,
+                                                 $percTotalCourse );
+                            $desclassified = 0;
+                            $classified    = 0;
+                            $surplus       = 0;
+                        }
+                    }
+
+                     $grdResults = $MIOLO->getUI()->getGrid($module, 'GrdSelectiveProcessResults', '', $filters);
+                     $grdResults->setData($gridData);
+                     $grdResults->setTitle(_M('Classification summary',   $module));
+                     $grdResults->setClose(null);
+                }
+
+                if ( $reportOption == 2 )
+                {
+                    $gridData = $this->business->greaterGreaterMinorNote($selectiveProcessId->value);
+                    $grdResults = $MIOLO->getUI()->getGrid($module, 'GrdGreaterMinorNote', '', $filters);
+                    $grdResults->setData($gridData);
+                    $grdResults->setTitle(_M('Greater/minor note',       $module));
+                    $grdResults->setClose(null);
+                }
+
+                if ( $reportOption == 3 )
+                {
+                    $query = $this->business->inscriptionForExamsAveragePerCourse($selectiveProcessId->value);
+                    for ($i = 0; $i < count($query); $i++)
+                    {
+                        $lines[] = array('', $query[$i][3], $query[$i][4]);
+                        if ( $query[$i][0] != $query[$i+1][0] )
+                        {
+                            $gridData[] = array( '<b>'.$query[$i][1].'</b>', '', '');
+                            $gridData = array_merge($gridData, $lines);
+                            unset($lines);
+                        }
+                    }
+                    $grdResults = $MIOLO->getUI()->getGrid($module, 'GrdExamsAveragePerCourse', '', $filters);
+                    $grdResults->setData($gridData);
+                    $grdResults->setTitle(_M('Exams average per course', $module));
+                    $grdResults->setClose(null);
+
+                }
+
+                if ( $reportOption == 4 )
+                {
+                    $gridData = $this->business->inscriptionForGeneralExamsAverage($selectiveProcessId->value);
+                    $grdResults = $MIOLO->getUI()->getGrid($module, 'GrdGeneralExamsAverage', '', $filters);
+                    $grdResults->setData($gridData);
+                    $grdResults->setTitle(_M('General exams average',    $module));
+                    $grdResults->setClose(null);
+                }
+
+                if ( $reportOption == 5 )
+                {
+                    $query = $this->business->inscriptionForConferenceList($selectiveProcessId->value);
+                    for ($i = 0; $i < count($query); $i++)
+                    {
+                        $cols[] = $query[$i][4];
+                        if ( !$generateLabel )
+                        {
+                            $labels[] = $query[$i][3];
+                        }
+                        if ( $query[$i][0] != $query[$i+1][0] )
+                        {
+                            $line = array_merge(array( $query[$i][1] ), $cols);
+
+                            if ( is_array($gridData) )
+                            {
+                                $gridData = array_merge($gridData, array($line));
+                            }
+                            else
+                            {
+                                $gridData[] = $line;
+                            }
+                            unset($cols);
+                            $generateLabel = true;
+                        }
+                    }
+                    $grdResults = $MIOLO->getUI()->getGrid($module, 'GrdConferenceList', '', $filters);
+                    $columns[] = new MDataGridColumn('canditate', _M('Candidate', $module), 'left', true, null, true, null, true );
+
+                    if ( is_array($labels) && (count($labels) > 0))
+                    {
+                        foreach ( $labels as $key=>$label )
+                        {
+                            $columns[] = new MDataGridColumn('note' . $key, $label, 'center', true, null, true, null, true);
+                        }
+                    }
+                    $grdResults->setColumns($columns);
+                    $grdResults->setData($gridData);
+                    $grdResults->setTitle(_M('Conference list', $module));
+                    $grdResults->setClose(null);
+                }
+            }
+
+            $reportOption = $this->getFormValue('reportOption', $data->reportOption);
+
+            $bsg1            = new BaseGroup('bsg1', _M('Report type', $module), $flds, 'vertical');
+            $bsg1->showLabel = true;
+            $bsg1->width     = '50%';
+
+
+            $hct1            = new MHContainer('hct1',array($bsg1, $divAct));
+            $hct1->showLabel = true;
+            $fields[] = $hct1;
+
+            if ($grdResults)
+            {
+                $fields[] = $grdResults;
+            }
+        }
+
+        $fields[] = new Separator('');
+
+        if (isset($dataGrid))
+        {
+            $fields[] = $dataGrid;
+        }
+
+        $this->page->setAction($MIOLO->getActionURL($module, $action));
+        $this->setFields($fields);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+        $this->setClose($MIOLO->getActionURL($module, substr($action, 0, strrpos($action, ':'))));
+    }
+
+    /**
+     * Event triggered when user chooses a link inside the grid
+     **/
+    public function tbBtnPrint_click($sender = null)
+    {
+        $MIOLO             = MIOLO::getInstance();
+        $module            = MIOLO::getCurrentModule();
+        $action            = MIOLO::getCurrentAction();
+
+        $data->selectiveProcessId = MIOLO::_request('selectiveProcessId');
+        $data->reportOption       = MIOLO::_request('reportOption');
+        $data->placeRoomId        = MIOLO::_request('placeRoomId'); 
+        $data->build              = MIOLO::_request('build');
+        $data->room               = MIOLO::_request('room');
+        $data->count              = MIOLO::_request('count');
+        $data->isClassified       = MIOLO::_request('isClassified');
+    }
+
+    public function onLblActClick($sender=NULL)
+    {
+            $MIOLO  = MIOLO::getInstance();
+            $module = MIOLO::getCurrentModule();
+            $action            = MIOLO::getCurrentAction();
+            $postAction = $action;
+            $vars = array ( 'event'=>'tbBtnPrint_click',
+                            'cityExam' => null,
+                            'reportOption'=>$this->reportOption->value,
+                            'selectiveProcessId'=>$this->selectiveProcessId->value
+                            );
+            
+            $this->page->mGoto($MIOLO->getActionURL($module, $postAction,null,$vars));
+
+    }
+
+    public function onLblActClick2($sender=NULL)
+    {
+
+        if ( $this->getFormValue('reportOption', $data->reportOption) ==4 )
+        {
+            $MIOLO  = MIOLO::getInstance();
+            $module = MIOLO::getCurrentModule();
+
+            $data->selectiveProcessId = MIOLO::_request('selectiveProcessId');
+            $data->reportOption       = MIOLO::_request('reportOption');
+            $data->placeRoomId        = MIOLO::_request('placeRoomId');
+            $data->build              = MIOLO::_request('build');
+            $data->room               = MIOLO::_request('room');
+            $data->count              = MIOLO::_request('count');
+
+            $MIOLO->getClass($module, 'RptInscriptionByRoomAct');
+            $data->optionNumber = 2;
+            $report = new RptInscriptionByRoomAct($data);
+        }
+    }
+
+    public function onLblActClick3($sender=NULL, $dataGrid)
+    {
+        //$query = $this->business->inscriptionForRoom($this->getFormValue('selectiveProcessId'));
+
+        if ( $this->getFormValue('reportOption', $data->reportOption) == 4 )
+        {
+            $MIOLO  = MIOLO::getInstance();
+            $module = MIOLO::getCurrentModule();
+
+            /*$data->selectiveProcessId = MIOLO::_request('selectiveProcessId');
+            $data->reportOption       = MIOLO::_request('reportOption');
+            $data->placeRoomId        = MIOLO::_request('placeRoomId');
+            $data->build              = MIOLO::_request('build');
+            $data->room               = MIOLO::_request('room');
+            $data->count              = MIOLO::_request('count');
+
+            $MIOLO->getClass($module, 'RptInscriptionByRoomActs');
+            $data->optionNumber = 1;
+            $report = new RptInscriptionByRoomAllActs($data);*/
+        }
+
+    }
+
+    public function onLblActClick4($sender=NULL)
+    {
+
+        if ( $this->getFormValue('reportOption', $data->reportOption) ==4 )
+        {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+
+        $data->selectiveProcessId = MIOLO::_request('selectiveProcessId');
+        $data->reportOption       = MIOLO::_request('reportOption');
+        $data->placeRoomId        = MIOLO::_request('placeRoomId');
+        $data->build              = MIOLO::_request('build');
+        $data->room               = MIOLO::_request('room');
+        $data->count              = MIOLO::_request('count');
+
+        $MIOLO->getClass($module, 'RptInscriptionByRoomAllWritingActs');
+        $data->optionNumber = 2;
+        $report = new RptInscriptionByRoomWritingAllActs($data);
+        }
+
+        else
+        {
+        }
+
+    }
+
+
+
+    
+}
+
+?>

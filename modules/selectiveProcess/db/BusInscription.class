@@ -1,0 +1,1206 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for sprInscription table
+ *
+ * @author Jamiel Spezia [jamiel@solis.coop.br]
+ *
+ * @version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * Rafael Luís Spengler [rafael@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ *
+ * @since
+ * Class created on 28/11/2005
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br
+ *
+ **/
+
+/**
+ * Class to manipulate the sprInscription table
+ **/
+class BusinessSelectiveProcessBusInscription extends Business
+{
+	public $db;
+
+	/**
+	 * Class constructor
+	 **/
+	public function BusinessSelectiveProcessBusInscription()
+	{
+		$this->db = $this->getDatabase();
+	}
+
+	/**
+	 * Make a connection to the database
+	 *
+	 * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+	 *
+	 * @return (object): A MIOLO Database connection
+	 **/
+	public function getDatabase($module = null)
+	{
+		$MIOLO = MIOLO::getInstance();
+		$MIOLO->getClass('basic','sagu');
+		$module = is_null($module) ? 'selectiveProcess' : $module;
+
+		return $MIOLO->getDatabase($module);
+	}
+
+
+	public function beginTransaction()
+	{
+		//$db = $this->getDatabase('selectiveProcess');
+		$this->db->execute('BEGIN TRANSACTION');
+	}
+
+	public function commit()
+	{
+		//$db = $this->getDatabase('selectiveProcess');
+		$this->db->execute('COMMIT');
+	}
+
+	/**
+	 * Return a specific record from the database
+	 *
+	 * @param $inscriptionId (integer): Primary key of the record to be retrieved
+	 *
+	 * @return (object): Return an object of the type handled by the class
+	 *
+	 **/
+	public function getInscription($inscriptionId)
+	{
+		$MIOLO = MIOLO::getInstance();
+
+		$sql = 'SELECT A.inscriptionId,
+                       A.selectiveProcessId,
+                       A.personId,
+                       A.cityExam,
+                       A.placeRoomId,
+                       A.languageId,
+                       A.isHighSchool,
+                       A.isInternet,
+                       TO_CHAR(A.dateInscription,\'' . MASK_DATE . '\'),
+                       A.totalPoints,
+                       A.isClassified,
+                       A.inscriptionInvoiceId,
+                       A.isCanceled
+		    FROM sprInscription A
+                 WHERE A.inscriptionId = ?';
+
+		//$db     = $this->getDatabase();
+		$result = $this->db->query(SAGU::prepare($sql, $inscriptionId));
+
+		$inscription = new sprInscription();
+		list ( $inscription->inscriptionId,
+		$inscription->selectiveProcessId,
+		$inscription->personId,
+		$inscription->cityExam,
+		$inscription->placeRoomId,
+		$inscription->languageId,
+		$inscription->isHighSchool,
+		$inscription->isInternet,
+		$inscription->dateInscription,
+		$inscription->totalPoints,
+		$inscription->isClassified,
+		$inscription->inscriptionInvoiceId,
+		$inscription->isCanceled) = $result[0];
+
+		$business = $MIOLO->getBusiness('selectiveProcess', 'BusInscriptionOption');
+		$inscription->options = $business->getInscriptionOption($inscriptionId);
+
+		return $inscription;
+	}
+
+
+	/**
+	 * Do a search on the database table handled by the class
+	 *
+	 * @param $filters (object): Search filters
+	 *
+	 * @return (array): An array containing the search results
+	 **/
+	public function searchInscription($filters)
+	{
+		$sql = ' SELECT
+                       A.inscriptionId,
+                       A.selectiveProcessId,
+                       A.personId,
+                       C.name as personName,
+                       A.cityExam,
+                       D.name as cityName,
+                       A.languageId,
+                       E.description as languageDescription,
+                       B.courseOccurrenceId,
+                       F.courseVersion,
+                       F.courseId,
+                       G.shortName || \' / \' || getturndescription(F.turnid),
+			  		   t.description,
+                       B.optionNumber,
+                       F.unitId,
+                       H.description as unitDescription,
+                       C.residentialphone,
+                       C.workphone,
+                       C.cellphone,
+                       I.content,
+                       A.isInternet,
+                       A.isHighSchool,
+                       C.specialNecessityId,
+                       C.email,
+                       coalesce(k.contractid,0) as contrato,
+                       coalesce(l.classid,\'-\') as turma,
+                       case when A.isCanceled then \'Sim\' else \'-\' end as isCanceled
+                  FROM sprInscription A
+             LEFT JOIN sprInscriptionOption B
+                    ON ( A.inscriptionId = B.inscriptionId )
+        LEFT JOIN ONLY basPhysicalPerson C
+                    ON ( A.personId = C.personId )
+             LEFT JOIN basCity D
+                    ON ( A.cityExam = D.cityId )
+             LEFT JOIN sprLanguage E
+                    ON ( A.languageId = E.languageId )
+             LEFT JOIN sprCourseOccurrence F
+                    ON ( B.courseOccurrenceId = F.courseOccurrenceId )
+	      LEFT JOIN basturn t 
+		      ON (t.turnid = F.turnid)
+             LEFT JOIN acdCourse G
+                    ON ( F.courseId = G.courseId )
+             LEFT JOIN basUnit H
+                    ON ( H.unitId = F.unitId )
+             LEFT JOIN basDocument I
+                    ON ( I.personId = C.personId AND I.documentTypeId = ' . RG_CODE . ') ';
+
+		if ( strlen((string)$filters->rgNumber) > 0 )
+		{
+			$sql .= ' INNER JOIN ONLY basDocument J
+                                   ON (J.content = \''.$filters->rgNumber.'\'        AND
+                                       J.documentTypeId = \''.RG_CODE.'\' AND
+                                       J.personId = A.personId)';
+		}
+
+		if ( strlen((string)$filters->cpfNumber) > 0 )
+		{
+			$sql .= ' INNER JOIN ONLY basDocument J
+                                   ON (J.content = \''.$filters->cpfNumber.'\'        AND
+                                       J.documentTypeId = \''.CPF_CODE.'\' AND
+                                       J.personId = A.personId)';
+		}
+
+
+		$sql .= ' LEFT JOIN acdContract K ON (    k.personid = A.personid
+                                              and k.courseid = f.courseid 
+                                              and k.courseversion = f.courseversion
+                                              and not iscontractout(k.contractid)
+                                              and k.turnid = f.turnid and k.unitid = f.unitid
+                                              )
+                  LEFT JOIN acdClassPupil L ON (
+                                                l.contractid = k.contractid
+                                               )
+                                               ';    
+
+		if ( strlen((string)$filters->selectiveProcessId) > 0 )
+		{
+			$where .= ' AND A.selectiveProcessId = ? ';
+			$args[] = $filters->selectiveProcessId;
+		}
+		if ( strlen((string)$filters->personId) > 0 )
+		{
+			$where .= ' AND A.personId = ? ';
+			$args[] = $filters->personId;
+		}
+		if ( strlen((string)$filters->personName) > 0 )
+		{
+			$where .= ' AND TO_ASCII(C.name) ilike TO_ASCII(?) ';
+			$args[] = $filters->personName . '%';
+		}
+		if ( strlen((string)$filters->cityExam) > 0 )
+		{
+			$where .= ' AND A.cityExam = ? ';
+			$args[] = $filters->cityExam;
+		}
+		if ( strlen((string)$filters->cityName) > 0 )
+		{
+			$where .= ' AND TO_ASCII(D.name) ILIKE TO_ASCII(?) ';
+			$args[] = $filters->cityName . '%';
+		}
+		if ( strlen((string)$filters->languageId) > 0 )
+		{
+			$where .= ' AND A.languageId = ? ';
+			$args[] = $filters->languageId;
+		}
+		if ( strlen((string)$filters->languageDescription) > 0 )
+		{
+			$where .= ' AND TO_ASCII(E.languageDescription) = TO_ASCII(?) ';
+			$args[] = $filters->languageDescription . '%';
+		}
+		if ( strlen((string)$filters->courseOccurrenceId) > 0 )
+		{
+			$where .= ' AND B.courseOccurrenceId = ? ';
+			$args[] = $filters->courseOccurrenceId;
+		}
+		if ( strlen((string)$filters->courseVersion) > 0 )
+		{
+			$where .= ' AND F.courseVersion = ? ';
+			$args[] = $filters->courseVersion;
+		}
+		if ( strlen((string)$filters->courseId) > 0 )
+		{
+			$where .= ' AND F.courseId = ? ';
+			$args[] = $filters->courseId;
+		}
+		if ( strlen((string)$filters->courseName) > 0 )
+		{
+			$where .= ' AND TO_ASCII(G.name) ILIKE TO_ASCII(?) ';
+			$args[] = $filters->courseName . '%';
+		}
+		if ( strlen((string)$filters->optionNumber) > 0 )
+		{
+			$where .= ' AND B.optionNumber = ? ';
+			$args[] = $filters->optionNumber;
+		}
+		if ( strlen((string)$filters->placeRoomId) > 0 )
+		{
+			$where .= ' AND A.placeRoomId = ? ';
+			$args[] = $filters->placeRoomId;
+		}
+		if ( strlen((string)$filters->unitId) > 0 )
+		{
+			$where .= ' AND F.unitId = ? ';
+			$args[] = $filters->unitId;
+		}
+		if ( strlen((string)$filters->turnId) > 0 )
+		{
+			$where .= ' AND F.turnId = ? ';
+			$args[] = $filters->turnId;
+		}
+		if ( strlen((string)$filters->ishighschool) > 0 )
+		{
+			$where .= ' AND A.ishighschool = ? ';
+			$args[] = $filters->ishighschool;
+		}
+		if ( strlen((string)$filters->specialNecessityId) > 0 )
+		{
+			if ( $filters->specialNecessityId == 0 )
+			{
+				$where .= ' AND ( C.specialNecessityId = 0 OR C.specialNecessityId IS NULL )';
+			}
+			else
+			{
+				$where .= ' AND C.specialNecessityId = ? ';
+				$args[] = $filters->specialNecessityId;
+			}
+		}
+
+		if ( strlen((string)$filters->isCanceled) > 0 )
+		{
+			$where .= ' AND A.isCanceled = ? ';
+			$args[] = $filters->isCanceled;
+		}
+
+		unset($result);
+
+		if ( strlen((string)$where) > 0 )
+		{
+			$sql .= ' WHERE ' . substr($where, 4) . ' ORDER BY C.name, inscriptionId, selectiveProcessId, B.optionNumber';
+
+			$result = $this->db->query(SAGU::prepare($sql, $args));
+		}
+
+		return $result;
+	}
+
+
+
+
+	/**
+	 * Do a search on the database table handled by the class
+	 *
+	 * @param $filters (object): Search filters
+	 *
+	 * @return (array): An array containing the search results
+	 **/
+	public function searchInscriptionGrid($filters)
+	{
+		$sql = ' SELECT to_char(A.datetime, \'' . MASK_DATE . '\') as dateinscription,
+                       A.inscriptionId,
+                       A.selectiveProcessId,
+                       A.personId,
+                       C.name as personName,
+                       A.cityExam,
+                       D.name as cityName,
+                       A.languageId,
+                       E.description as languageDescription,
+                       B.courseOccurrenceId,
+                       F.courseVersion,
+                       F.courseId,
+                       G.shortName || \' / \' || getturndescription(F.turnid),
+			  		   t.description,
+                       B.optionNumber,
+                       F.unitId,
+                       H.description as unitDescription,
+                       C.residentialphone,
+                       C.workphone,
+                       C.cellphone,
+                       I.content,
+                       A.isInternet,
+                       A.isHighSchool,
+                       C.specialNecessityId,
+                       C.email,
+                       coalesce(k.contractid,0) as contrato,
+                       coalesce(l.classid,\'-\') as turma,
+                       to_char(k.datetime, \'' . MASK_DATE . '\') as datecontract
+                  FROM sprInscription A
+             LEFT JOIN sprInscriptionOption B
+                    ON ( A.inscriptionId = B.inscriptionId )
+        LEFT JOIN ONLY basPhysicalPerson C
+                    ON ( A.personId = C.personId )
+             LEFT JOIN basCity D
+                    ON ( A.cityExam = D.cityId )
+             LEFT JOIN sprLanguage E
+                    ON ( A.languageId = E.languageId )
+             LEFT JOIN sprCourseOccurrence F
+                    ON ( B.courseOccurrenceId = F.courseOccurrenceId )
+	      LEFT JOIN basturn t 
+		      ON (t.turnid = F.turnid)
+             LEFT JOIN acdCourse G
+                    ON ( F.courseId = G.courseId )
+             LEFT JOIN basUnit H
+                    ON ( H.unitId = F.unitId )
+             LEFT JOIN basDocument I
+                    ON ( I.personId = C.personId AND I.documentTypeId = ' . RG_CODE . ') ';
+
+		if ( strlen((string)$filters->rgNumber) > 0 )
+		{
+			$sql .= ' INNER JOIN ONLY basDocument J
+                                   ON (J.content = \''.$filters->rgNumber.'\'        AND
+                                       J.documentTypeId = \''.RG_CODE.'\' AND
+                                       J.personId = A.personId)';
+		}
+
+		if ( strlen((string)$filters->cpfNumber) > 0 )
+		{
+			$sql .= ' INNER JOIN ONLY basDocument J
+                                   ON (J.content = \''.$filters->cpfNumber.'\'        AND
+                                       J.documentTypeId = \''.CPF_CODE.'\' AND
+                                       J.personId = A.personId)';
+		}
+
+
+		$sql .= ' LEFT JOIN acdContract K ON (    k.personid = A.personid
+                                              and k.courseid = f.courseid 
+                                              and k.courseversion = f.courseversion
+                                              and not iscontractout(k.contractid)
+                                              and k.turnid = f.turnid and k.unitid = f.unitid
+                                              )
+                  LEFT JOIN acdClassPupil L ON (
+                                                l.contractid = k.contractid
+                                               )
+                                               ';    
+
+		if ( strlen((string)$filters->selectiveProcessId) > 0 )
+		{
+			$where .= ' AND A.selectiveProcessId = ? ';
+			$args[] = $filters->selectiveProcessId;
+		}
+		if ( strlen((string)$filters->personId) > 0 )
+		{
+			$where .= ' AND A.personId = ? ';
+			$args[] = $filters->personId;
+		}
+		if ( strlen((string)$filters->personName) > 0 )
+		{
+			$where .= ' AND TO_ASCII(C.name) ilike TO_ASCII(?) ';
+			$args[] = $filters->personName . '%';
+		}
+		if ( strlen((string)$filters->cityExam) > 0 )
+		{
+			$where .= ' AND A.cityExam = ? ';
+			$args[] = $filters->cityExam;
+		}
+		if ( strlen((string)$filters->cityName) > 0 )
+		{
+			$where .= ' AND TO_ASCII(D.name) ILIKE TO_ASCII(?) ';
+			$args[] = $filters->cityName . '%';
+		}
+		if ( strlen((string)$filters->languageId) > 0 )
+		{
+			$where .= ' AND A.languageId = ? ';
+			$args[] = $filters->languageId;
+		}
+		if ( strlen((string)$filters->languageDescription) > 0 )
+		{
+			$where .= ' AND TO_ASCII(E.languageDescription) = TO_ASCII(?) ';
+			$args[] = $filters->languageDescription . '%';
+		}
+		if ( strlen((string)$filters->courseOccurrenceId) > 0 )
+		{
+			$where .= ' AND B.courseOccurrenceId = ? ';
+			$args[] = $filters->courseOccurrenceId;
+		}
+		if ( strlen((string)$filters->courseVersion) > 0 )
+		{
+			$where .= ' AND F.courseVersion = ? ';
+			$args[] = $filters->courseVersion;
+		}
+		if ( strlen((string)$filters->courseId) > 0 )
+		{
+			$where .= ' AND F.courseId = ? ';
+			$args[] = $filters->courseId;
+		}
+		if ( strlen((string)$filters->courseName) > 0 )
+		{
+			$where .= ' AND TO_ASCII(G.name) ILIKE TO_ASCII(?) ';
+			$args[] = $filters->courseName . '%';
+		}
+		if ( strlen((string)$filters->optionNumber) > 0 )
+		{
+			$where .= ' AND B.optionNumber = ? ';
+			$args[] = $filters->optionNumber;
+		}
+		if ( strlen((string)$filters->placeRoomId) > 0 )
+		{
+			$where .= ' AND A.placeRoomId = ? ';
+			$args[] = $filters->placeRoomId;
+		}
+		if ( strlen((string)$filters->unitId) > 0 )
+		{
+			$where .= ' AND F.unitId = ? ';
+			$args[] = $filters->unitId;
+		}
+		if ( strlen((string)$filters->turnId) > 0 )
+		{
+			$where .= ' AND F.turnId = ? ';
+			$args[] = $filters->turnId;
+		}
+		if ( strlen((string)$filters->ishighschool) > 0 )
+		{
+			$where .= ' AND A.ishighschool = ? ';
+			$args[] = $filters->ishighschool;
+		}
+		if ( strlen((string)$filters->specialNecessityId) > 0 )
+		{
+			if ( $filters->specialNecessityId == 0 )
+			{
+				$where .= ' AND ( C.specialNecessityId = 0 OR C.specialNecessityId IS NULL )';
+			}
+			else
+			{
+				$where .= ' AND C.specialNecessityId = ? ';
+				$args[] = $filters->specialNecessityId;
+			}
+		}
+
+		unset($result);
+
+		if ( strlen((string)$where) > 0 )
+		{
+			$sql .= ' WHERE ' . substr($where, 4) . ' ORDER BY C.name, inscriptionId, selectiveProcessId, B.optionNumber';
+
+			$result = $this->db->query(SAGU::prepare($sql, $args));
+		}
+
+		return $result;
+	}
+
+	/**
+	 * Do a search on the database table handled by the special
+	 * necessity ans selective process
+	 *
+	 * @param $filters (object): Search filters
+	 *
+	 * @return (array): An array containing the search results
+	 **/
+	public function getInscriptionsBySpecialNecessity($filters)
+	{
+		$sql = ' SELECT A.inscriptionId,
+                       A.selectiveProcessId,
+                       A.personId,
+                       B.name as personName,
+                       B.residentialphone,
+                       B.workphone,
+                       B.cellphone
+                  FROM sprInscription A
+       INNER JOIN ONLY basPhysicalPerson B
+                    ON ( A.personId = B.personId ) ';
+
+		if ( strlen((string)$filters->selectiveProcessId) > 0 )
+		{
+			$where .= ' AND A.selectiveProcessId = ? ';
+			$args[] = $filters->selectiveProcessId;
+		}
+		if ( strlen((string)$filters->specialNecessityId) > 0 )
+		{
+			if ( $filters->specialNecessityId == 0 )
+			{
+				$where .= ' AND ( B.specialNecessityId = 0 OR B.specialNecessityId IS NULL )';
+			}
+			else
+			{
+				$where .= ' AND B.specialNecessityId = ? ';
+				$args[] = $filters->specialNecessityId;
+			}
+		}
+
+		unset($result);
+		if ( strlen((string)$where) > 0 )
+		{
+			$sql .= ' WHERE ' . substr($where, 4) . ' ORDER BY B.name, A.inscriptionId';
+			//$db = $this->getDatabase();
+
+			$result = $this->db->query(SAGU::prepare($sql, $args));
+			//$db->close();
+		}
+
+		return $result;
+	}
+
+	/**
+	 * Do a search on the database table handled by the class
+	 *
+	 * @param $filters (object): Search filters
+	 *
+	 * @return (array): An array containing the search results
+	 **/
+	public function searchInscriptionToWrittingAndAnswerSheet($filters)
+	{
+		$sql = ' SELECT A.inscriptionId,
+                       A.selectiveProcessId,
+                       A.personId,
+                       C.name as personName,
+                       A.cityExam,
+                       D.name as cityName,
+                       A.languageId,
+                       E.description as languageDescription,
+                       B.courseOccurrenceId,
+                       F.courseVersion,
+                       F.courseId,
+                       G.shortName as courseName,
+			  B.optionNumber,
+                       F.unitId,
+                       H.description as unitDescription,
+                       I.room,
+                       I.build,
+                       J.content AS personRG
+                  FROM sprInscription A
+             LEFT JOIN sprInscriptionOption B
+                    ON ( A.inscriptionId = B.inscriptionId )
+        LEFT JOIN ONLY basPhysicalPerson C
+                    ON ( A.personId = C.personId )
+             LEFT JOIN basCity D
+                    ON ( A.cityExam = D.cityId )
+             LEFT JOIN sprLanguage E
+                    ON ( A.languageId = E.languageId )
+             LEFT JOIN sprCourseOccurrence F
+                    ON ( B.courseOccurrenceId = F.courseOccurrenceId )
+             LEFT JOIN acdCourse G
+                    ON ( F.courseId = G.courseId )
+	      LEFT JOIN basUnit H
+                    ON ( H.unitId = F.unitId )
+             LEFT JOIN sprPlaceRoom I
+                    ON (I.placeRoomId = A.placeRoomId)
+             LEFT JOIN basDocument J
+                    ON (J.personId = A.personId AND
+                        J.documentTypeId = ' . RG_CODE . ')';
+
+		if ( strlen((string)$filters->selectiveProcessId) > 0 )
+		{
+			$where .= ' AND A.selectiveProcessId = ? ';
+			$args[] = $filters->selectiveProcessId;
+		}
+		if ( strlen((string)$filters->inscriptionId) > 0 )
+		{
+			$where .= ' AND A.inscriptionId = ? ';
+			$args[] = $filters->inscriptionId;
+		}
+
+
+		$where .= ' AND B.optionNumber = 1';            //Generate only first option
+
+		unset($result);
+		if ( strlen((string)$where) > 0 )
+		{
+			$sql .= ' WHERE ' . substr($where, 4) . ' ORDER BY C.name, inscriptionId, selectiveProcessId, B.optionNumber';
+			//$db = $this->getDatabase();
+
+			$result = $this->db->query(SAGU::prepare($sql, $args));
+		}
+
+		return $result;
+	}
+
+	/**
+	 * Insert a new record
+	 *
+	 * @param $data (object): An object of the type handled by the class
+	 *
+	 * @return True if succed, otherwise False
+	 *
+	 **/
+	public function insertInscription($data)
+	{
+		$MIOLO  = MIOLO::getInstance();
+		$db     = $this->getDatabase();
+
+		$sql = 'SELECT NEXTVAL(\'seq_inscriptionid\')';
+		$ret = $this->db->query(SAGU::prepare($sql,null));
+		$data->inscriptionId = $ret[0][0];
+
+		$sql = 'INSERT INTO sprInscription
+                            (inscriptionId,
+                             selectiveProcessId,
+                             personId,
+                             cityExam,
+                             placeRoomId,
+                             languageId,
+                             isHighSchool,
+                             isInternet,
+                             totalPoints,
+                             isClassified,
+                             inscriptionInvoiceId,
+                             isCanceled)
+                     VALUES (?,?,?,?,?,?,?,?,?,?,?,\'F\')';
+
+		$args   = array ( $data->inscriptionId,
+		$data->selectiveProcessId,
+		$data->personId,
+		$data->cityExam,
+		$data->placeRoomId,
+		$data->languageId,
+		$data->isHighSchool,
+		$data->isInternet,
+		$data->totalPoints,
+		$data->isClassified,
+		$data->inscriptionInvoiceId);
+
+		$result = $this->db->execute(SAGU::prepare($sql, $args));
+
+		//$db->close();
+
+		if ( $result )
+		{
+			if ( is_array($data->options) )
+			{
+				$businessInscriptionOption = $MIOLO->GetBusiness('selectiveProcess', 'BusInscriptionOption');
+				foreach( $data->options as $option )
+				{
+					$option->inscriptionId = $data->inscriptionId;
+					$ok = $businessInscriptionOption->insertInscriptionOption($option);
+				}
+			}
+			return $data;
+		}
+
+		return false;
+	}
+
+	/**
+	 * Update data from a specific record
+	 *
+	 * @param $data (object): Data which will replace the old record data
+	 *
+	 * @return (boolean): True if succeed, otherwise False
+	 *
+	 **/
+	public function updateInscription($data)
+	{
+		$MIOLO = MIOLO::getInstance();
+
+		$sql = 'UPDATE sprInscription
+                   SET personId             = ?,
+                       cityExam             = ?,
+                       placeRoomId          = ?,
+                       languageId           = ?,
+                       isHighSchool         = ?,
+                       isInternet           = ?,
+                       totalPoints          = ?,
+                       isClassified         = ?,
+                       inscriptionInvoiceId = ?,
+                       isCanceled           = ?
+                 WHERE inscriptionId        = ?';
+
+		$data->isCanceled = isset($data->isCanceled) ? $data->isCanceled : 'F';
+		$args   = array ( $data->personId,
+		$data->cityExam,
+		$data->placeRoomId,
+		$data->languageId,
+		$data->isHighSchool,
+		$data->isInternet,
+		$data->totalPoints,
+		$data->isClassified,
+		$data->inscriptionInvoiceId,
+		$data->isCanceled,
+		$data->inscriptionId);
+
+		$db   = $this->getDatabase();
+		$sqls = SAGU::prepare($sql, $args);
+		for ( $i=0; $i<count($sqls); $i++ )
+		{
+			$result = $this->db->execute($sqls[$i]);
+		}
+
+		if ( is_array($data->options) )
+		{
+			foreach ( $data->options as $key=>$option )
+			{
+				$business = $MIOLO->getBusiness('selectiveProcess', 'BusInscriptionOption');
+				$result = $business->updateInscriptionOption($option);
+			}
+		}
+
+		return $result;
+	}
+
+	/**
+	 * Delete a record
+	 *
+	 * @param $inscriptionId (string): Primary key for deletion
+	 *
+	 * @return (boolean): True if succeed, otherwise False
+	 *
+	 **/
+	public function deleteInscription($inscriptionId)
+	{
+		$MIOLO = MIOLO::getInstance();
+		$businessInscriptionOption = $MIOLO->GetBusiness('selectiveProcess', 'BusInscriptionOption');
+		$businessInscriptionOption->deleteInscriptionOption($inscriptionId);
+
+		$sql = 'DELETE FROM sprInscription
+                      WHERE inscriptionId = ?';
+
+		//$db     = $this->getDatabase();
+		$result = $this->db->execute(SAGU::prepare($sql, $inscriptionId));
+
+		return $result;
+	}
+
+
+	/**
+	 * list the inscription notes result if the inscription already have a result
+	 *
+	 * @author: William Prigol Lopes [william@solis.coop.br]
+	 *
+	 * @param $inscriptionId (int): inscription info
+	 *
+	 * @return (array): Exam info and notes about inscription
+	 *
+	 */
+	public function listInscriptionNotes($inscriptionId)
+	{
+		$sql = '     SELECT to_char(examDateTime, \''.MASK_DATE.'\'),
+                            D.description,
+                            B.note
+                       FROM sprInscription A
+                 INNER JOIN sprNote B
+                      USING (inscriptionId)
+                 INNER JOIN sprExamOccurrence C
+                      USING (examOccurrenceId)
+                 INNER JOIN sprExam D
+                      USING (examId)
+                      WHERE A.inscriptionId = ? ';
+		//$db = $this->getDatabase();
+
+		$args = array($inscriptionId);
+
+		$result = $this->db->query(SAGU::prepare($sql, $args));
+
+		return $result;
+
+	}
+
+	/**
+	 * List the inscription for reserve room
+	 *
+	 * @author: Hélio H. R. Guimarães [helio@solis.coop.br]
+	 *
+	 * @return (array): list of inscription
+	 *
+	 */
+	public function listInscriptionReserveRoom($filters)
+	{
+		$sql = '     SELECT A.inscriptionId,
+                            A.cityExam, ';
+
+		$sql .= $filters->auxSelect;
+
+		$sql .=       ' FROM sprInscription A
+             INNER JOIN ONLY basPhysicalPerson B
+                          ON (B.personId = A.personId)
+                       WHERE A.selectiveProcessId = ?';
+
+		if ( $filters->alphabeticOrder == DB_TRUE )
+		{
+			$sql .= ' ORDER BY A.cityExam, B.name ASC' ;
+		}
+		else
+		{
+			$sql .= ' ORDER BY A.cityExam, A.inscriptionId' ;
+		}
+
+		$args[] = $filters->selectiveProcessId;
+
+		$result = $this->db->query(SAGU::prepare($sql, $args));
+
+		return $result;
+	}
+
+	/**
+	 * set place room id to inscription
+	 *
+	 * @author: Jamiel Spezia [jamiel@solis.coop.br]
+	 *
+	 * @param $selectiveProcessId (int): selective process id
+	 * @param $personId (array): person id
+	 * @param $placeRoomId (int): place room id
+	 *
+	 * @return (boolean): True if succeed, otherwise False
+	 *
+	 */
+	public function setPlaceRoomInscription($selectiveProcessId, $inscriptionId, $placeRoomId)
+	{
+		$args = array($selectiveProcessId);
+		$sql = ' UPDATE sprInscription
+                    SET placeRoomId        = ?
+                  WHERE selectiveProcessId = ? ';
+
+		if ( strlen((string)$inscriptionId) > 0 )
+		{
+			$sql .= ' AND inscriptionId in ('.$inscriptionId.') ';
+		}
+
+		$db = $this->getDatabase();
+		$args = array($placeRoomId, $selectiveProcessId);
+
+		$sqls = SAGU::prepare($sql, $args);
+
+		for ( $i=0; $i<count($sqls); $i++ )
+		{
+			$result = $this->db->execute($sqls[$i]);
+		}
+
+		return $result;
+	}
+
+	/**
+	 * get amount inscription room
+	 *
+	 * @author: Jamiel Spezia [jamiel@solis.coop.br]
+	 *
+	 * @param $selectiveProcessId (int): selective process id
+	 *
+	 * @return (array): list of amount inscription for room
+	 *
+	 */
+	public function listAmountInscriptionRoom($selectiveProcessId)
+	{
+		$sql1 = 'SELECT D.name as cityName,
+                       B.room,
+                       B.build,
+                       B.specialNecessity,
+                       F.description,
+                       B.isHighSchool,
+                       count(A.placeRoomId)
+                  FROM sprInscription A
+            INNER JOIN sprPlaceRoom B
+                    ON (B.placeRoomId = A.placeRoomId)
+            INNER JOIN sprPlace C
+                    ON (C.placeId = B.placeId)
+            INNER JOIN basCity D
+                    ON (D.cityId = C.cityId)
+       INNER JOIN ONLY basPhysicalPerson E
+                    ON (E.personId = A.personId)
+             LEFT JOIN sprLanguage F
+                    ON (F.languageId = B.languageId)
+            INNER JOIN sprPlaceOccurrence G
+                    ON (G.placeId = B.placeId AND
+                        G.selectiveProcessId = A.selectiveProcessId)
+                 WHERE A.selectiveProcessId = ?
+              GROUP BY 1, 2, 3, 4, 5, 6
+              ORDER BY D.name ASC';
+
+		$db = $this->getDatabase();
+		$args1 = array($selectiveProcessId);
+
+		$result1 = $this->db->query(SAGU::prepare($sql1, $args1));
+
+		if ( isset($result1) )
+		{
+			foreach ( $result1 as $inscriptions ) //Sum total inscriptions
+			{
+				$totalInscriptions += $inscriptions[6];
+			}
+		}
+
+		$sql2    = 'SELECT count(*)
+                      FROM sprInscription A
+                     WHERE A.selectiveProcessId = ? AND
+                           A.placeRoomId IS NULL';
+
+		$args2 = array($selectiveProcessId);
+
+		$result2 = $this->db->query(SAGU::prepare($sql2, $args2));
+
+		$noInscript    = $result2[0][0];
+
+		$result2[0][6] = '<b>' . $result2[0][0] . '</b>';
+		$result2[0][0] = '<b>' . _M('No inscriptions alocated', 'selectiveProcess') . '</b>';
+
+		$result2[1][6] = '<b>' . ($noInscript + $totalInscriptions) . '</b>';
+		$result2[1][0] = '<b>' . _M('Total inscriptions', 'selectiveProcess') . '</b>';
+
+		if ( isset($result1) && isset($result2) )
+		{
+			$result = array_merge($result1, $result2);
+		}
+		else
+		{
+			if ( isset($result1) )
+			{
+				$result = $result1;
+			}
+			elseif ( isset($result2) )
+			{
+				$result = $result2;
+			}
+		}
+
+		return $result;
+	}
+
+
+
+
+
+	/**
+	 * get amount inscription room
+	 *
+	 * @author: Jamiel Spezia [jamiel@solis.coop.br]
+	 *
+	 * @param $selectiveProcessId (int): selective process id
+	 *
+	 * @return (array): list of amount inscription for room
+	 *
+	 */
+	public function getOthersSelectiveProcess($selectiveProcessId)
+	{
+		$args = array(  $selectiveProcessId,
+		DEFAULT_SELECTIVE_PROCESS_TYPE);
+
+		$sql = ' SELECT A.examOccurrenceId,
+                        A.selectiveProcessTypeId,
+                        A.examId,
+                        B.description,
+                        C.description
+                   FROM sprExamOccurrence A
+              LEFT JOIN sprExam B
+                     ON (A.examId = B.examId)
+              LEFT JOIN sprSelectiveProcessType C
+                     ON (A.selectiveProcessTypeId = C.selectiveProcessTypeId) 
+                  WHERE A.selectiveProcessId  = ?
+                    AND A.selectiveProcessTypeId <> ? ';
+
+		$db = $this->getDatabase();
+		$result = $this->db->query(SAGU::prepare($sql, $args));
+
+		return $result;
+	}
+
+	/**
+	 * Do a search on the database table handled by the class
+	 *
+	 * @param $filters (object): Search filters
+	 *
+	 * @return (array): An array containing the search results
+	 **/
+	public function searchCourseClassification($filters)
+	{
+		$sql = ' SELECT DISTINCT A.selectiveProcessId,
+                                C.unitId,
+                                E.description,
+                                C.courseId,
+                                C.courseVersion,
+                                D.shortName || \' - \' || G.description AS courseName,
+                                F.vacant,
+                                C.turnId
+                           FROM sprInscription A
+                      LEFT JOIN sprInscriptionOption B
+                             ON ( A.inscriptionId = B.inscriptionId )
+                      LEFT JOIN sprCourseOccurrence C
+                             ON ( B.courseOccurrenceId = C.courseOccurrenceId )
+                      LEFT JOIN acdCourse D
+                             ON ( D.courseId = C.courseId )
+                      LEFT JOIN basUnit E
+                             ON ( E.unitId = C.unitId )
+                      LEFT JOIN basTurn G
+                             ON ( G.turnId = C.turnId )
+                      LEFT JOIN sprCourseVacant F
+                             ON ( F.courseVacantId = C.courseVacantId ) ';
+
+		if ( strlen((string)$filters->selectiveProcessId) > 0 )
+		{
+			$where .= ' AND A.selectiveProcessId = ? ';
+			$args[] = $filters->selectiveProcessId;
+		}
+		if ( strlen((string)$filters->personId) > 0 )
+		{
+			$where .= ' AND A.personId = ? ';
+			$args[] = $filters->personId;
+		}
+		if ( strlen((string)$filters->courseId) > 0 )
+		{
+			$where .= ' AND C.courseId = ? ';
+			$args[] = $filters->courseId;
+		}
+		if ( strlen((string)$filters->courseName) > 0 )
+		{
+			$where .= ' AND TO_ASCII(D.courseName) = TO_ASCII(?) ';
+			$args[] = $filters->courseName . '%';
+		}
+		if ( strlen((string)$filters->unitId) > 0 )
+		{
+			$where .= ' AND C.unitId = ? ';
+			$args[] = $filters->unitId;
+		}
+		unset($result);
+		if ( strlen((string)$where) > 0 )
+		{
+			$sql .= ' WHERE ' . substr($where, 4) . ' ORDER BY 6 ';
+			//$db = $this->getDatabase();
+			$result = $this->db->query(SAGU::prepare($sql, $args));
+		}
+
+		return $result;
+	}
+
+	public function reportInscriptionByRoomAct($filters)
+	{
+		$sql = '    SELECT A.examId,
+                           B.description
+                      FROM sprExamOccurrence A
+                INNER JOIN sprExam B
+                     USING (examId)
+                     WHERE A.selectiveProcessId = ?
+                       AND A.selectiveProcessTypeId = ?
+                  ORDER BY B.description';
+
+		$args = array($filters->selectiveProcessId,
+		DEFAULT_SELECTIVE_PROCESS_TYPE);
+
+		//$db = $this->getDatabase();
+
+		$result = $this->db->query(SAGU::prepare($sql, $args));
+
+		return $result;
+	}
+
+	/**
+	 * Return the number of inscriptions in one selective process
+	 *
+	 * @param $selectiveProcessId(varchar): Foreign key of the record to be retrieved
+	 *
+	 * @return (int): The number of inscriptions
+	 *
+	 **/
+	public function getInscriptinsNumber($selectiveProcess)
+	{
+		$sql = 'SELECT count(*)
+                  FROM sprInscription
+                 WHERE selectiveProcessId = ?';
+
+		//$db     = $this->getDatabase();
+		$result = $this->db->query(SAGU::prepare($sql, $selectiveprocessid));
+
+		return $result[0][0];
+	}
+
+	/**
+	 * Verify if invoiceId is valid
+	 *
+	 * @author: Hélio H. R. Guimarães [helio@solis.coop.br]
+	 *
+	 * @param $invoiceId (int): invoice id
+	 *
+	 * @return (array): list of array from inscription
+	 *
+	 */
+	public function verifyInvoiceId($invoiceId)
+	{
+		$sql = ' SELECT A.inscriptionId
+                   FROM sprInscription A
+                  WHERE A.inscriptionInvoiceId  = ? ';
+
+		//$db = $this->getDatabase();
+		$result = $this->db->query(SAGU::prepare($sql, $invoiceId));
+
+		return $result;
+	}
+
+	/**
+	 * Get invoice id number of person id
+	 *
+	 * @author: Hélio H. R. Guimarães [helio@solis.coop.br]
+	 *
+	 * @param $filters (array): dates possible to query
+	 *
+	 * @return (int): invoiceId
+	 *
+	 */
+	public function getInvoiceId($filters)
+	{
+		$sql = ' SELECT A.inscriptionInvoiceId
+                   FROM sprInscription A
+        INNER JOIN ONLY basPhysicalPerson B
+                     ON (A.personId = B.personId) ';
+
+		$args = array();
+
+		if ( strlen((string)$filters->invoiceId) > 0 )
+		{
+			$where .= ' AND A.inscriptionInvoiceId = ?';
+			$args[] = $filters->invoiceId;
+		}
+
+		if ( strlen((string)$filters->rgNumber) > 0 )
+		{
+			$sql .= ' INNER JOIN ONLY basDocument C
+                                   ON (C.content = \''.$filters->rgNumber.'\'        AND
+                                       C.documentTypeId = \''.RG_CODE.'\' AND
+                                       C.personId = A.personId)';
+		}
+
+		if ( strlen((string)$filters->cpfNumber) > 0 )
+		{
+			$sql .= ' INNER JOIN ONLY basDocument C
+                                   ON (C.content = \''.$filters->cpfNumber.'\'        AND
+                                       C.documentTypeId = \''.CPF_CODE.'\' AND
+                                       C.personId = A.personId)';
+		}
+
+		if ( strlen((string)$where) > 0 )
+		{
+			$sql .= ' WHERE ' . substr($where, 4);
+		}
+
+		//$db = $this->getDatabase();
+		$result = $this->db->query(SAGU::prepare($sql, $args));
+
+		return $result[0][0];
+	}
+}
+
+?>

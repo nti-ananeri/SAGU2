@@ -1,0 +1,723 @@
+<?php
+
+/**
+ * Form to include checks
+ *
+ * @author Daniel Afonso Heisler [daniel@hsti.inf.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * Rafael Luís Spengler [rafael@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ *
+ * @since
+ * Class created on 31/10/2007
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2005 SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+
+/**
+ * Form to manipulate checks
+ **/
+class FrmCheck extends MForm
+{
+
+    /**
+     * Class constructor
+     **/
+    function __construct()
+    {
+        $module = MIOLO::getCurrentModule();
+        if ( MIOLO::_request('function') == 'insert' )
+        {
+            parent::__construct(_M('Insert', $module));
+        }
+        else
+        {
+            parent::__construct(_M('Update', $module));
+        }
+
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+        $event    = MIOLO::_request('event');
+
+        //faz o cálculo do valor total
+        $jsCode = 
+<<< HERE
+        function isNumeric(control)
+        {
+            return (! isNaN(parseFloat(control))) && (parseFloat(control) == control)
+        }
+
+        function balanceBlur()
+        {
+
+            if ( ! isNumeric(document.getElementById('checkValue').value) )
+                document.getElementById('checkValue').value = '0.00';
+            if ( ! isNumeric(document.getElementById('tax').value) )
+                document.getElementById('tax').value = '0.00';
+            if ( ! isNumeric(document.getElementById('interest').value) )
+                document.getElementById('interest').value = '0.00';
+            if ( ! isNumeric(document.getElementById('discount').value) )
+                document.getElementById('discount').value = '0.00';
+            if ( ! isNumeric(document.getElementById('totalValue').value) )
+                document.getElementById('totalValue').value = '0.00';
+
+            document.getElementById('totalValue').value = ( parseFloat(document.getElementById('checkValue').value) + parseFloat(document.getElementById('tax').value) + parseFloat(document.getElementById('interest').value) - parseFloat(document.getElementById('discount').value));
+        }
+HERE;
+        $this->page->addJSCode($jsCode);
+
+        $toolBar = new MToolBar('toolBar', $MIOLO->getActionURL($module, $action));
+
+        if ( $function == 'insert' )
+        {
+            $toolBar->disableButton('tbBtnDelete');
+            $toolBar->disableButton('tbBtnPrint');
+        }
+        elseif ( $function == 'delete' )
+        {
+            $toolBar->disableButton('tbBtnSave');
+        }
+        $fields[] = $toolBar;
+
+        $fields[] = new Separator();
+
+        if ( $event == 'tbBtnSave:click' )
+        {
+            $fields[] = new MHiddenField('saveAnyWay', $this->getFormValue('saveAnyWay', $this->saveAnyWay->value));
+            $fields[] = new MHiddenField('checkBalance2', $this->getFormValue('checkBalance2', $this->checkBalance2->value));
+        }
+
+        $gotoBack = unserialize(urldecode(stripslashes(MIOLO::_request('gotoBack'))));
+        $fields[] = new MHiddenField('gotoBackInvoiceId', strlen((string)$this->getFormValue('gotoBackInvoiceId'))>0 ? $this->getFormValue('gotoBackInvoiceId') : $gotoBack['gotoBackInvoiceId']);
+        $fields[] = new MHiddenField('gotoBackAction', strlen((string)$this->getFormValue('gotoBackAction'))>0 ? $this->getFormValue('gotoBackAction') : $gotoBack['gotoBackAction']);
+        $fields[] = new MHiddenField('gotoBackPersonId', strlen((string)$this->getFormValue('gotoBackPersonId'))>0 ? $this->getFormValue('gotoBackPersonId') : $gotoBack['gotoBackPersonId']);
+        $fields[] = new MHiddenField('gotoBackGoto', strlen((string)$this->getFormValue('gotoBackGoto'))>0 ? $this->getFormValue('gotoBackGoto') : $gotoBack['gotoBackGoto']);
+
+        /* dados pessoais */
+        $fields[] = new MHiddenField('limbo');
+        $fields[] = new MDiv('downQuestion', null);
+
+        if ( in_array($function, array('update', 'delete')) )
+        {
+            $checkId  = $_GET['checkId'] ? $_GET['checkId'] : $_POST['checkId'];
+            $fields[] = new MHiddenField('checkId', $checkId);
+
+            $busCheck = $MIOLO->getBusiness('finance', 'BusCheck');
+            $data     = $busCheck->getCheck($checkId);
+        }
+
+        $contractPersonLabel = new MText('contractPersonLabel', _M('Person', 'academic') . ':');
+        $contractPersonLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $contractPersonLabel->setClass('m-caption m-caption-required');
+        $flds[]              = $contractPersonLabel;
+            
+        $contractPersonId    = new MLookupTextField('contractPersonId', $this->getFormValue('contractPersonId', $data->personId), '', FIELD_ID_SIZE, null, null, array('contractId', 'contractPersonId', 'contractPersonName', 'contractCourseId', 'contractCourseName', 'contractCourseVersion'), 'academic', 'ActivePersonContract', null, array('personId' => 'contractPersonId'), true);
+        $contractPersonId->setJsHint(_M('Enter the person code', 'academic'));
+        $validators[]        = new MRequiredValidator('contractPersonId', _M('Person',$module));
+        $flds[]              = $contractPersonId;
+
+        $contractPersonName = new MTextField('contractPersonName', $this->getFormValue('contractPersonName',$this->enrollData->contractPersonName), '', FIELD_DESCRIPTION_SIZE);
+        $contractPersonName->setReadOnly(true);
+        $contractPersonName->setJsHint(_M('Person name', 'academic'));
+        $flds[]             = $contractPersonName;
+
+        $hctPerson = new MHContainer('hctContract', $flds);
+        $hctPerson->setShowLabel(false);
+        $flds2[]    = $hctPerson;
+        unset($flds);
+
+        if ( MODULE_ACADEMIC_INSTALLED == 'YES' )
+        {
+            $contractCourseLabel = new MText('contractCourseLabel', _M('Contract', 'academic') . ':');
+            $contractCourseLabel->setWidth(FIELD_CONTAINER_SIZE);
+            //$contractCourseLabel->setClass('m-caption m-caption-required');
+            $flds[]           = $contractCourseLabel;
+
+            $contractId = new MLookupTextField('contractId', $this->getFormValue('contractId'), '', FIELD_LOOKUPFIELD_SIZE, null, null, array('contractPersonId', 'contractPersonName', 'contractCourseId', 'contractCourseName', 'contractCourseVersion'), 'academic', 'ActiveContract', null, array('personId' => 'contractPersonId'), true);
+            $contractId->setJsHint(_M('Enter the contract code', 'academic'));
+            //$validators[] = new MRequiredValidator('contractId', _M('Contract',$module));
+            $flds[]     = $contractId;
+
+            $contractCourseId = new MTextField('contractCourseId', $this->getFormValue('contractCourseId',$this->enrollData->contractCourseId), '', FIELD_ID_SIZE);
+            $contractCourseId->setReadOnly(true);
+            $contractCourseId->setJsHint(_M('Course code','academic'));
+            $flds[]           = $contractCourseId;
+
+            $contractCourseVersion = new MTextField('contractCourseVersion', $this->getFormValue('contractCourseVersion',$this->enrollData->contractCourseVersion), '', FIELD_ID_SIZE);
+            $contractCourseVersion->setReadOnly(true);
+            $contractCourseVersion->setJsHint(_M('Course version','academic'));
+            $flds[]                = $contractCourseVersion;
+
+            $contractCourseName = new MTextField('contractCourseName', $this->getFormValue('contractCourseName',$this->enrollData->contractCourseName), '', 30);
+            $contractCourseName->setReadOnly(true);
+            $contractCourseName->setJsHint(_M('Course name','academic'));
+            $flds[]             = $contractCourseName;
+
+            $hctContract = new MHContainer('hctContract', $flds);
+            $hctContract->setShowLabel(false);
+            unset($flds);
+            $flds2[]     = $hctContract;
+        }
+
+        $bsg1            = new BaseGroup('bsg1',_M('Personal data', $module), $flds2, 'vertical');
+        $bsg1->showLabel = true;
+        $bsg1->width     = '100%';
+        unset($flds);
+
+        //apenas para definir os valores das baixas
+        if ( count($this->getFormValue('invoices')) > 0 && $event == 'tbBtnSave:click' && strlen((string)$this->getFormValue('saveAnyWay'))>0)
+        {
+            $busInvoice  = $MIOLO->getBusiness('finance', 'BusInvoice');
+            $invoices__  = $this->getFormValue('invoices');
+            for ( $x=0; $x<count($invoices__); $x++ )
+            {
+                $row         = $invoices__[$x];
+                $invoiceId__ = substr($row, 1, strpos($row, ']')-1);
+                $fields[]    = new MHiddenField('invoiceDownValue' . $invoiceId__, str_replace(',', '.', $this->getFormvalue('invoiceDownValue' . $invoiceId__)));
+            }
+        }
+
+        /* títulos */
+        if ( in_array($function, array('update', 'delete')) && $event != 'tbBtnSave:click' )
+        {
+            if ( count($data->invoices) > 0 )
+            {
+                $busInvoice  = $MIOLO->getBusiness('finance', 'BusInvoice');
+                for ( $x=0; $x<count($data->invoices); $x++ )
+                {
+                    $invoiceData        = $busInvoice->getInvoice($data->invoices[$x]->invoiceId);
+                    $data->invoices[$x] = '[' . $invoiceData->invoiceId . ']';
+                    $data->invoices[$x] .= ' [' . $invoiceData->maturityDate . ']';
+                    $data->invoices[$x] .= ' [' . $invoiceData->value . ']';
+                    $data->invoices[$x] .= ' [' . $invoiceData->balance . ']';
+                }
+            }
+        }
+        elseif ( $event == 'tbBtnSave:click' )
+        {
+            unset($data->invoices);
+        }
+
+        $invoiceId    = new MLookupTextField('invoiceId', $this->getFormValue('invoiceId'), _M('Invoice', $module), FIELD_ZIPCODE_SIZE, null, null, 'limbo, limbo, limbo, limbo, limbo, limbo, limbo, maturityDate, value, balance', $module, 'CheckInvoice', null, array('personId' => 'contractPersonId', 'courseId' => 'contractCourseId', 'courseVersion' => 'contractCourseVersion'), true );
+
+        $maturityDate = new MTextField('maturityDate', $this->getFormValue('maturityDate'), _M('Maturity date', $module) . ':');
+        $maturityDate->setReadOnly(true);
+
+        $value        = new MTextField('value', $this->getFormValue('value'), _M('Open value', $module) . ':');
+        $value->setReadOnly(true);
+
+        $balance      = new MTextField('balance', $this->getFormValue('balance'), _M('Balance', $module) . ':');
+        $balance->setReadOnly(true);
+
+        $flds[] = new MMultiTextField2('invoices', $this->getFormValue('invoices', $data->invoices), null, array($invoiceId, $maturityDate, $value, $balance), 240, true, 'vertical2' );
+
+        $bsg2            = new BaseGroup('bsg2',_M('Invoice',$module) . 's', $flds, 'vertical');
+        $bsg2->showLabel = true;
+        $bsg2->width     = '33%';
+        unset($flds);
+
+        /* dados do cheque */
+        unset($flds2);
+        $checkNumber  = new MTextField('checkNumber', $this->getFormvalue('checkNumber', $data->checkNumber), _M('Check number', $module) . ':', FIELD_DATE_SIZE);
+        $validators[] = new MRequiredValidator('checkNumber');
+        $flds22[]     = $checkNumber;
+
+        $checkMaturityDate = new MCalendarField('checkMaturityDate', $this->getFormValue('checkMaturityDate', $data->maturityDate), _M('Maturity date', $module), FIELD_DATE_SIZE);
+        $validators[]      = new MDATEDMYValidator('checkMaturityDate', _M('Maturity date', $module), 'required');
+        $flds22[]          = $checkMaturityDate;
+
+        if ( in_array($function, array('update', 'delete')) )
+        {
+            $checkNewMaturityDate = new MCalendarField('checkNewMaturityDate', $this->getFormValue('checkNewMaturityDate', $data->newMaturityDate), _M('New maturity date', $module), FIELD_DATE_SIZE);
+            $flds22[]             = $checkNewMaturityDate;
+        }
+
+        if ( strlen((string)$gotoBack['showDownDate']) == 0 || $gotoBack['showDownDate'] == 'false' )
+        {
+            $downDate = new MCalendarField('downDate', $this->getFormValue('downDate', $data->downDate), _M('Down date', $module), FIELD_DATE_SIZE);
+            $validators[]      = new MDATEDMYValidator('downDate', _M('Down date', $module), 'optional');
+            $flds22[] = $downDate;
+        }
+
+        $hctDates            = new MHContainer('hctDates', $flds22);
+        $hctDates->width     = '100%';
+        $hctDates->showLabel = true;
+        $flds2[]             = $hctDates;
+        unset($flds22);
+
+        $issuingName = new MTextField('issuingName', $this->getFormValue('issuingName', $data->issuingName), _M('Issuing name', $module), FIELD_DESCRIPTION_SIZE);
+        $flds22[]    = $issuingName;
+
+        $issuingCPF   = new MTextField('issuingCPF', $this->getFormValue('issuingCPF', $data->issuingCPF), _M('Issuing CPF', $module), FIELD_DATE_SIZE);
+        $validators[] = new MCPFValidator('issuingCPF', null, 'optional');
+        $flds22[]     = $issuingCPF;
+
+        $issuingCNPJ  = new MTextField('issuingCNPJ', $this->getFormValue('issuingCNPJ', $data->issuingCNPJ), _M('Issuing CNPJ', $module), FIELD_DATE_SIZE + 2);
+        $validators[] = new MCNPJValidator('issuingCNPJ', null, 'optional');
+        $flds22[]     = $issuingCNPJ;
+
+        $hctIssuing            = new MHContainer('hctIssuing', $flds22);
+        $hctIssuing->width     = '100%';
+        $hctIssuing->showLabel = true;
+        $flds2[]               = $hctIssuing;
+        unset($flds22);
+
+        //valor do cheque
+        $checkValue   = new MTextField('checkValue', $this->getFormValue('checkValue', $data->value), _M('Value', $module), FIELD_DATE_SIZE);
+        $checkValue->addAttribute('onChange', "balanceBlur()");
+        $validators[] = new MFloatValidator('checkValue', null, FLOAT_SEPARATOR, REAL_ROUND_VALUE, 'required');
+        if ( in_array($function, array('update', 'delete')) )
+        {
+            $checkValue->setReadOnly(true);
+        }
+        $flds22[]     = $checkValue;
+
+        $tax          = new MTextField('tax', $this->getFormValue('tax', $data->tax), _M('Tax', $module), FIELD_DATE_SIZE);
+        $tax->addAttribute('onChange', "balanceBlur()");
+        $validators[] = new MFloatValidator('tax', null, FLOAT_SEPARATOR, REAL_ROUND_VALUE, 'optional');
+        if ( in_array($function, array('update', 'delete')) )
+        {
+            $tax->setReadOnly(true);
+        }
+        $flds22[]     = $tax;
+
+        $interest     = new MTextField('interest', $this->getFormValue('interest', $data->interest), _M('Interest', $module), FIELD_DATE_SIZE);
+        $interest->addAttribute('onChange', "balanceBlur()");
+        $validators[] = new MFloatValidator('interest', null, FLOAT_SEPARATOR, REAL_ROUND_VALUE, 'optional');
+        if ( in_array($function, array('update', 'delete')) )
+        {
+            $interest->setReadOnly(true);
+        }
+        $flds22[]     = $interest;
+
+        $discount     = new MTextField('discount', $this->getFormValue('discount', $data->discount), _M('Discount', $module), FIELD_DATE_SIZE);
+        $discount->addAttribute('onChange', "balanceBlur()");
+        $validators[] = new MFloatValidator('discount', null, FLOAT_SEPARATOR, REAL_ROUND_VALUE, 'optional');
+        if ( in_array($function, array('update', 'delete')) )
+        {
+            $discount->setReadOnly(true);
+        }
+        $flds22[]     = $discount;
+
+        $totalValue   = new MTextField('totalValue', $this->getFormValue('totalValue', $data->totalValue), _M('Total value', $module), FIELD_DATE_SIZE);
+        $validators[] = new MFloatValidator('totalValue', null, FLOAT_SEPARATOR, REAL_ROUND_VALUE, 'required');
+        if ( in_array($function, array('update', 'delete')) )
+        {
+            $totalValue ->setReadOnly(true);
+        }
+        $flds22[]     = $totalValue;
+
+        $hctValues             = new MHContainer('hctValues', $flds22);
+        $hctValues->width      = '100%';
+        $hctValues->showLabel = true;
+        $flds2[]               = $hctValues;
+        unset($flds22);
+
+        $business = $MIOLO->getBusiness('finance', 'BusBranch');
+        $flds22[] = new MSelection('branch', $this->getFormValue('branch', $data->branch), _M('Origin branch',$module), $business->listBranch());
+        $validators[] = new MRequiredValidator('branch');
+
+        $business = $MIOLO->getBusiness('finance', 'BusBankAccount');
+        $flds22[] = new MSelection('destinationBankAccountId', $this->getFormValue('destinationBankAccountId', $data->destinationBankAccountId), _M('Destination bank account',$module), $business->listBankAccount());
+
+        $hctBranch             = new MHContainer('hctBranch', $flds22);
+        $hctBranch->width      = '100%';
+        $hctBranch->showLabel = true;
+        $flds2[]               = $hctBranch;
+        unset($flds22);
+
+        $business = $MIOLO->getBusiness('finance', 'BusReason');
+        $flds22[] = new MSelection('reasonId', $this->getFormValue('reasonId', $data->reasonId), _M('History',$module), $business->listReason());
+        
+        if ( in_array($function, array('update', 'delete')) )
+        {
+            $messagesType = array ( 
+                                     array (_M('With funds', $module), 'C'),
+                                     array (_M('No funds', $module), 'S'),
+                                     array (_M('Returned', $module), 'D')
+                                  );
+        
+            $statusLabel = new MText('statusLabel', _M('Check status',$module) . ':');
+            $statusLabel->setWidth(FIELD_CONTAINER_SIZE);
+
+            $statusId    = new MRadioButtonGroup('status', null, $messagesType, $this->getFormValue('status', $data->status) ? $this->getFormValue('status', $data->status) : 'C', null, 'horizontal');        
+            $statusId->SetShowLabel(false);
+
+            $hctStatus = new MVContainer('hctStatus', array($statusLabel, $statusId));
+            $flds22[]  = $hctStatus; 
+
+            $hctStatus            = new MVContainer('hctStatus', $flds22);
+            $hctStatus->width     = '50%';
+            $hctStatus->showLabel = true;
+            unset($flds22);
+            $flds22[]              = $hctStatus;
+        }
+
+        $flds22[] = new MMultiLineField('observation', $this->getFormValue('observation',$data->observation), _M('Observation', $module), FIELD_MULTILINE_NUM_COLS, FIELD_MULTILINE_NUM_ROWS - 1, FIELD_MULTILINE_NUM_COLS);
+
+        $hctDetail            = new MHContainer('hctDetail', $flds22);
+        $hctDetail->width     = '100%';
+        $hctDetail->showLabel = true;
+        $flds2[]              = $hctDetail;
+        unset($flds22);
+
+        $bsg3            = new BaseGroup('bsg3',_M('Check data',$module), $flds2, 'vertical');
+        $bsg3->showLabel = true;
+        $bsg3->width     = '100%';
+        unset($flds2);
+
+        $hct0            = new MVContainer('hct0',array($bsg1, $bsg3));
+        $hct0->width     = '65%';
+        $hct0->showLabel = true;
+
+        $hct1            = new MHContainer('hct1',array($hct0, $bsg2));
+        $hct1->showLabel = true;
+        $fields[]        = $hct1;
+
+        if ( $function == 'update' )
+        {
+            $fields[] = new Separator();
+            $fields[] = new MTextLabel('lastModification', '['.$data->userName.' - '.$data->dateTime.']', _M('Last modification', $module));
+
+        }
+
+        $fields[] = new Separator('');
+
+        $this->setFields($fields);
+        $this->setValidators($validators);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+        $this->setClose($MIOLO->getActionURL($module, substr($action, 0, strrpos($action, ':'))));
+        $this->page->onLoad('document.' . $this->name . '.contractPersonId.focus();');
+
+    }
+
+    /**
+     * Event triggered when user chooses New from the toolbar
+     **/
+    public function tbBtnNew_click($sender = null)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+    }
+
+    /**
+     * Event triggered when user chooses Delete from the toolbar
+     **/
+    public function tbBtnDelete_click($sender = null)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $data   = $this->getTypesData();
+        $opts   = array('event'    => 'tbBtnDelete_confirm',
+                        'function' => 'delete',
+                        'checkId'  => MIOLO::_request('checkId'));
+
+        $gotoYes = $MIOLO->getActionURL( $module, $action, null, $opts );
+        $goto    = SAGU::getStackBackUrl();
+        $gotoNo  = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+        $msg     = MSG_CONFIRM_RECORD_DELETE;
+        $caption = _M('Question',$module);
+        $MIOLO->question($msg, $gotoYes, $gotoNo);
+    }
+
+    /**
+     * Event triggered when user chooses Yes from the Delete prompt dialog
+     **/
+    public function tbBtnDelete_confirm($sender = null)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $data     = $this->getTypesData();
+
+        $business = $MIOLO->getBusiness($module, 'BusCheck');
+        $ok       = $business->deleteCheck($data->checkId, $data->invoices);
+
+        if ( $ok )
+        {
+            $msg     = MSG_RECORD_DELETED;
+            $goto    = SAGU::getStackBackUrl();
+            $goto    = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Information',$module);
+            $MIOLO->information($msg, $goto);
+        }
+        else
+        {
+            $msg  = _M('Error executing requested operation.',$module);
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Error', $module);
+            $MIOLO->error( $msg, $goto, $caption );
+        }
+    }
+
+    /**
+     * Event triggered when user chooses Save from the toolbar
+     **/
+    public function tbBtnSave_click($sender = null)
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+
+        $data = $this->getTypesData();
+
+        if (   ( count($data->invoices)>0 && strlen((string)$data->saveAnyWay) == 0 )
+            || ( (float)$data->checkBalance2 < 0 && strlen((string)$data->saveAnyWay) == 1 )  )
+        {
+            $this->checkValue->setReadOnly(true);
+            $this->tax->setReadOnly(true);
+            $this->interest->setReadOnly(true);
+            $this->discount->setReadOnly(true);
+            $this->totalValue->setReadOnly(true);
+            $js = 'document.getElementById(\'invoices_text1\').disabled = true;';
+            $js .= 'document.getElementById(\'invoices_add\').disabled = true;';
+            $js .= 'document.getElementById(\'invoices_modify\').disabled = true;';
+            $js .= 'document.getElementById(\'invoices_remove\').disabled = true;';
+            $this->page->addJSCode($js);
+
+            $businessInvoice = $MIOLO->getBusiness($module, 'BusReceivableInvoice');
+
+            $this->saveAnyWay->value = 1;
+            //$fields[] = new MHiddenField('saveAnyWay', '1');
+            $info     = new MText('info', '<b><font color=red>' . _M('Informe os valores parciais do cheque para os títulos abaixo.', $module) . '</font></b>');
+            $fields[] = $info;
+
+            $totalValue2 = new MTextField('totalValue2', $this->getFormValue('totalValue', $data->totalValue), _M('Total value', $module), FIELD_DATE_SIZE);
+            $totalValue2->setReadOnly(true);
+            $fields2[]    = $totalValue2;
+
+            $checkBalance3 = new MTextField('checkBalance3', $this->getFormValue('checkBalance3'), _M('Check balance', $module), FIELD_DATE_SIZE);
+            $checkBalance3->setReadOnly(true);
+            $fields2[]     = $checkBalance3;
+
+            $hctBalances = new MHContainer('hctBalances', $fields2);
+            $hctBalances->setShowLabel(true);
+            $fields[]    = $hctBalances;
+            unset($fields2);
+
+            $checkValue = $data->totalValue;
+
+            foreach ( $data->invoices as $invoiceId )
+            {
+                $fieldsName[] = 'invoiceDownValue' . $invoiceId;
+
+                $invoice = $businessInvoice->getReceivableInvoice($invoiceId);
+
+                if ( MIOLO::_REQUEST('function') == 'update' )
+                {
+                    $businessCheck   = $MIOLO->getBusiness($module, 'BusCheck');
+                    $resCheckInvoice = $businessCheck->getCheck($data->checkId, $invoiceId);
+                    $checkValue2     = $resCheckInvoice->invoices[0]->value;
+                }
+                else
+                {
+                    if ( (float)$checkValue >= (float)$invoice->balance )
+                    {
+                        $checkValue2  = $invoice->balance;
+                        $checkValue  -= $invoice->balance;
+                    }
+                    elseif ( (float)$checkValue < (float)$invoice->balance )
+                    {
+                        $checkValue2  = $checkValue;
+                        $checkValue  -= 0;
+                    }
+                }
+
+                if ( $invoice->balance > 0 )
+                {
+                    $lbl  = new MText('lbl' . $invoiceId, _M('Close value', $module) . ':');
+                    $text = new MTextField('invoiceDownValue' . $invoiceId, str_replace(',', '.', $this->getFormValue('invoiceDownValue' . $invoiceId, $checkValue2)));
+                    $text->addAttribute('onblur', 'checkBalance();');
+
+                    $hint = new MText('hint' . $invoiceId, _M('the open value of this invoice is @1 and the respective maturity date is @2.', $module, $invoice->balance, $invoice->maturityDate));
+
+                    $bsgCont  = new BaseGroup('bsgCont' . $invoiceId, _M('Invoice', $module) . ': ' . $invoiceId, array($lbl, $text, $hint), 'horizontal');
+                    $bsgCont->showLabel = true;
+                    $bsgCont->width     = '100%';
+                    $fields[]           = $bsgCont;
+                }
+            }
+
+            $jsCode2 = 'function checkBalance(){ ';
+            if ( count($fieldsName)>0 )
+            {
+                foreach ( $fieldsName as $rowf )
+                {
+                    $jsCode2 .= ' if ( ! isNumeric(document.getElementById(\'' . $rowf . '\').value) ) document.getElementById(\'' . $rowf . '\').value = \'0.00\'; ';
+                }
+                $jsCode2 .= 'document.getElementById(\'checkBalance2\').value = parseFloat(document.getElementById(\'totalValue\').value) - ( ';
+                foreach ( $fieldsName as $rowf )
+                {
+                    $jsCode2 .= 'parseFloat(document.getElementById(\'' . $rowf . '\').value) + ';
+                }
+                $jsCode2 .= '0); ';
+                $jsCode2 .= 'document.getElementById(\'checkBalance3\').value = document.getElementById(\'checkBalance2\').value; }';
+            }
+            $this->page->addJSCode($jsCode2);
+
+            if ( $this->checkBalance2->value < 0 )
+            {
+                unset($fields7);
+                $info      = new MText('info', '<b><font color=red>' . _M('The sum of invoice values is more great that the check value!', $module) . '</font></b>');
+                $fields7[]  = $info;
+                $bsgCont2  = new BaseGroup('bsgCont2', _M('Error', $module) . '!', $fields7, 'vertical');
+                $bsgCont2->showLabel = true;
+                $bsgCont2->width     = '98%';
+                $this->downQuestion->addControl($bsgCont2);
+                unset($fields7, $bsgCont2);
+            }
+
+            $bsgCont  = new BaseGroup('bsgCont', _M('Question', $module), $fields, 'vertical');
+            $bsgCont->showLabel = true;
+            $bsgCont->width     = '98%';
+            $this->downQuestion->addControl($bsgCont);
+            $jsCode2 = 'checkBalance();';
+            $this->page->addJSCode($jsCode2);
+        }
+        else
+        {
+            $business = $MIOLO->getBusiness($module, 'BusCheck');
+
+            if ( $function == 'update' )
+            {
+                $ok  = $business->updateCheck($data);
+                $msg = MSG_RECORD_UPDATED;
+            }
+            else
+            {
+                $ok  = $business->insertCheck($data);
+                $msg = MSG_RECORD_INSERTED;
+            }
+
+            if ( $ok )
+            {
+                $opts = array('checkIdS' => $data->checkId);
+
+                if ( $function == 'update' )
+                {
+                    $caption = _M('Information', $module);
+                    $MIOLO->information($msg, $MIOLO->getActionURL( $module, $action, null, $opts));
+                }
+                else
+                {
+                    unset($opts);
+                    if ( strlen((string)$this->gotoBackAction->value)>0 && ( strlen((string)$this->gotoBackPersonId->value)>0 || strlen((string)$this->gotoBackInvoiceId->value)>0 ) )
+                    {
+                        $msg = _M('Check inserted', $module);
+                        if ( strlen((string)$this->gotoBackPersonId->value)>0 )
+                        {
+                            $goto = $MIOLO->getActionURL( $module, $this->gotoBackAction->value, null, array('personId' => $this->gotoBackPersonId->value, 'speciesId' => SPECIE_ID_CHECK, 'goto' => urlencode($this->gotoBackGoto->value) ));
+                        }
+                        else
+                        {
+                            $goto = $MIOLO->getActionURL( $module, $this->gotoBackAction->value, null, array('invoiceId' => $this->gotoBackInvoiceId->value, 'speciesId' => SPECIE_ID_CHECK, 'goto' => urlencode($this->gotoBackGoto->value) ));
+                        }
+                        $MIOLO->information($msg, $goto);
+                    }
+                    else
+                    {
+                        $goto = SAGU::getStackBackUrl();
+                        $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL( $module, $action, null, $opts);
+                        $opts = array('function'=>'insert');
+                        $gotoYes = $MIOLO->getActionURL($module, $action, null, $opts);
+                        $caption = _M('Question',$module);
+                        $MIOLO->question($msg, $gotoYes, $goto);
+                    }
+                }
+            }
+            else
+            {
+                $msg  = _M('Error executing requested operation.', $module);
+                $goto = SAGU::getStackBackUrl();
+                $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+                $caption = _M('Error', $module);
+                $MIOLO->error( $msg, $goto, $caption );
+            }
+        }
+    }
+
+    /**
+     * Method to gather all information from the form fields
+     * and put them on a database compatible object
+     **/
+    public function getTypesData()
+    {
+        $data = new finCheck();
+        $vars = get_object_vars($data);
+        foreach ( $vars as $var => $value )
+        {
+            if ( $this->$var && $var != 'name' )
+            {
+                $data->$var = $this->$var->value;
+            }
+        }
+
+        $data->personId        = $this->contractPersonId->value;
+        $data->maturityDate    = $this->checkMaturityDate->value;
+        $data->newMaturityDate = $this->checkNewMaturityDate->value;
+        $data->value           = $this->checkValue->value;
+        $data->saveAnyWay      = $this->saveAnyWay->value;
+
+        $branch                = explode('/', $this->branch->value);
+        $data->bankId          = $branch[0];
+        $data->branchNumber    = $branch[1];
+
+        unset($data->invoices);
+        if ( strlen((string)$this->invoices->value[0]) > 0 )
+        {
+            foreach ( $this->invoices->value as $row )
+            {
+                $invoiceId        = substr($row, 1, strpos($row, ']')-1);
+                $data->invoices[] = $invoiceId;
+                eval('$data->invoiceDownValue' . $invoiceId . ' = str_replace(\',\', \'.\', $this->invoiceDownValue' . $invoiceId . '->value);');
+            }
+        }
+        else
+        {
+            $data->invoices = NULL;
+        }
+        $data->checkBalance2 = $this->checkBalance2->value;
+        return $data;
+    }
+
+}
+
+?>

@@ -1,0 +1,348 @@
+<?php
+/**
+ *
+ * @author Armando Taffarel Neto [taffarel@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * Armando Taffarel Neto [taffarel@solis.coop.br]
+ * 
+ * @since
+ * Class created on 10/08/2006
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ **/
+class BusinessAccountancyBusDiverseConsultation extends Business
+{
+    function BusinessAccountancyBusDiverseConsultation()
+    {
+        $this->db = $this->getDatabase();
+    }
+
+
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module = is_null($module) ? 'accountancy' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+    
+    /**
+     * Get the person balances from accPersonBalance
+     *
+     * @param $filters (object): Search filters
+     *
+     * @return (array): An array containing the search results
+     **/
+    public function getPersonBalances($filters)
+    {
+        $sql = 'SELECT TO_CHAR(A.balanceDate, \'' . MASK_DATE . '\'),
+                       A.accountSchemeId,
+                       (SELECT description FROM accAccountScheme WHERE accountSchemeId = A.accountSchemeId),
+                       round(A.value, ' . REAL_ROUND_VALUE . ')
+                FROM accPersonBalance A
+                WHERE personid = ? AND
+                      source   = ? 
+                ORDER BY balanceDate desc' ;
+                                 
+        if ( strlen((string)$filters->personId) > 0 )
+        {
+            $args[] = $filters->personId;
+        }
+        if ( strlen((string)$filters->source) > 0 )
+        {
+            $args[] = $filters->source;
+        }
+
+        unset($result);
+        if ( strlen((string)$sql) > 0 )
+        {
+            $db     = $this->getDatabase();
+            $result = $db->query(SAGU::prepare($sql, $args));
+        }
+
+        return $result;
+    }
+
+    /**
+     * Get the person balance from previous month
+     *
+     * @param $filters (object): Search filters
+     *
+     * @return (array): An array containing the search results
+     **/
+    public function getPersonCurrentBalance($filters)
+    {
+        $sql = 'SELECT round(SUM( CASE WHEN C.operationTypeId = \'D\' THEN ( 1 * B.value )
+                                       WHEN C.operationTypeId = \'C\' THEN ( -1 * B.value )
+                                  END
+                                ), ' . REAL_ROUND_VALUE . '),
+                       TO_CHAR((extract (year from now()) || \'-\' || extract (month from now()) || \'-01\')::timestamp - \'1 day\'::interval, \'' . MASK_DATE . '\')
+                FROM (SELECT invoiceId
+                        FROM ONLY finInvoice
+                        WHERE personId = ?) AS A
+                INNER JOIN (SELECT invoiceId,
+                                    operationId,
+                                    value
+                            FROM finEntry
+                            WHERE entryDate <= (extract (year from now()) || \'-\' || extract (month from now()) || \'-01\')::timestamp - \'1 day\'::interval) AS B
+                    USING(invoiceId)
+                INNER JOIN finOperation C
+                    USING(operationId)' ;
+                                 
+        if ( strlen((string)$filters->personId) > 0 )
+        {
+            $args[] = $filters->personId;
+        }
+
+        unset($result);
+        if ( strlen((string)$sql) > 0 )
+        {
+            $db     = $this->getDatabase();
+            $result = $db->query(SAGU::prepare($sql, $args));
+        }
+
+        return $result[0];
+    }
+
+    /**
+     * Get the course balances from accAccountBalance
+     *
+     * @param $filters (object): Search filters
+     *
+     * @return (array): An array containing the search results
+     **/
+    public function getCourseBalances($filters)
+    {
+        $sql = 'SELECT TO_CHAR(A.balanceDate, \'' . MASK_DATE . '\'),
+                       A.accountSchemeId,
+                       (SELECT description FROM accAccountScheme WHERE accountSchemeId = A.accountSchemeId),
+                       round(A.value, ' . REAL_ROUND_VALUE . ')
+                FROM accAccountBalance A
+                INNER JOIN accCourseAccount
+                    USING(accountSchemeId)
+                WHERE courseId = ? AND
+                      source   = ? 
+                ORDER BY balanceDate desc' ;
+                                 
+        if ( strlen((string)$filters->courseId) > 0 )
+        {
+            $args[] = $filters->courseId;
+        }
+        if ( strlen((string)$filters->source) > 0 )
+        {
+            $args[] = $filters->source;
+        }
+
+        unset($result);
+        if ( strlen((string)$sql) > 0 )
+        {
+            $db     = $this->getDatabase();
+            $result = $db->query(SAGU::prepare($sql, $args));
+        }
+
+        return $result;
+    }
+
+    /**
+     * Get the person balance from previous month
+     *
+     * @param $filters (object): Search filters
+     *
+     * @return (array): An array containing the search results
+     **/
+    public function getCourseCurrentBalance($filters)
+    {
+        $sql = 'SELECT round(SUM( CASE WHEN C.operationTypeId = \'D\' THEN ( 1 * B.value )
+                                       WHEN C.operationTypeId = \'C\' THEN ( -1 * B.value )
+                                  END
+                                ), ' . REAL_ROUND_VALUE . '),
+                       TO_CHAR((extract (year from now()) || \'-\' || extract (month from now()) || \'-01\')::timestamp - \'1 day\'::interval, \'' . MASK_DATE . '\')
+                FROM (SELECT invoiceId
+                        FROM ONLY finInvoice
+                        WHERE courseId = ? AND
+                              courseVersion = ? AND
+                              unitId = ?) AS A
+                INNER JOIN (SELECT invoiceId,
+                                    operationId,
+                                    value
+                            FROM finEntry
+                            WHERE entryDate <= (extract (year from now()) || \'-\' || extract (month from now()) || \'-01\')::timestamp - \'1 day\'::interval) AS B
+                    USING(invoiceId)
+                INNER JOIN finOperation C
+                    USING(operationId)' ;
+                                 
+        if ( strlen((string)$filters->courseId) > 0 )
+        {
+            $args[] = $filters->courseId;
+        }
+        if ( strlen((string)$filters->courseVersion) > 0 )
+        {
+            $args[] = $filters->courseVersion;
+        }
+        if ( strlen((string)$filters->unitId) > 0 )
+        {
+            $args[] = $filters->unitId;
+        }
+
+        unset($result);
+        if ( strlen((string)$sql) > 0 )
+        {
+            $db     = $this->getDatabase();
+            $result = $db->query(SAGU::prepare($sql, $args));
+        }
+
+        return $result[0];
+    }
+
+
+    /**
+     * Get the account scheme balances from accAccountBalance
+     *
+     * @param $filters (object): Search filters
+     *
+     * @return (array): An array containing the search results
+     **/
+    public function getAccountSchemeBalances($filters)
+    {
+        $sql = 'SELECT TO_CHAR(A.balanceDate, \'' . MASK_DATE . '\'),
+                       B.courseId,
+                       (SELECT name FROM acdCourse WHERE courseId = B.courseId),
+                       round(A.value, ' . REAL_ROUND_VALUE . ')
+                FROM accAccountBalance A
+                INNER JOIN accCourseAccount B
+                    USING(accountSchemeId)
+                WHERE accountSchemeId = ? AND
+                      source   = ? 
+                ORDER BY balanceDate desc' ;
+                                 
+        if ( strlen((string)$filters->accountSchemeId) > 0 )
+        {
+            $args[] = $filters->accountSchemeId;
+        }
+        if ( strlen((string)$filters->source) > 0 )
+        {
+            $args[] = $filters->source;
+        }
+        unset($result);
+        if ( strlen((string)$sql) > 0 )
+        {
+            $db     = $this->getDatabase();
+            $result = $db->query(SAGU::prepare($sql, $args));
+        }
+
+        return $result;
+    }
+
+    /**
+     * Get the person balance from previous month
+     *
+     * @param $filters (object): Search filters
+     *
+     * @return (array): An array containing the search results
+     **/
+    public function getAccountSchemeCurrentBalance($filters)
+    {
+        $sql = 'SELECT round(SUM( CASE WHEN C.operationTypeId = \'D\' THEN ( 1 * B.value )
+                                       WHEN C.operationTypeId = \'C\' THEN ( -1 * B.value )
+                                  END
+                                ), ' . REAL_ROUND_VALUE . '),
+                       TO_CHAR((extract (year from now()) || \'-\' || extract (month from now()) || \'-01\')::timestamp - \'1 day\'::interval, \'' . MASK_DATE . '\')
+                FROM (SELECT invoiceId
+                        FROM ONLY finInvoice
+                        WHERE accountschemeid = ? ) AS A
+                INNER JOIN (SELECT invoiceId,
+                                    operationId,
+                                    value
+                            FROM finEntry
+                            WHERE entryDate <= (extract (year from now()) || \'-\' || extract (month from now()) || \'-01\')::timestamp - \'1 day\'::interval) AS B
+                    USING(invoiceId)
+                INNER JOIN finOperation C
+                    USING(operationId)' ;
+                                 
+        if ( strlen((string)$filters->accountSchemeId) > 0 )
+        {
+            $args[] = $filters->accountSchemeId;
+        }
+
+        unset($result);
+        if ( strlen((string)$sql) > 0 )
+        {
+            $db     = $this->getDatabase();
+            $result = $db->query(SAGU::prepare($sql, $args));
+        }
+
+        return $result[0];
+    }
+
+    /**
+     * Get the cost center balances from accAccountBalance
+     *
+     * @param $filters (object): Search filters
+     *
+     * @return (array): An array containing the search results
+     **/
+    public function getCostCenterBalances($filters)
+    {
+        $sql = 'SELECT TO_CHAR(A.balanceDate, \'' . MASK_DATE . '\'),
+                       B.courseId,
+                       (SELECT name FROM acdCourse WHERE courseId = B.courseId),
+                       round(A.value, ' . REAL_ROUND_VALUE . ')
+                FROM accAccountBalance A
+                INNER JOIN accCourseAccount B
+                    USING(accountSchemeId)
+                WHERE costCenterId = ? AND
+                      source   = ? 
+                ORDER BY balanceDate desc' ;
+                                 
+        if ( strlen((string)$filters->costCenterId) > 0 )
+        {
+            $args[] = $filters->costCenterId;
+        }
+        if ( strlen((string)$filters->source) > 0 )
+        {
+            $args[] = $filters->source;
+        }
+        unset($result);
+        if ( strlen((string)$sql) > 0 )
+        {
+            $db     = $this->getDatabase();
+            $result = $db->query(SAGU::prepare($sql, $args));
+        }
+
+        return $result;
+    }
+
+
+}
+
+?>

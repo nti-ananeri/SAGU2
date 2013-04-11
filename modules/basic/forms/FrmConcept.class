@@ -1,0 +1,325 @@
+<?php
+
+/**
+ * Concept form
+ *
+ * @author Daniel Afonso Heisler [daniel@solis.coop.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ *
+ * @since
+ * Class created on 02/09/2005
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2005 SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+
+/**
+ * Form to manipulate a concept
+ **/
+class FrmConcept extends MForm
+{
+
+    /**
+     * Class constructor
+     **/
+    function __construct()
+    {
+
+        $module = MIOLO::getCurrentModule();
+
+        if ( MIOLO::_request('function') == 'insert' )
+        {
+            parent::__construct(_M('Insert', $module));
+        }
+        else
+        {
+            parent::__construct(_M('Update', $module));
+        }
+
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+
+        $toolBar = new MToolBar('toolBar',$MIOLO->getActionURL($module,$action));
+
+        if ( $function == 'insert' )
+        {
+            $toolBar->disableButton('tbBtnDelete');
+            $toolBar->disableButton('tbBtnPrint');
+        }
+        elseif ( $function == 'delete' )
+        {
+            $toolBar->disableButton('tbBtnSave');
+        }
+        $fields[] = $toolBar;
+
+        if ( in_array($function,array('update','delete')) )
+        {
+            $conceptId = $_GET['conceptId'] ? $_GET['conceptId'] : $_POST['conceptId'];
+            $fields[]  = new MTextLabel('conceptId', $conceptId, _M('Concept id',$module));
+            $fields[]  = new MHiddenField('conceptId', $conceptId);
+
+            $companyLabel = new MText('companyLabel', _M('Company',$module) . ':');
+            $companyLabel->setWidth(FIELD_CONTAINER_SIZE);
+            $flds[] = $companyLabel;
+
+            $companyId = $_GET['companyId'] ? $_GET['companyId'] : $_POST['companyId'];
+            $flds[]  = new MTextLabel('companyId', $companyId);
+            $flds[]  = new MHiddenField('companyId', $companyId);
+
+            $business = $MIOLO->getBusiness($module,'BusConcept');
+            $data     = $business->getConcept($companyId, $conceptId);
+
+            $flds[]  = new MTextLabel('companyName', $this->getFormValue('companyName', $data->companyName));
+            $flds[]  = new MHiddenField('companyName', $companyName);
+
+            $hctCompany = new MHContainer('hctCompany', $flds);
+            $hctCompany->setShowLabel(true);
+            $fields[]   = $hctCompany;
+        }
+        else
+        {
+            $companyLabel = new MText('companyLabel', _M('Corporate name',$module) . ':');
+            $companyLabel->setWidth(FIELD_CONTAINER_SIZE);
+            $companyLabel->setClass('m-caption m-caption-required');
+
+
+            //$companyId    = new MLookupTextField('companyId', $this->getFormValue('companyId', $data->companyId), _M('Company id',$module), 10, null, null, 'companyName', 'basic', 'Company', null, null, true);
+            $companyId    = new MLookupTextField('companyId', $this->getFormValue('companyId', $data->companyId), '', FIELD_LOOKUPFIELD_SIZE, null, null, 'companyName', 'basic', 'Company', null, null, true);
+            $companyId->setJsHint(_M('Enter the company code',$module));
+            $validators[] = new MIntegerValidator('companyId', _M('Corporate name',$module), 'required');
+
+            //$companyName  = new MTextField('companyName', $this->getFormValue('companyName', $data->companyName), _M('Company name',$module), 30);
+            $companyName  = new MTextField('companyName', $this->getFormValue('companyName', $data->companyName), '', FIELD_DESCRIPTION_SIZE);
+            $companyName->setReadOnly(true);
+
+            $hctCompany = new MHContainer('hctCompany', array($companyLabel, $companyId, $companyName));
+            $hctCompany->setShowLabel(true);
+            $fields[]   = $hctCompany;
+        }
+
+        $concept      = new MTextField('concept', $this->getFormValue('concept', $data->concept), _M('Concept',$module), 15);
+        $concept->setJsHint(_M('Enter the concept name',$module));
+        $validators[] = new MRequiredValidator('concept');
+        $fields[]     = $concept;
+
+        //isApproved
+
+        $isApprovedLabel = new MText('isApprovedLabel', _M('Is it approved',$module) . '?');
+        $isApprovedLabel->setWidth(FIELD_CONTAINER_SIZE);
+
+        $isApproved = $this->GetFormValue('isApproved',$data->isApproved) ? $this->GetFormValue('isApproved',$data->isApproved) : DB_FALSE;
+        $isApproved = new MRadioButtonGroup('isApproved', '', SAGU::listTrueFalse(1), $isApproved, null, 'horizontal');
+        $isApproved->SetShowLabel(false);
+
+        $hctIsApproved = new MHContainer('hctIsApproved', array($isApprovedLabel, $isApproved));
+        $fields[]  = $hctIsApproved;
+
+
+        //needsDescriptive
+
+        $needsDescriptiveLabel = new MText('needsDescriptiveLabel', _M('Does it need descriptive',$module) . '?');
+        $needsDescriptiveLabel->setWidth(FIELD_CONTAINER_SIZE);
+
+        $needsDescriptive = $this->GetFormValue('needsDescriptive',$data->needsDescriptive) ? $this->GetFormValue('needsDescriptive',$data->needsDescriptive) : DB_FALSE;
+        $needsDescriptive = new MRadioButtonGroup('needsDescriptive', '', SAGU::listTrueFalse(1), $needsDescriptive, null, 'horizontal');
+        $needsDescriptive->SetShowLabel(false);
+
+        $hctNeedsDescriptive = new MHContainer('hctNeedsDescriptive', array($needsDescriptiveLabel, $needsDescriptive));
+        $fields[]  = $hctNeedsDescriptive;
+
+        if ( $function == 'update' )
+        {
+            $fields[] = new MTextLabel('lastModification', '[' . $data->userName . ' - ' . $data->dateTime . ']', _M('Last modification',$module));
+
+        }
+
+        $fields[] = new Separator('');
+
+        $this->setFields($fields);
+        $this->setValidators($validators);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+        $this->setClose($MIOLO->getActionURL($module,substr($action,0,strrpos($action,':'))));
+        $this->page->onLoad('document.' . $this->name . '.concept.focus();');
+    }
+
+    /**
+     * Event triggered when user chooses New from the toolbar
+     **/
+    public function tbBtnNew_click($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $data = $this->getTypesData();
+        $vars = get_object_vars($data);
+        foreach ( $vars as $var => $value )
+        {
+            if ( $this->$var && $var != 'name' )
+            {
+                eval('$this->' . $var . '->value = $this->getFormValue(\'' . $var . 'S\') ? $this->getFormValue(\'' . $var . 'S\') : \'\';');
+            }
+        }
+    }
+
+    /**
+     * Event triggered when user chooses Delete from the toolbar
+     **/
+    public function tbBtnDelete_click($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $data   = $this->getTypesData();
+        $opts   = array('event'     => 'tbBtnDelete_confirm',
+                        'function'  => 'delete',
+                        'conceptId' => MIOLO::_request('conceptId'),
+                        'companyId' => MIOLO::_request('companyId'));
+
+        $gotoYes = $MIOLO->getActionURL( $module, $action, null, $opts );
+        $goto    = SAGU::getStackBackUrl();
+        $gotoNo  = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+        $msg     = MSG_CONFIRM_RECORD_DELETE;
+        $caption = _M('Question',$module);
+        $MIOLO->question($msg, $gotoYes, $gotoNo);
+    }
+
+    /**
+     * Event triggered when user chooses Yes from the Delete prompt dialog
+     **/
+    public function tbBtnDelete_confirm($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $business = $MIOLO->getBusiness($module, 'BusConcept');
+        $ok = $business->deleteConcept($this->companyId->value, $this->conceptId->value);
+
+        if ( $ok )
+        {
+            $msg  = MSG_RECORD_DELETED;
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Information',$module);
+            $MIOLO->information($msg, $goto);
+        }
+        else
+        {
+            $msg  = _M('Error executing requested operation.',$module);
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Error',$module);
+            $MIOLO->error( $msg, $goto, $caption );
+        }
+    }
+
+    /**
+     * Event triggered when user chooses Save from the toolbar
+     **/
+    public function tbBtnSave_click($sender=NULL)
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+
+        $data     = $this->getTypesData();
+        $business = $MIOLO->getBusiness($module, 'BusConcept');
+
+        if ( $function == 'update' )
+        {
+            $ok  = $business->updateConcept($data);
+            $msg = MSG_RECORD_UPDATED;
+        }
+        else
+        {
+            $ok  = $business->insertConcept($data);
+            $msg = MSG_RECORD_INSERTED;
+        }
+
+        if ( $ok )
+        {
+            $opts = array('conceptS'=>$data->concept,
+                          'companyIdS'=>$data->companyId);
+
+            if ( $function == 'update' )
+            {
+                $caption = _M('Information', $module);
+                $MIOLO->information($msg, $MIOLO->getActionURL( $module, $action, null, $opts));
+            }
+            else
+            {
+                unset($opts);
+                $goto = SAGU::getStackBackUrl();
+                $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL( $module, $action, null, $opts);
+                $opts = array('function'=>'insert');
+
+                $gotoYes = $MIOLO->getActionURL($module, $action, null, $opts);
+                $caption = _M('Question',$module);
+                $MIOLO->question($msg, $gotoYes, $goto);
+            }
+        }
+        else
+        {
+            $msg  = _M('Error executing requested operation.',$module);
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Error',$module);
+            $MIOLO->error( $msg, $goto, $caption );
+        }
+    }
+
+    /**
+     * Method to gather all information from the form fields
+     * and put them on a database compatible object
+     **/
+    public function getTypesData()
+    {
+        $data = new BasConcept();
+        $vars = get_object_vars($data);
+        foreach ( $vars as $var => $value )
+        {
+            if ( $this->$var && $var != 'name' )
+            {
+                eval('$data->' . $var . ' = $this->' . $var . '->value;');
+            }
+        }
+
+        return $data;
+    }
+}
+
+?>

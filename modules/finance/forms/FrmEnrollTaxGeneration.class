@@ -1,0 +1,634 @@
+<?php
+
+/**
+ *
+ * This file handles the connection and actions for fiReceivableInvoice table
+ *
+ * @author Daniel Afonso Heisler [daniel.heisler@gmail.com.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Armando Taffarel Neto [taffarel@solis.coop.br]
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 27/11/2007
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de SoluÃ§Ãµes Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de SoluÃ§Ãµes Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+ 
+/**
+ * Form to search the finInvoice table
+ */
+class FrmEnrollTaxGeneration extends MForm
+{
+
+    /**
+     * Class constructor
+     */
+    function __construct()
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        
+        parent::__construct(_M('Enroll tax generation', $module));
+
+        $this->setShowPostButton(false);
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+        $this->eventHandler();
+    }
+
+    /**
+     *  Default method to define fields
+     */
+    public function createFields()
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        //inclui os defines do accountancy
+        $business = $MIOLO->getBusiness('basic','BusConfig');
+        $constants = $business->getModuleValues('accountancy');
+        foreach ( $constants as $cnt )
+        {
+            define($cnt[0],$cnt[1]);
+        }
+
+        $flds[] = new MHiddenField('contractTurnId', $this->getFormValue('contractTurnId', $data->contractTurnId));
+        $flds[] = new MHiddenField('contractUnitId', $this->getFormValue('contractUnitId', $data->contractUnitId));
+        $flds[] = new MHiddenField('limbo', '');
+
+        //period
+        $periodIdLabel = new MText('incomeSourceLabel', _M('Period','academic').':');
+        $periodIdLabel->setWidth(FIELD_CONTAINER_SIZE);        
+
+        $business  = $MIOLO->getBusiness('academic', 'BusPeriod');
+        $periodId  = new MSelection('periodId', strlen((string)$this->getFormValue('periodId', $data->periodId))>0 ? $this->getFormValue('periodId', $data->periodId) : CURRENT_PERIOD_ID, '', $business->listPeriod(), true );
+        $hctPeriod = new MHContainer('hctPeriod', array($periodIdLabel, $periodId));
+        $hctPeriod->setShowLabel(true);
+        $flds[]    = $hctPeriod;
+        $validators[] = new MRequiredValidator('periodId', _M('Period','academic'), 'required');
+
+        $contractPersonLabel = new MText('contractLabel', _M('Person',$module) . ':');
+        $contractPersonLabel->setWidth(FIELD_CONTAINER_SIZE);
+//        $contractPersonLabel->setClass('m-caption m-caption-required');
+        $flds1[]             = $contractPersonLabel;
+
+        $flds[]    = new MSeparator('<hr>' . _M('Enter the pupil to generate the enroll fee', 'academic') . ':');
+
+        //pessoa
+        $contractPersonId = new MLookupTextField('contractPersonId', $this->getFormValue('contractPersonId',$data->contractPersonId), _M('Person',$module), FIELD_LOOKUPFIELD_SIZE, null, null, ( $this->getFormValue('contractId') == '' ) ? array('contractId', 'contractPersonId', 'contractPersonName', 'contractCourseId', 'contractCourseName', 'contractCourseVersion', 'contractTurnId', null, 'contractUnitId') : null, 'academic', 'PersonContract', null, array('personId' => 'contractPersonId'), true);
+        $contractPersonId->setJsHint(_M('Enter the person code',$module));
+        $flds1[]          = $contractPersonId;
+        $validators[]     = new MIntegerValidator('contractPersonId', _M('Person',$module), 'optional');
+
+        $contractPersonName = new MTextField('contractPersonName', $this->getFormValue('contractPersonName',$data->contractPersonName), _M('Name',$module), FIELD_DESCRIPTION_SIZE);
+        $contractPersonName->setReadOnly(true);
+        $contractPersonName->setJsHint(_M('Person name',$module));
+        $flds1[]            = $contractPersonName;
+
+        $hctPerson = new MHContainer('hctContract', $flds1);
+        $hctPerson->setShowLabel(false);
+        $flds[]    = $hctPerson;
+        unset($flds1);
+
+        //contrato
+        $contractLabel = new MText('contractLabel', _M('Contract',$module) . ':');
+        $contractLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $flds1[]       = $contractLabel;
+
+        $contractId_ = new MLookupTextField('contractId', $this->getFormValue('contractId', $data->contractId), _M('Contract',$module), FIELD_LOOKUPFIELD_SIZE, null, null, array('contractPersonId', 'contractPersonName', 'contractCourseId', 'contractCourseName', 'contractCourseVersion', 'contractTurnId', null, 'contractUnitId'), 'academic', 'Contract', null, array('personId' => 'contractPersonId'), true);
+        $contractId_->setJsHint(_M('Enter the contract code',$module));
+        $flds1[]     = $contractId_;
+        $validators[] = new MIntegerValidator('contractId', _M('Contract',$module), 'optional');
+
+        $contractCourseId = new MTextField('contractCourseId', $this->getFormValue('contractCourseId',$data->contractCourseId), _M('Course',$module), FIELD_ID_SIZE);
+        $contractCourseId->setReadOnly(true);
+        $contractCourseId->setJsHint(_M('Course id',$module));
+        $flds1[]          = $contractCourseId;
+
+        $contractCourseVersion = new MTextField('contractCourseVersion', $this->getFormValue('contractCourseVersion',$data->contractCourseVersion), _M('Version',$module), FIELD_ID_SIZE);
+        $contractCourseVersion->setReadOnly(true);
+        $contractCourseVersion->setJsHint(_M('Course version',$module));
+        $flds1[]               = $contractCourseVersion;
+
+        $contractCourseName = new MTextField('contractCourseName', $this->getFormValue('contractCourseName',$data->contractCourseName), _M('Description',$module), FIELD_DESCRIPTION_SIZE);
+        $contractCourseName->setReadOnly(true);
+        $contractCourseName->setJsHint(_M('Course name',$module));
+        $flds1[]            = $contractCourseName;
+
+        $hctContract = new MHContainer('hctContract', $flds1);
+        $hctContract->setShowLabel(false);
+        $flds[]    = $hctContract;
+
+        $flds[]    = new MSeparator('<hr>' . _M('If you do not enter the pupil in the fields above, will be generated enroll fees for all pupils with active contract in that course', 'academic') . ':');
+
+        //periodo letivo
+        $learningPeriodLabel = new MText('learningPeriodLabel', _M('Learning period','academic').':');
+        $learningPeriodLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $learningPeriodLabel->setClass('m-caption m-caption-required');
+
+        $learningPeriodId = new MLookupTextField('learningPeriodId', $this->getFormValue('learningPeriodId', $data->learningPeriodId), '', FIELD_LOOKUPFIELD_SIZE, null, null, 'limbo, limbo, limbo, limbo, limbo, learningPeriodDescription', 'academic', 'LearningPeriod', null, array('courseId' => 'contractCourseId', 'courseVersion' => 'contractCourseVersion', 'turnId' => 'contractTurnId', 'unitId' => 'contractUnitId', 'periodId' => 'periodId'), true);
+        $learningPeriodId->setJsHint(_M('Enter the learning period code','academic'));
+        $validators[] = new MRequiredValidator('learningPeriodId', _M('Learning period',$module));
+
+        $learningPeriodDescription = new MTextField('learningPeriodDescription', $this->getFormValue('learningPeriodDescription', $data->learningPeriodDescription), '', FIELD_DESCRIPTION_SIZE);
+        $learningPeriodDescription->setJsHint(_M('Learning period description','academic'));
+        $learningPeriodDescription->setReadOnly(true);
+
+        $hctlearningPeriod = new MHContainer('hctlearningPeriod', array($learningPeriodLabel, $learningPeriodId, $learningPeriodDescription));
+        $hctlearningPeriod->setShowLabel(true);
+        $flds[]  = $hctlearningPeriod;
+
+        $flds[]    = new MSeparator('<hr>');
+
+        // account scheme
+        $accountSchemeLabel = new MText('accountSchemeLabel', _M('Account scheme',$module).':');
+        $accountSchemeLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $accountSchemeLabel->setClass('m-caption m-caption-required');
+        $accountSchemeId    = new MLookupTextField('accountSchemeId', strlen((string)$this->getFormValue('accountSchemeId', $data->accountSchemeId))>0 ? $this->getFormValue('accountSchemeId', $data->accountSchemeId) : DEFAULT_TAX_ACCOUNT_SCHEME_ID, null,FIELD_ID_SIZE, null, null, 'accountSchemeDescription', 'accountancy', 'AccountScheme', null, array('courseId' => 'contractCourseId', 'courseVersion' => 'contractCourseVersion', 'unitId' => 'contractUnitId'), true);
+        $accountSchemeId->setJsHint(_M('Select the account scheme id', $module));
+        $validators[]       = new MRequiredValidator('accountSchemeId',_M('Account scheme',$module), 'required');        
+        $accountSchemeDescription = new MTextField('accountSchemeDescription', $this->getFormValue('accountSchemeDescription',$data->accountSchemeDescription), null, FIELD_DESCRIPTION_SIZE);
+        $accountSchemeDescription->setReadOnly(true);
+        $hctAccountScheme   = new MHContainer('hctAccountScheme', array($accountSchemeLabel, $accountSchemeId, $accountSchemeDescription));
+        $hctAccountScheme->setShowLabel(true);
+        $flds[]   = $hctAccountScheme;
+            
+        // cost center
+        $costCenterLabel = new MText('costCenterLabel', _M('Cost center',$module).':');
+        $costCenterLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $costCenterLabel->setClass('m-caption m-caption-required');
+        $costCenterId = new MLookupTextField('costCenterId', strlen((string)$this->getFormValue('costCenterId', $data->costCenterId))>0 ? $this->getFormValue('costCenterId', $data->costCenterId) : DEFAULT_TAX_COST_CENTER_ID, null,FIELD_ID_SIZE, null, null, 'costCenterDescription', 'accountancy', 'CostCenter', null, array('courseId' => 'contractCourseId', 'courseVersion' => 'contractCourseVersion', 'unitId' => 'contractUnitId'), true);
+        $costCenterId->setJsHint(_M('Select the cost center id', $module));
+        $validators[] = new MRequiredValidator('costCenterId',_M('Cost center',$module), 'required');                
+        $costCenterDescription = new MTextField('costCenterDescription',$this->getFormValue('costCenterDescription',$data->costCenterDescription), null, FIELD_DESCRIPTION_SIZE);
+        $costCenterDescription->setReadOnly(true);
+        $hctCostCenter = new MHContainer('hctCostCenter', array($costCenterLabel, $costCenterId, $costCenterDescription));
+        $hctCostCenter->setShowLabel(true);
+        $flds[]   = $hctCostCenter;
+
+        // income source
+        $incomeSourceLabel = new MText('incomeSourceLabel', _M('Income source',$module).':');
+        $incomeSourceLabel->setWidth(FIELD_CONTAINER_SIZE);        
+        $incomeSourceLabel->setClass('m-caption m-caption-required');
+        $incomeSourceId = new MLookupTextField('incomeSourceId', $this->getFormValue('incomeSourceId',$data->incomeSourceId), null,FIELD_ID_SIZE, null, null,
+            'incomeSourceDescription',
+            'finance', 'IncomeSource', null, null, true);
+        $incomeSourceId->setJsHint(_M('Select the income source id', $module));
+        $validators[] = new MIntegerValidator('incomeSourceId', _M('Income source',$module), 'required');
+        $incomeSourceDescription = new MTextField('incomeSourceDescription', $this->getFormValue('incomeSourceDescription',$data->incomeSourceDescription), null, FIELD_DESCRIPTION_SIZE);
+        $incomeSourceDescription->setReadOnly(true);
+        $hctIncomeSource = new MHContainer('hctIncomeSource', array($incomeSourceLabel, $incomeSourceId, $incomeSourceDescription));
+        $hctIncomeSource->setShowLabel(true);
+        $flds[]   = $hctIncomeSource;        
+
+        // Policy 
+        $policyLabel = new MText('policyLabel', _M('Policy', $module). ':');
+        $policyLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $policyLabel->setClass('m-caption m-caption-required');
+        $policyId = new MLookupTextField('policyId', strlen((string)$this->getFormValue('policyId', $data->policyId))>0 ? $this->getFormValue('policyId', $data->policyId) : DEFAULT_ENROLL_TAX_POLICY_ID, null, FIELD_ID_SIZE, null, null, 'policyDescription', 'finance', 'Policy', null, null, true);
+        $policyId->setJsHint(_M('Select the policy id', $module));
+//        $policyId->setReadOnly(true);
+        $validators[] = new MIntegerValidator('policyId', _M('Policy', $module), 'required');
+
+        $business = $MIOLO->getBusiness('finance','BusPolicy');
+        $policy   = $business->getPolicy(strlen((string)$this->getFormValue('policyId', $data->policyId))>0 ? $this->getFormValue('policyId', $data->policyId) : DEFAULT_ENROLL_TAX_POLICY_ID);
+
+        $policyDescription = new MTextField('policyDescription', $this->getFormValue('policyDescription',$policy->description), null, FIELD_DESCRIPTION_SIZE);
+        $policyDescription->setReadOnly(true);
+        $hctPolicy = new MHContainer('hctPolicy', array($policyLabel, $policyId, $policyDescription));
+        $hctPolicy->setShowLabel(true);
+        $flds[]   = $hctPolicy;
+
+        // Emission date
+        $emissionDateLabel = new MText('emissionDateLabel', _M('Emission date',$module).':');
+        $emissionDateLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $emissionDateLabel->setClass('m-caption m-caption-required');
+        
+        $data->emissionDate = strlen((string)$data->emissionDate) > 0 ? $data->emissionDate : date(MASK_DATE_PHP); 
+        $emissionDate = new MCalendarField('emissionDate', $this->getFormValue('emissionDate',$data->emissionDate), '', FIELD_DATE_SIZE);
+        $emissionDate->setJsHint(_M('Enter the emission date',$module));
+        $validators[] = new MDATEDMYValidator('emissionDate', _M('Emission date',$module), 'required');
+        $hctEmissionDate = new MHContainer('hctEmissionDate', array($emissionDateLabel, $emissionDate));
+        $hctEmissionDate->setShowLabel(true);
+        $flds[]   = $hctEmissionDate;
+
+        //conta bancária
+        $businessBankAccount = $MIOLO->getBusiness('finance', 'BusBankAccount');
+        $dataBankAccount     = $businessBankAccount->listBankAccount();
+
+        $bankAccountIdLabel = new MText('bankAccountIdLabel', _M('Bank account', 'finance').':');
+        $bankAccountIdLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $bankAccountIdLabel->setClass('m-caption m-caption-required');
+
+        $bankAccountId = new Mselection('bankAccountId', $this->getFormValue('bankInvoiceId',$data->bankInvoiceId), '', $dataBankAccount, false);
+        $bankAccountId->setAutoSubmit(true);
+        $validators[]  = new MIntegerValidator('bankAccountId', _M('Bank account',$module), 'required');
+
+        $hctBankAccount = new MHContainer('hctBankAccountId', array($bankAccountIdLabel, $bankAccountId));
+        $hctBankAccount->setShowLabel(true);
+
+        $flds[] = $hctBankAccount;
+
+        if ( strlen((string)$this->getFormValue('bankAccountId', $data->bankAccountId))>0 )
+        {
+            //contrato
+            $businessBankAccountContract = $MIOLO->getBusiness('finance', 'BusBankAccountContract');
+
+            $dataBankAccountContract = $businessBankAccountContract->listBankAccountContract($this->getFormValue('bankAccountId', $data->bankAccountId));
+            $bankContractIdLabel     = new MText('bankContractIdLabel', _M('Bank contract', 'finance').':');
+            $bankContractIdLabel->setWidth(FIELD_CONTAINER_SIZE);
+            $bankContractIdLabel->setClass('m-caption m-caption-required');
+
+            $bankContractId = new Mselection('bankContractId', $this->getFormValue('bankContractId', $data->bankContractId), '', $dataBankAccountContract, false);
+            $validators[]   = new MRequiredValidator('bankContractId', _M('Bank contract', $module), 'required');
+
+            $hctBankAccountContract = new MHContainer('hctBankAccountContract', array($bankContractIdLabel, $bankContractId));
+            $hctBankAccountContract->setShowLabel(true);
+    
+            $flds[] = $hctBankAccountContract;
+        }
+
+        // Comments
+        $commentsLabel = new MText('commentsLabel', _M('Comments', $module).':');
+        $commentsLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $comments = new MMultiLineField('invoiceComments', $data->invoiceComments ? $data->invoiceComments : $this->getFormValue('invoiceComments',$data->invoiceComments), '', 80, 4, 80);
+        $comments->setJsHint(_M('Enter the comments',$module));
+        $flds[] = new MHContainer('hctMessage', array($commentsLabel, $comments));
+       
+        $fields[]  = new MVContainer('vctInvoice', $flds);
+
+        $fields[] = new MSeparator('<hr>');
+        $fields[] = new MCheckBox('checkInvoice', 'true', '', true, ' ' . _M('Leave this option checked if you want the system not enter a new enroll fee for students who already have it.', 'academic'));
+        $fields[] = new MSeparator('<hr>');
+
+        if ( GENERATE_INCENTIVES_ON_ENROLL_TAX_INVOICE == 'YES' )
+        {
+            $fields[] = new MCheckBox('checkIncentive', 'true', '', true, ' ' . _M('Leave this option checked if you want the system check if the pupil have a incentive, and so, give the respective incentive to the same.', 'finance'));
+        }
+        else
+        {
+            $fields[] = new MCheckBox('checkIncentive', 'true', '', false, ' ' . _M('Leave this option checked if you want the system check if the pupil have a incentive, and so, give the respective incentive to the same.', 'finance'));
+        }
+        $fields[] = new MSeparator('<hr>');
+
+        $btnSearch = new MButton('btnGenerate', _M('Generate', $module));
+        $fields[]  = $btnSearch;
+
+        $this->addFields($fields);
+        $this->setValidators($validators);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+        $this->page->onLoad('document.' . $this->name . '.periodId.focus();');
+        $this->setClose($MIOLO->getActionURL($module, substr($action, 0, strrpos($action, ':'))));
+    }
+
+    /**
+     * Event triggered when user chooses Generate from the toolbar
+     **/
+    public function btnGenerate_click($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+        $goto   = MIOLO::_request('goto') ? MIOLO::_request('goto') : MIOLO::_request('goto', 'GET');
+        $data   = $this->getTypesData();
+
+        if ( count($data)>0 )
+        {
+            $business = $MIOLO->getBusiness($module, 'BusReceivableInvoice');
+            $ok       = $business->generateIndividualInvoices($data);
+        }
+        else
+        {
+            $msg  = _M('No invoices entered', $module);
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL('finance', $action, null, $opts);
+            $MIOLO->information($msg, $goto);
+        }
+      
+        if ( $ok )
+        {
+            /*$msg  = _M('Invoices added with success', $module) . '<br><br>';
+            $msg .= '<li>' . _M('Click @1 to print the invoice.', $module, $MIOLO->getActionURL('finance', 'main:process:printInvoice', null, array('_invoiceId' => '_invoiceId'))) . '</li>';
+            $msg .= '<li>' . _M('Click @1 to print the internal invoice.', $module, '') . '</li>';
+            $msg .= '<li>' . _M('Click @1 to pay the invoice.', $module, '') . '</li>';
+            $msg .= '<li>' . _M('Click @1 to go to the pupil assorted queries screen.', $module, '') . '</li>';*/
+            $msg  = _M('Invoices added with success', $module);
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL('finance', $action, null, $opts);
+            $MIOLO->information($msg, $goto);
+        }
+        else
+        {
+            $msg  = _M('Error executing requested operation.', $module);
+            
+            $goto = $this->getFormValue('goto');
+            if (!(strlen((string)$goto)>0))
+            {
+                $goto = SAGU::getStackBackUrl();
+            }
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            
+            $caption = _M('Error', $module);
+            $MIOLO->error($msg, $goto, $caption);
+        }
+
+    }
+    
+   /**
+    *
+    * Get the data for fields on form and returns as object
+    *
+    * @param: No parameters needed
+    *
+    * @return: (object): Object containing the values of form
+    */
+    public function getTypesData()
+    {
+
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+
+        $busLearningPeriod = $MIOLO->getBusiness('academic', 'BusLearningPeriod');
+        $learningPeriod    = $busLearningPeriod->getLearningPeriod($this->learningPeriodId->value);
+
+        $x = 0;
+        //definição para vários alunos
+        if ( strlen((string)$this->contractPersonId->value) == 0 &&
+             strlen((string)$this->contractId->value) == 0  )
+        {
+            $busContract = $MIOLO->getBusiness('academic', 'BusContract');
+            $contracts   = $busContract->getCourseActiveContractsAndWithoutFormationPeriod($learningPeriod);
+
+            if ( count($contracts)> 0 )
+            {
+                for ( $x=0; $x<count($contracts); $x++ )
+                {
+                    //se deve verificar caso já exista uma taxa de matrícula
+                    if ( $this->getFormValue('checkInvoice') == true )
+                    {
+                        //verifica se já possui a taxa praquele curso
+                        $busReceivableInvoice = $MIOLO->getBusiness('finance', 'BusReceivableInvoice');
+                        $haveEnrollFee        = $busReceivableInvoice->haveEnrollFee($contracts[$x][1], $learningPeriod->beginDate, $learningPeriod->endDate, $contracts[$x][2], $contracts[$x][3], $contracts[$x][4]);
+                        if ( $haveEnrollFee == true )
+                        {
+                            continue;
+                        }
+                    }
+
+                    /* DADOS DO TITULO */
+
+                    /* dados do formulário e defines */
+                    $invoice[$x]->data->personId        = $contracts[$x][1];
+                    $invoice[$x]->data->contractId      = $contracts[$x][0];
+                    $invoice[$x]->data->periodId        = $this->periodId->value;
+                    $invoice[$x]->data->incomeSourceId  = $this->incomeSourceId->value;
+                    $invoice[$x]->data->bankAccountId   = $this->bankAccountId->value;
+                    $invoice[$x]->data->bankContractId  = $this->bankContractId->value;
+                    $invoice[$x]->data->comments        = $this->invoiceComments->value;
+                    $invoice[$x]->data->emissionDate    = $this->emissionDate->value;
+                    $invoice[$x]->data->parcelNumber    = '1';
+                    $invoice[$x]->data->courseId        = $contracts[$x][2];
+                    $invoice[$x]->data->courseVersion   = $contracts[$x][3];
+                    $invoice[$x]->data->unitId          = $contracts[$x][4];
+                    $invoice[$x]->data->automaticDebit  = DB_FALSE;
+
+                    $pi = $busContract->getContractPolicyId($contracts[$x][0]);
+
+                    $invoice[$x]->data->policyId        = strlen((string)$pi)>0 ? $pi : $this->policyId->value;
+
+                    $invoice[$x]->data->accountSchemeId = $this->accountSchemeId->value;
+                    $invoice[$x]->data->costCenterId    = $this->costCenterId->value;
+
+                    /* valor da taxa */
+                    $args = array( $learningPeriod->learningPeriodId,
+                                   $learningPeriod->beginDate,
+                                   $learningPeriod->endDate
+                                 );
+                    $business = $MIOLO->getBusiness($module, 'BusPrice');
+                    $price    = $business->getPrice($args);
+
+                    $invoice[$x]->data->value = strlen((string)$price->enrollValue)>0 ? $price->enrollValue : '0';
+
+                    /* data de vencimento */
+                    $contractData       = $busContract->getContract($contracts[$x][0]);
+
+                    $busReceivableInvoice = $MIOLO->getBusiness('finance', 'BusReceivableInvoice');
+                    $maturityDate         = $busReceivableInvoice->generateMaturityDate($learningPeriod->beginDate, strlen((string)$contractData->maturityDay) ? $contractData->maturityDay : MATURITY_DAY);
+
+                    $invoice[$x]->data->maturityDate  = $maturityDate;
+
+                    /* DADOS DO LANCAMENTO */
+
+                    /* dados do formulário e defines */
+                    $invoice[$x]->entries[0]->costCenterId = $this->costCenterId->value;
+                    $invoice[$x]->entries[0]->isAccounted  = DB_FALSE;
+                    $invoice[$x]->entries[0]->creationType = MANUAL_ENTRY_CREATION_TYPE;
+                    $invoice[$x]->entries[0]->value        = strlen((string)$price->enrollValue)>0 ? $price->enrollValue : '0';
+                    $invoice[$x]->entries[0]->comments     = $this->invoiceComments->value;
+                    $invoice[$x]->entries[0]->entryDate    = $this->emissionDate->value;
+
+                    /* operação padrão */
+                    $busDefaultOperations = $MIOLO->getBusiness('finance', 'BusDefaultOperations');
+                    $defaultOperations    = $busDefaultOperations->getDefaultOperations();
+                    $invoice[$x]->entries[0]->operationId  = $defaultOperations->enrollTaxOperation;
+
+                    /* BUSCA POR INCENTIVOS */
+                    if ( $this->getFormValue('checkIncentive') == true )
+                    {
+                        $busIncentive = $MIOLO->getBusiness('finance', 'BusIncentive');
+                        $incentives   = $busIncentive->getContractIncentives($contractData->contractId);
+                        //Processa os incentivos
+                        if ( count($incentives)>0 )
+                        {
+                            $y = 1;
+                            foreach ( $incentives as $inc )
+                            {
+                                if ( $inc[0] == DB_TRUE )
+                                {
+                                    $incentivesValue = strlen((string)$price->enrollValue)>0 ? $price->enrollValue : 0;
+                                    $multiplier      = $incentivesValue * ($inc[1]/100);
+                                }
+                                else
+                                {
+                                    $multiplier = $inc[1];
+                                }
+                
+                                $invoice[$x]->entries[$y]->operationId  = $inc[4];
+                                $invoice[$x]->entries[$y]->costCenterId = strlen((string)$inc[9]) > 0 ? $inc[9] : $this->costCenterId->value;
+                                $invoice[$x]->entries[$y]->isAccounted  = DB_FALSE;
+                                $invoice[$x]->entries[$y]->creationType = MANUAL_ENTRY_CREATION_TYPE;
+                                $invoice[$x]->entries[$y]->value        = strlen((string)number_format($multiplier, 8, '.', ''))>0 ? number_format($multiplier, 8, '.', '') : number_format('0', 8, '.', '');
+                                $invoice[$x]->entries[$y]->comments     = $this->invoiceComments->value;
+                                $invoice[$x]->entries[$y]->entryDate    = $this->emissionDate->value;
+
+                                /*
+                                 *  1 = Auxilio financeiro (bolsas internas)
+                                 *  2 = Patrocionio e financiamento (precisa de pessoa que pague)
+                                 */
+
+                                // guarda esse lancamento para o financiador ou patrocinador
+                                if ( $inc[8] ==  2 )
+                                {
+                                    $invoice[$x]->entries[$y]->haveSupporter            = true;
+                                    $invoice[$x]->entries[$y]->supporterId              = $inc[2];
+                                    $invoice[$x]->entries[$y]->agglutinate              = $inc[3];
+                                    $invoice[$x]->entries[$y]->sendInvoices             = $inc[6];
+                                    $invoice[$x]->entries[$y]->supporterOperationId     = $inc[10];
+                                    $invoice[$x]->entries[$y]->supporterAccountSchemeId = strlen((string)$inc[11])>0 ? $inc[11] : $invoice[$x]->data->accountSchemeId;
+                                }
+                                $y++;
+                            }
+                        }
+                    } //if dos incentivos
+                }
+            }
+        }
+        //definição para apenas um aluno
+        else
+        {
+            //se deve verificar caso já exista uma taxa de matrícula
+            if ( $this->getFormValue('checkInvoice') == true )
+            {
+                //verifica se já possui a taxa
+                $busReceivableInvoice = $MIOLO->getBusiness('finance', 'BusReceivableInvoice');
+                $haveEnrollFee        = $busReceivableInvoice->haveEnrollFee($this->contractPersonId->value, $learningPeriod->beginDate, $learningPeriod->endDate, $this->contractCourseId->value, $this->contractCourseVersion->value, $this->contractUnitId->value);
+                if ( $haveEnrollFee == true )
+                {
+                    return null;
+                }
+            }
+        
+            /* DADOS DO TITULO */
+
+            $busContract = $MIOLO->getBusiness('academic', 'BusContract');
+            
+            /* dados do formulário e defines */
+            $invoice[$x]->data->personId        = $this->contractPersonId->value;
+            $invoice[$x]->data->contractId      = $this->contractId->value;
+            $invoice[$x]->data->periodId        = $this->periodId->value;
+            $invoice[$x]->data->incomeSourceId  = $this->incomeSourceId->value;
+            $invoice[$x]->data->bankAccountId   = $this->bankAccountId->value;
+            $invoice[$x]->data->bankContractId  = $this->bankContractId->value;
+            $invoice[$x]->data->comments        = $this->invoiceComments->value;
+            $invoice[$x]->data->emissionDate    = $this->emissionDate->value;
+            $invoice[$x]->data->parcelNumber    = '1';
+            $invoice[$x]->data->courseId        = $this->contractCourseId->value;
+            $invoice[$x]->data->courseVersion   = $this->contractCourseVersion->value;
+            $invoice[$x]->data->unitId          = $this->contractUnitId->value;
+            $invoice[$x]->data->automaticDebit  = DB_FALSE;
+
+            $pi = $busContract->getContractPolicyId($this->contractId->value);
+
+            $invoice[$x]->data->policyId        = strlen((string)$pi)>0 ? $pi : $this->policyId->value;
+
+            $invoice[$x]->data->accountSchemeId = $this->accountSchemeId->value;
+            $invoice[$x]->data->costCenterId    = $this->costCenterId->value;
+
+            /* valor da taxa */
+
+            $args = array( $learningPeriod->learningPeriodId,
+                           $learningPeriod->beginDate,
+                           $learningPeriod->endDate
+                         );
+            $business = $MIOLO->getBusiness($module, 'BusPrice');
+            $price    = $business->getPrice($args);
+
+            $invoice[$x]->data->value = strlen((string)$price->enrollValue)>0 ? $price->enrollValue : '0';
+
+            /* data de vencimento */
+            $contractData       = $busContract->getContract($this->contractId->value);
+
+            $busReceivableInvoice = $MIOLO->getBusiness('finance', 'BusReceivableInvoice');
+            $maturityDate         = $busReceivableInvoice->generateMaturityDate($learningPeriod->beginDate, strlen((string)$contractData->maturityDay) ? $contractData->maturityDay : MATURITY_DAY);
+
+            $invoice[$x]->data->maturityDate  = $maturityDate;
+
+            /* DADOS DO LANCAMENTO */
+
+            /* dados do formulário e defines */
+            $invoice[$x]->entries[0]->costCenterId = $this->costCenterId->value;
+            $invoice[$x]->entries[0]->isAccounted  = DB_FALSE;
+            $invoice[$x]->entries[0]->creationType = MANUAL_ENTRY_CREATION_TYPE;
+            $invoice[$x]->entries[0]->value        = strlen((string)$price->enrollValue)>0 ? $price->enrollValue : '0';
+            $invoice[$x]->entries[0]->comments     = $this->invoiceComments->value;
+            $invoice[$x]->entries[0]->entryDate    = $this->emissionDate->value;
+
+            /* operação padrão */
+            $busDefaultOperations = $MIOLO->getBusiness('finance', 'BusDefaultOperations');
+            $defaultOperations    = $busDefaultOperations->getDefaultOperations();
+            $invoice[$x]->entries[0]->operationId  = $defaultOperations->enrollTaxOperation;
+
+            /* BUSCA POR INCENTIVOS */
+            if ( $this->getFormValue('checkIncentive') == true )
+            {
+                $busIncentive = $MIOLO->getBusiness('finance', 'BusIncentive');
+                $incentives   = $busIncentive->getContractIncentives($contractData->contractId);
+                //Processa os incentivos
+                if ( count($incentives)>0 )
+                {
+                    $y = 1;
+                    foreach ( $incentives as $inc )
+                    {
+                        if ( $inc[0] == DB_TRUE )
+                        {
+                            $incentivesValue = strlen((string)$price->enrollValue)>0 ? $price->enrollValue : 0;
+                            $multiplier      = $incentivesValue * ($inc[1]/100);
+                        }
+                        else
+                        {
+                            $multiplier = $inc[1];
+                        }
+                
+                        $invoice[$x]->entries[$y]->operationId  = $inc[4];
+                        $invoice[$x]->entries[$y]->costCenterId = strlen((string)$inc[9]) > 0 ? $inc[9] : $this->costCenterId->value;
+                        $invoice[$x]->entries[$y]->isAccounted  = DB_FALSE;
+                        $invoice[$x]->entries[$y]->creationType = MANUAL_ENTRY_CREATION_TYPE;
+                        $invoice[$x]->entries[$y]->value        = strlen((string)number_format($multiplier, 8, '.', ''))>0 ? number_format($multiplier, 8, '.', '') : number_format('0', 8, '.', '');
+                        $invoice[$x]->entries[$y]->comments     = $this->invoiceComments->value;
+                        $invoice[$x]->entries[$y]->entryDate    = $this->emissionDate->value;
+                        
+                        /*
+                         *  1 = Auxilio financeiro (bolsas internas)
+                         *  2 = Patrocionio e financiamento (precisa de pessoa que pague)
+                         */
+
+                        // guarda esse lancamento para o financiador ou patrocinador
+                        if ( $inc[8] == 2 )
+                        {
+                            $invoice[$x]->entries[$y]->haveSupporter            = true;
+                            $invoice[$x]->entries[$y]->supporterId              = $inc[2];
+                            $invoice[$x]->entries[$y]->agglutinate              = $inc[3];
+                            $invoice[$x]->entries[$y]->sendInvoices             = $inc[6];
+                            $invoice[$x]->entries[$y]->supporterOperationId     = $inc[10];
+                            $invoice[$x]->entries[$y]->supporterAccountSchemeId = strlen((string)$inc[11])>0 ? $inc[11] : $invoice[$x]->data->accountSchemeId;
+                        }
+                        
+                        $y++;
+                    }
+                }
+            } //if dos incentivos
+        }
+        return $invoice;
+    }
+
+}
+?>

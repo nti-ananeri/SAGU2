@@ -1,0 +1,1204 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions to register data in the acdenrollsummary table
+ *
+ * @author Leovan Tavares da Silva [leovan@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Armando Taffarel Neto [taffarel@solis.coop.br]
+ * Hélio Henrique Rodrigues Guimarães [helio@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 13/04/2007
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+
+/**
+ * Class to register data in the acdEnrollSummary table
+ **/
+class BusinessAcademicBusEnrollSummaryGeneration extends Business
+{
+    public $db;
+    
+    /**
+     * Class constructor
+     **/
+    public function BusinessAcademicBusEnrollSummaryGeneration()
+    {
+        $this->db = $this->getDatabase();
+    }
+    
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module = is_null($module) ? 'academic' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+    /**
+     *
+     * Generate data for acdEnrollSummary table from the enroll data in enroll period
+     *
+     * @param $data (object): an object containing the data
+     *
+     * @return: TRUE if success, otherwise FALSE
+     *
+     **/
+    public function generateEnrollSummaryInEnrollPeriod($data)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        
+        $business     = $MIOLO->getBusiness($module, 'BusEnrollSummary');
+        $business->db = $this->db;
+        
+        //Exclui dados referentes a matrícula no período letivo selecionado
+        $business->deleteEnrollSummary($data->contractId, $data->learningPeriodId);
+        
+        //Obtém dados do período letivo de contrato
+        $busLearningPeriod  = $MIOLO->getBusiness($module, 'BusLearningPeriod');
+        $learningPeriodData = $busLearningPeriod->getLearningPeriod($data->learningPeriodId);
+
+        $busContract  = $MIOLO->getBusiness($module, 'BusContract');
+        $contractData = $busContract->getContract($data->contractId);
+        
+        //Obtem número de parcelas da política padrão do período letivo
+        $sql = 'SELECT parcelsNumber,
+                       policyId
+                  FROM acdLearningPeriod
+                 WHERE learningPeriodId = ?';
+                 
+        $finInfo = $this->db->query(SAGU::prepare($sql, $data->learningPeriodId));
+
+        $busPolicy  = $MIOLO->getBusiness('finance', 'BusPolicy');
+        $policyData = $busPolicy->getPolicy($finInfo[0][1]);
+
+        //Obtém número de parcelas
+        if (strlen((string)$data->parcelsNumber) > 0)
+        {
+            $parcelsNumber = $data->parcelsNumber;
+        }
+        elseif (strlen((string)$contractData->parcelsNumber) > 0)
+        {
+            $parcelsNumber = $contractData->parcelsNumber;
+        }
+        else
+        {
+            $parcelsNumber = $finInfo[0][0];
+        }
+
+        //Monta o objeto com os dados padrão
+        $enrollSummary = new acdEnrollSummary();
+        $enrollSummary->contractId       = $data->contractId;
+        $enrollSummary->learningPeriodId = $data->learningPeriodId;
+        $enrollSummary->parcelsNumber    = $parcelsNumber;
+        $enrollSummary->isProcessed      = DB_FALSE;
+        $enrollSummary->isValue          = DB_FALSE;
+        $enrollSummary->recordDate       = date(MASK_DATE_PHP);
+        
+        //Obtém os incentivos para determinado contrato
+        $sql = 'SELECT A.valueIsPercent,
+                       A.value,
+                       A.supporterId,
+                       A.agglutinate,
+                       C.operationId,
+                       C.needAdjustAuthorization,
+                       C.sendInvoices,
+                       C.generateCredits,
+                       CASE WHEN A.incentiveTypeId IN (SELECT incentiveTypeId FROM finFinancialAid) 
+                            THEN 1
+                            ELSE 2 END as financialAid
+                  FROM finIncentive A
+            INNER JOIN ONLY finIncentiveType C
+                    ON ( A.incentiveTypeId = C.incentiveTypeId )
+            INNER JOIN finOperation B
+                    ON ( B.operationId     = C.operationId )
+                 WHERE ((A.endDate = null AND 
+                         A.cancellationDate = null) OR A.endDate > date(now()))
+                   AND now() BETWEEN A.startDate AND A.endDate
+                   AND C.generateCredits   = TRUE
+                   AND A.contractId        = ?';
+
+        $incentives = $this->db->query(SAGU::prepare($sql, $data->contractId));
+
+        //Verifica se o incentivo é do tipo auxílio financeiro
+        $isFinAid = false;
+        for ( $i = 0; $i < count($incentives) && $isFinAid == false; $i++ )
+        {
+            if ( $incentives[$i][8] == 1 )
+            {
+                $isFinAid = true;
+            }
+        }
+
+        //Obtém os dados referentes as disciplinas (créditos e descontos)
+        if ( count($data->groupId) > 0 )
+        {
+            //Se for matrícula seriada, deve tratar descontos e incentivos como valor
+            if ( $data->isSerialEnrollProcess )
+            {
+                $enrollSummary->multiplier = number_format(1, 8, '.', '');
+                //$enrollSummary->isValue    = DB_TRUE; 
+                
+                $busPrice  = $MIOLO->getBusiness('finance', 'BusPrice');
+                $priceData = $busPrice->getLastPrice($data->learningPeriodId);
+                
+                //se for menos que o mínimo de disciplinas o valor é por disciplina
+                if ( count($data->groupId) < $priceData->minimumCurricularComponent )
+                {
+                    $incentivesValue = count($data->groupId) * $priceData->curricularComponentPrice;
+                }
+                else
+                {
+                    $incentivesValue = $priceData->value;
+                }
+            }
+            else
+            {
+                $financeCredits = 0;
+                foreach ( $data->groupId as $groupId )
+                {               
+                    //Número de créditos financeiros da disciplina
+                    $sql = 'SELECT C.financeCredits
+                              FROM acdGroup A
+                        INNER JOIN acdCurriculum B
+                                ON (B.curriculumId = A.curriculumId)
+                        INNER JOIN acdCurricularComponent C
+                                ON (C.curricularComponentId = B.curricularComponentId AND
+                                    C.curricularComponentVersion = B.curricularComponentVersion)
+                              WHERE A.groupId = ?';
+                                
+                    $result = $this->db->query(SAGU::prepare($sql, $groupId));
+                    
+                    $financeCredits += $result[0][0];
+                    
+                    //Descontos referentes a disciplina (somente se não possuir incentivo
+                    //do tipo auxílio financeiro)
+                    if (!$isFinAid)
+                    {
+                        $sql = ' SELECT discounting,
+                                        numcredits,
+                                        operationId
+                                   FROM acdSchedule
+                                  WHERE groupId = ? ';
+                                    
+                        $discounts = $this->db->query(SAGU::prepare($sql, $groupId));
+                        
+                        if (count($discounts) > 0)
+                        {
+                            foreach ($discounts as $disc)
+                            {
+                                if ($disc[0] > 0)
+                                {
+                                    if ($disc[1] > 0)
+                                    {
+                                        $numCredits = $disc[1];
+                                    }
+                                    else
+                                    {
+                                        $numCredits = $result[0][0];
+                                    }
+                                    
+                                    //Monta os dados dos descontos e os insere na tabela acdEnrollSummary
+                                    $enrollSummary->multiplier       = number_format($numCredits*($disc[0]/100), 8, '.', '');
+                                    $enrollSummary->operationId      = $disc[2];
+
+                                    $business->insertEnrollSummary($enrollSummary);
+                                    
+                                    $totalDiscount += $enrollSummary->multiplier;
+                                }
+                            }
+                        }
+                    }
+                }
+                $enrollSummary->multiplier = number_format($financeCredits, 8, '.', '');
+                //Verifica sobre quantos créditos o incentivo será aplicado (créditos totais menos os descontos)
+                $incentivesValue = $financeCredits - $totalDiscount;
+                $incentivesValue = number_format($incentivesValue, 8, '.', '');
+            }
+            //Monta os dados referentes a mensalidade e insere no resumo de matrícula
+            $enrollSummary->operationId      = $policyData->operationId;
+
+            //se for menos que o mínimo de disciplinas o valor é por disciplina
+            if ( count($data->groupId) < $priceData->minimumCurricularComponent )
+            {
+                // numero de disciplina vezes o valor da disciplina e,
+                // dividido pelo valor do curso pq depois ele multiplica pelo valor do curso,
+                // então é apenas para anular esse cálculo
+                $enrollSummary->multiplier = number_format( ( count($data->groupId) * $priceData->curricularComponentPrice ) / $priceData->value, 8);
+            }
+            $business->insertEnrollSummary($enrollSummary);
+            
+            //Processa os incentivos
+            if ( count($incentives) > 0 )
+            {
+                foreach ( $incentives as $inc )
+                {   
+                    if ( $inc[0] == DB_TRUE )
+                    {
+                        $multiplier = $incentivesValue * ($inc[1]/100);
+                    }
+                    else
+                    {
+                        $multiplier = $inc[1];
+                    }
+                    
+                    if ( $data->isSerialEnrollProcess )
+                    {
+                        $enrollSummary->isValue = DB_TRUE;
+                    }
+                    
+                    //Atualiza os dados necessários para enviar a acdEnrollSummary
+                    $enrollSummary->multiplier       = number_format($multiplier, 8, '.', '');
+                    $enrollSummary->operationId      = $inc[4];
+                    
+                    $business->insertEnrollSummary($enrollSummary);
+                }
+            }
+        }
+        
+        if ( (count($business->getErrors()) > 0) || (count($this->getErrors()) > 0) )
+        {
+            return false;
+        }
+        else
+        {   
+            return true;
+        }
+    }
+    
+    /**
+     *
+     * Generate data for acdEnrollSummary table from the enroll data in adjustment period
+     *
+     * @param $data (object): an object containing the data
+     *
+     * @return: TRUE if success, otherwise FALSE
+     *
+     **/
+    /* UTILIZADA SEMPRE NA MATRICULA DE DENTRO DO SAGU */
+    public function generateEnrollSummaryInAdjustmentPeriod($data)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+     
+        $business     = $MIOLO->getBusiness($module, 'BusEnrollSummary');
+        $business->db = $this->db;
+        
+        $busLearningPeriod  = $MIOLO->getBusiness($module, 'BusLearningPeriod');
+        $learningPeriodData = $busLearningPeriod->getLearningPeriod($data->learningPeriodId);
+
+        $busContract  = $MIOLO->getBusiness($module, 'BusContract');
+        $contractData = $busContract->getContract($data->contractId);
+        
+        //Obtem informações do periodo letivo e políticas
+        $sql = 'SELECT parcelsNumber,
+                       policyId
+                  FROM acdLearningPeriod
+                 WHERE learningPeriodId = ?';
+                    
+        $finInfo = $this->db->query(SAGU::prepare($sql, $data->learningPeriodId));
+        
+        $busPolicy  = $MIOLO->getBusiness('finance', 'BusPolicy');
+        $policyData = $busPolicy->getPolicy($finInfo[0][1]);
+        
+        //Obtém número de parcelas
+        if ( strlen((string)$data->parcelsNumber) > 0 )
+        {
+            $parcelsNumber = $data->parcelsNumber;
+        }
+        else
+        {
+           $sql = 'SELECT count(months)
+                     FROM (SELECT DISTINCT EXTRACT(MONTH FROM maturitydate) as months 
+                             FROM finincomeforecast 
+                            WHERE contractid = ? 
+                              AND isprocessed = \'' . DB_FALSE . '\'
+                              AND maturityDate BETWEEN TO_DATE(?,\'' . MASK_DATE . '\') AND
+                                                       TO_DATE(?,\'' . MASK_DATE . '\')) AS sel';
+                        
+            $args = array($data->contractId,
+                          $learningPeriodData->beginDate,
+                          $learningPeriodData->endDate);
+                          
+            $restantParcels = $this->db->query(SAGU::prepare($sql, $args));
+            
+            if (strlen((string)$contractData->parcelsNumber) > 0)
+            {
+                $parcelsNumber = $contractData->parcelsNumber;
+            }
+            elseif ( ($restantParcels[0][0] < $finInfo[0][0]) &&
+                     ($restantParcels[0][0] > 0) )
+            {
+                $parcelsNumber = $restantParcels[0][0];
+            }
+            else
+            {
+                $parcelsNumber = $finInfo[0][0];
+            }
+        }
+
+        //Monta o objeto com os dados padrão 
+        $enrollSummary = new acdEnrollSummary();
+        $enrollSummary->contractId       = $data->contractId;
+        $enrollSummary->learningPeriodId = $data->learningPeriodId;
+        $enrollSummary->parcelsNumber    = $parcelsNumber;
+        $enrollSummary->isProcessed      = DB_FALSE;
+        $enrollSummary->isValue          = DB_FALSE;
+        $enrollSummary->recordDate       = date(MASK_DATE_PHP);
+        
+        //Obtém os incentivos para determinado contrato
+        $sql = 'SELECT A.valueIsPercent,
+                       A.value,
+                       A.supporterId,
+                       A.agglutinate,
+                       C.operationId,
+                       C.needAdjustAuthorization,
+                       C.sendInvoices,
+                       C.generateCredits,
+                       CASE WHEN A.incentiveTypeId IN (SELECT incentiveTypeId FROM finFinancialAid) 
+                            THEN 1
+                            ELSE 2 END as financialAid
+                  FROM finIncentive A
+            INNER JOIN ONLY finIncentiveType C
+                    ON ( A.incentiveTypeId = C.incentiveTypeId )
+            INNER JOIN finOperation B
+                    ON ( B.operationId     = C.operationId )
+                 WHERE ((A.endDate = null AND 
+                         A.cancellationDate = null) OR A.endDate > date(now()))
+                   AND now() BETWEEN A.startDate AND A.endDate
+                   AND C.generateCredits   = TRUE
+                   AND A.contractId        = ?';
+
+        $incentives = $this->db->query(SAGU::prepare($sql, $data->contractId));
+
+        //Verifica se o incentivo é do tipo auxílio financeiro
+        $isFinAid = false;
+        for ($i = 0; $i < count($incentives) && $isFinAid == false; $i++)
+        {
+            if ($incentives[$i][8] == 1)
+            {
+                $isFinAid = true;
+            }
+        }
+        
+        //Obtém os dados referentes as disciplinas (créditos e descontos)
+        if ( count($data->groupId) > 0 )
+        {
+            //Se for matrícula seriada, deve tratar descontos e incentivos como valor
+            if ( $data->isSerialEnrollProcess )
+            {
+                $enrollSummary->multiplier = number_format(1, 8, '.', '');
+                //$enrollSummary->isValue    = DB_TRUE; 
+                
+                $busPrice  = $MIOLO->getBusiness('finance', 'BusPrice');
+                $priceData = $busPrice->getLastPrice($data->learningPeriodId);
+                
+                //se for menos que o mínimo de disciplinas o valor é por disciplina
+                if ( count($data->groupId) < $priceData->minimumCurricularComponent )
+                {
+                    $incentivesValue = count($data->groupId) * $priceData->curricularComponentPrice;
+                }
+                else
+                {
+                    $incentivesValue = $priceData->value;
+                }
+            }
+            else
+            {
+                $financeCredits = 0;
+                foreach ($data->groupId as $groupId)
+                {               
+                    //Créditos financeiros da disciplina
+                    $sql = 'SELECT C.financeCredits
+                              FROM acdGroup A
+                        INNER JOIN acdCurriculum B
+                                ON (B.curriculumId = A.curriculumId)
+                        INNER JOIN acdCurricularComponent C
+                                ON (C.curricularComponentId = B.curricularComponentId AND
+                                    C.curricularComponentVersion = B.curricularComponentVersion)
+                              WHERE A.groupId = ?';
+                                
+                    $result = $this->db->query(SAGU::prepare($sql, $groupId));
+                    $financeCredits += $result[0][0];
+                    
+                    //Descontos
+                    if (!$isFinAid)
+                    {
+                        $sql = ' SELECT discounting,
+                                        numcredits,
+                                        operationId
+                                   FROM acdSchedule
+                                  WHERE groupId = ? ';
+                                    
+                        $discounts = $this->db->query(SAGU::prepare($sql, $groupId));
+                        
+                        if (count($discounts) > 0)
+                        {
+                            foreach ($discounts as $disc)
+                            {
+                                if ($disc[0] > 0)
+                                {
+                                    if ($disc[1] > 0)
+                                    {
+                                        $numCredits = $disc[1];
+                                    }
+                                    else
+                                    {
+                                        $numCredits = $result[0][0];
+                                    }
+                                    
+                                    //Monta os dados dos descontos e os insere na tabela acdEnrollSummary
+                                    $enrollSummary->multiplier       = number_format($numCredits*($disc[0]/100), 8, '.', '');
+                                    $enrollSummary->operationId      = $disc[2];
+                                    
+                                    $business->insertEnrollSummary($enrollSummary);
+                                    
+                                    $totalDiscount += $enrollSummary->multiplier;
+                                }
+                            }
+                        }
+                    }
+                }
+                $enrollSummary->multiplier = $financeCredits;
+                //Verifica sobre quantos créditos o incentivo será aplicado (créditos totais menos os descontos)
+                $incentivesValue = $financeCredits - $totalDiscount;
+                $incentivesValue = number_format($incentivesValue, 8, '.', '');
+            }
+            //Monta os dados referentes a mensalidade e insere no resumo de matrícula
+            $enrollSummary->operationId = $policyData->operationId;
+
+            //se for menos que o mínimo de disciplinas o valor é por disciplina
+            if ( count($data->groupId) < $priceData->minimumCurricularComponent )
+            {
+                // numero de disciplina vezes o valor da disciplina e,
+                // dividido pelo valor do curso pq depois ele multiplica pelo valor do curso,
+                // então é apenas para anular esse cálculo
+                $enrollSummary->multiplier = number_format( ( count($data->groupId) * $priceData->curricularComponentPrice ) / $priceData->value, 8);
+            }
+        
+            $business->insertEnrollSummary($enrollSummary);
+            
+            //Processa os incentivos
+            if (count($incentives) > 0)
+            {
+                foreach ($incentives as $inc)
+                {   
+                    if ($inc[0] == DB_TRUE)
+                    {
+                        $multiplier = $incentivesValue * ($inc[1]/100);
+                    }
+                    else
+                    {
+                        $multiplier = $inc[1];
+                    }
+                    
+                    if ($data->isSerialEnrollProcess)
+                    {
+                        $enrollSummary->isValue = DB_TRUE;
+                    }
+                    
+                    //Atualiza os dados necessários para enviar a acdEnrollSummary
+                    $enrollSummary->multiplier       = number_format($multiplier, 8, '.', '');
+                    $enrollSummary->operationId      = $inc[4];
+                    
+                    $business->insertEnrollSummary($enrollSummary);
+                }
+            }
+        }
+        
+        //Processa os dados referentes as disciplinas canceladas
+        if (count($data->cancelledGroupId) > 0)
+        {
+            //unset($groupId);
+            $financeCredits = 0;
+            $totalDiscount  = 0;
+            
+            $sql = 'SELECT cancelCurricularComponentOperation 
+                      FROM finDefaultOperations';
+                      
+            $result = $this->db->query($sql);
+            
+            $cancelOperation = $result[0][0];
+            
+            foreach ($data->cancelledGroupId as $cancelGroupId)
+            {               
+                //Créditos financeiros
+                $sql = 'SELECT C.financeCredits
+                          FROM acdGroup A
+                    INNER JOIN acdCurriculum B
+                            ON (B.curriculumId = A.curriculumId)
+                    INNER JOIN acdCurricularComponent C
+                            ON (C.curricularComponentId = B.curricularComponentId AND
+                                C.curricularComponentVersion = B.curricularComponentVersion)
+                         WHERE A.groupId = ?';
+                            
+                $result = $this->db->query(SAGU::prepare($sql, $cancelGroupId));
+                
+                $financeCredits += $result[0][0];
+                
+                //Descontos
+                if (!$isFinAid)
+                {
+                    $sql = ' SELECT discounting,
+                                    numcredits,
+                                    operationId
+                               FROM acdSchedule
+                              WHERE groupId = ? ';
+                                
+                    $cancelDiscounts = $this->db->query(SAGU::prepare($sql, $cancelGroupId));
+                    
+                    if (count($cancelDiscounts) > 0)
+                    {
+                        foreach ($cancelDiscounts as $cancelDisc)
+                        {
+                            if ($cancelDisc[0] > 0)
+                            {
+                                if ($cancelDisc[1] > 0)
+                                {
+                                    $numCredits = $cancelDisc[1];
+                                }
+                                else
+                                {
+                                    $numCredits = $result[0][0];
+                                }
+                                
+                                //Monta os dados dos descontos e os insere na tabela acdEnrollSummary
+                                $multiplier                      = number_format($numCredits*($cancelDisc[0]/100), 8, '.', '');
+                                //Como é um estorno, deve ser negativo
+                                $multiplierN = (-1) * $multiplier;
+                                
+                                $enrollSummary->multiplier       = number_format($multiplierN, 8, '.', '');
+                                $enrollSummary->operationId      = $cancelDisc[2];
+                                
+                                $business->insertEnrollSummary($enrollSummary);
+                                
+                                $totalDiscount += $multiplier;
+                            }
+                        }
+                    }
+                }
+            }
+            //Insere os dados referentes aos créditos da disciplina (com operação de cancelamento)
+            $enrollSummary->multiplier  = number_format($financeCredits, 8, '.', '');
+            $enrollSummary->operationId = $cancelOperation;
+            
+            $business->insertEnrollSummary($enrollSummary);
+            //Verifica sobre quantos créditos o incentivo será aplicado (créditos totais menos os descontos)
+            $incentivesValue = $financeCredits - $totalDiscount;
+            
+            $incentivesValue = number_format($incentivesValue, 8, '.', '');
+            
+            //Processa os incentivos
+            if (count($incentives) > 0)
+            {
+                foreach ($incentives as $inc)
+                {   
+                    if ($inc[0] == DB_TRUE)
+                    {
+                        $multiplier = $incentivesValue * ($inc[1]/100);
+                    }
+                    else
+                    {
+                        $multiplier = $inc[1];
+                    }
+                    
+                    if ($data->isSerialEnrollProcess)
+                    {
+                        $enrollSummary->isValue = DB_TRUE;
+                    }
+                    
+                    $multiplierN                = (-1) * $multiplier;
+                    //Atualiza os dados necessários e insere na acdEnrollSummary
+                    $enrollSummary->multiplier  = number_format($multiplierN, 8, '.', '');
+                    $enrollSummary->operationId = $inc[4];
+                    
+                    $business->insertEnrollSummary($enrollSummary);
+                }
+            }
+        }
+        
+        if ( (count($business->getErrors()) > 0) || (count($this->getErrors()) > 0) )
+        {
+            return false;
+        }
+        else
+        {   
+            return true;
+        }
+    }
+    
+    /**
+     *
+     * Generate data for acdEnrollSummary table from the enroll addition proccess
+     *
+     * @param $data (object): an object containing the data
+     *
+     * @return: TRUE if success, otherwise FALSE
+     *
+     **/
+    public function generateEnrollSummaryToEnrollAddition($data)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        
+        $business     = $MIOLO->getBusiness($module, 'BusEnrollSummary');
+        $business->db = $this->db;
+        
+        $busLearningPeriod  = $MIOLO->getBusiness($module, 'BusLearningPeriod');
+        $learningPeriodData = $busLearningPeriod->getLearningPeriod($data->learningPeriodId);
+
+        $busContract  = $MIOLO->getBusiness($module, 'BusContract');
+        $contractData = $busContract->getContract($data->contractId);
+
+        $busCourseVersion  = $MIOLO->getBusiness($module, 'BusCourseVersion');
+        $courseVersionData = $busCourseVersion->getCourseVersion($contractData->courseId, $contractData->courseVersion);
+
+        $busDefaultOperations = $MIOLO->getBusiness('finance', 'BusDefaultOperations');
+        $defaultOperations    = $busDefaultOperations->getDefaultOperations();
+        
+        $serialEnrollProcess = false;
+        
+        if ( in_array($courseVersionData->courseVersionTypeId, explode(',', str_replace(' ', '', SERIAL_ENROLL_TYPE_IDS) ) ) )
+        {
+            $serialEnrollProcess = true;
+        }
+
+        //Obtem informações do periodo letivo e políticas
+        $sql = 'SELECT parcelsNumber,
+                       policyId,
+                       CASE WHEN ( parcelsNumber - (EXTRACT(MONTH FROM now()) - EXTRACT(MONTH FROM begindate)+1) ) > 0 THEN ( parcelsNumber - (EXTRACT(MONTH FROM now()) - EXTRACT(MONTH FROM begindate)+1) ) ELSE parcelsNumber END
+                  FROM acdLearningPeriod
+                 WHERE learningPeriodId = ?';
+
+        $finInfo = $this->db->query(SAGU::prepare($sql, $data->learningPeriodId));
+
+        $busPolicy  = $MIOLO->getBusiness('finance', 'BusPolicy');
+
+        $policyData = $busPolicy->getPolicy($finInfo[0][1]);
+
+//echo 'periodo letivo parcelas: ' . $finInfo[0][0] . "<br>";
+//echo 'periodo letivo parcelas calculo atual: ' . $finInfo[0][2] . "<br>";
+
+        //Obtem a quantidade de meses das previsões ainda não geradas
+        if ( strlen((string)$data->parcelsNumer) <= 0 )
+        {
+            $sql = 'SELECT count(months)
+                     FROM (SELECT DISTINCT EXTRACT(MONTH FROM maturitydate) as months 
+                             FROM finincomeforecast 
+                            WHERE contractid = ? 
+                              AND isprocessed = \'' . DB_FALSE . '\'
+                              AND maturityDate BETWEEN TO_DATE(?,\'' . MASK_DATE . '\') AND
+                                                       TO_DATE(?,\'' . MASK_DATE . '\')) AS sel';
+
+            $args = array($data->contractId,
+                          $learningPeriodData->beginDate,
+                          $learningPeriodData->endDate);
+                          
+            $restantParcels = $this->db->query(SAGU::prepare($sql, $args));
+//echo 'parcelas ainda nao geradas (previsoes): ' . $finInfo[0][3] . "<br>";
+
+            if ($restantParcels[0][0] > 0)
+            {
+                $data->parcelsNumber = $restantParcels[0][0];
+            }
+            //se tudo estiver gerado, pega os meses sequentes a data atual
+            else
+            {
+                $sql = 'SELECT count(months)
+                         FROM (SELECT DISTINCT EXTRACT(MONTH FROM maturitydate) as months 
+                                 FROM finincomeforecast 
+                                WHERE contractid = ? 
+                                  AND maturityDate > date(now())) AS sel';
+            
+                $args           = array($data->contractId);
+                $restantParcels = $this->db->query(SAGU::prepare($sql, $args));
+                $data->parcelsNumber = $restantParcels[0][0]>0 ? $restantParcels[0][0] : $finInfo[0][2];
+//echo 'meses sequentes: ' . $restantParcels[0][0] . "<br>";
+            }
+        }
+//vd($data->parcelsNumber);
+        //Monta o objeto com os dados padrão 
+        $enrollSummary = new acdEnrollSummary();
+        $enrollSummary->contractId       = $data->contractId;
+        $enrollSummary->learningPeriodId = $data->learningPeriodId;
+        $enrollSummary->parcelsNumber    = $data->parcelsNumber;
+        $enrollSummary->isProcessed      = DB_FALSE;
+        $enrollSummary->isValue          = DB_FALSE;
+        $enrollSummary->recordDate       = date(MASK_DATE_PHP);
+
+        //Obtém os incentivos para determinado contrato
+        $sql = 'SELECT A.valueIsPercent,
+                       A.value,
+                       A.supporterId,
+                       A.agglutinate,
+                       C.operationId,
+                       C.needAdjustAuthorization,
+                       C.sendInvoices,
+                       C.generateCredits,
+                       CASE WHEN A.incentiveTypeId IN (SELECT incentiveTypeId FROM finFinancialAid) 
+                            THEN 1
+                            ELSE 2 END as financialAid
+                  FROM finIncentive A
+            INNER JOIN ONLY finIncentiveType C
+                    ON ( A.incentiveTypeId = C.incentiveTypeId )
+            INNER JOIN finOperation B
+                    ON ( B.operationId     = C.operationId )
+                 WHERE ((A.endDate = null AND 
+                         A.cancellationDate = null) OR A.endDate > date(now()))
+                   AND now() BETWEEN A.startDate AND A.endDate
+                   AND C.generateCredits   = TRUE
+                   AND A.contractId        = ?';
+
+        $incentives = $this->db->query(SAGU::prepare($sql, $data->contractId));
+
+        //Verifica se o incentivo é do tipo auxílio financeiro
+        $isFinAid = false;
+        for ($i = 0; $i < count($incentives) && $isFinAid == false; $i++)
+        {
+            if ($incentives[$i][8] == 1)
+            {
+                $isFinAid = true;
+            }
+        }
+        
+        $incentivesValue = 0;
+        
+        if (strlen((string)$data->groupId) > 0)
+        {
+            //seriado
+            if ( $serialEnrollProcess )
+            {
+                $enrollSummary->multiplier = number_format(1, 8, '.', '');
+                //$enrollSummary->isValue    = DB_TRUE; 
+
+                $busPrice  = $MIOLO->getBusiness('finance', 'BusPrice');
+                $priceData = $busPrice->getLastPrice($data->learningPeriodId);
+
+                // conta as disciplinas atuais
+                $sql = 'SELECT count(A.*) 
+                          FROM acdEnroll A
+                    INNER JOIN acdGroup B
+                         USING ( groupId )
+                         WHERE A.contractId = ?
+                           AND B.learningPeriodId = ?
+                           AND A.statusId IN (' . ENROLL_STATUS_ENROLLED . ')';
+
+                $enroll = $this->db->query(SAGU::prepare($sql, array($data->contractId, $data->learningPeriodId)));
+                $enrollCount = strlen((string)$enroll[0][0])>0 ? $enroll[0][0] : '0'; 
+
+                if ( $enrollCount < $priceData->minimumCurricularComponent )
+                {
+                    $incentivesValue = count($data->groupId) * $priceData->curricularComponentPrice;
+                    $enrollSummary->multiplier = number_format( ( count($data->groupId) * $priceData->curricularComponentPrice) / ($priceData->value), 8, '.', '');
+                }
+                else
+                {
+                    $incentivesValue = 0;
+                    //$incentivesValue = $priceData->value;
+                    $enrollSummary->multiplier = number_format( 0, 8, '.', '');
+                }
+            }
+            //creditos
+            else
+            {
+                $financeCredits = 0;
+                $totalDiscount  = 0;
+                            
+                //Créditos financeiros da disciplina
+                $sql = 'SELECT C.financeCredits
+                            FROM acdGroup A
+                    INNER JOIN acdCurriculum B
+                            ON (B.curriculumId = A.curriculumId)
+                    INNER JOIN acdCurricularComponent C
+                            ON (C.curricularComponentId = B.curricularComponentId AND
+                                C.curricularComponentVersion = B.curricularComponentVersion)
+                            WHERE A.groupId = ?';
+                            
+                $result = $this->db->query(SAGU::prepare($sql, $data->groupId));
+                
+                $financeCredits += $result[0][0];
+                
+                //Descontos
+                if (!$isFinAid)
+                {
+                    $sql = ' SELECT discounting,
+                                    numcredits,
+                                    operationId
+                                FROM acdSchedule
+                                WHERE groupId = ? ';
+                                
+                    $discounts = $this->db->query(SAGU::prepare($sql, $data->groupId));
+                    
+                    if (count($discounts) > 0)
+                    {
+                        foreach ($discounts as $disc)
+                        {
+                            if ($disc[0] > 0)
+                            {
+                                if ($disc[1] > 0)
+                                {
+                                    $numCredits = $disc[1];
+                                }
+                                else
+                                {
+                                    $numCredits = $result[0][0];
+                                }
+                                
+                                //Monta os dados dos descontos e os insere na tabela acdEnrollSummary
+                                $enrollSummary->multiplier       = number_format($numCredits*($disc[0]/100), 8, '.', '');
+                                $enrollSummary->operationId      = $disc[2];
+                                
+                                $business->insertEnrollSummary($enrollSummary);
+                                
+                                $totalDiscount += $enrollSummary->multiplier;
+                            }
+                        }
+                    }
+                }
+                $enrollSummary->multiplier  = $financeCredits;
+                //Verifica sobre quantos créditos o incentivo será aplicado (créditos totais menos os descontos)
+                $incentivesValue = $financeCredits - $totalDiscount;
+            }
+
+            //Monta os dados referentes a mensalidade e insere no resumo de matrícula
+            //$enrollSummary->operationId = $policyData->operationId;
+            $enrollSummary->operationId = $defaultOperations->addCurricularComponentOperation;
+
+            $business->insertEnrollSummary($enrollSummary);
+
+            $incentivesValue = number_format($incentivesValue, 8, '.', '');
+        }
+        
+        //Processa os incentivos
+        if (count($incentives) > 0)
+        {
+            foreach ($incentives as $inc)
+            {   
+                if ($inc[0] == DB_TRUE)
+                {
+                    $multiplier = $incentivesValue * ($inc[1]/100);
+                }
+                else
+                {
+                    $multiplier = $inc[1];
+                }
+                
+                if ( $serialEnrollProcess )
+                {
+                    $enrollSummary->isValue = DB_TRUE;
+                }
+                
+                //Atualiza os dados necessários para enviar a acdEnrollSummary
+                $enrollSummary->multiplier       = number_format($multiplier, 8, '.', '');
+                $enrollSummary->operationId      = $inc[4];
+                
+                $business->insertEnrollSummary($enrollSummary);
+            }
+        }
+        
+        if ( (count($business->getErrors()) > 0) || (count($this->getErrors()) > 0) )
+        {
+            return false;
+        }
+        else
+        {   
+            return true;
+        }
+    }
+    
+    /**
+     *
+     * Generate data for acdEnrollSummary table from the enroll cancellation process
+     *
+     * @param $data (object): an object containing the data
+     *
+     * @return: TRUE if success, otherwise FALSE
+     *
+     **/
+    public function generateEnrollSummaryToEnrollCancellationProcess($data)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        
+        $business     = $MIOLO->getBusiness($module, 'BusEnrollSummary');
+        $business->db = $this->db;
+        
+        $busLearningPeriod  = $MIOLO->getBusiness($module, 'BusLearningPeriod');
+        $learningPeriodData = $busLearningPeriod->getLearningPeriod($data->learningPeriodId);
+
+        $busContract  = $MIOLO->getBusiness($module, 'BusContract');
+        $contractData = $busContract->getContract($data->contractId);
+
+        $busCourseVersion  = $MIOLO->getBusiness($module, 'BusCourseVersion');
+        $courseVersionData = $busCourseVersion->getCourseVersion($contractData->courseId, $contractData->courseVersion);
+        
+        $busDefaultOperations = $MIOLO->getBusiness('finance', 'BusDefaultOperations');
+        $defaultOperations    = $busDefaultOperations->getDefaultOperations();
+
+        $serialEnrollProcess = false;
+        
+        if ( in_array($courseVersionData->courseVersionTypeId, explode(',', str_replace(' ', '', SERIAL_ENROLL_TYPE_IDS) ) ) )
+        {
+            $serialEnrollProcess = true;
+        }
+
+        //Obtem informações do periodo letivo e políticas
+        $sql = 'SELECT parcelsNumber,
+                       policyId
+                  FROM acdLearningPeriod
+                 WHERE learningPeriodId = ?';
+                    
+        $finInfo = $this->db->query(SAGU::prepare($sql, $data->learningPeriodId));
+        
+        $busPolicy  = $MIOLO->getBusiness('finance', 'BusPolicy');
+
+        $policyData = $busPolicy->getPolicy($finInfo[0][1]);
+        
+        //Obtem numero de parcelas que o valor da disciplina deve ser dividido
+        if (strlen((string)$data->parcelsNumer) <= 0)
+        {
+            $sql = 'SELECT count(months)
+                     FROM (SELECT DISTINCT EXTRACT(MONTH FROM maturitydate) as months 
+                             FROM finincomeforecast 
+                            WHERE contractid = ? 
+                              AND isprocessed = \'' . DB_FALSE . '\'
+                              AND maturityDate BETWEEN TO_DATE(?,\'' . MASK_DATE . '\') AND
+                                                       TO_DATE(?,\'' . MASK_DATE . '\')) AS sel';
+            
+            $args = array($data->contractId,
+                          $learningPeriodData->beginDate,
+                          $learningPeriodData->endDate);
+                          
+            $restantParcels = $this->db->query(SAGU::prepare($sql, $args));
+            
+            if ($restantParcels[0][0] > 0)
+            {
+                $data->parcelsNumber = $restantParcels[0][0];
+            }
+            else
+            {
+                $data->parcelsNumber = 1;
+            }
+        }
+        
+        //Monta o objeto com os dados padrão 
+        $enrollSummary = new acdEnrollSummary();
+        $enrollSummary->contractId       = $data->contractId;
+        $enrollSummary->learningPeriodId = $data->learningPeriodId;
+        $enrollSummary->parcelsNumber    = $data->parcelsNumber;
+        $enrollSummary->isProcessed      = DB_FALSE;
+        $enrollSummary->isValue          = DB_FALSE;
+        $enrollSummary->recordDate       = date(MASK_DATE_PHP);
+        
+        //Obtém os incentivos para determinado contrato
+        $sql = 'SELECT A.valueIsPercent,
+                       A.value,
+                       A.supporterId,
+                       A.agglutinate,
+                       C.operationId,
+                       C.needAdjustAuthorization,
+                       C.sendInvoices,
+                       C.generateCredits,
+                       CASE WHEN A.incentiveTypeId IN (SELECT incentiveTypeId FROM finFinancialAid) 
+                            THEN 1
+                            ELSE 2 END as financialAid
+                  FROM finIncentive A
+            INNER JOIN ONLY finIncentiveType C
+                    ON ( A.incentiveTypeId = C.incentiveTypeId )
+            INNER JOIN finOperation B
+                    ON ( B.operationId     = C.operationId )
+                 WHERE ((A.endDate = null AND 
+                         A.cancellationDate = null) OR A.endDate > date(now()))
+                   AND now() BETWEEN A.startDate AND A.endDate
+                   AND C.generateCredits   = TRUE
+                   AND A.contractId        = ?';
+
+        $incentives = $this->db->query(SAGU::prepare($sql, $data->contractId));
+
+        //Verifica se o incentivo é do tipo auxílio financeiro
+        $isFinAid = false;
+        for ($i = 0; $i < count($incentives) && $isFinAid == false; $i++)
+        {
+            if ($incentives[$i][8] == 1)
+            {
+                $isFinAid = true;
+            }
+        }
+                
+        $incentivesValue = 0;
+        
+        if (strlen((string)$data->groupId) > 0)
+        {
+            //seriado
+            if ( $serialEnrollProcess )
+            {
+                $enrollSummary->multiplier = number_format(1, 8, '.', '');
+                //$enrollSummary->isValue    = DB_TRUE; 
+
+                $busPrice  = $MIOLO->getBusiness('finance', 'BusPrice');
+                $priceData = $busPrice->getLastPrice($data->learningPeriodId);
+
+                // conta as disciplinas atuais
+                $sql = 'SELECT count(A.*) 
+                          FROM acdEnroll A
+                    INNER JOIN acdGroup B
+                         USING ( groupId )
+                         WHERE A.contractId = ?
+                           AND B.learningPeriodId = ?
+                           AND A.statusId IN (' . ENROLL_STATUS_ENROLLED . ')';
+
+                $enroll = $this->db->query(SAGU::prepare($sql, array($data->contractId, $data->learningPeriodId)));
+                $enrollCount = strlen((string)$enroll[0][0])>0 ? $enroll[0][0] : '0'; 
+
+                //se a soma das disciplinas atuais com o acréscimo for menos que o mínimo de disciplinas o valor é por disciplina, senão, o valor é zerado
+                if ( $enrollCount < $priceData->minimumCurricularComponent )
+                {
+                    $incentivesValue = count($data->groupId) * $priceData->curricularComponentPrice;
+                    $enrollSummary->multiplier = number_format( ( count($data->groupId) * $priceData->curricularComponentPrice ) / $priceData->value, 8, '.', '');
+                }
+                else
+                {
+                    $incentivesValue = 0;
+                    $enrollSummary->multiplier = number_format( 0, 8, '.', '');
+
+                }
+            }
+            //creditos
+            else
+            {
+                $financeCredits = 0;
+                $totalDiscount  = 0;
+                            
+                //Créditos financeiros da disciplina
+                $sql = 'SELECT C.financeCredits
+                          FROM acdGroup A
+                    INNER JOIN acdCurriculum B
+                            ON (B.curriculumId = A.curriculumId)
+                    INNER JOIN acdCurricularComponent C
+                            ON (C.curricularComponentId = B.curricularComponentId AND
+                                C.curricularComponentVersion = B.curricularComponentVersion)
+                            WHERE A.groupId = ?';
+                            
+                $result = $this->db->query(SAGU::prepare($sql, $data->groupId));
+                
+                $financeCredits += $result[0][0];
+                
+                //Descontos
+                if (!$isFinAid)
+                {
+                    $sql = ' SELECT discounting,
+                                    numcredits,
+                                    operationId
+                                FROM acdSchedule
+                                WHERE groupId = ? ';
+                                
+                    $discounts = $this->db->query(SAGU::prepare($sql, $data->groupId));
+                    
+                    if (count($discounts) > 0)
+                    {
+                        foreach ($discounts as $disc)
+                        {
+                            if ($disc[0] > 0)
+                            {
+                                if ($disc[1] > 0)
+                                {
+                                    $numCredits = $disc[1];
+                                }
+                                else
+                                {
+                                    $numCredits = $result[0][0];
+                                }
+                                
+                                //Monta os dados dos descontos e os insere na tabela acdEnrollSummary
+                                $enrollSummary->multiplier       = number_format($numCredits*($disc[0]/100) * (-1), 8, '.', '');
+                                $enrollSummary->operationId      = $disc[2];
+                                
+                                $business->insertEnrollSummary($enrollSummary);
+                                
+                                $totalDiscount += $enrollSummary->multiplier;
+                            }
+                        }
+                    }
+                }
+                $enrollSummary->multiplier  = $financeCredits;
+                //Verifica sobre quantos créditos o incentivo será aplicado (créditos totais menos os descontos)
+                $incentivesValue = $financeCredits - $totalDiscount;
+            }
+
+            //Monta os dados referentes a mensalidade e insere no resumo de matrícula
+            //$enrollSummary->operationId = $policyData->operationId;
+            $enrollSummary->operationId = $defaultOperations->cancelCurricularComponentOperation;
+
+            $business->insertEnrollSummary($enrollSummary);
+
+            $incentivesValue = number_format($incentivesValue, 8, '.', '');
+        }
+        
+        //Processa os incentivos
+        if (count($incentives) > 0)
+        {
+            foreach ($incentives as $inc)
+            {   
+                if ($inc[0] == DB_TRUE)
+                {
+                    $multiplier = $incentivesValue * ($inc[1]/100);
+                }
+                else
+                {
+                    $multiplier = $inc[1];
+                }
+                
+                if ( $serialEnrollProcess )
+                {
+                    $enrollSummary->isValue = DB_TRUE;
+                }
+                
+                //Atualiza os dados necessários para enviar a acdEnrollSummary
+                $enrollSummary->multiplier       = number_format($multiplier * (-1), 8, '.', '');
+                $enrollSummary->operationId      = $inc[4];
+                
+                $business->insertEnrollSummary($enrollSummary);
+            }
+        }
+        
+        if ( (count($business->getErrors()) > 0) || (count($this->getErrors()) > 0) )
+        {
+            return false;
+        }
+        else
+        {   
+            return true;
+        }
+    }
+}
+
+?>

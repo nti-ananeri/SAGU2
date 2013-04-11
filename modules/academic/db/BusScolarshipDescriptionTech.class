@@ -1,0 +1,894 @@
+<?php
+
+/**
+ * This class contains methods to get, search and list data from the
+ * tables used by the scolarship description report.
+ *
+ * @author Leovan Tavares da Silva [leovan@solis.coop.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * Armando Taffarel Neto [taffarel@solis.coop.br]
+ *
+ * @since
+ * This class was created 31/05/2006
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2005 SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br
+ *
+ */
+
+class BusinessAcademicBusScolarshipDescriptionTech extends Business
+{
+
+    /**
+     * Creates a connection with the specified database. 
+     * If no database is specified, assume the current module name.
+     *
+     * @author Jamiel Spezia [jamiel@solis.coop.br]
+     *
+     * @param $dbname (string): Specifies the database name to which we want to connect.
+     *
+     * @return (object): A database object.
+     *
+     */
+    function getDatabase($dbname=null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic', 'sagu');
+        $module = is_null($module) ? 'academic' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+    function getPhysicalPersonData($personId)    
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        
+        $business = $MIOLO->getBusiness('basic', 'BusPhysicalPerson');
+	
+        if ( strlen((string)$personId) > 0 )
+        {
+            return $business->getPhysicalPerson($personId);
+        }
+        else
+        {
+            return null;
+        }
+    }
+    
+    function getCompanyData($companyId)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        
+        $business = $MIOLO->getBusiness('basic', 'BusCompany');
+        return $business->getCompany($companyId);
+    }
+    
+    function getLegalPersonData($personId)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        
+        $business = $MIOLO->getBusiness('basic', 'BusLegalPerson');
+        return $business->getLegalPerson($personId);   
+    }
+    
+    function getPersonDocumentData($personId, $documentType = null)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        
+        $business = $MIOLO->getBusiness('basic', 'BusDocument');
+        
+        if ($documentType != null)
+        {
+            return $business->getDocument($personId, $documentType);
+        }
+        else
+        {
+            $db = $this->getDatabase();
+            
+            $sql = 'SELECT documentTypeId FROM basDocumentType';
+            
+            $dTypes = $db->query($sql);
+            
+            foreach ($dTypes as $docType)
+            {
+                $personDocumentData[$docType[0]] = $business->getDocument($personId, $docType[0]);
+            }
+            return $personDocumentData;
+        }
+    }
+    
+    function getPhysicalPersonStudentData($personId)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        
+        $business = $MIOLO->getBusiness('basic', 'BusPhysicalPersonStudent');
+        return $business->getPhysicalPersonStudent($personId);
+    }
+    
+    function getCourseData($courseId, $courseVersion, $turnId=null, $unitId=null)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        
+        $business   = $MIOLO->getBusiness($module, 'BusCourse');
+        $courseData = $business->getCourse($courseId);
+        
+        $business   = $MIOLO->getBusiness($module, 'BusCourseVersion');
+        $courseVersionData = $business->getCourseVersion($courseId, $courseVersion);
+        
+        if (is_object($courseData))
+        {
+            $attrs = get_object_vars($courseData);
+            
+            foreach ($attrs as $key=>$value)
+            {
+                $result->$key = $value;
+            }
+        }
+        if (is_object($courseVersionData))
+        {
+            $attrs = get_object_vars($courseVersionData);
+            
+            foreach ($attrs as $key=>$value)
+            {
+                $result->$key = $value ;
+            }
+        }
+        
+        $business              = $MIOLO->getBusiness($module, 'BusEducationArea');
+        if ( strlen((string)$result->educationAreaId) > 0 )
+        {
+            $educationArea         = $business->getEducationArea($result->educationAreaId);
+            $result->educationArea = $educationArea->description;
+        }
+        //$result = array_merge($courseData, $courseVersionData);
+
+        if ( strlen((string)$unitId)>0 && strlen((string)$turnId)>0 )
+        {
+            $business         = $MIOLO->getBusiness($module, 'BusCourseOccurrence');
+            $courseOccurrence = $business->getCourseOccurrence($courseId, $courseVersion, $turnId, $unitId);
+            $result->authorizationDocument = $courseOccurrence->authorizationDocument;
+        }
+
+        return $result;
+    }
+    
+    function getCourseOccurrenceData($courseId, $courseVersion, $turnId, $unitId)
+    {
+        $sql = 'SELECT authorizationDate,
+                       authorizationDocument,
+                       status,
+                       minimumConclusionCourse,
+                       maximumConclusionCourse
+                  FROM acdCourseOccurrence
+                 WHERE courseId = ?
+                   AND courseVersion = ?
+                   AND turnId = ?
+                   AND unitId = ?';
+                   
+        $args = array($courseId, $courseVersion, $turnId, $unitId);
+        
+        $db = $this->getDatabase();
+
+        $result = $db->query(SAGU::prepare($sql, $args));
+        
+        list(   $data->authorizationDate,
+                $data->authorizationDocument,
+                $data->status,
+                $data->minimumConclusionCourse,
+                $data->maximumConclusionCourse) = $result[0];
+                
+        return $data;
+    }
+    
+    function getCityData($cityId)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        
+        $business = $MIOLO->getBusiness('basic', 'BusCity');
+        return $business->getCity($cityId);
+    }
+    
+    function getStampData($stampId)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        
+        $business = $MIOLO->getBusiness('basic', 'BusStamp');
+        return $business->getStamp($stampId);
+    }
+    
+    function getCoursedEnrolledData($contractId)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        
+        $busContract  = $MIOLO->getBusiness($module, 'BusContract');
+        $contractData = $busContract->getContract($contractId);
+        
+        $db = $this->getDatabase();
+        
+        $sql = '    SELECT SUM(C.academicCredits),
+                           SUM(C.academicNumberHours)
+                      FROM acdEnroll A 
+                INNER JOIN acdCurriculum B 
+                        ON (B.curriculumId = A.curriculumId) 
+                INNER JOIN acdCurricularComponent C 
+                        ON (C.curricularComponentId = B.curricularComponentId) 
+                INNER JOIN acdGroup D 
+                        ON (D.groupId = A.groupId) 
+                INNER JOIN acdLearningPeriod E 
+                        ON (E.learningPeriodId = D.learningPeriodId)
+                     WHERE A.contractId = ?
+                       AND A.statusId IN ('.ENROLL_STATUS_APPR_OR_EXC.') 
+                       AND B.curriculumId IN (SELECT curriculumId 
+                                                FROM acdCurriculum
+                                               WHERE courseId = ?
+                                                 AND courseVersion = ?
+                                                 AND turnId = ?
+                                                 AND unitId = ?
+                                                 AND curriculumTypeId IN (' . CURRICULUM_TYPE_NON_OPTIONAL . '))';
+        
+        $args = array($contractId,
+                      $contractData->courseId,
+                      $contractData->courseVersion,
+                      $contractData->turnId,
+                      $contractData->unitId);
+                       
+        $resultCoursed = $db->query(SAGU::prepare($sql, $args));
+        
+        $sql = '    SELECT SUM(C.academicCredits),
+                           SUM(C.academicNumberHours)
+                      FROM acdEnroll A 
+                INNER JOIN acdCurriculum B 
+                        ON (B.curriculumId = A.curriculumId) 
+                INNER JOIN acdCurricularComponent C 
+                        ON (C.curricularComponentId = B.curricularComponentId)
+                INNER JOIN acdGroup D
+                        ON (D.groupId = A.groupId)
+                INNER JOIN acdLearningPeriod E
+                        ON (E.learningPeriodId = D.learningPeriodId)
+                     WHERE A.contractId = ?
+                       AND A.statusId IN (' . ENROLL_STATUS_ENROLLED . ')
+                       AND B.curriculumId IN (SELECT curriculumId 
+                                                FROM acdCurriculum
+                                               WHERE courseId = ?
+                                                 AND courseVersion = ?
+                                                 AND turnId = ?
+                                                 AND unitId = ?
+                                                 AND curriculumTypeId IN (' . CURRICULUM_TYPE_NON_OPTIONAL . '))';
+                       
+        $resultEnrolled = $db->query(SAGU::prepare($sql, $args));
+        
+        $data->enrollHoursCoursed    = $resultCoursed[0][1];
+        $data->enrollHoursEnrolled   = $resultEnrolled[0][1];
+        $data->enrollCreditsCoursed  = $resultCoursed[0][0];
+        $data->enrollCreditsEnrolled = $resultEnrolled[0][0];
+        
+        return $data;
+    }
+    
+    function getContractData($contractId)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        
+        $business = $MIOLO->getBusiness($module, 'BusContract');
+        
+        $return = $business->getContract($contractId);
+        
+        $db = $this->getDatabase();
+        
+        $sql = 'SELECT TO_CHAR(statetime, \'' . MASK_DATE . '\') 
+                  FROM acdmovementcontract 
+                 WHERE contractid = ? 
+              ORDER BY statetime';
+        
+        $result = $db->query(SAGU::prepare($sql, $contractId));
+        
+        $return->contractBeginDate = $result[0][0];
+        
+        return $return;
+    }
+    
+    function getInscriptionData($inscriptionId, $withNotes=false)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        
+        $business = $MIOLO->getBusiness('selectiveProcess', 'BusInscription');
+        
+        $inscriptionData = $business->getInscription($inscriptionId);
+        
+        if ($withNotes)
+        {
+            $inscriptionData->notes = $business->listInscriptionNotes($inscriptionId);
+        }
+        
+        return $inscriptionData;
+    }
+    
+    function getSelectiveProcessData($selectiveProcessId)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        
+        $business = $MIOLO->getBusiness('selectiveProcess', 'BusSelectiveProcess');
+        
+        return $business->getSelectiveProcess($selectiveProcessId);
+    }
+    
+    function getCourseCurriculumData($courseId, $courseVersion, $turnId, $unitId, $orderByGroup=false, $orderByDescription=true)
+    {
+
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+
+        $db = $this->getDatabase();
+        
+        $sql = 'SELECT A.curriculumId,
+                       A.courseId,
+                       A.courseVersion,
+                       B.name AS courseName,
+                       A.turnId,
+                       A.unitId,
+                       A.curricularComponentId,
+                       A.curricularComponentVersion,
+                       C.name AS curricularComponentName,
+                       A.semester,
+                       A.isShowDocumentEndCourse,
+                       A.isCurriculum,
+                       A.curricularComponentGroupDocumentEndCourseId,
+                       D.name AS curricularComponentGroupDocumentEndCourseName,
+                       A.curricularComponentGroupElectiveId,
+                       E.name AS curricularComponentGroupElectiveName,
+                       A.curriculumTypeId,
+                       F.description AS curriculumTypeDescription,
+                       TO_CHAR(A.endDate,\'' . MASK_DATE . '\'),
+                       A.curricularComponentTypeId,
+                       C.academicCredits,
+                       C.academicNumberHours
+                  FROM acdCurriculum A
+            INNER JOIN acdCourse B
+                    ON (B.courseId = A.courseId)
+            INNER JOIN acdCurricularComponent C
+                    ON (C.curricularComponentId = A.curricularComponentId
+                        AND C.curricularComponentVersion = A.curricularComponentVersion)
+             LEFT JOIN acdCurricularComponentGroup D
+                    ON (D.curricularComponentGroupId = A.curricularComponentGroupDocumentEndCourseId)
+             LEFT JOIN acdCurricularComponentGroup E
+                    ON (E.curricularComponentGroupId = A.curricularComponentGroupElectiveId)
+            INNER JOIN acdCurriculumType F
+                    ON (F.curriculumTypeId = A.curriculumTypeId)
+                 WHERE A.courseId = ?
+                   AND A.courseVersion = ?
+                   AND A.turnId = ?
+                   AND A.unitId = ?
+                   AND A.curriculumTypeId IN (' . SCOLARSHIP_CURRICULUM_TYPE_NON_OPTIONAL . ')';
+
+        if ( $orderByGroup )
+        {
+            if ( $orderByDescription == true )
+            {
+                $sql .= ' ORDER BY A.curricularComponentGroupDocumentEndCourseId, curricularComponentName, A.semester';
+            }
+            else
+            {
+                $sql .= ' ORDER BY A.curricularComponentGroupDocumentEndCourseId, A.semester, curricularComponentName';
+            }
+        }
+        else
+        {
+            if ( $orderByDescription == true )
+            {
+                $sql .= ' ORDER BY curricularComponentName, A.semester';
+            }
+            else
+            {
+                $sql .= ' ORDER BY A.semester, curricularComponentName';
+            }
+        }
+
+        $args = array($courseId, $courseVersion, $turnId, $unitId);
+
+        $result = $db->query(SAGU::prepare($sql, $args));
+
+        return $result;
+    }
+    
+    function getCourseCurricularComponentGroupData($curricularComponentGroupId, $courseId, $courseVersion, $type=0)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        
+        $db = $this->getDatabase();
+        
+        if ($type == 0)
+        {
+            $sql = 'SELECT A.curriculumId,
+                           B.curricularComponentId,
+                           B.curricularComponentVersion,
+                           B.name
+                      FROM acdCurriculum A
+                INNER JOIN acdCurricularComponent B
+                        ON (B.curricularComponentId = A.curricularComponentId)
+                     WHERE B.curricularComponentGroupDocumentEndCourseId = ?
+                       AND A.courseId = ?
+                       AND A.courseVersion = ?';
+        }
+        elseif ($type == 1)
+        {
+            $sql = 'SELECT A.curriculumId,
+                           B.curricularComponentId,
+                           B.curricularComponentVersion,
+                           B.name
+                      FROM acdCurriculum A
+                INNER JOIN acdCurricularComponent B
+                        ON (B.curricularComponentId = A.curricularComponentId)
+                     WHERE B.curricularComponentGroupElectiveId = ?
+                       AND A.courseId = ?
+                       AND A.courseVersion = ?';
+        }
+        
+        $args = array ( $curricularComponentGroupId,
+                        $courseId,
+                        $courseVersion);
+        
+        if (strlen((string)$sql) > 0)
+        {                
+            $result = $db->query(SAGU::prepare($sql, $args));
+        }
+        
+        return $result;
+    }
+    
+    function getEnrollData($contractId, $curriculumId)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        
+        $db = $this->getDatabase();
+        
+        $sql = 'SELECT A.curriculumId AS curriculumId,                     
+                       A.finalNote,
+                       E.periodId,
+                       A.obsExploitation,
+                       A.statusId,
+                       A.concept,
+                       B.curriculumTypeId,
+                       D.curriculumId AS groupCurriculumId
+                  FROM acdEnroll A
+            INNER JOIN acdCurriculum B
+                    ON (B.curriculumId = A.curriculumId)
+            INNER JOIN acdCurricularComponent C
+                    ON (C.curricularComponentId      = B.curricularComponentId AND
+                        C.curricularComponentVersion = B.curricularComponentVersion)
+            INNER JOIN acdGroup D
+                    ON (D.groupId = A.groupId)
+            INNER JOIN acdLearningPeriod E
+                    ON (E.learningPeriodId = D.learningPeriodId)
+                 WHERE A.contractId = ?
+                   AND A.curriculumId = ?
+                   AND A.statusId IN (' . ENROLL_STATUS_APPR_OR_EXC . ', ' . ENROLL_STATUS_ENROLLED . ')';
+              
+        $args = array(  $contractId,
+                        $curriculumId );
+        
+        $result = $db->query(SAGU::prepare($sql, $args));
+        
+        return $result;
+    }
+    
+    function getCurriculumData($curriculumId)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        
+        $business = $MIOLO->getBusiness($module, 'BusCurriculum');
+        
+        return $business->getCurriculum($curriculumId);
+    }
+    
+    function getCurriculumComplementaryActivitiesEnroll($contractId)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        
+        $db = $this->getDatabase();
+        
+        $sql = 'SELECT A.enrollId,
+                       B.curriculumId,
+                       C.curricularComponentId,
+                       C.name as curricularComponentName,
+                       C.academicNumberHours,
+                       C.academicCredits,
+                       A.concept,
+                       B.curricularComponentGroupDocumentEndCourseId
+                  FROM acdEnroll A
+            INNER JOIN acdCurriculum B
+                    ON (A.curriculumId = B.curriculumId)
+            INNER JOIN acdCurricularComponent C
+                    ON (B.curricularComponentId = C.curricularComponentId AND
+                        B.curricularComponentVersion = C.curricularComponentVersion)
+                 WHERE A.contractId = ?
+                   AND B.curriculumTypeId = ' . CURRICULUM_TYPE_COMPLEMENTARY_ACTIVITY_ID;
+        
+        $args = array($contractId);
+        $result = $db->query(SAGU::prepare($sql, $args));
+        
+        return $result;
+    }
+    
+    function getComplementaryActivitiesTotals($enrollId)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        
+        $db = $this->getDatabase();
+        
+        $sql = 'SELECT sum(totalHours) FROM acdComplementaryActivities WHERE enrollId = ?';
+        
+        $result = $db->query(SAGU::prepare($sql, $enrollId));
+        
+        $return->totalHours = $result[0][0];
+        
+        $sql = 'SELECT sum(totalCredits) FROM acdComplementaryActivities WHERE enrollId = ?';
+        
+        $result = $db->query(SAGU::prepare($sql, $enrollId));
+        
+        $return->totalCredits = $result[0][0];
+        
+        return $return;
+    }
+    
+    function getComplementaryActivitiesData($contractId)    
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        
+        $db = $this->getDatabase();
+        
+        $sql = 'SELECT E.periodId,
+                        C.curricularComponentId,
+                        C.curricularComponentVersion,
+                        C.shortName,
+                        C.academicNumberHours,
+                        C.academicCredits,
+                        A.finalNote,
+                        A.statusId,
+                        D2.curricularComponentId,
+                        D2.curricularComponentVersion,
+                        F.description,
+                        F.degree,
+                        F.totalHours,
+                        F.totalCredits,
+                        F.concept,
+                        B.curricularComponentGroupDocumentEndCourseId,
+                        G.name
+                   FROM acdEnroll A
+             INNER JOIN acdCurriculum B
+                     ON ( A.curriculumId = B.curriculumId )
+             INNER JOIN acdCurricularComponent C
+                     ON ( B.curricularComponentId = C.curricularComponentId
+                    AND B.curricularComponentVersion = C.curricularComponentVersion )
+              LEFT JOIN acdGroup D
+                     ON ( A.groupId = D.groupId )
+             INNER JOIN acdCurriculum D2
+                     ON ( D.curriculumId = D2.curriculumId )
+             INNER JOIN acdCurricularComponent D3
+                     ON ( D2.curricularComponentId = D3.curricularComponentId
+                    AND D2.curricularComponentVersion = D3.curricularComponentVersion )
+             INNER JOIN acdLearningPeriod E
+                     ON ( D.learningPeriodId = E.learningPeriodId )
+             INNER JOIN acdComplementaryActivities F
+                     ON (F.enrollId = A.enrollId)
+             INNER JOIN acdCurricularComponentGroup G
+                     ON (G.curricularComponentGroupId = B.curricularComponentGroupDocumentEndCourseId)
+                  WHERE A.contractId = ?
+                    AND A.statusId IN (' . ENROLL_STATUS_ENROLLED . ',' . ENROLL_STATUS_APPR_OR_EXC . ')
+                    AND B.curriculumTypeId IN (' . CURRICULUM_TYPE_COMPLEMENTARY_ACTIVITY_ID . ')
+               ORDER BY E.beginDate ASC,
+                        B.semester,
+                        C.shortName';
+      
+        $args = array($contractId);
+        
+        $result = $db->query(SAGU::prepare($sql, $args));
+        
+        return $result;
+    }
+    
+    function getLearningPeriodData($contractId)
+    {   
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        
+        $business           = $MIOLO->getBusiness($module, 'BusMovementContract');
+        $movementContract   = $business->getLastMovementContract($contractId);
+
+        if ( strlen((string)$movementContract->learningPeriodId) > 0 )
+        {
+            $business           = $MIOLO->getBusiness($module, 'BusLearningPeriod');
+            $learningPeriodData = $business->getLearningPeriod($movementContract->learningPeriodId);
+        
+            return $learningPeriodData;
+        }
+        else
+        {
+            return null;
+        }
+    }
+    
+    function getOtherCurricularComponentsCoursedData($contractId, $concludedCourses = '')
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        
+        $contractData = $this->getContractData($contractId);
+        
+        $db = $this->getDatabase();
+        
+        $sql = 'SELECT  A.enrollId, 
+                        E.curriculumId,
+                        C.curricularComponentId,
+                        C.curricularComponentVersion,
+                        C.name as curricularComponentName,
+                        C.academicCredits,
+                        C.academicNumberHours,
+                        A.finalNote,
+                        A.concept,
+                        A.obsExploitation,
+                        A.isShowDocumentEndCourse,
+                        F.periodId
+                   FROM acdEnroll A
+             INNER JOIN acdCurriculum B
+                     ON (B.curriculumId = A.curriculumId)
+             INNER JOIN acdCurricularComponent C
+                     ON (C.curricularComponentId = B.curricularComponentId AND
+                         C.curricularComponentVersion = B.curricularComponentVersion)
+             INNER JOIN acdContract D
+                     ON (D.contractId = A.contractId)
+             INNER JOIN acdGroup E
+                     ON (E.groupId = A.groupId)
+             INNER JOIN acdLearningPeriod F
+                     ON (F.learningPeriodId = E.learningPeriodId)
+                  WHERE D.personId = ?
+                    AND A.statusId IN (' . ENROLL_STATUS_APPR_OR_EXC . ')
+                    AND A.enrollId NOT IN (SELECT A.enrollId 
+                                             FROM acdEnroll A 
+                                       INNER JOIN acdCurriculum B 
+                                               ON (B.curriculumId = A.curriculumId)
+                                            WHERE A.contractId = ?
+                                              AND A.statusId IN (' . ENROLL_STATUS_APPR_OR_EXC . ')
+                                              AND B.courseId = ?
+                                              AND B.courseVersion = ?)';
+        if ( strlen((string)$concludedCourses) > 0 )
+        {
+            $sql .= ' AND D.courseId NOT IN (' . $concludedCourses . ')';
+        }
+                                              
+        $args   = array($contractData->personId, $contractId, $contractData->courseId, $contractData->courseVersion);
+        
+        $result = $db->query(SAGU::prepare($sql, $args));
+        
+        return $result;
+    }
+    
+    function getIngressionFormData($contractId)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        
+        $db = $this->getDatabase();
+        
+        $sql = ' SELECT stateContractId, 
+                        description 
+                   FROM acdstatecontract 
+                  WHERE stateContractId IN (SELECT A.stateContractId 
+                                              FROM acdMovementContract A
+                                        INNER JOIN acdStateContract B
+                                                ON (B.stateContractId = A.stateContractId)
+                                             WHERE A.contractId = ? 
+                                               AND B.inOutTransition = \'I\'
+                                          ORDER BY stateTime LIMIT 1)';
+        
+        $result = $db->query(SAGU::prepare($sql, $contractId));
+        
+        $sql = 'SELECT stateContractFieldId,
+                       description
+                  FROM acdStateContractField
+                 WHERE stateContractId = ?';
+                 
+        $result2 = $db->query(SAGU::prepare($sql, $result[0][0]));
+        
+        if (count($result2) > 0)
+        {
+            $return = $result[0][1] . ': ' . $result2[0][1];
+            
+            $sql = 'SELECT value,
+                           TO_CHAR(statetime, \'' . MASK_DATE . '\')
+                      FROM acdMovementContractComplement
+                     WHERE stateContractId = ?
+                       AND stateContractFieldId = ?
+                       AND contractId = ?';
+                       
+            $args = array($result[0][0], $result2[0][0], $contractId);
+            
+            $result3 = $db->query(SAGU::prepare($sql, $args));
+            
+            if (count($result3) > 0)
+            {
+                $return .= ' - ' . $result3[0][0] . ' - ' . $result3[0][1];
+            }
+            
+            return strtoupper($return);
+        }
+        else
+        {
+            $contractData = $this->getContractData($contractId);
+            $inscriptionData = $this->getInscriptionData($contractData->inscriptionSelectiveProcId);
+            $selectiveProcessData = $this->getSelectiveProcessData($inscriptionData->selectiveProcessId);
+            
+            $sql = 'SELECT B.selectiveProcessTypeId,
+                           C.description
+                      FROM sprInscription A
+                 LEFT JOIN sprSelectiveProcessTypeData B
+                        ON (B.inscriptionId = A.inscriptionId)
+                 LEFT JOIN sprSelectiveProcessType C
+                        ON (C.selectiveProcessTypeId = B.selectiveProcessTypeId)
+                     WHERE A.selectiveProcessId = ?
+                       AND A.inscriptionId      = ?
+                  GROUP BY B.selectiveProcessTypeId,
+                           C.description,
+                           A.totalPoints
+                  ORDER BY A.totalPoints DESC';
+                  
+            $args = array($selectiveProcessData->selectiveProcessId,
+                          $inscriptionData->inscriptionId);
+                          
+            $result4 = $db->query(SAGU::prepare($sql, $args));
+            
+            $return = _M('Selective process', $module) .  ' ' . $selectiveProcessData->selectiveProcessId . ' - ' . $selectiveProcessData->description . ': ' . _M('Classification', $module);
+            
+            if (count($result4) > 0 && strlen((string)$result4[0][1]) > 0)
+            {
+                $return .= ' ' . _M('by', $module) . ' ' . $result4[0][1] . ', ';
+            }
+            
+            $return .= ' ' . _M('with final average', $module) . ' ' . number_format($inscriptionData->totalPoints, 3, ',', '');
+            
+            return strtoupper($return);
+        }
+    }
+    
+    function getContractStateData($contractId)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        
+        $contractData = $this->getContractData($contractId);
+        
+        if (strlen((string)$contractData->conclusionDate) > 0)
+        {
+            $return->concluded = true;
+            $conclusionDate    = explode('/', $contractData->conclusionDate);
+            $return->year      = $conclusionDate[2];
+        }
+        else
+        {
+            $db = $this->getDatabase();
+            
+            $sql = 'SELECT B.isCloseContract
+                      FROM acdMovementContract A
+                INNER JOIN acdStateContract B
+                        ON (B.stateContractId = A.stateContractId)
+                     WHERE contractId = ? 
+                  ORDER BY A.stateTime DESC';
+                  
+            $result = $db->query(SAGU::prepare($sql, $contractId));
+            
+            if ($result[0][0] == 't')
+            {
+                $return->locked = true;
+            }
+            else
+            {
+                $return->coursing = true;
+            }
+        }
+    }
+    
+    function getCourseAbilitiesData($courseId, $courseVersion)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+
+        $db = $this->getDatabase();
+        
+        $business = $MIOLO->getBusiness($module, 'BusCourseAbility');
+        
+        $filters->courseId        = $courseId;
+        $filters->courseVersion   = $courseVersion;
+        $filters->type            = 'G';
+        $result->generalAbilities = $business->searchCourseAbility($filters);
+        
+        $filters->type = 'E';
+        $result->especificAbilities = $business->searchCourseAbility($filters);
+        
+        return $result;
+    }
+    
+    function testIsListener($contractId)
+    {
+        $sql = 'SELECT isListener
+                  FROM acdContract
+                 WHERE contractId = ?';
+                 
+        $db = $this->getDatabase();
+                 
+        $result = $db->query(SAGU::prepare($sql, $contractId));
+
+        return $result[0][0];
+    }
+    
+    function getSavedOptions()
+    {
+        $sql = 'SELECT value
+                  FROM basConfig
+                 WHERE parameter = ?';
+                 
+        $args = array(
+                        'SCHOLARSHIP_DESCRIPTION_SAVED_OPTIONS'
+                     );
+
+        $db = $this->getDatabase();
+                 
+        $result = $db->query(SAGU::prepare($sql, $args, false));
+
+        return $result[0][0];
+    }
+
+
+    function saveOptions($content)
+    {
+        $sql = 'UPDATE basConfig
+                   SET value = ?
+                 WHERE parameter = ?';
+                 
+        $args = array(
+                        $content,
+                        'SCHOLARSHIP_DESCRIPTION_SAVED_OPTIONS'
+                     );
+
+        $db = $this->getDatabase();
+                 
+        $result = $db->execute(SAGU::prepare($sql, $args, false));
+
+        return $result;
+    }
+}
+
+?>

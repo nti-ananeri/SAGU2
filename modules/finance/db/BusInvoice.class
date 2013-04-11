@@ -1,0 +1,1249 @@
+<?php
+
+/**
+ *
+ * This file handles the connection and actions for finInvoice table
+ *
+ * @author Alexandre Heitor Schmidt [alexsmith@solis.coop.br] 
+ * @maintainer William Prigol Lopes [william@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * Rafael Luís Spengler [rafael@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ *
+ * @since
+ * Class created on 13/12/2005
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to manipulate the Invoice table
+ **/
+$MIOLO  = MIOLO::getInstance();
+$MIOLO->uses('db/BusEntry.class', 'finance');
+
+class BusinessFinanceBusInvoice extends BusinessFinanceBusEntry
+{
+
+    
+    /**
+     * List all records from the table handled by the class
+     *
+     * @param: None
+     *
+     * @returns (array): Return an array with the entire table
+     *
+     **/
+    public function listInvoice()
+    {
+    }
+
+    /**
+     * List all records from the table handled by the class
+     *
+     * @param: $data (object): Object contanining all information about that
+     *
+     * @returns (array): Return an array with the entire table
+     *
+     **/
+    public function listInvoicesWithModifiedValues($data)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $sql = ' SELECT A.invoiceId,
+                        A.personId,
+                        (SELECT name 
+                      FROM ONLY basPerson
+                          WHERE basPerson.personId = A.personId ),
+                        ROUND(A.value, '.REAL_ROUND_VALUE.')
+              FROM ONLY finInvoice A
+             INNER JOIN finEntry B
+                  USING (invoiceId)
+                  where A.maturityDate = TO_DATE(?, \''.MASK_DATE.'\')
+                    AND B.entryDate 
+                BETWEEN TO_DATE(?, \''.MASK_DATE.'\')
+                    AND TO_DATE(?, \''.MASK_DATE.'\')
+                    AND B.creationType = \'M\'
+               ORDER BY 3 ';
+               
+         $args = array( $data->maturityDate,
+                        $data->beginDate,
+                        $data->endDate );
+         
+         
+
+         $return = $this->db->query(SAGU::prepare($sql, $args));
+         return $return;
+    }
+
+    /**
+     * @author: William Prigol Lopes [william@solis.coop.br]
+     *
+     * @param $returnBankCode (int): Return bank code (unique) 
+     *
+     * @return (int): the respectively invoice id
+     *
+     */
+    public function getInvoiceIdByBankInvoiceId($bankInvoiceId)
+    {
+        $sql = '   SELECT invoiceId
+                FROM ONLY finReceivableInvoice
+                    WHERE bankInvoiceId = ? ';
+                  
+        $args   = array($bankInvoiceId);
+        $return = $this->db->query(SAGU::prepare($sql, $args));
+        return $return[0][0];
+    }
+
+    public function getInvoiceIdByBankInvoiceAndBankContractAndBanAccount($bankInvoiceId, $bankContractId, $bankAccountId)
+    {
+        $sql = '   SELECT invoiceId
+                FROM ONLY finReceivableInvoice
+                    WHERE bankInvoiceId  = ?
+                      AND bankContractId = ?
+                      AND bankAccountId  = ?';
+                  
+        $args   = array($bankInvoiceId, $bankContractId, $bankAccountId);
+        $return = $this->db->query(SAGU::prepare($sql, $args));
+        return $return[0][0];
+    }
+
+
+    /**
+     * Return a specific record from the database
+     *
+     * @param $invoiceId (integer): Primary key of the record to be retrieved
+     *
+     * @return (object): Return an object of the type handled by the class
+     *
+     **/
+    public function getInvoice($invoiceId)
+    {
+        $sql = 'SELECT A.invoiceId,
+                       A.personId,
+                       A.accountSchemeId,
+                       A.costCenterId,
+                       A.courseId,
+                       A.courseVersion,
+                       A.unitId,
+                       A.parcelNumber,
+                       TO_CHAR(A.emissionDate,\'' . MASK_DATE . '\'),
+                       TO_CHAR(A.maturityDate,\'' . MASK_DATE . '\'),
+                       ROUND(A.value, ' . REAL_ROUND_VALUE . '),
+                       A.policyId,
+                       A.bankInvoiceId,
+                       A.automaticDebit,
+                       A.comments,
+                       A.incomeSourceId,
+                       A.bankAccountId,
+                       A.bankContractId,
+                       A.sagu1InvoiceId,
+                       A.sectorId,
+                       ROUND(balanceWithPolicies(A.invoiceId), ' . REAL_ROUND_VALUE . '),
+                       A.messageInvoice,
+                       A.periodId,
+                       A.userName,
+                       TO_CHAR(A.dateTime,\'' . MASK_DATE . '\'),
+                       A.ipAddress,
+                       B.description,
+                       C.description,
+                       getCourseName(A.courseId)
+             FROM 
+                ONLY finInvoice A
+                LEFT JOIN finIncomeSource B ON ( A.incomeSourceId = B.incomeSourceId )
+                LEFT JOIN finPolicy C ON ( C.policyId = A.policyId )
+                 WHERE A.invoiceId = ?';
+        $result = $this->db->query(SAGU::prepare($sql, $invoiceId));
+
+        $invoice = new FinInvoice();
+        list ( $invoice->invoiceId,
+               $invoice->personId,
+               $invoice->accountSchemeId,
+               $invoice->costCenterId,
+               $invoice->courseId,
+               $invoice->courseVersion,
+               $invoice->unitId,
+               $invoice->parcelNumber,
+               $invoice->emissionDate,
+               $invoice->maturityDate,
+               $invoice->value,
+               $invoice->policyId,
+               $invoice->bankInvoiceId,
+               $invoice->automaticDebit,
+               $invoice->comments,
+               $invoice->incomeSourceId,
+               $invoice->bankAccountId,
+               $invoice->bankContractId,
+               $invoice->sagu1InvoiceId,
+               $invoice->sectorId,
+               $invoice->balance,
+               $invoice->messageInvoice,
+               $invoice->periodId,
+               $invoice->userName,
+               $invoice->dateTime,
+               $invoice->ipAddress,
+               $invoice->incomeSourceDescription,
+               $invoice->policyDescription,
+               $invoice->courseName ) = $result[0];
+
+        return $invoice;
+    }
+
+    /**
+     * Return a specific record from the database
+     *
+     * @param $learningPeriodId (integer): Primary key of the record to be retrieved
+     * @param $startDate(integer): Primary key of the record to be retrieved
+     * @param $endDate (integer): Primary key of the record to be retrieved
+     *
+     * @return (object): Return an object of the type handled by the class
+     *
+     **/
+    public function getLastInvoice($learningPeriodId)
+    {
+    }
+
+    public function searchInvoiceBtDates($data)
+    {
+
+        unset($args);
+        $where = '';
+        if ( strlen((string)$data->classId) > 0 || strlen((string)$data->className) > 0 )
+        {
+        $sql = 'SELECT A.invoiceId,
+                       A.bankInvoiceId,
+                       A.personId,
+                       P.name,
+                       round(balance(invoiceId),'. REAL_ROUND_VALUE .'),
+                       TO_CHAR(A.maturityDate,\'' . MASK_DATE . '\'),
+                       TO_CHAR(A.emissionDate,\'' . MASK_DATE . '\'),
+                       A.courseId,
+                       A.courseVersion,
+                       A.accountSchemeId,
+                       A.costCenterId,
+                       A.unitId,
+                       A.parcelNumber,
+                       round(A.value,'. REAL_ROUND_VALUE .'),
+                       A.policyId,
+                       A.bankInvoiceId,
+                       A.automaticDebit,
+                       A.comments,
+                       A.incomeSourceId,
+                       A.bankAccountId,
+                       A.bankContractId,
+                       A.sagu1InvoiceId,
+                       A.messageInvoice,
+                       B.bankId,
+                       min(CL.classId),
+                       min(C.contractId),
+                       min(getturndescription(C.turnId)),
+                       min(getcoursename(C.courseId))
+             FROM ONLY finReceivableInvoice A
+             LEFT JOIN ONLY basPerson P USING(personId) 
+             LEFT JOIN finBankAccount B USING (bankAccountId) 
+             LEFT JOIN finEntry E USING (invoiceId) 
+             LEFT JOIN acdContract C USING (personId, courseId, contractId)
+             LEFT JOIN acdEnroll EN ON (EN.contractId = C.contractId)
+             LEFT JOIN acdGroup G USING (groupId) 
+             LEFT JOIN acdClass CL ON G.classId = CL.classId 
+             INNER JOIN acdClassPupil CP ON CL.classId = CP.classId AND CP.contractId = C.contractId AND CP.enddate IS NULL';
+            if (strlen((string)$data->classId) > 0 && strlen((string)$data->className) > 0 )
+            {
+                $sql .= ' AND CL.classId ILIKE ? AND CL.name ILIKE TO_ASCII(?) ';
+                $args[] = $data->classId.'%';
+                $args[] = $data->className.'%';
+                $args[] = $data->classId.'%';
+                $args[] = $data->className.'%';
+                $where .= '    AND  CL.classId ILIKE TO_ASCII(?) ';
+                $where .= '    AND  CL.name ILIKE TO_ASCII(?) ';
+            }
+            else if (strlen((string)$data->classId) > 0 )
+            {
+                $sql .= ' AND CL.classId ILIKE ? ';
+                $args[] = $data->classId.'%';
+                $args[] = $data->classId.'%';
+                $where .= '    AND  CL.classId ILIKE TO_ASCII(?) ';
+            }
+            else if (strlen((string)$data->className) > 0 )
+            {
+                $sql .= ' AND CL.name ILIKE TO_ASCII(?) ';
+                $args[] = $data->className.'%';
+                $args[] = $data->className.'%';
+                $where .= '    AND  CL.name ILIKE TO_ASCII(?) ';
+            }
+            $where .= '    AND  NOT iscontractout(C.contractId) ';
+                     $order = ' 
+                      CL.classId,
+                      C.turnId,
+                      A.courseId,
+                      P.name,
+                      A.emissionDate';
+        $groupby = ', CL.classId, C.turnId';
+            
+        }
+        else
+        {
+        $sql = 'SELECT A.invoiceId,
+                       A.bankInvoiceId,
+                       A.personId,
+                       P.name,
+                       round(balance(invoiceId),'. REAL_ROUND_VALUE .'),
+                       TO_CHAR(A.maturityDate,\'' . MASK_DATE . '\'),
+                       TO_CHAR(A.emissionDate,\'' . MASK_DATE . '\'),
+                       A.courseId,
+                       A.courseVersion,
+                       A.accountSchemeId,
+                       A.costCenterId,
+                       A.unitId,
+                       A.parcelNumber,
+                       round(A.value,'. REAL_ROUND_VALUE .'),
+                       A.policyId,
+                       A.bankInvoiceId,
+                       A.automaticDebit,
+                       A.comments,
+                       A.incomeSourceId,
+                       A.bankAccountId,
+                       A.bankContractId,
+                       A.sagu1InvoiceId,
+                       A.messageInvoice,
+                       B.bankId
+             FROM ONLY finReceivableInvoice A
+             LEFT JOIN ONLY basPerson P USING(personId) 
+             LEFT JOIN finBankAccount B USING (bankAccountId) 
+            LEFT JOIN finEntry E USING (invoiceId) ';
+                     $order = ' A.courseId,
+                      A.courseVersion, 
+                      P.name,
+                      A.emissionDate';
+        $groupby = '';
+
+        }
+        if ( strlen((string)$data->invoiceId) > 0 )
+        {
+            $where .= '    AND   A.invoiceId = ?';
+            $args[] = $data->invoiceId;
+        }
+        if ( strlen((string)$data->personId) > 0 )
+        {
+            $where .= '    AND   A.personId = ?';
+            $args[] = $data->personId;
+        }
+        if ( strlen((string)$data->accountSchemeId) > 0 )
+        {
+            $where .= '    AND   A.accountSchemeId ILIKE ?';
+            $args[] = $data->accountSchemeId;
+        }
+        if ( strlen((string)$data->costCenterId) > 0 )
+        {
+            $where .= '    AND   A.costCenterId ILIKE ?';
+            $args[] = $data->costCenterId;
+        }
+        if ( strlen((string)$data->courseId) > 0 )
+        {
+            $where .= '    AND   A.courseId ILIKE ?';
+            $args[] = $data->courseId;
+        }
+        if ( strlen((string)$data->courseVersion) > 0 )
+        {
+            $where .= '    AND   A.courseVersion = ?';
+            $args[] = $data->courseVersion;
+        }
+        if ( strlen((string)$data->unitId) > 0 )
+        {
+            $where .= '    AND   A.unitId = ?';
+            $args[] = $data->unitId;
+        }
+        if ( strlen((string)$data->parcelNumber) > 0 )
+        {
+            $where .= '    AND   A.parcelNumber = ?';
+            $args[] = $data->parcelNumber;
+        }
+        if ( strlen((string)$data->emissionDate) > 0 )
+        {
+            $where .= '    AND   A.emissionDate = TO_DATE(?,\'' . MASK_DATE . '\')';
+            $args[] = $data->emissionDate;
+        }
+        if ( strlen((string)$data->maturityDate) > 0 )
+        {
+            $where .= '    AND   A.maturityDate = TO_DATE(?,\'' . MASK_DATE . '\')';
+            $args[] = $data->maturityDate;
+        }
+        if ( strlen((string)$data->value) > 0 )
+        {
+            $where .= '    AND   A.value = ?';
+            $args[] = $data->value;
+        }
+        if ( strlen((string)$data->policyId) > 0 )
+        {
+            $where .= '    AND   A.policyId = ?';
+            $args[] = $data->policyId;
+        }
+        if ( strlen((string)$data->bankInvoiceId) > 0 )
+        {
+            $where .= '    AND   A.bankInvoiceId ILIKE ?';
+            $args[] = $data->bankInvoiceId;
+        }
+        if ( strlen((string)$data->automaticDebit) > 0 )
+        {
+            $where .= '    AND   A.automaticDebit = ?';
+            $args[] = $data->automaticDebit;
+        }
+        if ( strlen((string)$data->comments) > 0 )
+        {
+            $where .= '    AND   A.comments ILIKE ?';
+            $args[] = $data->comments;
+        }
+        if ( strlen((string)$data->incomeSourceId) > 0 )
+        {
+            $where .= '    AND   A.incomeSourceId = ?';
+            $args[] = $data->incomeSourceId;
+        }
+        if ( strlen((string)$data->bankAccountId) > 0 )
+        {
+            $where .= '    AND   A.bankAccountId = ?';
+            $args[] = $data->bankAccountId;
+        }
+        if ( strlen((string)$data->bankContractId) > 0 )
+        {
+            $where .= '    AND   A.bankContractId = ?';
+            $args[] = $data->bankContractId;
+        }
+        if ( strlen((string)$data->sagu1InvoiceId) > 0 )
+        {
+            $where .= '    AND   A.sagu1InvoiceId ILIKE ?';
+            $args[] = $data->sagu1InvoiceId;
+        }
+        if ( strlen((string)$data->messageInvoice) > 0 )
+        {
+            $where .= '    AND   A.messageInvoice ILIKE ?';
+            $args[] = $data->messageInvoice;
+        }
+        if ( strlen((string)$data->emissionStartDate) > 0  && strlen((string)$data->emissionEndDate) > 0 )
+        {
+            $where .= '    AND   A.emissionDate BETWEEN TO_DATE(?,\'' . MASK_DATE . '\') AND TO_DATE(?,\'' . MASK_DATE . '\')';
+            $args[] = $data->emissionStartDate;
+            $args[] = $data->emissionEndDate;
+        }
+        elseif ( strlen((string)$data->emissionStartDate) > 0 )
+        {
+            $where .= '    AND   A.emissionDate BETWEEN TO_DATE(?,\'' . MASK_DATE . '\') AND now()::date ';
+            $args[] = $data->emissionStartDate;
+        }
+        elseif ( strlen((string)$data->emissionEndDate) > 0 )
+        {
+            $where .= '    AND   A.emissionDate BETWEEN now()::date AND TO_DATE(?,\'' . MASK_DATE . '\')';
+            $args[] = $data->emissionEndDate;
+        }
+        if ( strlen((string)$data->startDate) > 0  && strlen((string)$data->endDate) > 0 )
+        {
+            $where .= '    AND   A.maturityDate BETWEEN TO_DATE(?,\'' . MASK_DATE . '\') AND TO_DATE(?,\'' . MASK_DATE . '\')';
+            $args[] = $data->startDate;
+            $args[] = $data->endDate;
+        }
+        elseif ( strlen((string)$data->startDate) > 0 )
+        {
+            $where .= '    AND   A.maturityDate BETWEEN TO_DATE(?,\'' . MASK_DATE . '\') AND now()::date ';
+            $args[] = $data->startDate;
+        }
+        elseif ( strlen((string)$data->endDate) > 0 )
+        {
+            $where .= '    AND   A.maturityDate BETWEEN now()::date AND TO_DATE(?,\'' . MASK_DATE . '\')';
+            $args[] = $data->endDate;
+        }
+        if ( strlen((string)$data->operationId) > 0 ) 
+        {
+            $where .= '    AND   E.operationId = ?';
+            $args[] = $data->operationId;
+        }
+        if ( strlen((string)$data->bankId) > 0 )
+        {
+            $where .= '    AND   B.bankId = ?';
+            $args[] = $data->bankId;
+        }
+        if ( strlen((string)$data->policyId) > 0 )
+        {
+            $where .= '    AND   A.policyId = ?';
+            $args[] = $data->policyId;
+        }
+        if ( strlen((string)$data->personId) > 0 )
+        {
+            $where .= '    AND A.personId = ?';
+            $args[] = $data->personId;
+        }
+        if ( strlen((string)$data->periodId) > 0 )
+        {
+            $where .= '    AND A.periodId = ?';
+            $args[] = $data->periodId;
+        }
+        if ( strlen((string)$data->contractId) > 0 )
+        {
+            $where .= '    AND A.contractId = ?';
+            $args[] = $data->contractId;
+        }
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE '. substr($where, 8) .
+                    //' AND balance(A.invoiceId) > '. MINIMAL_VALUE_TO_PRINT_INVOICE .'
+                    '  GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, A.emissionDate, A.contractId, A.periodId ';
+            $sql .= $groupby;
+            $sql .= '
+					  ORDER BY ';
+            $sql .= $order;
+            $sql = SAGU::prepare($sql,$args);
+            $result = $this->db->query($sql);
+        }
+        return $result;
+
+    }
+
+
+    /**
+     * Do a search on the database table handled by the class
+     *
+     * @param $filters (object): Search filters
+     *
+     * @return (array): An array containing the search results
+     **/
+    public function searchInvoice($data)
+    {
+        $sql = 'SELECT A.invoiceId,
+                       A.personId,
+                       A.accountSchemeId,
+                       A.costCenterId,
+                       A.courseId,
+                       A.courseVersion,
+                       A.unitId,
+                       A.parcelNumber,
+                       TO_CHAR(A.emissionDate,\'' . MASK_DATE . '\'),
+                       TO_CHAR(A.maturityDate,\'' . MASK_DATE . '\'),
+                       round(A.value,'. REAL_ROUND_VALUE .'),
+                       A.policyId,
+                       A.bankInvoiceId,
+                       A.automaticDebit,
+                       A.comments,
+                       A.incomeSourceId,
+                       A.bankAccountId,
+                       A.bankContractId,
+                       A.sagu1InvoiceId,
+                       A.messageInvoice
+             FROM ONLY finInvoice A';
+
+        $where = '';
+        unset($args);
+        if ( strlen((string)$data->invoiceId) > 0 )
+        {
+            $where .= '    AND   A.invoiceId = ?';
+            $args[] = $data->invoiceId;
+        }
+        if ( strlen((string)$data->personId) > 0 )
+        {
+            $where .= '    AND   A.personId = ?';
+            $args[] = $data->personId;
+        }
+        if ( strlen((string)$data->accountSchemeId) > 0 )
+        {
+            $where .= '    AND   A.accountSchemeId ILIKE ?';
+            $args[] = $data->accountSchemeId;
+        }
+        if ( strlen((string)$data->costCenterId) > 0 )
+        {
+            $where .= '    AND   A.costCenterId ILIKE ?';
+            $args[] = $data->costCenterId;
+        }
+        if ( strlen((string)$data->courseId) > 0 )
+        {
+            $where .= '    AND   A.courseId ILIKE ?';
+            $args[] = $data->courseId;
+        }
+        if ( strlen((string)$data->courseVersion) > 0 )
+        {
+            $where .= '    AND   A.courseVersion = ?';
+            $args[] = $data->courseVersion;
+        }
+        if ( strlen((string)$data->unitId) > 0 )
+        {
+            $where .= '    AND   A.unitId = ?';
+            $args[] = $data->unitId;
+        }
+        if ( strlen((string)$data->parcelNumber) > 0 )
+        {
+            $where .= '    AND   A.parcelNumber = ?';
+            $args[] = $data->parcelNumber;
+        }
+        if ( strlen((string)$data->emissionDate) > 0 )
+        {
+            $where .= '    AND   A.emissionDate = TO_DATE(?,\'' . MASK_DATE . '\')';
+            $args[] = $data->emissionDate;
+        }
+        if ( strlen((string)$data->maturityDate) > 0 )
+        {
+            $where .= '    AND   A.maturityDate = TO_DATE(?,\'' . MASK_DATE . '\')';
+            $args[] = $data->maturityDate;
+        }
+        if ( strlen((string)$data->value) > 0 )
+        {
+            $where .= '    AND   A.value = ?';
+            $args[] = $data->value;
+        }
+        if ( strlen((string)$data->policyId) > 0 )
+        {
+            $where .= '    AND   A.policyId = ?';
+            $args[] = $data->policyId;
+        }
+        if ( strlen((string)$data->bankInvoiceId) > 0 )
+        {
+            $where .= '    AND   A.bankInvoiceId ILIKE ?';
+            $args[] = $data->bankInvoiceId;
+        }
+        if ( strlen((string)$data->automaticDebit) > 0 )
+        {
+            $where .= '    AND   A.automaticDebit = ?';
+            $args[] = $data->automaticDebit;
+        }
+        if ( strlen((string)$data->comments) > 0 )
+        {
+            $where .= '    AND   A.comments ILIKE ?';
+            $args[] = $data->comments;
+        }
+        if ( strlen((string)$data->incomeSourceId) > 0 )
+        {
+            $where .= '    AND   A.incomeSourceId = ?';
+            $args[] = $data->incomeSourceId;
+        }
+        if ( strlen((string)$data->bankAccountId) > 0 )
+        {
+            $where .= '    AND   A.bankAccountId = ?';
+            $args[] = $data->bankAccountId;
+        }
+        if ( strlen((string)$data->bankContractId) > 0 )
+        {
+            $where .= '    AND   A.bankContractId = ?';
+            $args[] = $data->bankContractId;
+        }
+        if ( strlen((string)$data->sagu1InvoiceId) > 0 )
+        {
+            $where .= '    AND   A.sagu1InvoiceId ILIKE ?';
+            $args[] = $data->sagu1InvoiceId;
+        }
+        if ( strlen((string)$data->messageInvoice) > 0 )
+        {
+            $where .= '    AND   A.messageInvoice ILIKE ?';
+            $args[] = $data->messageInvoice;
+        }
+
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= substr($where, 8) .
+                    ' ORDER BY A.invoiceId,
+                               A.emissionDate';
+
+            $result = $this->db->query(SAGU::prepare($sql,$args));
+        }
+
+        return $result;
+
+    }
+
+    /**
+     * Insert a new record
+     *
+     * @param $data (object): An object of the type handled by the class
+     *
+     * @return If succed, return the invoice id. Otherwise return FALSE.
+     *
+     **/
+    public function insertInvoice($data)
+    {
+        $sql = 'SELECT NEXTVAL(\'seq_invoiceId\')';
+        $retVal = $this->db->query($sql);
+        $invoiceId = false;
+        if ( isset($retVal[0][0]) )
+        {
+            $invoiceId = $retVal[0][0];
+
+            $field[]        = 'invoiceId';
+            $prepareValue[] = '?';
+            $dataValue[]    = $invoiceId;
+            $field[]        = 'personId';
+            $prepareValue[] = '?';
+            $dataValue[]    = $data->personId;
+            $field[]        = 'accountSchemeId';
+            $prepareValue[] = '?';
+            $dataValue[]    = $data->accountSchemeId;
+            $field[]        = 'costCenterId';
+            $prepareValue[] = '?';
+            $dataValue[]    = $data->costCenterId;
+            $field[]        = 'courseId';
+            $prepareValue[] = '?';
+            $dataValue[]    = $data->courseId;
+            $field[]        = 'courseVersion';
+            $prepareValue[] = '?';
+            $dataValue[]    = $data->courseVersion;
+            $field[]        = 'unitId';
+            $prepareValue[] = '?';
+            $dataValue[]    = $data->unitId;
+            $field[]        = 'parcelNumber';
+            $prepareValue[] = '?';
+            $dataValue[]    = $data->parcelNumber;
+            $field[]        = 'emissionDate';
+            if ( is_null($data->emissionDate) )
+            {
+                $prepareValue[] = 'now()';
+            }
+            else
+            {
+                $prepareValue[] = 'TO_DATE(?,\'' . MASK_DATE . '\')';
+                $dataValue[]    = $data->emissionDate;
+            }
+            $field[]        = 'maturityDate';
+            $prepareValue[] = 'TO_DATE(?,\'' . MASK_DATE . '\')';
+            $dataValue[]    = $data->maturityDate;
+            $field[]        = 'value';
+            $prepareValue[] = '?';
+            $dataValue[]    = $data->value;
+            $field[]        = 'policyId';
+            $prepareValue[] = '?';
+            $dataValue[]    = $data->policyId;
+            $field[]        = 'bankInvoiceId';
+            $prepareValue[] = '?';
+            $dataValue[]    = $data->bankInvoiceId;
+            $field[]        = 'automaticDebit';
+            $prepareValue[] = '?';
+            $dataValue[]    = $data->automaticDebit;
+            $field[]        = 'comments';
+            $prepareValue[] = '?';
+            $dataValue[]    = $data->comments;
+            $field[]        = 'incomeSourceId';
+            $prepareValue[] = '?';
+            $dataValue[]    = $data->incomeSourceId;
+            $field[]        = 'bankAccountId';
+            $prepareValue[] = '?';
+            $dataValue[]    = $data->bankAccountId;
+            $field[]        = 'bankContractId';
+            $prepareValue[] = '?';
+            $dataValue[]    = $data->bankContractId;
+            $field[]        = 'messageInvoice';
+            $prepareValue[] = '?';
+            $dataValue[]    = $data->messageInvoice;
+            $field[]        = 'sagu1InvoiceId';
+            $prepareValue[] = '?';
+            $dataValue[]    = $data->sagu1InvoiceId;
+            if (strlen((string)$data->periodId) > 0 )
+            {
+                $field[]        = 'periodId';
+                $prepareValue[] = '?';
+                $dataValue[]    = $data->periodId;
+            }
+
+            if (strlen((string)$data->sectorId)>0)
+            {
+                $field[]        = 'sectorId';
+                $prepareValue[] = '?';
+                $dataValue[]    = $data->sectorId;
+            }
+
+            $sql = 'INSERT INTO finInvoice
+                                (';
+            for ( $i=0; $i<count($field); $i++ )
+            {
+                $sql .= $field[$i] . ',';
+            }
+            $sql = substr($sql, 0, strlen((string)$sql)-1) . ')
+                         VALUES (';
+            for ( $i=0; $i<count($prepareValue); $i++ )
+            {
+                $sql .= $prepareValue[$i] . ',';
+            }
+            $sql = substr($sql, 0, strlen((string)$sql)-1) . ')';
+
+            if ( ! $this->db->execute(SAGU::prepare($sql, $dataValue)) )
+            {
+                $invoiceId = false;
+            }
+        }
+
+        return $invoiceId;
+    }
+
+    /**
+     * Update data from a specific record
+     *
+     * @param $data (object): Data which will replace the old record data
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+    public function updateInvoice($data)
+    {
+        $sql = 'UPDATE finInvoice
+                   SET personId        = ?,
+                       accountSchemeId = ?,
+                       costCenterId    = ?,
+                       courseId        = ?,
+                       courseVersion   = ?,
+                       unitId          = ?,
+                       parcelNumber    = ?,
+                       emissionDate    = TO_DATE(?,\'' . MASK_DATE . '\'),
+                       maturityDate    = TO_DATE(?,\'' . MASK_DATE . '\'),
+                       value           = ?,
+                       policyId        = ?,
+                       bankInvoiceId   = ?,
+                       automaticDebit  = ?,
+                       comments        = ?,
+                       incomeSourceId  = ?,
+                       bankAccountId   = ?,
+                       bankContractId  = ?,
+                       sagu1InvoiceId  = ?,
+                       messageInvoice  = ?,
+                       periodId        = ?';
+        if ($data->sectorId>0)
+        {
+            $sql.=',
+                       sectorId        = ? ';
+        }
+        $sql.='  WHERE invoiceId = ?';
+
+        unset($args);
+        $args[] = $data->personId;
+        $args[] = $data->accountSchemeId;
+        $args[] = $data->costCenterId;
+        $args[] = $data->courseId;
+        $args[] = $data->courseVersion;
+        $args[] = $data->unitId;
+        $args[] = $data->parcelNumber;
+        $args[] = $data->emissionDate;
+        $args[] = $data->maturityDate;
+        $args[] = $data->value;
+        $args[] = $data->policyId;
+        $args[] = $data->bankInvoiceId;
+        $args[] = $data->automaticDebit;
+        $args[] = $data->comments;
+        $args[] = $data->incomeSourceId;
+        $args[] = $data->bankAccountId;
+        $args[] = $data->bankContractId;
+        $args[] = $data->sagu1InvoiceId;
+        $args[] = $data->messageInvoice;
+        $args[] = $data->periodId;
+        if (strlen((string)$data->sectorId)>0)
+        {
+            $args[] = $data->sectorId;
+        }
+        $args[] = $data->invoiceId;
+
+        $sqls = SAGU::prepare($sql, $args);
+        for ( $i=0; $i<count($sqls); $i++ )
+        {
+            $result = $this->db->execute($sqls[$i]);
+        }
+
+        return $result;
+    }
+
+    /**
+     * Delete a record
+     *
+     * @param $invoiceId (integer): Primary key for deletion
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+    public function deleteInvoice($invoiceId)
+    {
+        $sql = 'DELETE FROM finInvoiceBalance
+                      WHERE invoiceId = ?';
+
+        $result = $this->db->execute(SAGU::prepare($sql, $invoiceId));
+
+        $sql = 'DELETE FROM ONLY finInvoice
+                      WHERE invoiceId = ?';
+
+        $result = $this->db->execute(SAGU::prepare($sql, $invoiceId));
+
+        return $result;
+    }
+
+   /**
+    * Get data information about invoices for long term short term process
+    *
+    * @author: William Prigol Lopes [william@solis.coop.br]
+    *
+    * $data (object): Object containing data to filter information to process
+    *
+    * @return (array) : Array containing data information about process
+    *
+    */
+    public function longTermShortTermInvoice($data)
+    {
+        $sql = ' SELECT invoiceId,
+                        \'limbo\' as limbo,
+                        personId,
+                        personName,
+                        emissionDate,
+                        maturityDate,
+                        value,
+                        balance(invoiceId),
+                        costCenterId,
+                        accountSchemeId,
+                        courseId,
+                        courseVersion,
+                        unitId,
+                        parcelNumber,
+                        policyId,
+                        incomeSourceId,
+                        bankAccountId,
+                        bankContractId
+                   FROM (    SELECT invoiceId,
+                                    personId,
+                                    getPersonName(personId) as personName,
+                                    to_char(emissionDate, \'' . MASK_DATE . '\') as emissionDate,
+                                    to_char(maturityDate, \'' . MASK_DATE . '\') as maturityDate,
+                                    value,
+                                    costCenterId,
+                                    accountSchemeId,
+                                    courseId,
+                                    courseVersion,
+                                    unitId,
+                                    parcelNumber,
+                                    policyId,
+                                    incomeSourceId,
+                                    bankAccountId,
+                                    bankContractId
+                          FROM ONLY finInvoice
+                              WHERE finInvoice.maturityDate
+                            BETWEEN to_date(?, \'' . MASK_DATE . '\')
+                                AND to_date(?, \'' . MASK_DATE . '\')
+                                AND courseId = ?
+                                AND policyId = ?
+                           ORDER BY 3, 5) AS A
+                  WHERE balance(invoiceId)>0 ';
+        
+        $args = array( $data->expirationInitialDate,
+                       $data->expirationEndDate,
+                       $data->oldCourseId,
+                       $data->oldPolicyId );
+                       
+        if (strlen((string)$data->personId)>0)
+        {
+            $args[] = $data->personId;
+
+            $sql.= ' AND personId = ? ';
+        }
+
+        
+        $return = $this->db->query(SAGU::prepare($sql, $args));
+        
+        return $return;
+    }
+
+    /**
+     * @author: William Prigol Lopes [william@solis.coop.br]
+     *
+     * @param $invoiceId (int): Value to identify invoice
+     *
+     :* @return (boolean): True if succeed, otherwise false
+     *
+     */
+    public function updateInvoiceBalance($invoiceId)
+    {
+        $sql = ' UPDATE finInvoice 
+                    SET value     = balance(invoiceId)
+                  WHERE invoiceId = ? ';
+
+        $db     = $this->getDatabase();
+        $args   = array($invoiceId);
+        $return = $this->db->execute(SAGU::prepare($sql, $args));
+
+        return $return;
+    }
+
+    /**
+     * @author: William Prigol Lopes [william@solis.coop.br]
+     *
+     * @param $invoiceId (int): Primary key for invoice
+     *
+     * @return (float): Invoice balance
+     *
+     */
+    public function getInvoiceBalance($invoiceId)
+    {
+        $sql = ' SELECT ROUND(balance(?), '. REAL_ROUND_VALUE .') ';
+
+        $args   = array($invoiceId);
+        $return = $this->db->query(SAGU::prepare($sql, $args));
+        return $return[0][0];
+    }
+
+    /**
+     * @author: William Prigol Lopes [william@solis.coop.br]
+     *
+     * @param $invoiceId (int): Invoice id
+     *
+     * @return (float): Value with policies rules for the respectively invoice
+     *
+     */
+    public function getInvoiceBalanceWithPolicies($invoiceId)
+    {
+        $sql = ' SELECT ROUND(balanceWithPolicies(?)::numeric(12, 4), 2) ';
+
+        $args   = array($invoiceId);
+        $return = $this->db->query(SAGU::prepare($sql, $args));
+        return $return[0][0];
+    }
+    
+
+    /** 
+     * @author: William Prigol Lopes [william@solis.coop.br]
+     *
+     * @param $invoiceId (int): Return the invoice id
+     *
+     * @return (object): Object with id and name of person
+     *
+     */
+    public function getPersonDataForInvoice($invoiceId)
+    {
+        $sql = ' SELECT personId,
+                        getPersonName(personId)
+                   FROM finReceivableInvoice
+                  WHERE invoiceId = ? ';
+        
+
+        $args = array($invoiceId);
+        $ret = $this->db->query(SAGU::prepare($sql, $args));
+        $return->personId   = $ret[0][0];
+        $return->personName = $ret[0][1];
+        return $return;
+    }
+    
+     /**
+     * Generate update finInvoice  SET value = balance
+     *
+     * @param  value ( balance ())
+     *
+     * @return true or false
+     *
+     **/
+    public function updateInvoiceValue($value, $invoiceId)
+    {
+             $sql = 'UPDATE finInvoice SET value = ? WHERE invoiceId = ? ';
+             $res = $this->db->execute(SAGU::prepare($sql, array ($value, $invoiceId ) ) );
+
+             if ($this->db->getErrors())
+             {
+                 $return = false;
+             }
+
+            return $return;
+
+    }
+
+    /**
+     * Verify the accounted entries for a specific invoice
+     *
+     * @param: $invoiceId (int): Primary key for invoice
+     *
+     * @return: True if has accounted entries for this invoice otherwise false
+     *
+     */
+    public function verifyAccountedEntriesForInvoice($invoiceId)
+    {
+        $sql = ' SELECT entryId
+                   FROM finEntry
+                  WHERE invoiceId = ?
+                    AND isAccounted = true ';
+        
+        
+        $args = array($invoiceId);
+
+        $return = $this->db->query(SAGU::prepare($sql, $args));
+        if (is_array($return[0]))
+        {
+            return true;
+        }
+        else
+        {
+            return false;
+        }
+    }
+
+    /**
+     * Return the invoiceId relative for sagu1InvoiceId system (used by remittance and return on migrations and upgrades)
+     *
+     * @param $sagu1InvoiceId (varchar): sagu1 invoice id
+     *
+     * @return: Key for invoice or false 
+     *
+     */
+    public function getInvoiceIdBySagu1InvoiceId($sagu1InvoiceId)
+    {
+        $sql = '   SELECT invoiceId
+                FROM ONLY finInvoice
+                    WHERE sagu1InvoiceId = ? ';
+
+        
+
+        $args = array($sagu1InvoiceId);
+        $return  = $this->db->query(SAGU::prepare($sql, $args));
+        if (is_array($return[0]))
+        {
+            return $return[0][0];
+        }
+        else
+        {
+            return false;
+        }
+    }
+
+
+   /**
+    * Get cost center by invoice id
+    *
+    * @param $invoiceId (int): Primary key for invoice
+    *
+    * @return: The cost center id for respectively invoice
+    *
+    */ 
+    public function getCostCenterByInvoiceId($invoiceId)
+    {
+        $sql = ' SELECT costCenterId
+                   FROM finInvoice 
+                  WHERE invoiceId = ? ';
+
+        
+        $args = array($invoiceId);
+        
+        $return = $this->db->query(SAGU::prepare($sql, $args));
+        return $return[0][0];
+    }
+
+
+   /**
+    * Get account scheme by invoice id
+    *
+    * @param $invoiceId (int): Primary key for invoice
+    *
+    * @return: The account scheme id for respectively invoice
+    *
+    */ 
+    public function getAccountSchemeByInvoiceId($invoiceId)
+    {
+        $sql = ' SELECT accountSchemeId
+                   FROM finInvoice 
+                  WHERE invoiceId = ? ';
+
+        
+        $args = array($invoiceId);
+        
+        $return = $this->db->query(SAGU::prepare($sql, $args));
+        return $return[0][0];
+    }
+
+
+   /**
+    * Verify if invoice exists
+    *
+    * @param $invoiceId (int): Primary key for invoice
+    *
+    * @return: true if invoice exists otherwise false
+    *
+    */
+    public function verifyInvoice($invoiceId)
+    {
+        $sql = '    SELECT invoiceId
+                 FROM ONLY finInvoice
+                     WHERE invoiceId = ? ';
+                     
+
+        $args = array($invoiceId);
+
+        $return = $this->db->query(SAGU::prepare($sql, $args));
+        if (is_array($return[0]))
+        {
+            return true;
+        }
+        else
+        {
+            return false;
+        }
+    }
+
+    /**
+     * Test if there is a accounted entry for a invoice
+     *
+     * @param $invoiceId (integer): An integer with invoiceId
+     *
+     * @return If succed, return the invoice TRUE. Otherwise return FALSE.
+     *
+     **/
+    public function testIsAccounted($invoiceId)
+    {
+    
+        $sql  = 'SELECT isAccounted
+                   FROM ONLY finInvoice A
+                 INNER JOIN finEntry B
+                     USING (invoiceId)
+                 WHERE invoiceId = ? AND
+                       isAccounted IS TRUE';
+                       
+        $data = $this->db->query(SAGU::prepare($sql, $invoiceId));    
+        
+        if ( $data[0][0] == DB_TRUE )
+        {
+            return true;
+        }
+        else
+        {
+            return false;
+        }
+    }
+
+   /**
+    *
+    * Verify if that invoice is 
+    *
+    * @param: $invoiceId (int): Primary key of invoice to analyze
+    *
+    * @returns (varchar): The invoice's period or null if don't exists
+    *
+    */
+    public function getInvoicePeriod($invoiceId)
+    {
+        $sql = ' SELECT periodId
+                   FROM finReceivableInvoice A
+             INNER JOIN acdLearningPeriod B
+                     ON (A.maturityDate
+                 BETWEEN B.beginDate
+                     AND B.endDate
+                     AND A.courseId      = B.courseId
+                     AND A.courseVersion = B.courseVersion
+                     AND A.unitId        = B.unitId)
+                 WHERE invoiceId = ? ';
+        $args[] = $invoiceId;
+      
+        $ret = $this->db->query(SAGU::prepare($sql, $args));
+        return $ret[0][0]; 
+    }
+
+
+}
+?>

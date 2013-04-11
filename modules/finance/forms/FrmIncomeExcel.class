@@ -1,0 +1,277 @@
+<?php
+/**
+ *
+ * @author José Walter Gonçalves Silva Júnior [jwaltergsj@gmail.com]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Walter Pozzguo	[pozzguo@gmail.com]
+ *
+ * @since
+ * Class created on 19/03/2012
+ *
+ * \b Organization: \n
+ * TodoTech - Fazer Tecnologia \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2012 TodoTech \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ **/
+
+class FrmIncomeExcel extends MForm
+{
+	private $home;
+	private $module;
+
+	/**
+	 * Class constructor
+	 */
+	function __construct($data)
+	{
+		$module = MIOLO::getCurrentModule();
+
+		$this->home   = $data->home;
+
+		parent::__construct(_M('Income report', $module).' (Excel)');
+
+		$this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+		$this->eventHandler();
+
+	}
+
+	/**
+	 *  Default method to define fields
+	 */
+	public function createFields()
+	{
+		$MIOLO  = MIOLO::getInstance();
+		$module = MIOLO::getCurrentModule();
+		$action = MIOLO::getCurrentAction();
+
+		$toolBar = new MToolBar('toolBar',$MIOLO->getActionURL($module,$action));
+		$toolBar->hideButton('tbBtnDelete');
+		$toolBar->hideButton('tbBtnSave');
+		$toolBar->hideButton('tbBtnSearch');
+		$toolBar->hideButton('tbBtnNew');
+
+		//favoritos
+		$enabledImage  = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-20x20.png');
+		$disabledImage = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-disabled-20x20.png');
+		$url           = $MIOLO->getActionURL($module, $this->home, null, array('function' => 'search', 'event' => 'bookmark'));
+		$toolBar->addButton('tbBtnBookmark', _M('Add to bookmarks', 'basic'), $url, null, true, $enabledImage, $disabledImage);
+
+		if ( MIOLO::_request('event') == 'bookmark' )
+		{
+			$MIOLO->getClass('basic', 'access');
+			access::insert('Income report excel', $this->home, 'excel-16x16.png', true);
+		}
+		//fim favoritos
+		 
+		$fields[] = $toolBar;
+
+		//MES e ANO
+		/*
+		$monthLabel   = new MText('monthlabel', _M('Month', $module) . '/' . _M('Year', $module));
+		$monthLabel->setClass('m-caption m-caption-required');
+		$monthLabel->setWidth(FIELD_CONTAINER_SIZE);
+
+		$month        = new MMultiSelection('month', strlen((string)$this->getFormValue('month'))>0 ? $this->getFormValue('month') : array(date('n')), '', SAGU::listMonths());
+		$validators[] = new MRequiredValidator('month', _M('Month', $module), 'required');
+
+		$year         = new MTextField('year', strlen((string)$this->getFormValue('year'))>0 ? $this->getFormValue('year') : date('Y'), null, 6);
+		$validators[] = new MIntegerValidator('year', _M('Year', $module), 'required');
+
+		$fields[]     = new MHContainer('hctMonth', array($monthLabel, $month, $year));
+		*/
+
+		// data inicial
+		$startDateLabel = new MText('startDateLabel', _M('Start date',$module).':');
+		$startDateLabel->setWidth(FIELD_CONTAINER_SIZE);
+		$startDateLabel->setClass('m-caption m-caption-required');
+		$startDate = new MCalendarField('startDate', $this->getFormValue('startDate', $data->startDate), _M('',$module), FIELD_DATE_SIZE);
+		$startDate->setJsHint(_M('Entre com a data de RECEBIMENTO inicial...',$module));
+		$validators[] = new MDATEDMYValidator('startDate', null, 'required');
+		$hctStartDate = new MHContainer('hctStartDate', array($startDateLabel, $startDate));
+		$hctStartDate->setShowLabel(true);
+		$fields[] = $hctStartDate;
+
+		// data final
+		$endDateLabel = new MText('endDateLabel', _M('End date',$module).':');
+		$endDateLabel->setWidth(FIELD_CONTAINER_SIZE);
+		$endDateLabel->setClass('m-caption m-caption-required');
+		$endDate = new MCalendarField('endDate', $this->getFormValue('endDate', $data->endDate), _M('',$module), FIELD_DATE_SIZE);
+		$endDate->setJsHint(_M('Entre com a data de RECEBIMENTO final.',$module));
+		$validators[] = new MDATEDMYValidator('endDate', null, 'required');
+		$hctEndDate = new MHContainer('hctEndDate', array($endDateLabel, $endDate));
+		$hctEndDate->setShowLabel(true);
+		$fields[] = $hctEndDate;
+
+		$businessIncomeSource = $MIOLO->getBusiness($module, 'BusIncomeSource');
+		$dataIncomeSource     = $businessIncomeSource->listIncomeSource();
+		$incomeSourceLabel    = new MText('incomeSourceLabel', _M('Income source', $module).':');
+		$incomeSourceLabel->setClass('m-caption m-caption-required');
+		$incomeSourceLabel->setWidth(FIELD_CONTAINER_SIZE);
+		$incomeSource         = new MMultiSelection('incomeSourceId', is_array($this->getFormValue('incomeSourceId', $data->incomeSourceId)) ? $this->getFormValue('incomeSourceId', $data->incomeSourceId) : array($this->getFormValue('incomeSourceId', $data->incomeSourceId)), '', $dataIncomeSource, true, null, 5);
+		$fields[] = new MHContainer('hctIncomeSource', array($incomeSourceLabel, $incomeSource));
+
+		$validators[]   = new MRequiredValidator('incomeSourceId', _M('Income source', $module), 'required');
+		if (MODULE_ACADEMIC_INSTALLED == 'YES')
+		{
+			// Course
+			$courseLabel   = new MText('courseLabel', _M('Course',$module) . ':');
+			$courseLabel->setWidth(FIELD_CONTAINER_SIZE);
+			//$courseLabel->setClass('m-caption m-caption-required');
+			$courseId = new MLookupTextField('courseId', $this->getFormValue('courseId',$data->courseId), _M('Code',$module), FIELD_LOOKUPFIELD_SIZE, null, null, array('limbo', 'courseName'), 'academic', 'CourseOccurrence', null, array('courseId' => 'courseId'), true);
+			$courseId->setJsHint(_M('Enter the course code',$module));
+			$courseName = new MTextField('courseName', $this->getFormValue('courseName',$data->courseName), _M('Name',$module), FIELD_DESCRIPTION_SIZE);
+			$courseName->setReadOnly(true);
+
+			$hctCourse = new MHContainer('hctCourse', array($courseLabel, $courseId, $courseName));
+			$hctCourse->setShowLabel(false);
+			$fields[]  = $hctCourse;
+		}
+
+		//Report mode
+		$printModeLabel = new MText('printModeLabel', _M('Print mode', $module));
+		$printModeLabel->setWidth(FIELD_CONTAINER_SIZE);
+		$printModeLabel->setClass('m-caption m-caption-required');
+		$listAnalyticalSynthetic[] = array( _M('Excel', $module), '1');
+		//$listAnalyticalSynthetic[] = array( _M('Synthetic', $module), '2');
+		$printMode      = new MRadioButtonGroup('printMode', '', $listAnalyticalSynthetic, $this->GetFormValue('printMode', '1'), null, 'horizontal');
+		$printMode->SetShowLabel(false);
+		$printMode->SetAutoPostBack(false);
+		$hctPrintMode  = new MHContainer('hctPrintMode', array($printModeLabel, $printMode));
+		$hctPrintMode->setShowLabel(false);
+		$fields[]      = $hctPrintMode;
+
+		$fields[] = new MHiddenField('limbo', $limbo);
+
+
+		$this->setFields($fields);
+		$this->setValidators($validators);
+		$this->setLabelWidth(FIELD_LABEL_SIZE);
+		$this->setShowPostButton(false);
+		$this->setClose($MIOLO->getActionURL($module, substr($action, 0, strrpos($action, ':'))));
+
+	}
+
+	function tbBtnPrint_click($sender = null)
+	{
+		$MIOLO  = MIOLO::getInstance();
+		$module = MIOLO::getCurrentModule();
+		$action = MIOLO::getCurrentAction();
+
+		//$data->year       = $this->year->value;
+		//$data->month      = $this->month->value;
+		$data->startDate      = $this->startDate->value;
+		$data->endDate        = $this->endDate->value;
+		$data->incomeSourceId = $this->incomeSourceId->value;
+		$data->courseId     = $this->courseId->value;
+		$data->reportType   = $this->printMode->value;
+		
+		//echo '<pre>';print_r($data);die();
+
+		$business = $MIOLO->getBusiness($module, 'BusIncome');
+		$result = $business->getIncomeExcel($data);
+
+
+		if ( count($result) > 0 )
+		{
+			//echo '<pre>';print_r($result);die();
+
+			//Titulos das Colunas:
+
+			$fileContent = 'Vencimento;Titulo;CodAluno;Aluno;CodOrigem;ReceitaPrevista;ReceitaNominal;ReceitaRealizada;Incentivos;Descontos;'.
+        'JurosRecebidos;ValorEmAberto;ValorEmAbertoAtualizado;CodCurso;Curso;Origem;DataPagamento;CodOperacao;Operacao;ano_vencimento;'.
+        'mes_vencimento;ano_pagamento;mes_pagamento;obs;Unidade;Situacao;Turno;Turma';
+			$fileContent .= "\n";
+
+			foreach ( $result as $value )
+			{
+				list (
+				$line->Vencimento,
+				$line->Titulo,
+				$line->Matricula,
+				$line->Aluno,
+				$line->incomeSourceId,
+				$line->receitaPrevista,
+				$line->receitaNominal,
+				$line->receitaRealizada,
+				$line->incentivos,
+				$line->descontos,
+				$line->jurosrecebidos,
+				$line->valoremaberto,
+				$line->valoremabertoatualizado,
+				$line->CourseId,
+				$line->Curso,
+				$line->Origem,
+				$line->DataPagamento,
+				$line->operationId,
+				$line->Operacao,
+				$line->ano_vencimento,
+				$line->mes_vencimento,
+				$line->ano_pagamento,
+				$line->mes_pagamento,
+				$line->obs,
+				$line->unidade,
+				$line->Situacao,
+				$line->Turno,
+				$line->Turma
+				) = $value;
+
+				$fileContent .= $line->Vencimento.';'.
+				$line->Titulo.';'.
+				$line->Matricula.';'.
+				$line->Aluno.';'.
+				$line->incomeSourceId.';'.
+				number_format($line->receitaPrevista,2,',','.').';'.
+				number_format($line->receitaNominal,2,',','.').';'.
+				number_format($line->receitaRealizada,2,',','.').';'.
+				number_format($line->incentivos,2,',','.').';'.
+				number_format($line->descontos,2,',','.').';'.
+				number_format($line->jurosrecebidos,2,',','.').';'.
+				number_format($line->valoremaberto,2,',','.').';'.
+				number_format($line->valoremabertoatualizado,2,',','.').';'.
+				$line->CourseId.';'.
+				$line->Curso.';'.
+				$line->Origem.';'.
+				$line->DataPagamento.';'.
+				$line->operationId.';'.
+				$line->Operacao.';'.
+				$line->ano_vencimento.';'.
+				$line->mes_vencimento.';'.
+				$line->ano_pagamento.';'.
+				$line->mes_pagamento.';'.
+				$line->obs.';'.
+				$line->unidade.';'.
+				$line->Situacao.';'.
+				$line->Turno.';'.
+				$line->Turma;
+				$fileContent .= "\n";
+			}
+
+			//$fileContent = implode(chr(hexdec("\X0D\X0A")), $fileContent);
+			//$fileContent.= chr(hexdec("\X0D\X0A"));
+
+			//echo '<pre>';print_r($fileContent);die();
+
+			// File format based on RFC 4180 (http://www.rfc-editor.org/rfc/rfc4180.txt)
+			SAGU::returnAsFile(_M('Income report', $module).'_'.date('Y-m-d') . '.csv', $fileContent, 'text/csv');
+		}
+		else
+		{
+			$this->addInfo(_M('No data found', $module));
+		}
+
+		//$this->page->setAction($MIOLO->getActionURL($module, $action));
+	}
+
+}
+
+?>

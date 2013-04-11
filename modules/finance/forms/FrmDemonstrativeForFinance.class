@@ -1,0 +1,320 @@
+<?php
+
+/**
+ * Payroll Demostrative for finance
+ *
+ * @author Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ *
+ * @since
+ * Class created on 22/12/2005
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2005 SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+
+/**
+ * Form 
+ **/
+class FrmDemonstrativeForFinance extends MForm
+{
+    private $home;
+    public $showForm;
+
+    /**
+     * Class constructor
+     **/
+    function __construct($data)
+    {
+        $this->showForm = true;
+        $module = MIOLO::getCurrentModule();
+
+        $this->home   = $data->home;
+
+        parent::__construct(_M('Demonstrative for finance', $module));
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+
+        $toolBar = new MToolBar('toolBar', $MIOLO->getActionURL($module, $action));
+
+        $toolBar->disableButton('tbBtnDelete');
+        $toolBar->disableButton('tbBtnPrint');
+        $toolBar->disableButton('tbBtnSave');
+        $toolBar->disableButton('tbBtnNew');
+        $toolBar->disableButton('tbBtnSearch');
+
+        //favoritos
+        $enabledImage  = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-20x20.png');
+        $disabledImage = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-disabled-20x20.png');
+        $url           = $MIOLO->getActionURL($module, $this->home, null, array('function' => 'search', 'event' => 'bookmark'));
+        $toolBar->addButton('tbBtnBookmark', _M('Add to bookmarks', 'basic'), $url, null, true, $enabledImage, $disabledImage);
+
+        if ( MIOLO::_request('event') == 'bookmark' )
+        {
+            $MIOLO->getClass('basic', 'access');
+            access::insert('Demonstrative for finance', $this->home, 'demonstrativeForFinance-16x16.png', true);
+        }
+        //fim favoritos
+        $fields[] = $toolBar;
+        
+        // data inicial
+        $beginDateLabel = new MText('beginDateLabel', _M('Start date',$module).':');
+        $beginDateLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $beginDateLabel->setClass('m-caption m-caption-required');
+        $beginDate = new MCalendarField('beginDate', $this->getFormValue('beginDate', $data->beginDate), _M('',$module), FIELD_DATE_SIZE);
+        $beginDate->setJsHint(_M('Enter the start date',$module));
+        $validators[] = new MDATEDMYValidator('beginDate', _M('Start date',$module), 'required');
+        $hctBeginDate = new MHContainer('hctBeginDate', array($beginDateLabel, $beginDate));
+        $hctBeginDate->setShowLabel(true);
+        $field1[] = $hctBeginDate;
+
+        // data final
+        $endDateLabel = new MText('endDateLabel', _M('End date',$module).':');
+        $endDateLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $endDateLabel->setClass('m-caption m-caption-required');
+        $endDate = new MCalendarField('endDate', $this->getFormValue('endDate', $data->endDate), _M('',$module), FIELD_DATE_SIZE);
+        $endDate->setJsHint(_M('Enter the end date',$module));
+        $validators[] = new MDATEDMYValidator('endDate',_M('End date',$module), 'required');
+        $hctEndDate = new MHContainer('hctEndDate', array($endDateLabel, $endDate));
+        $hctEndDate->setShowLabel(true);
+        $field1[] = $hctEndDate;
+
+        // person 
+        $personIdLabel = new MText('personIdLabel', _M('Person id', $module).':');
+        $personIdLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $personIdLabel->setClass('m-caption m-caption-required');
+//        $field1[]      = $personIdLabel;
+        $personId      = new MLookupTextField('personId', 
+                                              $this->getFormValue('personId', $data->personId), 
+                                              '',
+                                              10,
+                                              null, 
+                                              null,
+                                              array('personName', 'limbo', 'limbo', 'limbo', 'limbo'),
+                                              'basic',
+                                              'Person', 
+                                              null,
+                                              null,
+                                              true);
+
+        $validators[] = new MIntegerValidator('personId', _M('Person id', $module));
+        $personName   = new MTextField('personName', $this->getFormValue('personName', $data->personName), '', FIELD_DESCRIPTION_SIZE);
+        $personName->setReadOnly(true);
+        $hctPerson = new MHContainer('hctPerson', array($personIdLabel, $personId, $personName));
+        $hctPerson->setShowLabel(true);
+        $field1[]   = $hctPerson;
+  
+        $data->operationId = explode(',', DEMONSTRATIVE_INCOME_TAX);
+        $businessOperation = $MIOLO->getBusiness($module, 'BusOperation');
+        $dataOperation = $businessOperation->listOperation();
+
+        // Multiseleção 
+        $operationIdLabel = new MText('operationIdLabel', _M('Operation',$module).':');
+        $operationIdLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $operationIdLabel->setClass('m-caption m-caption-required');
+        $selectionOperationId = new MMultiSelection('operationId', is_array($this->getFormValue('operationId', $data->operationId)) ?  $this->getFormValue('operationId', $data->operationId) : array($this->getFormValue('operationId', $data->operationId)), _M('', $module), $dataOperation, true, null, 5);
+        $validators[] = new MRequiredValidator('operationId', _M('Operation',$module));
+        $hctOperationId = new MHContainer('hctPerson', array($operationIdLabel, $selectionOperationId));
+        $hctOperationId->setShowLabel(true);
+        $field1[]   = $hctOperationId;
+
+  
+        // get Yes and No for Radio Button
+//        $messagesType = SAGU::listTrueFalse(1);
+        $messagesType[0][0] = _M('sxw',$module);
+        $messagesType[0][1] = DB_TRUE;
+        $messagesType[1][0] = _M('pdf',$module);
+        $messagesType[1][1] = DB_FALSE;
+
+        $generateOptionLabel = new MText('generateOptionLabel', _M('Generate option',$module).':');
+        $generateOptionLabel->setWidth(FIELD_CONTAINER_SIZE);
+//        $isActiveLabel->setClass('m-caption m-caption-required');
+        $generateOption = $this->GetFormValue('generateOption', $data->generateOption) ? $this->GetFormValue('generateOption', $data->generateOption) : DB_TRUE;
+
+        $generateOption = new MRadioButtonGroup('generateOption', '', $messagesType, $generateOption, null, 'horizontal');
+        $generateOption->SetShowLabel(false);
+        $hctGenerateOption = new MHContainer('hctGenerateOption', array($generateOptionLabel, $generateOption));
+        $field1[]  = $hctGenerateOption;
+        
+        $field1[]  = new MHiddenField('limbo', $this->getFormValue('limbo', $data->limbo));
+        $fields[]  = new MVContainer('container1', $field1);
+        
+        // Botao 
+        $btnGenerate = new MButton('btnGenerate', _M('Generate', $module));
+        $fieldss1[]  = new MHContainer('hctBtn', array($btnGenerate));
+        $fields[]    = $fieldss1;
+
+ //       $fields[] = new MSeparator('');
+        unset($field1);
+        unset($fields1);
+        unset($fieldss1);
+      
+        $this->setShowPostButton(false);
+        $this->setFields($fields);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setValidators($validators);
+
+        
+        $this->setClose($MIOLO->getActionURL($module, substr($action, 0, strrpos($action, ':'))));
+        $this->page->onLoad('document.' . $this->name . '.description.focus();');
+    }
+
+    /**
+     * Event triggered when button search is clicked 
+     */
+     public function btnGenerate_click($sender = null)
+     {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        
+        $data->personId       = $this->getFormValue('personId');
+        $data->beginDate      = $this->getFormValue('beginDate');
+        $data->endDate        = $this->getFormValue('endDate');
+        $data->generateOption = $this->getFormValue('generateOption');
+        $data->operationId    = $this->getFormValue('operationId');
+
+        if(DEFAULT_COMPANY_CONF == NULL)
+        {
+           $msg  = _M('Error, the parameter DEFAULT_COMPANY_CONF is not set in table basConfig (DEFAULT_COMPANY_CONF is a default institucional company ).',$module);
+           $goto = SAGU::getStackBackUrl();
+           $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+           $caption = _M('Error',$module);
+           $MIOLO->error( $msg, $goto, $caption );
+        }
+        
+        // Pega dados da 'Company' padrão 
+        $business    = $MIOLO->getBusiness('basic', 'BusCompany');
+        $companyData = $business->getCompany(DEFAULT_COMPANY_CONF);
+        
+        // Pega informações completas da company padrão
+        $business   = $MIOLO->getBusiness('basic', 'BusLegalPerson');
+        $legalData = $business->getLegalPerson($companyData->personId);
+
+        // pega dados para tabela do documento. ( movimentos )
+        $business   = $MIOLO->getBusiness($module, 'BusDemonstrativeForIncomeTax');
+        $returnData = $business->getDemonstrativeForIncomeTax($data);
+
+        $cnpj = SAGU::formatCNPJ($legalData->cnpj);
+
+        if($returnData == NULL)
+        {
+           $msg  = _M('Error executing requested operation.',$module);
+           $goto = SAGU::getStackBackUrl();
+           $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+           $caption = _M('Error',$module);
+           $MIOLO->error( $msg, $goto, $caption );
+        }
+
+      // Pega data atual 
+      $actualDate = SAGU::getDateNow();
+      // Seta data atual por extenso
+      $actualDate = SAGU::getDateByExtense($actualDate);
+
+      $returnNumber = count($returnData);
+
+      $index = 0;
+      for( $option = 0 ; $option < $returnNumber; $option++) 
+      {
+//            seta variaveis para percorrer dados para percorrer $returnData[$option][0] = personId
+//                                                               $returnData[$option][2] = month
+
+           $y = $x ? $x : 0;
+           $ay = $ax ? $ax : 0;
+
+           $x = $returnData[$option][0];
+           $ax = $returnData[$option][2];
+            
+           if (  $x == $y  )
+           {
+               
+               // incrementa outras linhas da tabela
+               $arrayS[0][$index][] = array(SAGU::getMonth($returnData[$option][2]),$returnData[$option][3], $returnData[$option][4] );
+
+           }
+           else
+           {
+
+                $index++;   
+ 
+                $array[$index] = array($returnData[$option][1],
+                                       $returnData[$option][0],
+                                       $legalData->currentName,
+                                       $legalData->fakeName,
+                                       $cnpj,
+                                       $legalData->location,
+                                       $legalData->number,
+                                       $legalData->neighborhood,
+                                       $legalData->cityName,
+                                       $legalData->stateId,
+                                       $data->beginDate,
+                                       $data->endDate,
+                                       $actualDate );
+
+                $arrayS[0][$index][] = array(SAGU::getMonth($returnData[$option][2]),$returnData[$option][3], $returnData[$option][4] );
+           }
+
+        }
+
+ 
+
+        $MIOLO->uses('/core/AgataAPI.class');
+        $api = new AgataAPI;
+        $api->setLanguage($MIOLO->getConf('i18n.language'));
+        $api->setOutputPath(TEMP_DIR . '/demonstrativeForFinance.sxw');
+        $api->setDataArray($array);
+        $api->setSubDataArray($arrayS);
+        set_time_limit(0);
+        $ok = $api->parseOpenOffice($MIOLO->getModulePath('basic', '/documents/demonstrativeForFinance.sxw'));
+
+        if( $ok && $data->generateOption == DB_FALSE)
+        {
+
+            $api->setOutputPath(TEMP_DIR . '/demonstrativeForFinance.pdf');
+            $ok = $api->openOffice2pdf(TEMP_DIR . '/demonstrativeForFinance.sxw');
+
+        }
+
+        //se não conseguiu gerar o arquivo
+        if ( !$ok )
+        {
+            $lblAgataError        = new MText('lblMsg1', $api->getError());
+            $lblAgataError->color = 'red';
+            $sep1                 = new Separator('');
+            $cntErrors            = new MVContainer('cntErrors', array($lblAgataError,$sep));
+            $this->divError->addControl($cntErrors);
+        }
+        else
+        {
+            $api->fileDialog();
+
+        }
+     }
+}
+?>

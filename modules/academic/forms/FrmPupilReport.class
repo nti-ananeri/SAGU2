@@ -1,0 +1,184 @@
+<?php
+
+/**
+ * Form to manipulate a pupilReport
+ **/
+class FrmPupilReport extends MForm
+{
+    private $home;
+
+    /**
+     * Class constructor
+     **/
+    function __construct($data)
+    {
+        $module = MIOLO::getCurrentModule();
+        $this->home   = $data->home;
+
+        parent::__construct(_M('Pupil listing', $module));
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+
+        $a = unserialize(urldecode(stripslashes(MIOLO::_request('formationLevelId'))));
+        if ( is_array($a) )
+        {
+            $formationLevelId = $a;
+        }
+
+        if ( !is_array($formationLevelId) )
+        {
+            $formationLevelId = array();
+        }
+
+        $toolBar = new MToolBar('toolBar', $MIOLO->getActionURL($module, $action));
+        $toolBar->hideButton('tbBtnNew');
+        $toolBar->hideButton('tbBtnSave');
+        $toolBar->hideButton('tbBtnDelete');
+        $toolBar->hideButton('tbBtnSearch');
+
+        //favoritos
+        $enabledImage  = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-20x20.png');
+        $disabledImage = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-disabled-20x20.png');
+        $url           = $MIOLO->getActionURL($module, $this->home, null, array('function' => 'search', 'event' => 'bookmark'));
+        $toolBar->addButton('tbBtnBookmark', _M('Add to bookmarks', 'basic'), $url, null, true, $enabledImage, $disabledImage);
+
+        if ( MIOLO::_request('event') == 'bookmark' )
+        {
+            $MIOLO->getClass('basic', 'access');
+            access::insert('Pupil listing', $this->home, 'pupilListing-16x16.png', true);
+        }
+        //fim favoritos
+
+        $fields[] = $toolBar;
+
+        //Period
+        $businessPeriod = $MIOLO->getBusiness($module, 'BusPeriod');
+        $busPeriod    = $MIOLO->getBusiness($module, 'BusPeriod');
+        $periodValue  = is_array($this->getFormValue('periodId', $this->periodId->value)) ? $this->getFormValue('periodId',$this->periodId->value) : array(CURRENT_PERIOD_ID);
+        $periodIdLabel  = new MText('periodIdLabel',  _M('Period', 'academic') . ':');
+        $periodIdLabel->setWidth(FIELD_CONTAINER_SIZE);
+
+        $periodId     = new MMultiSelection('periodId', $periodValue, null, $busPeriod->listPeriod(), false, null, 5 );
+        $fields[]     = new MHContainer('hctPeriodId', array($periodIdLabel, $periodId));
+        $validators[]   = new MRequiredValidator('periodId', _M('Period',$module));
+
+        //Neighborhood 
+        $neighborhoodLabel = new MText('neighborhoodLabel', _M('Neighborhood',$module) . ':');
+        $neighborhoodLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $neighborhoodId = new MLookupTextField('neighborhoodId', $this->neighborhoodId->value, '', FIELD_LOOKUPFIELD_SIZE, null, null,
+            'neighborhoodName',
+            'basic', 'Neighborhood', null, null, true);
+        $neighborhoodId->setJsHint(_M('Enter the neighborhood code',$module));
+        $validators[] = new MIntegerValidator('neighborhoodId');
+
+        $neighborhoodName = new MTextField('neighborhoodName', $this->neighborhoodName->value, '', FIELD_DESCRIPTION_SIZE);
+        $neighborhoodName->setJsHint(_M('Enter the neighborhood name',$module));
+
+        $hctNeighborhood = new MHContainer('hctNeighborhood', array($neighborhoodLabel, $neighborhoodId, $neighborhoodName));
+        $fields[]  = $hctNeighborhood;
+
+        //State contract in
+        $stateContractLabel = new MText('stateContractLabel', _M('State contract',$module) . ':');
+        $stateContractLabel->setWidth(FIELD_CONTAINER_SIZE);
+         
+        $businessStateContract = $MIOLO->getBusiness($module,'BusStatesContract');
+        $data->stateContractId = $this->getFormValue('stateContractId', array());
+        $stateContractId       = new MMultiSelection('stateContractId', $data->stateContractId,null, $businessStateContract->listStatesContractIn());
+        $stateContractId->setAutoPostBack(true);
+        $fields[]              = new MHContainer ('hctStateContract', array ( $stateContractLabel, $stateContractId) ) ;
+        $validators[]          = new MIntegerValidator('stateContractId', null, 'optional');
+
+        //Physical resource
+        $businessPhysicalResourse = $MIOLO->getBusiness('institutional', 'BusPhysicalResource');
+        $physicalResourceLabel = new MText('physicalResourceLabel', _M('Room',$module) . '/' . _M('Building', 'academic') . ':');
+        $physicalResourceLabel->setWidth(FIELD_CONTAINER_SIZE);
+
+        $physicalResourceId =  new MComboBox('physicalResourceId', $this->getFormValue('physicalResourceId', $data->physicalResourceId), null, $businessPhysicalResourse->listPhysicalResource());
+
+        $fields[] = new MHContainer('hctPhysicalResource', array ( $physicalResourceLabel, $physicalResourceId ) ) ;
+
+        $busFormationLevel = $MIOLO->getBusiness($module, 'BusFormationLevel');
+        $formationLevels   = $busFormationLevel->listFormationLevel();
+
+        $formationLevelId = new MMultiSelection('formationLevelId', is_array($this->getFormValue('formationLevelId', $formationLevelId)) ? $this->getFormValue('formationLevelId', $formationLevelId) : $formationLevelId, _M('Formation level', $module), $formationLevels, true, null, 5);
+
+        $fields[]          = $formationLevelId;
+
+        $opts[] = new MOption('opt1', '1', _M('Pupil', $module), true);
+        $opts[] = new MOption('opt2', '2', _M('Neighborhood', $module), false);
+        $opts[] = new MOption('opt3', '3', _M('Enroll date', $module), false);
+
+        $radOption = new MRadioButtonGroup('orderBy', '', $opts, $this->getFormValue('orderBy', $this->radOption->value), '', 'horizontal');
+        $radOption->setShowLabel(false);
+        $radOption->SetAutoPostBack(false);
+        $flds[]    = $radOption;
+
+        $baseOption = new MBaseGroup('hctOption', _M('Order by', 'academic'), $flds);
+        $fields[] = $baseOption;
+
+        $module = 'finance';
+        $printModeLabel = new MText('printModeLabel', _M('Print mode', $module));
+        $printModeLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $printModeLabel->setClass('m-caption m-caption-required');
+        $listAnalyticalSynthetic[] = array( _M('Analytical', $module), '1');
+        $listAnalyticalSynthetic[] = array( _M('Synthetic', $module), '2');
+        $printMode      = new MRadioButtonGroup('printMode', '', $listAnalyticalSynthetic, $this->GetFormValue('printMode', '1'), null, 'horizontal');
+        $printMode->SetShowLabel(false);
+        $printMode->SetAutoPostBack(false);
+
+        $module = 'academic';
+
+        $fields[]  = new MBaseGroup('mbgPrintMode', _M('Print mode', $module), array($printMode));
+
+
+        $fields[] = new Separator('');
+
+        $this->setValidators($validators);
+
+        $this->setFields($fields);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+        $this->setClose($MIOLO->getActionURL($module, substr($action, 0, strrpos($action, ':'))));
+    }
+
+    /**
+     * Event triggered when user chooses Delete from the toolbar
+     **/
+    public function tbBtnPrint_click($sender = null)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $data = $this->getData();
+        if ( count($data) > 0 )
+        {
+            foreach ( $data as $item => $value )
+            {
+                if ( stristr($item, 'label') || $value == null )
+                {
+                    unset($data->$item);
+                }
+            }
+        }
+
+        $reportX = 'RptPupilReport';
+        $MIOLO->getClass($module,$reportX);
+        $report = new $reportX($data);
+        
+    }
+}
+
+?>

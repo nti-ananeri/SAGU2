@@ -1,0 +1,303 @@
+<?php
+/**
+ *
+ * This file handles the actions for FormatAccountingImportFile
+ *
+ * @author Armando Taffarel Neto [taffarel@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Armando Taffarel Neto [taffarel@solis.coop.br]
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 04/10/2006
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Form to search the accFormatAccountingImportFile table
+ */
+class FrmFormatAccountingImportFile extends MForm
+{
+    private $home;
+    private $module;
+
+    /**
+     * Class constructor
+     */
+    function __construct($data)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $this->module = $module;
+
+        $this->home   = $data->home;
+
+        parent::__construct(_M('Format accounting import file', $module));
+
+        // hide the 'Submit' button
+        $this->setShowPostButton(false);
+
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+
+    }
+
+    /**
+     *  Default method to define fields
+     */
+    public function createFields()
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $toolBar = new MToolBar('toolBar',$MIOLO->getActionURL($module,$action));
+        
+        $toolBar->disableButton('tbBtnNew');
+        $toolBar->disableButton('tbBtnSearch');
+        $toolBar->disableButton('tbBtnSave');
+        $toolBar->disableButton('tbBtnDelete');
+        $toolBar->disableButton('tbBtnPrint');
+
+        //favoritos
+        $enabledImage  = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-20x20.png');
+        $disabledImage = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-disabled-20x20.png');
+        $url           = $MIOLO->getActionURL($module, $this->home, null, array('function' => 'search', 'event' => 'bookmark'));
+        $toolBar->addButton('tbBtnBookmark', _M('Add to bookmarks', 'basic'), $url, null, true, $enabledImage, $disabledImage);
+
+        if ( MIOLO::_request('event') == 'bookmark' )
+        {
+            $MIOLO->getClass('basic', 'access');
+            access::insert('Format accounting import file', $this->home, 'formatAccountingImportFile-16x16.png', true);
+        }
+        //fim favoritos
+
+        $fields[] = $toolBar;
+
+        if ( ! $this->page->isPostBack() )
+        {
+            $flds[]   = new MText('importLabel', _M('Source file', $module) . ':');
+
+            $flds[]   = new MFileField('importFile', $this->getFormValue('importFile', $data->importFile), '');
+
+            $btn1[]   = new MButton('btnValidate', _M('Validate', $module));
+            $div1     = new MDiv('div1', $btn1, null);
+            $flds[]   = $div1;
+            
+            $fields[] = new MHContainer('hctValidate', $flds);
+
+            $fields[] = new MSeparator('');
+        }
+
+        $this->setValidators($validators);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+        $this->setClose($MIOLO->getActionURL($module,substr($action,0,strrpos($action,':'))));
+        $this->setFields($fields);
+                
+    }
+
+    /**
+     * Event triggered when user chooses Validate from the toolbar
+     **/
+    public function btnValidate_click($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        if ($_FILES["importFile"]["error"] == 0)
+        {
+            $data->fileName  = $_FILES["importFile"]["name"];
+            $data->fileType  = $_FILES["importFile"]["type"];
+            $data->localPath = $_FILES["importFile"]["tmp_name"];
+            $data->size      = $_FILES["importFile"]["size"];
+        }
+        else
+        {
+            $MIOLO->Information(_M('Some problems occurred on update the file. Please, try again.', $module));
+        }
+        
+        $businessFile = $MIOLO->getBusiness('basic', 'BusFile');
+        
+        // Data to put information on files
+        $dataFile = $businessFile->insertFile($data);
+        if ($dataFile == false)
+        {
+            $MIOLO->Information(_M('Some problems occurred on update the file. Please, try again.', $module));
+        }
+        else
+        {
+            if (SAGUFile::saveFileToLocal($data->localPath, $dataFile->fileId))
+            {
+                $args = array('event'=>'process_click',
+                              'fileId'=>$dataFile->fileId
+                             );
+                             
+                $goProcessUrl = $MIOLO->getActionURL($module, $action, '', $args);
+                $MIOLO->Information(_M('File uploaded with success. Please, click on "OK" button to continue the process', $module), $goProcessUrl);
+            }
+        }
+
+    }
+
+   /**
+     * Event triggered when user set new from the toolbar
+     */
+    public function process_click($sender = null)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+        
+        $data->fileId        = MIOLO::_request('fileId');
+
+        $data = $this->getFileContent($data->fileId);        
+        if (strlen((string)$data)>0)
+        {
+            $data = explode("\n", $data);
+            $count = count($data);
+
+            $line     = 0;
+            $document = 0;
+           
+            for ( $i=0; $i<($count-1); $i++ )
+            {
+
+                list (
+                        $integrationData->externalEntryId,
+                        $integrationData->operationTypeId,
+                        $integrationData->debitAccount,
+                        $integrationData->creditAccount,
+                        $integrationData->operationDescription,
+                        $integrationData->value,
+                        $integrationData->debitCostCenter,
+                        $integrationData->creditCostCenter,
+                        $integrationData->debitItem,
+                        $integrationData->creditItem,
+                        $integrationData->other
+                       ) = explode(';', $data[$i]);
+                       
+                $line ++;
+                if ( $line == 100 )
+                {
+                  $line = 1;
+                  $documento++;
+                }
+                
+                $content[] = ACCOUNTING::writeToSigaFile(
+                                                            $integrationData->externalEntryId,
+                                                            $integrationData->operationTypeId,
+                                                            $integrationData->debitAccount,
+                                                            $integrationData->creditAccount,
+                                                            $integrationData->operationDescription,
+                                                            $integrationData->value,
+                                                            $integrationData->debitCostCenter,
+                                                            $integrationData->creditCostCenter,
+                                                            $lot,
+                                                            $document,
+                                                            $line,
+                                                            $integrationData->debitItem,
+                                                            $integrationData->creditItem
+                                                          );
+                $tableContent[] = array(
+                                            $integrationData->externalEntryId,
+                                            $integrationData->operationTypeId,
+                                            $integrationData->debitAccount,
+                                            $integrationData->creditAccount,
+                                            $integrationData->operationDescription,
+                                            $integrationData->value,
+                                            $integrationData->debitCostCenter,
+                                            $integrationData->creditCostCenter,
+                                            $integrationData->debitItem,
+                                            $integrationData->creditItem,
+                                            $integrationData->other
+                                        );
+            }
+            
+            $table = new MTableRaw('', $tableContent);
+            $table->setAlternate(true);
+
+            $fields[] = $table;
+            $fields[] = new MSeparator();
+
+
+    		if (is_array($content))
+    		{
+    			$fileContent = implode(chr(13) . chr(10), $content);
+    	        $fileContent.= chr(13) . chr(10);
+    	    }
+
+            $hiddenData = new MHiddenField('hiddenData', urlencode(serialize($fileContent)));
+            $fields[] = $hiddenData;
+            
+            $btn2[]   = new MButton('btnGenerate', _M('Generate', $module) . ' accounting-' . str_replace('/', '', date(MASK_DATE_PHP)) . '.txt');
+            $div2     = new MDiv('div2', $btn2, null, 'align=center');
+            $div2->width = '98%';
+            $fields[]   = $div2; 
+            
+            $this->setFields($fields);
+            
+        }
+        else
+        {
+            $goProcessUrl = $MIOLO->getActionURL($module, $action, '', null);
+            $MIOLO->Error(_M('The file is empty', $module), $goProcessUrl);
+        }
+    }
+
+   /**
+     * Event triggered when user set new from the toolbar
+     */
+    public function btnGenerate_click($sender = null)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+        
+        $fileContent = unserialize(urldecode(stripslashes($this->getFormValue('hiddenData'))));
+        
+        SAGU::returnAsFile('accounting-' . str_replace('/', '', date(MASK_DATE_PHP)) . '.txt', $fileContent, 'text/accounting-file');    
+            
+    }
+    /**
+     * get the file content
+     *
+     * @param: $fileName: string with filename
+     *
+     * @return (string): String containing the file content
+     *
+     */
+    private function getFileContent($fileName)
+    {
+        $MIOLO  = MIOLO::getInstance();
+
+        $path = $MIOLO->GetModulePath('basic', UPLOAD_PATH);
+        return file_get_contents($path.$fileName);
+    }
+
+
+}
+
+?>

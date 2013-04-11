@@ -1,0 +1,150 @@
+<?php
+/**
+ *
+ *
+ * @author Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * Armando Taffarel Neto [taffarel@solis.coop.br]
+ * 
+ * @since
+ * Class created on 31/03/2006
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU Development Team
+ *
+ * \b Copyright \n
+ * Copyright (c) 2005-2007 SOLIS - Cooperativa de Soluções Livres \n
+ * Copyright (c) 2005-2007 UNIVATES - Centro Universitario \n
+ *
+ * \b License \n
+ * Licensed under GPLv2 (for further details read the COPYING file or http://www.gnu.org/licenses/gpl.html )
+ *
+ * \b History \n
+ * See: http://sagu.solis.coop.br   
+ *
+ **/
+
+
+class BusinessHumanResourcesBusOpeningAccountReturn extends Business
+{
+
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module = is_null($module) ? 'basic' : $module;
+        $this->db = $MIOLO->getDatabase($module, 'humanResources');
+
+        return $MIOLO->getDatabase($module);
+    }
+
+    /**
+     * Process account return file
+     *
+     * @param $filters (object): Search filters
+     *
+     * @return (array): An array containing the search results
+     **/
+    public function processAccountReturn($data)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        
+        $this->db->execute('BEGIN TRANSACTION');
+        
+        foreach($data as $key => $line )
+        {
+            $business = $MIOLO->getBusiness('basic', 'BusEmployee');
+            $dataPerson = $business->getEmployeeForPersonId($line->data->personId);
+
+            if($dataPerson == false)
+            {
+                $msg  = _M('Error the person is not employee! Check this person id : @1',$module, $line->data->personId);
+                $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+                $caption = _M('Error', $module);
+                $MIOLO->error( $msg, $goto, $caption );
+            }
+
+            $dataPerson->branchNumber       = $line->data->branch;
+            $dataPerson->branchNumberDigit  = $line->data->branchDigit;
+            $dataPerson->accountNumber      = $line->data->account;
+            $dataPerson->accountNumberDigit = $line->data->accountDigit;
+            $dataPerson->isActiveAccount    = DB_TRUE;
+
+            $sql = 'UPDATE basEmployee
+                    SET personId           = ?,
+                        employeeTypeId     = ?,
+                        bankId             = ?,
+                        branchNumber       = ?,
+                        branchNumberDigit  = ?,
+                        accountNumber      = ?,
+                        accountNumberDigit = ?,
+                        isActiveAccount    = ?,
+                        accountType        = ?,
+                        clearingHouse      = ?
+                    WHERE employeeId       = ? ';
+    
+            $args = array( $dataPerson->personId,
+                           $dataPerson->employeeTypeId,
+                           $dataPerson->bankId,
+                           $dataPerson->branchNumber,
+                           $dataPerson->branchNumberDigit,
+                           $dataPerson->accountNumber,
+                           $dataPerson->accountNumberDigit,
+                           $dataPerson->isActiveAccount,
+                           $dataPerson->accountType,
+                           $dataPerson->clearingHouse,
+                           $dataPerson->employeeId );
+    
+            $sqls = SAGU::prepare($sql, $args);
+
+            for ( $i=0; $i<count($sqls); $i++ )
+            {
+                $result = $this->db->execute($sqls[$i]);
+            }
+        }
+
+        $this->closeTransaction($result);
+
+        return $result;
+    }
+
+
+    /**
+     * Function to close the transaction, depending the status make a commit or rollback
+     *
+     * @param $status (boolean): The status of "normally" keepGoing variable indicating to get a commit or rollback
+     *
+     */
+    private function closeTransaction($status)
+    {
+        if ($status == true)
+        {
+            $this->db->execute('COMMIT');
+            return true;
+        }
+        else
+        {
+            $this->db->execute('ROLLBACK');
+            return false;
+        }
+    }
+}
+
+?>

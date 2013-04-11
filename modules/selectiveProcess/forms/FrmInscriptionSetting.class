@@ -1,0 +1,410 @@
+<?php
+
+/**
+ * Inscription settings form
+ *
+ * @author Daniel Afonso Heisler [daniel@solis.coop.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ *
+ * @since
+ * Class created on 05/07/2006
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2005 SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+
+/**
+ * Form to manipulate a inscription setting
+ **/
+class FrmInscriptionSetting extends MForm
+{
+
+    /**
+     * Class constructor
+     **/
+    function __construct()
+    {
+        $module = MIOLO::getCurrentModule();
+
+        if ( MIOLO::_request('function') == 'insert' )
+        {
+            parent::__construct(_M('Insert', $module));
+        }
+        else
+        {
+            parent::__construct(_M('Update', $module));
+        }
+
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+
+        $toolBar = new MToolBar('toolBar',$MIOLO->getActionURL($module,$action));
+
+        if ( $function == 'insert' )
+        {
+            $toolBar->disableButton('tbBtnDelete');
+            $toolBar->disableButton('tbBtnPrint');
+        }
+        elseif ( $function == 'delete' )
+        {
+            $toolBar->disableButton('tbBtnSave');
+        }
+        $fields[] = $toolBar;
+
+        if ( in_array($function,array('update','delete')) )
+        {
+            $selectiveProcessId = $_GET['selectiveProcessId'] ? $_GET['selectiveProcessId'] : $_POST['selectiveProcessId'];
+
+            $fields[]         = new MTextLabel('selectiveProcessId', $selectiveProcessId, _M('Selective process',$module));
+            $fields[]         = new MHiddenField('selectiveProcessId', $selectiveProcessId);
+
+            $business = $MIOLO->getBusiness($module,'BusInscriptionSetting');
+            $data     = $business->getInscriptionSetting($selectiveProcessId);
+
+            $businessEmail = $MIOLO->getBusiness('basic','BusEmail');
+            $dataEmail     = $businessEmail->getEmail($data->emailAdmin);
+
+            $data->emailDescription = $dataEmail->description;
+        }
+        else
+        {
+            $business           = $MIOLO->getBusiness($module,'BusSelectiveProcess');
+            $selectiveProcessId = new MComboBox('selectiveProcessId', $this->getFormValue('selectiveProcessId', $data->selectiveProcessId), _M('Selective process',$module), $business->listSelectiveProcess());
+            $selectiveProcessId->setJsHint(_M('Enter the selective process code',$module));
+            $fields[]           = $selectiveProcessId;
+            $validators[]       = new MRequiredValidator('selectiveProcessId');
+        }
+
+        $beginDate    = new MCalendarField('beginDate', $this->getFormValue('beginDate', $data->beginDate), _M('Begin date',$module), FIELD_DATE_SIZE);
+        $beginDate->setJsHint(_M('Enter the begin inscription date',$module));
+        $beginDate->setValidator(new MDateDMYValidator('beginDate', _M('Begin date',$module),'required'));
+        $fields[]     = $beginDate;
+
+        $beginHour    = new MTextField('beginHour', $this->getFormValue('beginHour', $data->beginHour), _M('Begin time',$module), FIELD_TIME_SIZE, 'HH:mm');
+        $beginHour->setJsHint(_M('Enter the inscription begin time',$module));
+        $fields[]     = $beginHour;
+        $validators[] = new MTimeValidator('beginHour','','required');
+
+        $endDate    = new MCalendarField('endDate', $this->getFormValue('endDate', $data->endDate), _M('End date',$module), FIELD_DATE_SIZE);
+        $endDate->setJsHint(_M('Enter the end inscription date',$module));
+        $endDate->setValidator(new MDateDMYValidator('endDate', _M('End date',$module),'required'));
+        $fields[]     = $endDate;
+
+        $endHour    = new MTextField('endHour', $this->getFormValue('endHour', $data->endHour), _M('End time',$module), FIELD_TIME_SIZE, 'HH:mm');
+        $endHour->setJsHint(_M('Enter the inscription end time',$module));
+        $fields[]     = $endHour;
+        $validators[] = new MTimeValidator('endHour','','required');
+
+        $fee          = new MTextField('fee', $this->getFormValue('fee', $data->fee), _M('Fee',$module), 7);
+        $fee->setJsHint(_M('Enter the inscription fee',$module));
+        $fields[]     = $fee;
+        $validators[] = new MFloatValidator('fee', '', FLOAT_SEPARATOR, REAL_ROUND_VALUE, 'required');
+
+        // This entire 'if' will be removed when the field invoicePrefix is removed from the sprInscriptionSetting table.
+        if ( ($function == 'update') && (!(is_null($data->invoicePrefix))) )
+        {
+            $invoicePrefix = new MTextLabel('invoicePrefix', $this->getFormValue('invoicePrefix', $data->invoicePrefix), _M('Invoice prefix',$module));
+            $fields[]      = $invoicePrefix;
+        }
+
+        $emailAdminLabel = new MText('emailAdminLabel', _M('Inscription confirmation email',$module));
+        $emailAdminLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $emailAdminLabel->setClass('m-caption m-caption-required');
+
+        $emailAdmin = new MLookupTextField('emailAdmin', $this->getFormValue('emailAdmin', $data->emailAdmin), '', FIELD_LOOKUPFIELD_SIZE, null, null, 'emailDescription', 'basic', 'Email', null, null, !$this->page->isPostBack());
+
+         $validators[] = new MIntegerValidator('emailAdmin', _M('Inscription confirmation email',$module), 'required');
+ 
+        $emailDescription = new MTextField('emailDescription', $this->getFormValue('emailDescription', $data->emailDescription), '', FIELD_DESCRIPTION_SIZE);
+        $emailDescription->setJsHint(_M('Email description', $module));
+        $emailDescription->setReadOnly(true);
+
+
+        $hctEmail = new MHContainer('hctEmail', array($emailAdminLabel, $emailAdmin, $emailDescription));
+        $hctEmail->setShowLabel(true);
+        $fields[]  = $hctEmail;
+
+
+        //isSocialEconomic
+        $isSocialEconomicLabel = new MText('isSocialEconomicLabel', _M('Have social economic',$module) . '?');
+        $isSocialEconomicLabel->setWidth(FIELD_CONTAINER_SIZE);
+
+        $isSocialEconomic = new MRadioButtonGroup('isSocialEconomic', '', SAGU::ListYesNo(1), $this->GetFormValue('isSocialEconomic',$isSocialEconomic) > 0 ? $this->GetFormValue('isSocialEconomic',$isSocialEconomic) : DB_FALSE, null, 'horizontal');
+        $isSocialEconomic->SetShowLabel(false);
+
+        $hctSocialEconomic = new MHContainer('hctSocialEconomic', array($isSocialEconomicLabel, $isSocialEconomic));
+        $fields[]  = $hctSocialEconomic;
+
+
+        $getFormValueAux = $this->getFormValue('messageWelcomeInscription', $data->messageWelcomeInscription);
+
+        strlen((string)$getFormValueAux) > 0 ? $messageWelcomeInscriptionData = $getFormValueAux : $messageWelcomeInscriptionData = DEFAULT_MESSAGE_WELCOME_INSCRIPTION;
+
+        $messageWelcomeInscription = new MMultiLineField('messageWelcomeInscription', $messageWelcomeInscriptionData, _M('Message of welcome in inscription',$module), 40, 5, 40, _M('Message showed in inscription period at the first step', $module));
+        $fields[] = $messageWelcomeInscription;
+
+
+        $getFormValueAux = $this->getFormValue('messageNotDisponibleInscription', $data->messageNotDisponibleInscription);
+
+        strlen((string)$getFormValueAux) > 0 ? $messageNotDisponibleInscriptionData = $getFormValueAux : $messageNotDisponibleInscriptionData = DEFAULT_MESSAGE_NOT_DISPONIBLE_INSCRIPTION ;
+
+        $messageNotDisponibleInscription = new MMultiLineField('messageNotDisponibleInscription', $messageNotDisponibleInscriptionData, _M('Message if not disponible inscription',$module), 40, 5, 40, _M('Message showed if the inscription period is not opened', $module));
+        $fields[] = $messageNotDisponibleInscription;
+
+
+        $getFormValueAux = $this->getFormValue('messageFinishInscription', $data->messageFinishInscription);
+
+        strlen((string)$getFormValueAux) > 0 ? $messageFinishInscriptionData = $getFormValueAux : $messageFinishInscriptionData = DEFAULT_MESSAGE_FINISH_INSCRIPTION ;
+
+        $messageFinishInscription = new MMultiLineField('messageFinishInscription', $messageFinishInscriptionData, _M('Message in finisch inscription period',$module), 40, 5, 40, _M('Message showed in inscription if the inscription period will be finish', $module));
+        $fields[] = $messageFinishInscription;
+
+
+        $getFormValueAux = $this->getFormValue('messageDocumentInscription', $data->messageDocumentInscription);
+
+        strlen((string)$getFormValueAux) > 0 ? $messageDocumentInscriptionData = $getFormValueAux : $messageDocumentInscriptionData = DEFAULT_MESSAGE_DOCUMENT_INSCRIPTION ;
+
+        $messageDocumentInscription = new MMultiLineField('messageDocumentInscription', $messageDocumentInscriptionData, _M('Message on document verifier in inscription',$module), 40, 5, 40, _M('Message showed in document request from person in the inscription', $module));
+        $fields[] = $messageDocumentInscription;
+
+
+        $getFormValueAux = $this->getFormValue('messageInformationInscription', $data->messageInformationInscription);
+
+        strlen((string)$getFormValueAux) > 0 ? $messageInformationInscriptionData = $getFormValueAux : $messageInformationInscriptionData = DEFAULT_MESSAGE_INFORMATION_INSCRIPTION ;
+
+        $messageInformationInscription = new MMultiLineField('messageInformationInscription', $messageInformationInscriptionData, _M('Message in step of information at inscription',$module), 40, 5, 40, _M('Message showed in inscription period at the second step', $module));
+        $fields[] = $messageInformationInscription;
+
+
+        $getFormValueAux = $this->getFormValue('messageHighSchoolConcluedInscription', $data->messageHighSchoolConcluedInscription);
+
+        strlen((string)$getFormValueAux) > 0 ? $messageHighSchoolConcluedInscriptionData = $getFormValueAux : $messageHighSchoolConcluedInscriptionData = DEFAULT_MESSAGE_HIGH_SCHOOL_CONCLUED_INSCRIPTION ;
+
+        $messageHighSchoolConcluedInscription = new MMultiLineField('messageHighSchoolConcluedInscription', $messageHighSchoolConcluedInscriptionData, _M('Message in high school declaration on inscription',$module), 40, 5, 40, _M('Message showed in inscription to high school conclued declaration', $module));
+        $fields[] = $messageHighSchoolConcluedInscription;
+
+
+        $getFormValueAux = $this->getFormValue('messageConcluedInscription', $data->messageConcluedInscription);
+
+        strlen((string)$getFormValueAux) > 0 ? $messageConcluedInscriptionData = $getFormValueAux : $messageConcluedInscriptionData = DEFAULT_MESSAGE_CONCLUED_INSCRIPTION ;
+
+        $messageConcluedInscription = new MMultiLineField('messageConcluedInscription', $messageConcluedInscriptionData, _M('Message in the conclued of inscription',$module), 40, 5, 40, _M('Message showed in the conclued of inscription', $module));
+        $fields[] = $messageConcluedInscription;
+
+
+        $getFormValueAux = $this->getFormValue('messageOfInvoice', $data->messageOfInvoice);
+
+        strlen((string)$getFormValueAux) > 0 ? $messageOfInvoiceData = $getFormValueAux : $messageOfInvoiceData = DEFAULT_MESSAGE_INVOICE_CONCLUED_INSCRIPTION ;
+
+        $messageOfInvoice = new MMultiLineField('messageOfInvoice', $messageOfInvoiceData, _M('Message in the invoice generate on conclued inscription',$module), 40, 5, 40, _M('Message showed in the generate invoice at conclued of inscription', $module));
+        $fields[] = $messageOfInvoice;
+        
+        //conta bancária
+            $businessBankAccount = $MIOLO->getBusiness('finance', 'BusBankAccount');
+            $dataBankAccount     = $businessBankAccount->listBankAccount();
+
+            $bankAccountIdLabel  = new MText('bankAccountIdLabel', _M('Bank account', 'finance').':');
+            $bankAccountIdLabel->setWidth(FIELD_CONTAINER_SIZE);
+            $bankAccountIdLabel->setClass('m-caption m-caption-required');
+
+            $bankAccountId       = new Mselection('bankAccountId', $this->getFormValue('bankAccountId', $data->bankAccountId), '', $dataBankAccount, false);
+            $bankAccountId->setAutoSubmit(false);
+            $validators[] = new MRequiredValidator('bankAccountId', _M('Bank account', 'finance'), 'required');
+
+            $hctBankAccount      = new MHContainer('hctBankAccountId', array($bankAccountIdLabel, $bankAccountId));
+            $hctBankAccount->setShowLabel(true);
+            $fields[]            = $hctBankAccount;
+
+
+        if ( $function == 'update' )
+        {
+            $fields[] = new MTextLabel('lastModification', '[' . $data->userName . ' - ' . $data->dateTime . ']', _M('Last modification',$module));
+        }
+
+        $fields[] = new Separator('');
+
+        $this->setFields($fields);
+        $this->setValidators($validators);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+        $this->setClose($MIOLO->getActionURL($module,substr($action,0,strrpos($action,':'))));
+        if ( strlen((string)$this->getFormValue('selectiveProcessId', $data->selectiveProcessId))>0 || $function != 'insert')
+        {
+            $this->page->onLoad('document.' . $this->name . '.selectiveProcessTypeId.focus();');
+        }
+        elseif ( $function == 'insert' )
+        {
+            $this->page->onLoad('document.' . $this->name . '.selectiveProcessId.focus();' );
+        }
+
+    }
+
+    /**
+     * Event triggered when user chooses New from the toolbar
+     **/
+    public function tbBtnNew_click($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+    }
+
+    /**
+     * Event triggered when user chooses Delete from the toolbar
+     **/
+    public function tbBtnDelete_click($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $data   = $this->getTypesData();
+        $opts   = array('event'              => 'tbBtnDelete_confirm',
+                        'function'           => 'delete',
+                        'selectiveProcessId' => MIOLO::_request('selectiveProcessId') );
+
+        $gotoYes = $MIOLO->getActionURL( $module, $action, null, $opts );
+        $goto    = SAGU::getStackBackUrl();
+        $gotoNo  = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+        $msg     = _M(MSG_CONFIRM_RECORD_DELETE,$module);
+        $caption = _M('Question',$module);
+        $MIOLO->question($msg, $gotoYes, $gotoNo);
+    }
+
+    /**
+     * Event triggered when user chooses Yes from the Delete prompt dialog
+     **/
+    public function tbBtnDelete_confirm($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $business = $MIOLO->getBusiness($module, 'BusInscriptionSetting');
+        $ok       = $business->deleteInscriptionSetting($this->selectiveProcessId->value);
+
+        if ( $ok )
+        {
+            $msg  = _M(MSG_RECORD_DELETED,$module);
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Information',$module);
+            $MIOLO->information($msg, $goto);
+        }
+        else
+        {
+            $msg  = _M('Error executing requested operation.',$module);
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Error',$module);
+            $MIOLO->error( $msg, $goto, $caption );
+        }
+    }
+
+    /**
+     * Event triggered when user chooses Save from the toolbar
+     **/
+    public function tbBtnSave_click($sender=NULL)
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+
+        $data     = $this->getTypesData();
+
+        $business = $MIOLO->getBusiness($module, 'BusInscriptionSetting');
+
+        if ( $function == 'update' )
+        {
+            $ok  = $business->updateInscriptionSetting($data);
+            $msg = _M(MSG_RECORD_UPDATED,$module);
+        }
+        else
+        {
+            $ok  = $business->insertInscriptionSetting($data);
+            $msg = _M(MSG_RECORD_INSERTED,$module);
+        }
+
+        if ( $ok )
+        {
+            $opts = array('selectiveProcessIdS' => $data->selectiveProcessId);
+
+            if ( $function == 'update' )
+            {
+                $caption = _M('Information', $module);
+                $MIOLO->information($msg, $MIOLO->getActionURL( $module, $action, null, $opts));
+            }
+            else
+            {
+                unset($opts);
+                $goto = SAGU::getStackBackUrl();
+                $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL( $module, $action, null, $opts);
+                $opts = array('function'=>'insert');
+
+                $gotoYes = $MIOLO->getActionURL($module, $action, null, $opts);
+                $caption = _M('Question',$module);
+                $MIOLO->question($msg, $gotoYes, $goto);
+            }
+        }
+        else
+        {
+            $msg  = _M('Error executing requested operation.',$module);
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action, null, $opts);
+            $caption = _M('Error',$module);
+            $MIOLO->error( $msg, $goto, $caption );
+        }
+    }
+
+    /**
+     * Method to gather all information from the form fields
+     * and put them on a database compatible object
+     **/
+    public function getTypesData()
+    {
+        $data = new SprInscriptionSetting();
+        $vars = get_object_vars($data);
+        foreach ( $vars as $var => $value )
+        {
+            if ( $this->$var && $var != 'name' )
+            {
+                eval('$data->' . $var . ' = $this->getFormValue(' . $var . ');');
+            }
+        }
+
+        return $data;
+    }
+}
+
+?>

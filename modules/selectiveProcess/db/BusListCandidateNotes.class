@@ -1,0 +1,179 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for sprOtherListings
+ *
+ * @author Hélio Henrique Rodrigues Guimarães [helio@solis.coop.br]
+ *
+ * @version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * Rafael Luís Spengler [rafael@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ *
+ * @since
+ * Class created on 19/06/2006
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br
+ *
+ **/
+
+/**
+ * Class to manipulate the sprOtherListings table
+ **/
+class BusinessSelectiveProcessBusListCandidateNotes extends Business
+{
+
+    /**
+     * Make a connection to the database
+     *
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module = is_null($module) ? 'selectiveProcess' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+    /**
+     * Report of inscriptions for conference list
+     *
+     * @param $selectiveProcessId (int): Selective process id
+     *
+     * @return (array): An array containing the search results
+     **/
+    public function inscriptionForConferenceList($selectiveProcessId)
+    {
+       $args = array($selectiveProcessId);
+
+       $sql = ' SELECT A.personId,
+                       C.name,
+                       D.examOccurrenceId,
+                       D.examId,
+                       E.shortDescription,
+                       --(B.note * H.weight) / I.maximumPoints,
+                       B.note,
+                       D.weightQuestion,
+                       D.selectiveProcessTypeId,
+                       D.numberQuestions,
+                       F.courseOccurrenceId,
+                       A.inscriptionId,
+                       A.isHighSchool,
+                       H.weight as examBalance,
+                       I.maximumPoints
+                  FROM sprInscription A
+             LEFT JOIN sprNote B
+                    ON (A.inscriptionId = B.inscriptionId)
+       INNER JOIN ONLY basPhysicalPerson C
+                    ON (C.personId = A.personId)
+            INNER JOIN sprExamOccurrence D
+                    ON (D.examOccurrenceId = B.examOccurrenceId)
+            INNER JOIN sprExam E
+                    ON (E.examId = D.examId)
+            INNER JOIN sprInscriptionOption F
+                    ON (F.inscriptionId = A.inscriptionId)
+            INNER JOIN sprCourseOccurrence G
+                    ON (G.courseOccurrenceId = F.courseOccurrenceId)
+            INNER JOIN sprCourseExamBalance H
+                    ON (H.examOccurrenceId = D.examOccurrenceId AND
+                        H.courseVacantId = G.courseVacantId)
+            INNER JOIN sprSelectiveProcess I
+                    ON (I.selectiveProcessId = A.selectiveProcessId)
+                 WHERE A.selectiveProcessId = ? AND
+                       F.optionNumber = 1
+                ORDER BY C.name, 
+                         A.personId,
+                         D.selectiveProcessTypeId,
+                         D.examOccurrenceId ';
+
+        $db = $this->getDatabase();
+
+        $result = $db->query(SAGU::prepare($sql, $args));
+
+        return $result;
+    }
+
+    public function examOccurrenceIdNotes($selectiveProcessId)
+    {
+
+       $sql = ' SELECT A.examOccurrenceId,
+                       B.shortDescription,
+                       A.selectiveprocesstypeid
+                  FROM sprExamOccurrence A
+            INNER JOIN sprExam B
+                    ON (A.examId = B.examId)
+                 WHERE A.selectiveProcessId = ?
+              ORDER BY A.examOccurrenceId';
+
+        $db = $this->getDatabase();
+
+        $result = $db->query(SAGU::prepare($sql, $selectiveProcessId));
+
+        return $result;
+    }
+
+    public function selectiveProcessMain($selectiveProcessId)
+    {
+       $sql = ' SELECT selectiveProcessTypeId
+                  FROM sprSelectiveProcessOccurrence
+                 WHERE isMain = \'t\' AND
+                       selectiveProcessId = ? ';
+
+        $db = $this->getDatabase();
+
+        $result = $db->query(SAGU::prepare($sql, $selectiveProcessId));
+
+        return $result[0];
+    }
+
+
+    public function getWeightExamOccurrence($filters)
+    {
+       $sql = 'SELECT A.weight
+                 FROM sprCourseExamBalance A
+           INNER JOIN sprCourseVacant B
+                   ON (A.courseVacantId = B.courseVacantId)
+           INNER JOIN sprCourseOccurrence C
+                   ON (B.courseVacantId = C.courseVacantId)
+           INNER JOIN sprInscriptionOption F
+                   ON (F.courseOccurrenceId = C.courseOccurrenceId)
+                WHERE A.examOccurrenceId   = ' . $filters->examOccurrenceId   . ' AND
+                      F.courseOccurrenceId = ' . $filters->courseOccurrenceId . ' AND
+                      F.optionNumber       = 1 AND
+                      F.inscriptionId      = ' . $filters->inscriptionId . ' AND
+                      B.selectiveProcessId = ?';
+
+        $db = $this->getDatabase();
+
+        $args[] = $filters->selectiveProcessId;
+
+        $result = $db->query(SAGU::prepare($sql, $args));
+
+        return $result[0];
+    }
+
+
+
+
+}
+
+?>

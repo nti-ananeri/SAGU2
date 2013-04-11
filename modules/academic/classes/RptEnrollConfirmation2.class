@@ -1,0 +1,281 @@
+<?php
+
+/**
+ * Default defines 
+ * To report identification
+ */
+define('REPORT_ID', 'AC003'); 
+define('FPDF_FONTPATH', $MIOLO->getModulePath('basic', '/classes/fpdf/font/'));
+
+$MIOLO = MIOLO::getInstance();
+$module = MIOLO::getCurrentModule();
+$MIOLO->Uses('classes/fpdf/fpdf.php', 'basic');
+
+/**
+ * Create header and footer information
+ */
+class PDF extends FPDF
+{
+    var $type = 0;
+    /**
+     * Defines the footer for this report
+     */
+    public function Footer()
+    {
+        $module = MIOLO::getCurrentModule();
+        $this->setY(-15);
+        $pn = $this->PageNo().'/{nb}';
+        $this->cell(190, 1, '', 'B', 1);
+        $this->ln();
+        
+        $this->setFont(DEFAULT_REPORT_FONT, '', 8);
+        if ($pn == 1)
+        {
+            $text = $this->personName;
+        }
+        else
+        {
+            $text = _M('Continuation of', $module).' '.$this->personName;
+        }
+        
+        $this->setFont(DEFAULT_REPORT_FONT, 'I', 8);
+        //$this->cell(50, 4, $text, 0, 0);
+        //$this->cell(140, 4, _M('REPORT @1 ', $module, REPORT_ID).' '._M('Page @1', $module, $pn), 0, 0, 'R');
+        $this->ln();
+    }
+
+    /**
+     * Defines the header for this report
+     */
+    public function Header()
+    {
+        $module = MIOLO::getCurrentModule();
+        if ($this->type == 1)
+        {
+            $this->ln();
+            $this->ln();
+            $this->ln();
+            $this->ln();
+        }
+    }
+}
+
+
+/**
+ * PDF extension to generate report
+ */
+class RptEnrollConfirmation2 
+{
+    /**
+     * Method to generate the report
+     */
+    public function RptEnrollConfirmation2($data = null)
+    {
+        $MIOLO       = MIOLO::getInstance();
+        $module      = MIOLO::getCurrentModule();
+        
+        //get the business classes wich will be used to generate the PDF file
+        $busCompany  = $MIOLO->getBusiness('basic', 'BusCompany');
+        $busPhPerson = $MIOLO->getBusiness('basic', 'BusPhysicalPerson');
+        $busLePerson = $MIOLO->getBusiness('basic', 'BusLegalPerson');
+        $busCity     = $MIOLO->getBusiness('basic', 'BusCity');
+        $busContract = $MIOLO->getBusiness($module, 'BusContract');
+        $busEnroll   = $MIOLO->getBusiness($module, 'BusEnroll');
+        $business    = $MIOLO->getBusiness($module, 'BusEnrollConfirmation');
+        
+        $company     = $busCompany->getCompany(DEFAULT_COMPANY_CONF);     //get company data
+        $lab         = explode('-', ENROLL_DEDICATED_LAB);
+
+        $legalPerson = $busLePerson->getLegalPerson($company->personId);
+
+        //check if the class should generate files for one person or for all the course enrolled pupils
+        if (strlen((string)$data->contractId) > 0)
+        {
+            $contracts[][] = $data->contractId;
+        }
+        else
+        {
+            $contracts = $business->getEnrolledContracts($data->courseId,       //get all enrolled contracts
+                                                         $data->courseVersion, //of selected course
+                                                         $data->turnId,
+                                                         $data->unitId,
+                                                         $data->learningPeriodId);
+        }
+                                                     
+        // Generating PDF file
+        $pdf = new PDF();
+        $pdf->aliasNbPages();
+        // First page
+        $pdf->addPage('P', 'mm', 'A4');
+        $pdf->ln(10);
+        
+        if (count($contracts) > 0)
+        {
+            foreach ($contracts as $contract)
+            {
+                $contractData = $busContract->getContract($contract[0]);                   //get the contract data
+                $person       = $busPhPerson->getPhysicalPerson($contractData->personId); //get the person data
+                $city         = $busCity->getCity($person->cityId);                      //get the person city data
+                $groups       = $business->getEnrollConfirmation($contract[0], $data->learningPeriodId); //get groups
+
+                if (count($groups) > 0)
+                {
+                    $pdf->setFont(DEFAULT_REPORT_FONT, '', 10);
+                    
+                    //check if there is a document number/reference specified
+                    if (strlen((string)$data->documentNumber) > 0)
+                    {
+                        $msg = _M('Document', $module) . ' '  . $data->documentNumber;
+                        $pdf->cell(50, 5, $msg, 0, 0, 'L');
+                    }
+                    $pdf->ln(15);
+                    //Default company logotype
+                    $pdf->Image(SAGUFile::getPhotoPath($company->personId),177, 4, 25, PHOTO_FORMAT);
+                    
+                    //check if there is a emition date specified
+                    if (strlen((string)$data->emitionDate) > 0)
+                    {
+                        $pdf->cell(190, 5, $legalPerson->cityName . ', ' . SAGU::getDateByExtense($data->emitionDate), 0, 0, 'R');
+                    }
+                    $pdf->ln(10);
+        
+                    //Beggining of the text
+                    $msg = '        ' . _M('Dear pupil', $module) . ' '  . $person->name . ' (' . $person->personId . '):';
+                    $pdf->cell(190, 5, $msg, 0, 0);
+                    $pdf->ln(10);
+                    $msg = '        ' . _M('On the end of the enroll period, we inform that you are enrolled in course', $module) . ' '  . $data->courseName . ', ' . _M('in groups listed above', $module) . ' ';
+                    $pdf->multiCell(190, 5, $msg);
+                    
+                    //Groups list columns
+                    $pdf->cell(190,5, '', 'B', 0);
+                    $pdf->ln();
+                    $pdf->setFont(DEFAULT_REPORT_FONT, '', 10);
+                    $pdf->cell(8,5, _M('Day', $module), 'B', 0);
+                    $pdf->cell(11,5, _M('Turn', $module), 'B', 0);
+                    $pdf->cell(29,5, _M('Room-Building', $module), 'B', 0);
+                    $pdf->cell(20,5, _M('Begin day', $module), 'B', 0);
+                    $pdf->cell(20,5, _M('Unit', $module), 'B', 0);
+                    $pdf->cell(15,5, _M('Code', $module), 'B', 0);
+                    $pdf->cell(87,5, _M('Offered/Professor', $module), 'B', 0);
+                    $pdf->ln(5);
+        
+                    $pdf->setFont(DEFAULT_REPORT_FONT, '', 10);
+                    
+                    //Printing the groups        
+                    foreach ($groups as $group)
+                    {
+                        $pdf->cell(8,5, $group[0], 0, 0, 'C');
+                        $pdf->cell(11,5, $group[1], 0, 0, 'C');
+                        $pdf->cell(29,5, $group[2] . '-' . $group[3], 0, 0, 'C');
+                        $pdf->cell(20,5, $group[4], 0, 0, 'C');
+                        $pdf->cell(20,5, $group[5], 0, 0, 'C');
+                        $pdf->cell(15,5, $group[6] . '(' . $group[7] . ')', 0, 0, 'L');
+                        
+                        
+                        //Check if the group is substituted (like an eletive, i.e.)
+                        $substituted = $busEnroll->checkIfSubstituted($contract[0],     
+                                                                      $data->learningPeriodId, 
+                                                                      $group[10]);
+                        if ( $substituted->curricularComponentId && $substituted->curricularComponentVersion )
+                        {
+                            $busCurricularComponent = $MIOLO->getBusiness($module, 'BusCurricularComponent');
+                            $curricularComponent = $busCurricularComponent->getCurricularComponent($substituted->curricularComponentId, $substituted->curricularComponentVersion);
+                            $curricularComponentId      = $substituted->curricularComponentId;
+                            $curricularComponentVersion = $substituted->curricularComponentVersion;
+                            $group[8]    = $curricularComponent->name . ' (' . $group[8] . ')';
+                        }
+                        
+                        $pdf->multiCell(87,5, $group[8]);
+            
+                        //Check if there is a professor to the group
+                        if (strlen((string)$group[9]) > 0)
+                        {
+                            $pdf->cell(103,5, '', 0, 0);
+                            $pdf->multiCell(87, 5, $group[9]);    
+                        }   
+                        $pdf->ln(1);    
+                    }
+                    
+                    $pdf->cell(190,5, '', 'T', 0);
+                    $pdf->ln(3);
+
+                    $msg = '        ' . _M('We remind that, in necessity case of eventual adjustments or enroll additions,', $module) . ' ' ;
+                    $showMsg = false; //Set if the paragraph will be printed or not (true = print)
+        
+                    //Check if there is a internet adjustment period specified
+                    if (strlen((string)$data->internetAdjustmentPeriod) > 0)
+                    {
+                        $msg .= _M('this could be accomplished by Internet', $module) . ' '  . $data->internetAdjustmentPeriod . '. ';
+                        $showMsg = true;
+                    }
+                    
+                    //Check if there is a laboratory adjustment period specified
+                    if (strlen((string)$data->labsAdjustmentPeriod) > 0)
+                    {
+                        //Check if there is another sentence before this one
+                        if ($showMsg)
+                        {            
+                            $msg .= _M('On period', $module) . ' ';
+                        }
+                        else
+                        {
+                            $msg .= _M('on period', $module) . ' ';
+                            $showMsg = true;
+                        }
+            
+                        $msg .= $data->labsAdjustmentPeriod . _M('the laboratory', $module) . ' ' . $lab[0] . ' ' . _M('of building', $module) . ' ' . $lab[1] . ' ' . _M('will be available for adjustments', $module) . ' ';
+                    }
+                    
+                    //Check if there is a recess period specified
+                    if (strlen((string)$data->recessPeriod) > 0)
+                    {
+                        $msg .= '(' . $legalPerson->name . ' ' . _M('will be in recess', $module) . ' '  . $data->recessPeriod . ')';
+                    }
+                    
+                    $msg .= '.';
+                    
+                    if ($showMsg)
+                    {
+                        $pdf->multiCell(190, 5, $msg); //print the paragraph
+                    }
+
+                    $businessCompany = $MIOLO->getBusiness('basic', 'BusCompany');
+                    $company         = $businessCompany->getCompany(DEFAULT_COMPANY_CONF);
+
+                    $msg = '        ' . _M('The rooms are already defined, limiting, therefore, the vacant number of each group. Consequently, as soon you make your adjustments and additions, higher is the possibility to have your necessities taken care of. We alert, equally, that @1 take the right to accomplish the necessary adjustments like, for example, professors substitution, group change or division, without previous information or pupil consultation.', $module, $company->name);
+
+                    $pdf->ln(2);
+                    $pdf->multiCell(190, 5, $msg);
+
+                    $msg = '        ' . _M('We wish, finally, a good rest on this final period of academic vacation and a beneficial learning period. We remain available for any necessity.', $module);
+        
+                    $pdf->ln(2);
+                    $pdf->multiCell(190, 5, $msg);
+                    $pdf->ln(10);
+                    $pdf->cell(190,5, '        ' . _M('Yours truly', $module), 0, 0);
+                    $pdf->ln(10);
+                    $pdf->cell(100,5, '', 0, 0);
+                    $pdf->cell(90,5, _M('General and Education Secretariats', $module), 0, 0, 'C');
+                    $pdf->ln();
+                    $pdf->cell(100,5, '', 0, 0);
+                    $pdf->cell(90,5, _M('Education Pro-Directory', $module), 0, 0, 'C');
+                    $pdf->ln(30);
+                    //Printing the person data
+                    $pdf->setY(250);
+                    $pdf->cell(190,5, $person->name, 0, 1);
+                    $pdf->cell(190,5, $person->location . ($person->complement ? ', ' . $person->complement . ' - ' : ' - ') . $person->neighborhood, 0, 1);
+                    $pdf->cell(190,5, $city->name . ($city->stateId ? '-' . $city->stateId : ''), 0, 1);
+                    $pdf->cell(190,5, $city->zipCode, 0, 0);
+                    
+                    $pdf->addPage('P', 'mm', 'A4'); //Add a new page
+                    $pdf->ln(10);
+                }
+            }
+        }
+        //Close and generate the document        
+        $pdf->close();
+        $pdf->output();
+    }
+}
+
+?>

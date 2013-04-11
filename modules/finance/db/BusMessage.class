@@ -1,0 +1,270 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for finMessage table
+ *
+ * @author Rafael Luís Spengler [rafael@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * Rafael Luís Spengler [rafael@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 18/10/2005
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to manipulate the Message table
+ **/
+class BusinessFinanceBusMessage extends MBusiness
+{
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module = is_null($module) ? 'finance' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+    /**
+     * Return a specific record from the database
+     *
+     * @param $bankId (integer): Primary key of the record to be retrieved
+     * @param $collectionTypeId (integer): Primary key of the record to be retrieved
+     * @param $messageOrder (integer): Primary key of the record to be retrieved
+     *
+     * @return (object): Return an object of the type handled by the class
+     *
+     **/
+    public function getMessage($bankId, $policyId)
+    {
+        $sql = 'SELECT A.bankId,
+				       B.description,
+                       A.policyId,
+                       C.description,
+                       A.messageProtest,
+                       A.messageDiscount,
+                       A.messageFine,
+                       A.messageBank,
+                       A.userName,
+                       TO_CHAR(A.dateTime,\'' . MASK_TIMESTAMP . '\')
+                  FROM finMessage A 
+				  INNER JOIN finBank B USING (bankId)
+				  INNER JOIN finPolicy C USING (policyId)
+                 WHERE A.bankId = ?
+                   AND A.policyId = ?';
+
+        $db = $this->getDatabase();
+        $args = array ( $bankId, 
+                        $policyId);
+        
+        $result = $db->query(SAGU::prepare($sql,$args));
+
+        $message = new FinMessage();
+
+        list ( $message->bankId,
+               $message->bankDescription,
+               $message->policyId,
+               $message->policyDescription,
+               $message->messageProtest,
+               $message->messageDiscount,
+               $message->messageFine,
+               $message->messageBank,
+			   $message->userName,
+               $message->dateTime ) = $result[0];
+        return $message; 
+    }
+
+    /**
+     * Do a search on the database table handled by the class
+     *
+     * @param $filters (object): Search filters
+     * 
+     * @last modification: William Prigol Lopes [william@solis.coop.br]
+     *                     Make the search capable to get partial words with % in varchar fields
+     *
+     * @return (array): An array containing the search results
+     **/
+    public function searchMessage($data)
+    {
+        $sql = 'SELECT A.bankId,
+				       B.description,
+                       A.policyId,
+                       C.description,
+                       A.messageProtest,
+                       A.messageDiscount,
+                       A.messageFine,
+                       A.messageBank,
+                       A.userName,
+                       TO_CHAR(A.dateTime,\'' . MASK_TIMESTAMP . '\')
+                  FROM finMessage A 
+				  INNER JOIN finBank B USING (bankId)
+				  INNER JOIN finPolicy C USING (policyId)';
+
+        $where = '';
+        unset($args);
+        if ( strlen((string)$data->bankId) > 0 )
+        {
+            $where .= '    AND   A.bankId = ?';
+            $args[] = $data->bankId;
+        }
+        if ( strlen((string)$data->policyId) > 0 )
+        {
+            $where .= '    AND   A.policyId = ?';
+            $args[] = $data->policyId;
+        }
+        if ( strlen((string)$data->messageProtest) > 0 )
+        {
+            $where .= '    AND   TO_ASCII(A.messageProtest) ILIKE TO_ASCII(?)';
+            $args[] = $data->messageProtest . '%';
+        }
+        if ( strlen((string)$data->messageDiscount) > 0 )
+        {
+            $where .= '    AND   TO_ASCII(A.messageDiscount) ILIKE TO_ASCII(?)';
+            $args[] = $data->messageDiscount . '%';
+        }
+        if ( strlen((string)$data->messageFine) > 0 )
+        {
+            $where .= '    AND   TO_ASCII(A.messageFine) ILIKE TO_ASCII(?)';
+            $args[] = $data->messageFine . '%';
+        }
+        if ( strlen((string)$data->messageBank) > 0 )
+        {
+            $where .= '    AND   TO_ASCII(A.messageBank) ILIKE TO_ASCII(?)';
+            $args[] = $data->messageBank . '%';
+        }
+
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE ' . substr($where,8) .
+                    ' ORDER BY A.bankId, A.policyId';
+            $db = $this->getDatabase();
+            $result = $db->query(SAGU::prepare($sql,$args));
+        }
+
+        return $result;
+    }
+
+    /**
+     * Insert a new record
+     *
+     * @param $data (object): An object of the type handled by the class
+     *
+     * @return True if succed, otherwise False
+     *
+     **/
+    public function insertMessage($data)
+    {
+        $sql = 'INSERT INTO finMessage
+                            (bankId,
+                             policyId,
+                             messageProtest,
+                             messageDiscount,
+                             messageFine,
+							 messageBank)
+                     VALUES (?,?,?,?,?,?)';
+
+        $args = array($data->bankId,
+                      $data->policyId,
+                      $data->messageProtest,
+                      $data->messageDiscount,
+                      $data->messageFine,
+					  $data->messageBank);
+        
+        $db = $this->getDatabase();
+        $result = $db->execute(SAGU::prepare($sql,$args));
+
+        return $result;
+    }
+
+    /**
+     * Update data from a specific record
+     *
+     * @param $data (object): Data which will replace the old record data
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+    public function updateMessage($data)
+    {
+        $sql = 'UPDATE finMessage
+                   SET messageProtest	= ?,
+                       messageDiscount  = ?,
+					   messageFine		= ?,
+					   messageBank		= ?
+                 WHERE 
+					   bankId           = ?
+                   AND policyId			= ?';
+
+        $args = array ( $data->messageProtest,
+                        $data->messageDiscount,
+						$data->messageFine,
+						$data->messageBank,
+                        $data->bankId,
+                        $data->policyId );
+        $db = $this->getDatabase();
+        $sqls = SAGU::prepare($sql,$args);
+        for ( $i=0; $i<count($sqls); $i++ )
+        {
+            $result = $db->execute($sqls[$i]);
+        }
+
+        return $result;
+    }
+
+    /**
+     * Delete a record
+     *
+     * @param $bankId (string): Primary key for deletion
+     * @param $collectionTypeId (string): Primary key for deletion
+     * @param $messageOrder (string): Primary key for deletion
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+    public function deleteMessage($bankId, $policyId)
+    {
+        $sql = 'DELETE FROM finMessage
+                      WHERE bankId = ?
+                        AND policyId = ?';
+   
+        $args = array ( $bankId,
+                        $policyId);
+
+        $db = $this->getDatabase();
+        $result = $db->execute(SAGU::prepare($sql,$args));
+
+        return $result;
+    }
+
+}
+
+?>

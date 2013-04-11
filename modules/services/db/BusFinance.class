@@ -1,0 +1,154 @@
+<?php
+/**
+ *
+ * This file handles the connection for finance module
+ *
+ * @author Daniel Afonso Heisler [daniel@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 15/09/2006
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to manipulate the basCenter table
+ **/
+class BusinessServicesBusFinance extends Business
+{
+
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic', 'sagu');
+        $module = is_null($module) ? 'finance' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+    /**
+     * Return a specific person financial situation
+     *
+     * @param $personId (integer): Person code for the search to be retrieved
+     *
+     * @return (object): Return an array with the financial situation
+     *
+     **/
+    public function getFinancialConsultation($personId)
+    {
+
+        $sql = 'SELECT B.periodId,
+                       A.invoiceId,
+                       TO_CHAR(A.emissionDate,\'' . MASK_DATE . '\'),
+                       TO_CHAR(A.maturityDate,\'' . MASK_DATE . '\'),
+                       ROUND(A.value, ' . REAL_ROUND_VALUE . '),
+                       updatedTime(invoiceId),
+                       ROUND(balancewithpolicies(invoiceId)::numeric(12,2), ' . REAL_ROUND_VALUE . ') as balance,
+                       A2.bankid
+             FROM ONLY finReceivableInvoice A
+             LEFT JOIN finBankAccount A2
+                    ON ( A.bankAccountId = A2.bankAccountId )
+             LEFT JOIN acdLearningPeriod B
+                    ON ( A.maturityDate
+               BETWEEN B.beginDate
+                   AND B.endDate
+                   AND A.courseId      = B.courseId
+                   AND A.courseVersion = B.courseVersion
+                   AND A.policyId      = B.policyId
+                   AND A.unitId        = B.unitId)
+                 WHERE A.personId      = ? 
+              ORDER BY maturityDate DESC '; 
+
+        $db     = $this->getDatabase();
+
+        $result = $db->query(SAGU::prepare($sql, $personId));
+
+        return $result;
+    }
+
+    /**
+     * Return a specific person who have someone incentive
+     *
+     * @param $personId (integer): Person code for the search to be retrieved
+     *
+     * @return (object): Return an array with the financial situation
+     *
+     **/
+    public function listSupporterIncentives($supporterId, $maturityDate)
+    {
+        $sql = 'SELECT A.incentiveId,
+                       B.personId,
+                       getPersonName(B.personId) as personName,
+                       TO_CHAR(A.startDate,\'' . MASK_DATE . '\'),
+                       TO_CHAR(A.cancellationDate,\'' . MASK_DATE . '\'),
+                       TO_CHAR(A.endDate,\'' . MASK_DATE . '\'),
+                       ROUND(A.value, ' . REAL_ROUND_VALUE . '),
+                       valueIsPercent,
+                       D.invoiceId,
+                       ROUND(COALESCE(sum(E.value)::numeric(12,2), ROUND(0, 2)), ' . REAL_ROUND_VALUE . ')::numeric(12,2)
+             FROM ONLY finIncentive A
+       INNER JOIN ONLY acdContract B
+                    ON (A.contractId = B.contractId)
+       INNER JOIN ONLY finIncentiveType C
+                 USING (incentiveTypeId)
+        LEFT JOIN ONLY finReceivableInvoice D
+                    ON (    D.personId = B.personId
+                        AND extract(month FROM maturityDate) = extract(month FROM TO_DATE(?,\'' . MASK_DATE . '\'))
+                        AND extract(year FROM maturityDate) = extract(year FROM TO_DATE(?,\'' . MASK_DATE . '\')) 
+                        AND D.courseId      = B.courseId 
+                        AND D.courseVersion = B.courseVersion
+                        AND D.unitId        = B.unitId )
+             LEFT JOIN finEntry E
+                    ON (    E.invoiceId   = D.invoiceId
+                        AND E.operationId = C.operationId )
+                 WHERE A.supporterId = ?
+                   AND ( A.startDate <= TO_DATE(?,\'' . MASK_DATE . '\') OR A.startDate IS NULL )
+                   AND ( A.endDate >= TO_DATE(?,\'' . MASK_DATE . '\') OR A.endDate IS NULL )
+                   AND ( A.cancellationDate >= TO_DATE(?,\'' . MASK_DATE . '\') OR A.cancellationDate IS NULL )
+              GROUP BY 1,2,3,4,5,6,7,8,9, A.startDate
+              ORDER BY personName,
+                       A.startDate ';
+
+        $db     = $this->getDatabase();
+
+        $args = array (
+                        $maturityDate,
+                        $maturityDate,
+                        $supporterId,
+                        $maturityDate,
+                        $maturityDate,
+                        $maturityDate
+                      );
+        $result = $db->query(SAGU::prepare($sql, $args));
+
+        return $result;
+    }
+}
+?>

@@ -1,0 +1,504 @@
+<?php
+
+/**
+ * Supervised Training form
+ *
+ * @author Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+ *
+ * @since
+ * Class created on 05/12/2005
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2005 SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+
+/**
+ * Form to manipulate a course occurrence
+ **/
+class FrmSupervisedTraining extends MForm
+{
+    public $addComplementaryActivities;
+
+    /**
+     * Class constructor
+     **/
+    function __construct()
+    {
+        $module = MIOLO::getCurrentModule();
+        if ( MIOLO::_request('function') == 'insert' )
+        {
+            parent::__construct(_M('Insert', $module));
+        }
+        else
+        {
+            parent::__construct(_M('Update', $module));
+        }
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+        $this->eventHandler();
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+
+        $toolBar = new MToolBar('toolBar', $MIOLO->getActionURL($module, $action));
+
+        if ( $function == 'insert' )
+        {
+            $toolBar->disableButton('tbBtnDelete');
+            $toolBar->disableButton('tbBtnPrint');
+            $toolBar->disableButton('tbBtnSave');
+        }
+        elseif ( $function == 'delete' )
+        {
+            $toolBar->disableButton('tbBtnSave');
+        }
+        $fields[] = $toolBar;
+
+        if ( in_array($function, array('update', 'delete')) )
+        {
+            $supervisedTrainingId = MIOLO::_request('supervisedTrainingId');
+
+            $fields[] = new MHiddenField('supervisedTrainingId', $supervisedTrainingId);
+            $fields[] = new MTextLabel('supervisedTrainingId', $data->supervisedTrainingId, _M('Supervised training id', $module));
+
+            $business = $MIOLO->getBusiness($module, 'BusSupervisedTraining');
+            $data     = $business->getSupervisedTraining($supervisedTrainingId);
+        }
+
+        if ( $function == 'insert' )
+        {
+            $businessPeriod = $MIOLO->getBusiness($module,'BusPeriod');
+            if ( is_null($this->getFormValue('periodId', $data->periodId)) ||
+                 strlen((string)$this->getFormValue('periodId', $data->periodId)) == 0 )
+            {
+                $periodIdValue = CURRENT_PERIOD_ID;
+            }
+            else
+            {
+                $periodIdValue = $this->getFormValue('periodId', $data->periodId);
+            }
+
+            $periodId = new MComboBox('periodId', $periodIdValue, _M('Period',$module), $businessPeriod->listPeriod(), true );
+            $fields[] = $periodId;
+            $validators[] = new MRequiredValidator('periodId');
+
+            $personLabel = new MText('personLabel', _M('Person',$module) . ':');
+            $personLabel->setWidth(FIELD_CONTAINER_SIZE);
+
+            $personId     = new MLookupTextField('personId', $this->getFormValue('personId', $this->personId->value), '', FIELD_LOOKUPFIELD_SIZE, null, null, array('contractId', 'personId', 'personName', 'contractCourseId', 'contractCourseName', 'contractCourseVersion', 'contractTurnId', 'limbo', 'contractUnitId'), $module, 'PersonContract', null, null, !$this->page->isPostBack());
+            $validators[] = new MIntegerValidator('personId', '', 'optional');
+
+            $personName = new MTextField('personName', $this->getFormValue('personName', $data->personName), NULL, FIELD_DESCRIPTION_SIZE);
+            $personName->setReadOnly(true);
+            $personName->setJsHint(_M('Person name',$module));
+
+            $hctPerson = new MHContainer('hctPerson', array($personLabel, $personId, $personName));
+            $hctPerson->setShowLabel(true);
+            $fields[]  = $hctPerson;
+
+            $contractLabel = new MText('contractLabel', _M('Contract',$module) . ':');
+            $contractLabel->setWidth(FIELD_CONTAINER_SIZE);
+            $contractLabel->setClass('m-caption m-caption-required');
+            $flds[]                = $contractLabel;
+
+            $limbo = new MHiddenField('limbo', '');
+            $fields[] = $limbo;
+
+            $contractId = new MLookupTextField('contractId', $this->getFormValue('contractId',$data->contractId), '', FIELD_LOOKUPFIELD_SIZE, null, null, array('personId', 'personName', 'contractCourseId', 'contractCourseName', 'contractCourseVersion', 'contractTurnId', 'limbo', 'contractUnitId'), $module, 'Contract', null, array('personId' => 'personId'), true);
+            $contractId->setJsHint(_M('Enter the contract code',$module));
+            $flds[]           = $contractId;
+            $validators[] = new MIntegerValidator('contractId', _M('Contract',$module), 'required');
+
+            $contractCourseId = new MTextField('contractCourseId', $this->getFormValue('contractCourseId',$data->contractCourseId),'', FIELD_ID_SIZE);
+            $contractCourseId->setReadOnly(true);
+            $contractCourseId->setJsHint(_M('Course',$module));
+            $flds[]           = $contractCourseId;
+
+            $contractCourseVersion = new MTextField('contractCourseVersion', $this->getFormValue('contractCourseVersion',$data->contractCourseVersion), '', FIELD_ID_SIZE);
+            $contractCourseVersion->setReadOnly(true);
+            $contractCourseVersion->setJsHint(_M('Course version',$module));
+            $flds[]                = $contractCourseVersion;
+
+            $contractCourseName = new MTextField('contractCourseName', $this->getFormValue('contractCourseName',$data->contractCourseName), '', FIELD_DESCRIPTION_SIZE);
+            $contractCourseName->setReadOnly(true);
+            $contractCourseName->setJsHint(_M('Description',$module));
+            $flds[]             = $contractCourseName;
+
+            $hctContract = new MHContainer('hctContract', $flds);
+            $hctContract->setShowLabel(true);
+            $fields[]    = $hctContract;
+            unset($flds);
+
+            $contractTurnId = new MHiddenField('contractTurnId', $this->getFormValue('contractTurnId',$data->contractTurnId));
+            $fields[]       = $contractTurnId;
+
+            $contractUnitId = new MHiddenField('contractUnitId', $this->getFormValue('contractUnitId',$data->contractUnitId));
+            $fields[]    = $contractUnitId;        
+
+            $btn1 = new MButton('btnSupervisedTraining', _M('Add supervised training', $module));
+            $fields[] = $btn1;
+        }
+        else
+        {
+            $enrollId    = new MHiddenField('enrolllId', $this->getFormValue('enrollId', $data->enrollId));
+            $fields[]    = $enrollId;
+
+            $personLabel = new MText('personLabel', _M('Person',$module) . ':');
+            $personLabel->setWidth(FIELD_CONTAINER_SIZE);
+
+            $personId   = new MTextField('personId', $this->getFormValue('personId', $data->personId), NULL, FIELD_ID_SIZE);
+            $personId->setReadOnly(true);
+
+            $personName = new MTextField('personName', $this->getFormValue('personName', $data->personName), NULL, FIELD_DESCRIPTION_SIZE);
+            $personName->setReadOnly(true);
+            $personName->setJsHint(_M('Person name',$module));
+
+            $hctPerson = new MHContainer('hctPerson', array($personLabel, $personId, $personName));
+            $hctPerson->setShowLabel(true);
+            $fields[]  = $hctPerson;
+
+            $contractLabel = new MText('contractLabel', _M('Contract',$module) . ':');
+            $contractLabel->setWidth(FIELD_CONTAINER_SIZE);
+            $flds[]                = $contractLabel;
+
+            $limbo = new MHiddenField('limbo', '');
+            $fields[] = $limbo;
+
+            $contractId = new MTextField('contractId', $this->getFormValue('contractId',$data->contractId),'', FIELD_ID_SIZE);
+            $contractId->setReadOnly(true);
+            $contractId->setJsHint(_M('Contract code',$module));
+            $flds[]           = $contractId;
+
+            $contractCourseId = new MTextField('contractCourseId', $this->getFormValue('contractCourseId',$data->contractCourseId),'', FIELD_ID_SIZE);
+            $contractCourseId->setReadOnly(true);
+            $contractCourseId->setJsHint(_M('Course',$module));
+            $flds[]           = $contractCourseId;
+
+            $contractCourseVersion = new MTextField('contractCourseVersion', $this->getFormValue('contractCourseVersion',$data->contractCourseVersion), '', FIELD_ID_SIZE);
+            $contractCourseVersion->setReadOnly(true);
+            $contractCourseVersion->setJsHint(_M('Course version',$module));
+            $flds[]                = $contractCourseVersion;
+
+            $contractCourseName = new MTextField('contractCourseName', $this->getFormValue('contractCourseName',$data->contractCourseName), '', FIELD_DESCRIPTION_SIZE);
+            $contractCourseName->setReadOnly(true);
+            $contractCourseName->setJsHint(_M('Description',$module));
+            $flds[]             = $contractCourseName;
+
+            $hctContract = new MHContainer('hctContract', $flds);
+            $hctContract->setShowLabel(true);
+            $fields[]    = $hctContract;
+            unset($flds);
+
+            $contractTurnId = new MHiddenField('contractTurnId', '');
+            $fields[]    = $contractTurnId;
+
+            $contractUnitId = new MHiddenField('contractUnitId', '');
+            $fields[]    = $contractUnitId;        
+
+            //periodo
+            $periodId       = new MTextField('periodId', strlen((string)$this->getFormValue('periodId', $data->periodId))>0 ? $this->getFormValue('periodId', $data->periodId) : CURRENT_PERIOD_ID, _M('Period', $module), FIELD_ID_SIZE );
+            $periodId->setReadOnly(true);
+            $fields[]       = $periodId;
+
+            //enroll id
+            $enrollId = new MHiddenField('enrollId', strlen((string)$this->getFormValue('enrollId', $data->enrollId))>0 ? $this->getFormValue('enrollId', $data->enrollId) : $enrollId );
+            $fields[] = $enrollId;
+
+            //div de mensagens de erros
+            $fields[] = new MSeparator('<hr>');
+            $divError = new MDiv('divError', null, null, 'align=center');
+            $fields[] = $divError;
+            $fields[] = new MSeparator('');
+
+            //estágio
+            $description  = new MTextField('description', $this->getFormValue('description', $data->description), _M('Training',$module), FIELD_DESCRIPTION_SIZE);
+            $fields[]     = $description;
+            $validators[] = new MRequiredValidator('description');
+
+            //instituicao
+            $institutionLabel = new MText('institutionLabel', _M('Institution',$module) . ':');
+            $institutionLabel->setWidth(FIELD_CONTAINER_SIZE);
+            $institutionLabel->setClass('m-caption m-caption-required');
+
+            $institutionId    = new MLookupTextField('institutionId', $this->getFormValue('institutionId', $data->institutionId), '', FIELD_LOOKUPFIELD_SIZE, null, null, 'institutionName', 'basic', 'LegalPersonInstitution', null, null, true);
+            $institutionId->setJsHint(_M('Enter the institution code',$module));
+            $validators[]     = new MIntegerValidator('institutionId', _M('Institution',$module), 'required');
+
+            $institutionName  = new MTextField('institutionName', $this->institutionName->value, '', FIELD_DESCRIPTION_SIZE);
+            $institutionName->setJsHint(_M('Institution name',$module));
+            $institutionName->setReadOnly(true);
+
+            $hctInstitution   = new MHContainer('hctInstitution', array($institutionLabel, $institutionId, $institutionName));
+            $hctInstitution->setShowLabel(true);
+            $fields[]         = $hctInstitution;
+
+            //professor supervisor
+            $supervisorLabel = new MText('supervisorLabel', _M('Supervisor',$module) . ':');
+            $supervisorLabel->setWidth(FIELD_CONTAINER_SIZE);
+            $supervisorLabel->setClass('m-caption m-caption-required');
+
+            $supervisorId    = new MLookupTextField('supervisorId', $this->getFormValue('supervisorId', $data->supervisorId), '', FIELD_LOOKUPFIELD_SIZE, null, null, 'supervisorName', 'basic', 'PhysicalPersonProfessor', null, null, true);
+            $supervisorId->setJsHint(_M('Enter the institution code',$module));
+            $validators[]    = new MIntegerValidator('supervisorId', _M('Supervisor',$module), 'required');
+
+            $supervisorName  = new MTextField('supervisorName', $this->supervisorName->value, '', FIELD_DESCRIPTION_SIZE);
+            $supervisorName->setJsHint(_M('Supervisor',$module));
+            $supervisorName->setReadOnly(true);
+
+            $hctSupervisor   = new MHContainer('hctSupervisor', array($supervisorLabel, $supervisorId, $supervisorName));
+            $hctSupervisor->setShowLabel(true);
+            $fields[]        = $hctSupervisor;
+
+            $beginDate = new MCalendarField('beginDate', strlen((string)$this->getFormValue('beginDate', $data->beginDate))>0 ? $this->getFormValue('beginDate', $data->beginDate) : date(MASK_DATE_PHP), _M('Begin date', $module), FIELD_DATE_SIZE);
+            $beginDate->setJsHint(_M('Enter the begin date', $module));
+            $beginDate->setValidator(new MDATEDMYValidator('beginDate', _M('Begin date',$module), 'required'));
+            $fields[]  = $beginDate;
+
+            $endDate   = new MCalendarField('endDate', strlen((string)$this->getFormValue('endDate', $data->endDate))>0 ? $this->getFormValue('endDate', $data->endDate) : date(MASK_DATE_PHP), _M('End date', $module), FIELD_DATE_SIZE);
+            $endDate->setJsHint(_M('Enter the end date', $module));
+            $endDate->setValidator(new MDATEDMYValidator('endDate', _M('End date',$module), 'required'));
+            $fields[]  = $endDate;
+    
+            if ( $function == 'update' )
+            {
+                $fields[] = new MTextLabel('lastModification', '['.$data->userName.' - '.$data->dateTime.']', _M('Last modification', $module));
+            }
+            $fields[] = new MSeparator('<hr>');
+        }
+
+        $this->setFields($fields);
+        $this->setValidators($validators);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+        $this->setClose($MIOLO->getActionURL($module, substr($action, 0, strrpos($action, ':'))));
+        $this->page->onLoad('document.'.$this->name.'.personId.focus();');
+    }
+
+    /**
+     * Event triggered when user chooses Delete from the toolbar
+     **/
+    public function tbBtnDelete_click($sender = null)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $data   = $this->getTypesData();
+        $opts   = array('event'=>'tbBtnDelete_confirm',
+                        'function'=>'delete',
+                        'supervisedTrainingId'=>MIOLO::_request('supervisedTrainingId')
+                       );
+
+        $gotoYes = $MIOLO->getActionURL( $module, $action, null, $opts );
+        $goto    = SAGU::getStackBackUrl();
+        $gotoNo  = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+        $msg     = MSG_CONFIRM_RECORD_DELETE;
+        $caption = _M('Question',$module);
+        $MIOLO->question($msg, $gotoYes, $gotoNo);
+    }
+
+    /**
+     * Event triggered when user chooses Yes from the Delete prompt dialog
+     **/
+    public function tbBtnDelete_confirm($sender = null)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $business = $MIOLO->getBusiness($module, 'BusSupervisedTraining');
+        $ok       = $business->deleteSupervisedTraining($this->supervisedTrainingId->value);
+
+        if ( $ok )
+        {
+            $msg  = MSG_RECORD_DELETED;
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Information', $module);
+            $MIOLO->information($msg, $goto);
+        }
+        else
+        {
+            $msg  = _M('Error executing requested operation.',$module);
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Error', $module);
+            $MIOLO->error( $msg, $goto, $caption );
+        }
+    }
+
+    /**
+     * Event triggered when user chooses Save from the toolbar
+     **/
+    public function tbBtnSave_click($sender = null)
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+
+        $data                       = $this->getTypesData();
+        $businessSupervisedTraining = $MIOLO->getBusiness($module, 'BusSupervisedTraining');
+
+        if ( $function == 'update' )
+        {
+            $ok  = $businessSupervisedTraining->updateSupervisedTraining($data);
+            $msg = MSG_RECORD_UPDATED;
+        }
+
+        if ( $ok )
+        {
+            $opts = array('supervisedTrainingIdS' => $data->supervisedTrainingId );
+
+            if ( $function == 'update' )
+            {
+                $caption = _M('Information', $module);
+                $MIOLO->information($msg, $MIOLO->getActionURL( $module, $action, null, $opts));
+            }
+        }
+        else
+        {
+            $msg  = _M('Error executing requested operation.', $module). ' ' . $infoMsg . '. ';
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Error', $module);
+            $MIOLO->error( $msg, $goto, $caption );
+        }
+    }
+
+    public function btnSupervisedTraining_click($sender = null)
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+
+        $periodId              = MIOLO::_request('periodId');
+        $personId              = MIOLO::_request('personId');
+        $personName            = MIOLO::_request('personName');
+        $contractId            = MIOLO::_request('contractId');
+        $contractCourseId      = MIOLO::_request('contractCourseId');
+        $contractCourseVersion = MIOLO::_request('contractCourseVersion');
+        $contractCourseName    = MIOLO::_request('contractCourseName');
+        $contractTurnId        = MIOLO::_request('contractTurnId');
+        $contractUnitId        = MIOLO::_request('contractUnitId');
+
+        $businessCurriculum = $MIOLO->getBusiness($module, 'BusCurriculum');
+        $curriculumIds      = $businessCurriculum->getSupervisedTrainingCurriculumIds($contractCourseId, $contractCourseVersion, $contractTurnId, $contractUnitId);
+
+        if ( count($curriculumIds)>0 )
+        {
+
+            foreach ( $curriculumIds as $curriculumId )
+            {
+                $enrollId = $businessCurriculum->getSupervisedTrainingEnroll($contractId, $curriculumId, $periodId);
+                if ( (int)$enrollId > 0 )
+                {
+                    $ok  = $enrollId;
+                    $ok2 = $curriculumId;
+                }
+            }
+
+            if ( $ok > 0 )
+            {
+
+                $business = $MIOLO->getBusiness($module, 'BusSupervisedTraining');
+                $res      = $business->getSupervisedTrainingByEnrollId($enrollId);
+
+                if ( $res->supervisedTrainingId > 0 )
+                {
+                    $this->addError(_M('The student already has training register for this curricular component.', $module));
+                }
+                else
+                {
+                    $opts = array('enrollId'              => $ok,
+                                  'personId'              => $personId,
+                                  'personName'            => $personName,
+                                  'contractId'            => $contractId,
+                                  'contractCourseId'      => $contractCourseId,
+                                  'contractCourseVersion' => $contractCourseVersion,
+                                  'contractCourseName'    => $contractCourseName,
+                                  'contractTurnId'        => $contractTurnId,
+                                  'contractUnitId'        => $contractUnitId,
+                                  'curriculumId'          => $ok2,
+                                  'function'              => $function);
+
+                    $this->page->mGoto($MIOLO->getActionURL($module, 'main:register:training:supervisedTrainingRegister', null, $opts));
+                }
+            }
+            else
+            {
+                $this->addError(_M('The student has not enroll in the curricular component of type training in this period.', $module));
+            }
+        }
+        else
+        {
+            $this->addError(_M('There are no curricular component of type training in the student\'s curriculum.', $module));
+        }
+    }
+
+    /**
+     * Method to gather all information from the form fields
+     * and put them on a database compatible object
+     **/
+    public function getTypesData()
+    {
+        $data = new acdSupervisedTraining();
+        $vars = get_object_vars($data);
+        foreach ( $vars as $var => $value )
+        {
+            if ( $this->$var && $var != 'description' )
+            {
+                $data->$var = $this->$var->value;
+            }
+        }
+
+        $data->personId              = MIOLO::_request('personId');
+        $data->personName            = MIOLO::_request('personName');
+        $data->contractCourseId      = MIOLO::_request('contractCourseId');
+        $data->contractCourseVersion = MIOLO::_request('contractCourseVersion');
+        $data->contractCourseName    = MIOLO::_request('contractCourseName');
+        $data->contractTurnId        = MIOLO::_request('contractTurnId');
+        $data->contractUnitId        = MIOLO::_request('contractUnitId');
+        $data->enrollId              = MIOLO::_request('enrollId');
+        $data->curriculumId          = MIOLO::_request('curriculumId');
+        $data->description           = $this->description->value;
+        $data->contractId            = $this->contractId->value;
+        $data->beginDate             = $this->beginDate->value;
+        $data->endDate               = $this->endDate->value;
+        $data->institutionId         = $this->institutionId->value;
+        $data->supervisorId          = $this->supervisorId->value;
+
+        return $data;
+    }
+
+}
+
+?>

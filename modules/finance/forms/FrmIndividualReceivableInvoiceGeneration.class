@@ -1,0 +1,651 @@
+<?php
+
+/**
+ *
+ * This file handles the connection and actions for fiReceivableInvoice table
+ *
+ * @author Armando Taffarel Neto [taffarel@solis.coop.br]
+ * @last modification: William Prigol Lopes [william@solis.coop.br]
+ *                  Add ajax functionality
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Armando Taffarel Neto [taffarel@solis.coop.br]
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 24/05/2006
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+ 
+/**
+ * Form to search the finInvoice table
+ */
+class FrmIndividualReceivableInvoiceGeneration extends MForm
+{
+
+    /**
+     * Class constructor
+     */
+    function __construct()
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        
+        parent::__construct(_M('Invoice generation', $module));
+        // hide the 'Submit' button
+        $this->setShowPostButton(false);
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        if (($f = $this->page->request('cpaint_function')) != "") 
+        {
+            $this->manager->getTheme()->clearContent();
+            $this->$f($this->page->request('cpaint_argument'));
+            $this->page->generateMethod = 'generateAJAX';
+        }
+        else
+        {
+             $this->defineFields();
+             $this->eventHandler();
+        }
+    }
+
+    /**
+     *  Default method to define fields
+     */
+    public function defineFields()
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        // BASE GROUP  INVOICE
+        // person
+        $personLabel = new MText('personLabel', _M('Person',$module).':');
+        $personLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $personLabel->setClass('m-caption m-caption-required');
+        $fld[]            = $personLabel;
+
+        $personId = new MLookupTextField('personId', $this->getFormValue('personId',$data->personId), _M('Person',$module), FIELD_LOOKUPFIELD_SIZE, null, null, array('personId', 'contractId', 'personName', 'courseId', 'courseName', 'courseVersion', 'unitId', 'limbo', 'accountSchemeId', 'accountSchemeDescription', 'costCenterId', 'costCenterDescription'), 'finance', 'PersonContract', null, array('personId' => 'personId'), !$this->page->isPostBack() );
+        $personId->setJsHint(_M('Enter the person code',$module));
+        $fld[]            = $personId;
+        $validators[]      = new MIntegerValidator('personId', _M('Person id', $module), 'optional');
+
+        $personName = new MTextField('personName', $this->getFormValue('personName',$data->personName), _M('Name',$module), FIELD_DESCRIPTION_SIZE);
+        $personName->setReadOnly(true);
+        $fld[]              = $personName;
+
+        $hctPerson = new MHContainer('hctContract', $fld);
+        $hctPerson->setShowLabel(false);
+        $flds[]   = $hctPerson;
+
+        // Limbo =)
+        $limbo = new MHiddenField('limbo', '');
+        $flds[] = $limbo;
+
+        unset($fld);
+        $contractLabel = new MText('contractLabel', _M('Contract', $module) . ':');
+        $contractLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $fld[]         = $contractLabel;
+
+        $contractId  = new MLookupTextField('contractId', $this->getFormValue('contractId', $data->contractId), null, FIELD_LOOKUPFIELD_SIZE, null, null, array('personId', 'personName', 'courseId', 'courseName', 'courseVersion', 'unitId', 'unitDescription', 'accountSchemeId', 'accountSchemeDescription', 'costCenterId', 'costCenterDescription'), 'finance', 'Contract', null, array('personId' => 'personId', 'courseId' => 'courseId', 'courseVersion'=> 'courseVersion', 'unitId' => 'unitId'), true);
+        $contractId->setJsHint(_M('Enter the contract code',$module));
+        $validators[] = new MIntegerValidator('contractId', _M('Contract id', $module), 'optional');
+
+        $courseId = new MLookupTextField('courseId', $this->getFormValue('courseId',$data->courseId), null,FIELD_ID_SIZE, null, null, array('courseVersion','courseName','accountSchemeId','accountSchemeDescription','costCenterId','costCenterDescription','unitId'), $module, 'CourseAccountSchemeCostCenter', null, array('courseId' => 'courseId', 'courseVersion' => 'courseVersion', 'unitId' => 'unitId'), ($function == 'update') ? false:true);
+        $courseId->setJsHint(_M('Select the course id', $module));
+        $validators[] = new MRequiredValidator('courseId',_M('Course',$module));
+        $courseVersion = new MTextField('courseVersion', $this->getFormValue('courseVersion',$data->courseVersion), null,FIELD_ID_SIZE);
+        $validators[] = new MRequiredValidator('courseVersion',_M('Course version',$module), 'required');   
+        $couseVersionDescription = new MText('couseVersionDescription',_M('Version',$module));
+        $courseName = new MTextField('courseName', $this->getFormValue('courseName',$data->courseName), null, FIELD_DESCRIPTION_SIZE);
+        $courseName->setReadOnly(true);
+        $hctCourse = new MHContainer('hctCourse', array($contractLabel, $contractId, $courseId, $couseVersionDescription, $courseVersion, $courseName));
+        $hctCourse->setShowLabel(true);
+        $flds[]   = $hctCourse;       
+        $businessPeriod = $MIOLO->getBusiness('academic','BusPeriod');
+        if ( is_null($this->getFormValue('periodId', $data->periodId)) ||
+             strlen((string)$this->getFormValue('periodId', $data->periodId)) == 0 )
+        {
+            $periodIdValue = CURRENT_PERIOD_ID;
+        }
+        else
+        {
+            $periodIdValue = $this->getFormValue('periodId', $data->periodId);
+        }
+
+        $periodIdLabel = new MText('periodIdLabel', _M('Period',$module).':');
+        $periodIdLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $periodIdLabel->setClass('m-caption m-caption-required');
+
+        $periodId = new MSelection('periodId', $periodIdValue, null , $businessPeriod->listPeriod(), true );
+        $flds[] = new MHContainer('hctPeriod', array ($periodIdLabel, $periodId));
+        $validators[] = new MRequiredValidator('periodId');
+
+        // Policy 
+        $policyLabel = new MText('policyLabel', _M('Policy', $module). ':');
+        $policyLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $policyLabel->setClass('m-caption m-caption-required');
+        $policyId = new MLookupTextField('policyId', $this->getFormValue('policyId',$data->policyId), null, FIELD_ID_SIZE, null, null,
+            array('policyDescription', 'limbo', 'eOperationId', 'limbo', 'limbo', 'limbo', 'limbo','limbo', 'limbo', 'limbo','limbo', 'operationDescription', 'incomeSourceId', 'incomeSourceDescription' ),
+            'finance', 'Policy', null, null, true);
+        $policyId->setJsHint(_M('Select the policy id', $module));
+        $validators[] = new MIntegerValidator('policyId',_M('Policy', $module), 'required');
+        $policyDescription = new MTextField('policyDescription', $this->getFormValue('policyDescription',$data->policyDescription), null, FIELD_DESCRIPTION_SIZE);
+        $policyDescription->setReadOnly(true);
+        $hctPolicy = new MHContainer('hctPolicy', array($policyLabel, $policyId, $policyDescription));
+        $hctPolicy->setShowLabel(true);
+        $flds[]   = $hctPolicy;
+ 
+        // income source
+        $incomeSourceLabel = new MText('incomeSourceLabel', _M('Income source',$module).':');
+        $incomeSourceLabel->setWidth(FIELD_CONTAINER_SIZE);        
+        $incomeSourceLabel->setClass('m-caption m-caption-required');
+        $incomeSourceId = new MLookupTextField('incomeSourceId', $this->getFormValue('incomeSourceId',$data->incomeSourceId), null,FIELD_ID_SIZE, null, null,
+            'incomeSourceDescription',
+            'finance', 'IncomeSource', null, null, true);
+        $incomeSourceId->setJsHint(_M('Select the income source id', $module));
+        $validators[] = new MIntegerValidator('incomeSourceId', _M('Income source',$module), 'required');
+        $incomeSourceDescription = new MTextField('incomeSourceDescription', $this->getFormValue('incomeSourceDescription',$data->incomeSourceDescription), null, FIELD_DESCRIPTION_SIZE);
+        $incomeSourceDescription->setReadOnly(true);
+        $hctIncomeSource = new MHContainer('hctIncomeSource', array($incomeSourceLabel, $incomeSourceId, $incomeSourceDescription));
+        $hctIncomeSource->setShowLabel(true);
+        $flds[]   = $hctIncomeSource;        
+
+        // Account Scheme
+        $accountSchemeLabel = new MText('accountSchemeLabel', _M('Account scheme',$module).':');
+        $accountSchemeLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $accountSchemeLabel->setClass('m-caption m-caption-required');
+        $accountSchemeId = new MLookupTextField('accountSchemeId', $this->getFormValue('accountSchemeId',$data->accountSchemeId), null,FIELD_ID_SIZE, null, null,
+            'accountSchemeDescription',
+            'accountancy', 'AccountScheme', null, null, true);
+        $accountSchemeId->setJsHint(_M('Select the account scheme id', $module));
+        $validators[] = new MRequiredValidator('accountSchemeId',_M('Account scheme',$module), 'required');        
+        $accountSchemeDescription = new MTextField('accountSchemeDescription', $this->getFormValue('accountSchemeDescription',$data->accountSchemeDescription), null, FIELD_DESCRIPTION_SIZE);
+        $accountSchemeDescription->setReadOnly(true);
+        $hctAccountScheme = new MHContainer('hctAccountScheme', array($accountSchemeLabel, $accountSchemeId, $accountSchemeDescription));
+        $hctAccountScheme->setShowLabel(true);
+        $flds[]   = $hctAccountScheme;
+        
+        // Cost Center
+        $costCenterLabel = new MText('costCenterLabel', _M('Cost center',$module).':');
+        $costCenterLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $costCenterLabel->setClass('m-caption m-caption-required');
+        $costCenterId = new MLookupTextField('costCenterId',$this->getFormValue('costCenterId',$data->costCenterId), null,FIELD_ID_SIZE, null, null,
+            'costCenterDescription',
+            'accountancy', 'CostCenter', null, null, true);
+        $costCenterId->setJsHint(_M('Select the cost center id', $module));
+        $validators[] = new MRequiredValidator('costCenterId',_M('Cost center',$module), 'required');                
+        $costCenterDescription = new MTextField('costCenterDescription',$this->getFormValue('costCenterDescription',$data->costCenterDescription), null, FIELD_DESCRIPTION_SIZE);
+        $costCenterDescription->setReadOnly(true);
+        $hctCostCenter = new MHContainer('hctCostCenter', array($costCenterLabel, $costCenterId, $costCenterDescription));
+        $hctCostCenter->setShowLabel(true);
+        $flds[]   = $hctCostCenter;
+        
+        // unit
+        $unitLabel = new MText('unitLabel', _M('Unit',$module).':');
+        $unitLabel->setWidth(FIELD_CONTAINER_SIZE);
+		//$unitLabel->setClass('m-caption m-caption-required');
+
+        $business = $MIOLO->getBusiness('basic','BusUnit');
+        $unitId = new MSelection('unitId', $this->getFormValue('unitId',$data->unitId), '', $business->listUnit());
+        $unitId->setJsHint( _M('Choose the unit',$module) );
+        //$validators[] = new MIntegerValidator('unitId',_M('Unit',$module), 'required');
+		$validators[] = new MIntegerValidator('unitId',_M('Unit',$module), null);
+
+        $hctUnit = new MHContainer('hctUnit', array($unitLabel, $unitId, $unitDescription));
+        $hctUnit->setShowLabel(true);
+        $flds[]   = $hctUnit;
+        
+       
+        // Automatic Debit
+        $messagesType =  SAGU::listTrueFalse(1); 
+        $automaticDebitLabel = new MText('automaticDebitLabel', _M('Automatic debit',$module).':');
+        $automaticDebitLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $automaticDebitLabel->setClass('m-caption m-caption-required');
+        $automaticDebit = $this->GetFormValue('automaticDebit', $data->automaticDebit ? $data->automaticDebit : f );
+        $automaticDebit = new MRadioButtonGroup('automaticDebit', '', $messagesType, $automaticDebit, null, 'horizontal');
+        $automaticDebit->SetShowLabel(false);
+        $hctAutomaticDebit = new MHContainer('hctCloseInvoice', array($automaticDebitLabel, $automaticDebit));
+        $flds[]  = $hctAutomaticDebit; 
+        
+        // Emission date
+        $emissionDateLabel = new MText('emissionDateLabel', _M('Emission date',$module).':');
+        $emissionDateLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $emissionDateLabel->setClass('m-caption m-caption-required');
+        
+	    $data->emissionDate = strlen((string)$data->emissionDate) > 0 ? $data->emissionDate : date(MASK_DATE_PHP); 
+        $emissionDate = new MCalendarField('emissionDate', $this->getFormValue('emissionDate',$data->emissionDate), '', FIELD_DATE_SIZE);
+        $emissionDate->setJsHint(_M('Enter the emission date',$module));
+        $validators[] = new MDATEDMYValidator('emissionDate', _M('Emission date',$module), 'required');
+        $hctEmissionDate = new MHContainer('hctEmissionDate', array($emissionDateLabel, $emissionDate));
+        $hctEmissionDate->setShowLabel(true);
+        $flds[]   = $hctEmissionDate;
+
+ 
+   
+        // Bank Account
+        $business = $MIOLO->getBusiness($module, 'BusBankAccount');
+        $bankAccountLabel = new MText('bankAccountLabel', _M('Bank account',$module).':');
+        $bankAccountLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $bankAccountLabel->setClass('m-caption m-caption-required');
+        $bankAccountId = new MComboBox('bankAccountId',
+                                       strlen((string)$this->getFormValue('bankAccountId',$data->bankAccountId)) > 0 ? $this->getFormValue('bankAccountId',$data->bankAccountId) : DEFAULT_BANK_ACCOUNT_ID,
+                                       '', $business->listBankAccount());
+
+        $bankAccountId->setJsHint(_M('Bank account id', $module).':');
+		$bankAccountId->setAutoPostBack(true);
+        $validators[] = new MIntegerValidator('bankAccountId', _M('Bank account',$module), 'required');
+        $hctBankAccount = new MHContainer('hctBankAccount', array($bankAccountLabel, $bankAccountId));
+        $hctBankAccount->setShowLabel(true);
+        $flds[]   = $hctBankAccount;
+
+        //Bank Contract 
+		$businessBankAccountContract = $MIOLO->getBusiness('finance', 'BusBankAccountContract');
+		$dataBankAccountContract     = $businessBankAccountContract->listBankAccountContract(strlen((string)$this->getFormValue('bankAccountId',$data->bankInvoiceId)) > 0 ? $this->getFormValue('bankAccountId',$data->bankAccountId) : DEFAULT_BANK_ACCOUNT_ID);
+		$bankContractIdLabel  = new MText('bankContractIdLabel', _M('Bank contract', 'finance').':');
+		$bankContractIdLabel->setWidth(FIELD_CONTAINER_SIZE);
+		$bankContractIdLabel->setClass('m-caption m-caption-required');
+        $bankContractId       = new Mselection('bankContractId', strlen((string) $this->getFormValue('bankContractId', $data->bankContractId) ) > 0 ? $this->getFormValue('bankContractId', $data->bankContractId) : DEFAULT_BANK_CONTRACT_ID , '', $dataBankAccountContract, false);
+
+        $hctBankAccountContract      = new MHContainer('hctBankAccountContract', array($bankContractIdLabel, $bankContractId));
+        $hctBankAccountContract->setShowLabel(true);
+
+        $flds[]                 = $hctBankAccountContract;
+        $validators[] = new MIntegerValidator('bankContractId', _M('Bank contract',$module), 'required');
+
+        // Sector
+        $businessSector = $MIOLO->getBusiness('basic', 'BusSector');
+        $sectorLabel = new MText('sectorLabel', _M('Sector', $module).':');
+        $sectorLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $sector = new MComboBox('sectorId', $data->sectorId, '', $businessSector->listSector());
+        $sector->setJsHint(_M('Enter the sector that invoices are required', $module));
+        $flds[] = new MHContainer('hctSector', array($sectorLabel, $sector));
+
+        // Comments
+        $commentsLabel = new MText('commentsLabel', _M('Comments', $module).':');
+        $commentsLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $comments = new MMultiLineField('invoiceComments', $data->invoiceComments ? $data->invoiceComments : $this->getFormValue('invoiceComments',$data->invoiceComments), '', 80, 4, 80);
+        $comments->setJsHint(_M('Enter the comments',$module));
+        $flds[] = new MHContainer('hctMessage', array($commentsLabel, $comments));
+       
+        $vctInvoice[] = new MVContainer('vctInvoice', $flds);
+
+        $fields[] = new MBaseGroup('bgrInvoice', _M('Main invoice information', $module), $vctInvoice);
+        unset($flds);
+        
+        // BASE GROUP ENTRIES
+        // Parcels number for entries
+        for ($x = 1; $x<=5; $x++)
+        {
+            $entriesSelection[$x] = $x;
+        }
+        
+        $eParcelsNumberLabel = new MText('parcelsNumberLabel', _M('Parcels number', $module).':');
+        $eParcelsNumberLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $eParcelsNumberLabel->setClass('m-caption m-caption-required');
+        $eParcelsNumber = new MTextField('eParcelsNumber', $this->getFormValue('eParcelsNumber', $data->eParcelsNumber), '', FIELD_ID_SIZE);
+        $eParcelsNumber->setJsHint(_M('Enter the number of invoices to generate', $module));
+        $flds[] = new MHContainer('hctParcelsNumber', array($eParcelsNumberLabel, $eParcelsNumber));
+
+        // Entries by parcel
+        $eEntriesNumberLabel = new MText('eEntriesNumberLabel', _M('Entries by parcel', $module).':');
+        $eEntriesNumberLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $eEntriesNumberLabel->setClass('m-caption m-caption-required');
+        $eEntriesNumber = new MSelection('eEntriesNumber', $this->getFormValue('eEntriesNumber', $data->eEntriesNumber), '', $entriesSelection, false);
+        $eEntriesNumber->setJsHint(_M('Enter the number of entries by invoice', $module));
+        $validators[] = new MRequiredValidator('eEntriesNumber', _M('Entries by invoice', $module));
+        $flds[] = new MHContainer('eEntriesNumber', array($eEntriesNumberLabel, $eEntriesNumber));
+       
+        // Value
+        $eValueLabel = new MText('eValueLabel', _M('Value suggested', $module).':');
+        $eValueLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $eValueLabel->setClass('m-caption m-caption-required');
+        $eValue = new MTextField('eValue', $this->getFormValue('eValue', $data->eValue), '', 20);
+        $eValue->setJsHint(_M('Enter the approached value for entries', $module));
+        $flds[] = new MHContainer('hctValue', array($eValueLabel, $eValue));
+        
+        // Maturity Date
+        $eMaturityDateLabel = new MText('eMaturityDateLabel', _M('Maturity date suggested', $module).':');
+        $eMaturityDateLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $eMaturityDateLabel->setClass('m-caption m-caption-required');
+        $eMaturityDate      = new MCalendarField('eMaturityDate', $this->getFormValue('eMaturityDate',$data->eMaturityDate), '', FIELD_DATE_SIZE);
+        $eMaturityDate->setJsHint(_M('Enter the initial maturity date',$module));
+        $validators[] = new MDATEDMYValidator('eMaturityDate');
+        $hctEMaturityDate   = new MHContainer('hctEmaturityDate', array($eMaturityDateLabel, $eMaturityDate));
+        $flds[]             = $hctEMaturityDate;
+        
+        // Operation
+        $operationLabel = new MText('eOperationLabel', _M('Operation id suggested', $module));
+        $operationLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $operationLabel->setClass('m-caption m-caption-required');
+        $operationId    = new MLookupTextField('eOperationId', $this->getformValue('operationId'), null, FIELD_ID_SIZE, null, null, array('operationDescription'), $module, 'Operation', null, true);
+        $validators[]   = new MIntegerValidator('eOperationId');
+        $operationName  = new MTextField('operationDescription', $this->getFormValue('operationDescription'), '', FIELD_DESCRIPTION_SIZE);
+        $operationName->setReadOnly(true);
+        $flds[]       = new MHcontainer('hctOperation', array($operationLabel, $operationId, $operationName));
+        
+        $messageInvoiceLabel   = new MText('messageInvoiceLabel', _M('Invoice message', $module).':');
+		$messageInvoiceLabel->setWidth(FIELD_CONTAINER_SIZE);
+		$messageInvoice        = new MTextField('messageInvoice', $this->getFormValue('messageInvoice',$data->messageInvoice), '', FIELD_DESCRIPTION_SIZE);
+		$flds[]      = new MHContainer('hctMessageInvoice', array($messageInvoiceLabel, $messageInvoice));
+
+		$vctEntry[] = new MVContainer('vctEntry', $flds);
+		$fields[]   = new MSeparator('');
+		$fields[]   = new MBaseGroup('bgrEntry', _M('Entry information', $module), $vctEntry);
+
+
+        unset($flds);
+        $flds[]   = new MSeparator('');
+        $flds[]   = new MButton('btnIncomeForecast', _M('Next', $module), 'callIncomeForecastFields();');
+        $flds[]   = new MSeparator('');
+        $fields[] = new MDiv('divButton', $flds, null, 'align="center"');
+        $fields[] = new MDiv('divContent', null);
+        
+        $MIOLO->getRequiredJS4Ajax();
+        // Ajax calls
+        $this->page->addScript('x/x_core.js');
+        $this->page->addScript('cpaint/cpaint.inc.js');
+        $this->page->addScript('m_lookup_ajax.js');
+        $url = str_replace('&amp;', '&',$this->manager->getCurrentURL());
+
+        $code = '
+            function callIncomeForecastFields() 
+            {
+                
+                if ((xGetElementById(\'eParcelsNumber\').value.length>0) && (xGetElementById(\'eEntriesNumber\').value.length>0))
+                {
+                    if ((xGetElementById(\'eParcelsNumber\').value<=0) && (xGetElementById(\'eEntriesNumber\').value<=0))
+                    {
+                        alert(\''._M('The number of parcels must be greater than 0', $module).'\');
+                    }
+                    else
+                    {
+                        xGetElementById(\'bgrEntry\').style.display = \'none\';
+                        xGetElementById(\'btnIncomeForecast\').style.display = \'none\';
+                        var args = new Array(
+								xGetElementById(\'eParcelsNumber\').value, 
+								xGetElementById(\'eEntriesNumber\').value, 
+								xGetElementById(\'eValue\').value, 
+								xGetElementById(\'eMaturityDate\').value, 
+								xGetElementById(\'eOperationId\').value, 
+								xGetElementById(\'invoiceComments\').value,
+								xGetElementById(\'messageInvoice\').value);
+                        xGetElementById(\'divContent\').innerHTML = \'Loading...<img src="/images/loading.gif"/>\';
+                        cpaint_call("' . $url . '", "POST", "ajax_btnIncomeForecast", args, returnIncomeForecastFields, "TEXT");
+                    }
+                }
+                else
+                {
+                    alert(\''._M('Please, select a number of parcels and number of entries to continue', $module).'\');
+                }
+            } 
+
+            function returnIncomeForecastFields(result) 
+            {
+                xGetElementById(\'divContent\').innerHTML = result;
+                MIOLO_parseAjaxJavascript(result);
+            }
+        ';
+        $this->page->AddJsCode($code);
+        // End ajax calls
+      
+        $this->addFields($fields);
+        $this->setValidators($validators);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+        $this->setClose($MIOLO->getActionURL($module, substr($action, 0, strrpos($action, ':'))));
+    }
+
+    /**
+     * Event triggered when user chooses Generate from the toolbar
+     **/
+    public function btnGenerate_click($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+        $goto   = MIOLO::_request('goto') ? MIOLO::_request('goto') : MIOLO::_request('goto', 'GET');
+        
+        $businessFinOperation = $MIOLO->getBusiness($module,'BusOperation');
+        $gOperation->operationGroupId = RECEIVABLE_OPERATION_GROUP_ID; 
+        $gOperation->operationTypeId = 'D';
+        $operations = $businessFinOperation->searchOperation($gOperation);
+
+        foreach($operations as $item => $valor)
+        {
+            $ops[] = $valor[0];
+        }
+        $data     = $this->getTypesData($ops);
+        $business = $MIOLO->getBusiness($module, 'BusReceivableInvoice');
+        $ok       = $business->generateIndividualInvoices($data);
+      
+        if ( $ok )
+        {
+            $msg = _M('Invoices added with success', $module);
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action, null, $opts);
+            $MIOLO->information($msg, $goto);
+        }
+        else
+        {
+            $msg  = _M('Error executing requested operation.', $module);
+            
+            $goto = $this->getFormValue('goto');
+            if (!(strlen((string)$goto)>0))
+            {
+                $goto = SAGU::getStackBackUrl();
+            }
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            
+            $caption = _M('Error', $module);
+            $MIOLO->error($msg, $goto, $caption);
+        }
+    }
+
+    /**
+     *
+     * Call AJAX data generation
+     *
+     * @param: No parameters needed but $go for MIOLO function is needed... =/
+     * 
+     * @return: MIOLO call function, no return
+     *
+     */ 
+    function ajax_btnIncomeForecast($go)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $args = explode(',', $go[0]);
+        
+        // Parse values to a little object
+        $data->parcelsNumber	= $args[0];
+        $data->entriesNumber	= $args[1];
+        $data->value			= $args[2];
+        $data->maturityDate		= $args[3];
+        $data->operationId		= $args[4];
+        $data->comments			= $args[5];
+		$data->messageInvoice	= $args[6];
+
+        $obsInfo = new MText('obsInfo', '<b>'._M('Attention', $module).':</b> '._M('If the field operation of entries do not filled, that entry is not registered', $module), 'red');
+        
+        $mainFields[] = new MDiv('obsDiv', $obsInfo, null, 'align="center"');
+        
+        // Generate main loop containing the number of parcels
+        for ($x=1; $x<=$data->parcelsNumber; $x++)
+        {
+            // Invoice Maturity date
+            $maturityDateLabel = new MText('maturityDateLabel'.$x.$y, _M('Maturity date', $module).':');
+            $maturityDateLabel->setWidth(FIELD_CONTAINER_SIZE);
+            $maturityDate      = new MCalendarField('maturityDate['.$x.']', $this->getFormValue('maturityDate['.$x.']') ? $this->getFormValue('maturityDate['.$x.']') : SAGU::addIntervalInDate($data->maturityDate, 'm', $x-1), '', FIELD_DATE_SIZE);
+            $fieldEntries[] = new MHContainer('hctMaturityDate'.$x, array($maturityDateLabel, $maturityDate));
+            
+            // Entries by invoice
+            for ($y = 1; $y<=$data->entriesNumber; $y++)
+            {        
+                // Operation info
+                $operationLabel = new MText('operationLabel'.$x.$y, _M('Operation id', $module).':');
+                $operationLabel->setWidth(FIELD_CONTAINER_SIZE);
+                $operationId    = new MLookupTextField('operationId'.$x.$y, 
+                                                       ((strlen((string)$this->getformValue('operationId'.$x.$y)) == 0) && ($y == 1))  ? $data->operationId : $this->getFormValue('operationId'.$x.$y), 
+                                                       null,
+                                                       FIELD_ID_SIZE, 
+                                                       null, 
+                                                       null, 
+                                                       array('operationDescription'.$x.$y), 
+                                                       $module, 
+                                                       'Operation', 
+                                                       null, 
+                                                       true);
+                $validators[]  = new MIntegerValidator('operationId'.$x.$y, _M('Operation', $module).' '.$y.' '._M('for invoice', $module).' '.$x, 'required');
+                $operationName = new MTextField('operationDescription'.$x.$y, $this->getFormValue('operationDescription'.$x.$y), '', FIELD_DESCRIPTION_SIZE);
+                $operationName->setReadOnly(true);
+                $field[]       = new MHcontainer('hctOperation'.$x.$y, array($operationLabel, $operationId, $operationName));
+                
+                // entryDate
+                $entryDateLabel = new MText('entryDateLabel'.$x.$y, _M('Entry date', $module).':');
+                $entryDateLabel->setWidth(FIELD_CONTAINER_SIZE);
+                $entryDate      = new MCalendarField('entryDate'.$x.$y, date(MASK_DATE_PHP), '', FIELD_DATE_SIZE);
+                $field[]        = new MHContainer('hctEntryDate'.$x.$y, array($entryDateLabel, $entryDate));
+                
+                // Value
+                $valueLabel   = new MText('valueLabel'.$x.$y, _M('Value', $module).':');
+                $valueLabel->setWidth(FIELD_CONTAINER_SIZE);
+                $value        = new MTextField('entryValue'.$x.$y, ((strlen((string)$this->getFormValue('value'.$x.$y)) == 0) && ($y == 1)) ? $data->value : $this->getFormValue('value'.$x.$y), '', FIELD_MONETARY_SIZE);
+                $validators[] = new MFloatValidator('entryValue'.$x.$y, _M('Value', $module), FLOAT_SEPARATOR, REAL_ROUND_VALUE, 'required');
+                $field[]      = new MHContainer('hctValue'.$x.$y, array($valueLabel, $value));
+                
+                // Comments
+                $commentsLabel  = new MText('commentsLabel'.$x.$y, _M('Comments', $module).':');
+                $commentsLabel->setWidth(FIELD_CONTAINER_SIZE);
+                $comments       = new MMultiLineField('comments'.$x.$y, ((strlen((string)$this->getFormValue('comments'.$x.$y)) == 0) && ($y == 1)) ? $data->comments : $this->getFormValue('comments'.$x.$y), '', 60, 2, 60);
+                $field[]        = new MHContainer('hctComments'.$x.$y, array($commentsLabel, $comments));
+                $entryName      = new MText('entryName'.$x.$y, '<b>'._M('Entry', $module).' '.$y.'</b>', 'red');
+                
+				// Individual Invoice Message
+				$messageInvoiceLabel   = new MText('messageInvoiceLabel'.$x.$y, _M('Invoice message', $module).':');
+				$messageInvoiceLabel->setWidth(FIELD_CONTAINER_SIZE);
+				$messageInvoice        = new MTextField('messageInvoice'.$x.$y, ((strlen((string)$this->getFormValue('messageInvoice'.$x.$y)) == 0) && ($y == 1)) ? $data->messageInvoice : $this->getFormValue('messageInvoice'.$x.$y), '', FIELD_DESCRIPTION_SIZE);
+				$field[]      = new MHContainer('hctMessageInvoice'.$x.$y, array($messageInvoiceLabel, $messageInvoice));
+
+                // Group data                
+                $vCont          = new MVContainer('vContEntry'.$x.$y, $field);
+                $vPos[]         = $vCont;
+                $bgEntry        = new MBaseGroup('bgrEntry'.$x.$y, $entryName->generate(), $vPos, 'none', 'none');
+                $bgEntry->addStyle('border-top', 'medium solid yellow');
+                $fieldEntries[] = $bgEntry;
+                unset($field);
+                unset($vPos);
+            }
+            $entriesInvoice = new MVContainer('entriesInvoice'.$x, $fieldEntries);
+            $entriesInvoice->setWidth('98%');
+            
+            $fields[] = $entriesInvoice;
+            unset($fieldEntries);
+            
+            // Group info
+            $parcelName   = new MText('textInvoice'.$x, '<b>'._M('Invoice', $module).' '.$x.'</b>', 'blue');
+            $bgInvoice    = new MBaseGroup('bgrParcel'.$x, $parcelName->generate(), $fields);
+            $bgInvoice->setWidth('98%');
+            $mainFields[] = $bgInvoice;
+            unset($fields);
+        }
+        $spanGenerate = new MSpan('spanSpacing', '<hr>');
+        $btnGenerate  = new MButton('btnGenerate', _M('Generate', $module), 'SUBMIT');
+        $sepDiv       = new MDiv('divGenerate', array($spanGenerate, $btnGenerate));
+        $sepDiv->setWidth('99%');
+        $mainFields[] = $sepDiv;
+        $field = new MVContainer('vContainer', $mainFields);
+        $this->manager->getTheme()->setContent($field);
+    }
+    
+   /**
+    *
+    * Get the data for fields on form and returns as object
+    *
+    * @param: No parameters needed
+    *
+    * @return: (object): Object containing the values of form
+    */
+    public function getTypesData($operations = '')
+    {
+
+        // Information about parcels
+        $data->parcelsNumber   = $this->eParcelsNumber->value;
+        $data->entriesNumber   = $this->eEntriesNumber->value;
+        $data->eMaturityDate   = $this->eMaturityDate->value;
+        $maturityDateData      = $this->getFormValue('maturityDate');
+        for ($x = 1; $x<=$data->parcelsNumber; $x++)
+        {
+            
+            $invoice[$x]->data->personId        = $this->personId->value;
+            $invoice[$x]->data->accountSchemeId = $this->accountSchemeId->value;
+            $invoice[$x]->data->costCenterId    = $this->costCenterId->value;
+            $invoice[$x]->data->courseId        = $this->courseId->value;
+            $invoice[$x]->data->courseVersion   = $this->courseVersion->value;
+            $invoice[$x]->data->unitId          = $this->unitId->value;
+            $invoice[$x]->data->periodId        = $this->periodId->value;
+            $invoice[$x]->data->contractId      = $this->contractId->value;
+            $invoice[$x]->data->policyId        = $this->policyId->value;
+            $invoice[$x]->data->automaticDebit  = $this->automaticDebit->value;
+            $invoice[$x]->data->emissionDate    = $this->emissionDate->value;
+            $invoice[$x]->data->incomeSourceId  = $this->incomeSourceId->value;
+            $invoice[$x]->data->bankAccountId   = $this->bankAccountId->value;
+			$invoice[$x]->data->bankContractId  = $this->bankContractId->value;
+            $invoice[$x]->data->comments        = $this->invoiceComments->value;
+            $invoice[$x]->data->parcelNumber    = $x;
+            //$invoice[$x]->data->value           = SAGU::formatNumber($this->);
+            $invoice[$x]->data->maturityDate    = $maturityDateData[$x];
+            $invoice[$x]->data->sectorId        = $this->sectorId->value;
+            //  Call all entries
+            for ($y = 1; $y<=$data->entriesNumber; $y++)
+            {
+                $operationData  = $this->getFormValue('operationId'.$x.$y);
+                $entryValueData = $this->getFormValue('entryValue'.$x.$y);
+                $commentsData   = $this->getFormValue('comments'.$x.$y);
+                $entryDateData  = $this->getFormValue('entryDate'.$x.$y);
+                $messageInvoiceData  = $this->getFormValue('messageInvoice'.$x.$y);
+                if ( in_array($this->getFormValue('operationId'.$x.$y), $operations) )
+                {
+                    $invoice[$x]->data->value = $this->getFormValue('entryValue'.$x.$y);
+                }
+
+                // Verify if a valid entry
+                if (strlen((string)$operationData)>0)
+                {
+                    $invoice[$x]->entries[$y]->operationId  = $operationData;
+                    $invoice[$x]->entries[$y]->entryDate    = date(MASK_DATE_PHP);
+                    $invoice[$x]->entries[$y]->value        = $entryValueData;
+                    $invoice[$x]->entries[$y]->costCenterId = $this->costCenterId->value;
+                    $invoice[$x]->entries[$y]->comments     = $commentsData;
+                    $invoice[$x]->entries[$y]->isAccounted  = DB_FALSE;
+                    $invoice[$x]->entries[$y]->creationType = MANUAL_ENTRY_CREATION_TYPE;
+                    $invoice[$x]->entries[$y]->entryDate    = $entryDateData;
+					$invoice[$x]->data->messageInvoice		= $messageInvoiceData;
+                }
+            }
+        }
+        return $invoice;
+    }
+
+}
+?>

@@ -1,0 +1,261 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for rshOption table
+ *
+ * @author Armando Taffarel Neto [taffarel@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * Armando Taffarel Neto [taffarel@solis.coop.br]
+ * 
+ * @since
+ * Class created on 18/01/2007
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to manipulate the basCountry table
+ **/
+class BusinessResearchBusOption extends Business
+{
+
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic', 'sagu');
+        $module = is_null($module) ? 'research' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+    /**
+     * List all records from the table handled by the class
+     *
+     * @param: None
+     *
+     * @returns (array): Return an array with the entire table
+     *
+     **/
+    public function listOption($questionId=null)
+    {
+        $db  = $this->getDatabase();
+        $sql = 'SELECT optionId,
+                       description
+                  FROM rshOption ';
+        if ( strlen((string)$questionId)>0 )
+        {
+           $sql .= ' WHERE questionId = ? ';
+           $args[] = $questionId;
+        }
+
+        $sql .= '      ORDER BY description ';
+
+        $ret = $db->query(SAGU::prepare($sql, $args));
+        //$ret = $db->query($sql);
+        return $ret;
+    }
+    
+    /**
+     * Return a specific record from the database
+     *
+     * @param $courseId (integer): Primary key of the record to be retrieved
+     *
+     * @return (object): Return an object of the type handled by the class
+     *
+     **/
+    public function getOption($optionId)
+    {
+
+        $sql = 'SELECT A.optionId,
+                       A.questionId,
+                       A.description,
+                       B.questionId,
+                       B.formId,
+                       A.userName,
+                       TO_CHAR(A.dateTime,\'' . MASK_TIMESTAMP . '\')
+                  FROM rshOption A
+            INNER JOIN rshQuestion B
+                    ON ( A.questionId = B.questionId )
+                 WHERE A.optionId = ?';
+
+        $db     = $this->getDatabase();
+        $result = $db->query(SAGU::prepare($sql, $optionId));
+
+        $option = new rshOption();
+        list ( $option->optionId,
+               $option->questionId,
+               $option->description,
+               $option->formId,
+               $option->description,
+               $option->userName,
+               $option->dateTime ) = $result[0];
+
+        return $option; 
+    }
+
+    
+    /**
+     * Do a search on the database table handled by the class
+     *
+     * @param $filters (object): Search filters
+     *
+     * @return (array): An array containing the search results
+     **/
+
+    public function searchOption($filters)
+    {
+
+        $sql = 'SELECT A.optionId,
+                       B.questionId,
+                       CASE WHEN ( length(B.description) > 100 )
+                            THEN substr(B.description, 1, 100) || \'...\'
+                            ELSE B.description 
+                             END as questionDescription,
+                       CASE WHEN ( length(A.description) > 100 )
+                            THEN substr(A.description, 1, 100) || \'...\'
+                            ELSE A.description 
+                             END as optionDescription
+                  FROM rshOption A
+            INNER JOIN rshQuestion B
+                    USING(questionId)';
+
+        if ( strlen((string)$filters->optionId) > 0 )
+        {
+            $where .= ' AND A.optionId = ? ';
+            $args[] = $filters->optionId;
+        }
+        if ( strlen((string)$filters->questionId) > 0 )
+        {
+            $where .= ' AND A.questionId = ? ';
+            $args[] = $filters->questionId;
+        }
+        if ( strlen((string)$filters->formId) > 0 )
+        {
+            $where .= ' AND B.formId = ? ';
+            $args[] = $filters->formId;
+        }
+        if ( strlen((string)$filters->description) > 0 )
+        {
+            $where .= ' AND A.description ILIKE ? ';
+            $args[] = $filters->description.'%';
+        }
+
+        unset($result);
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE ' . substr($where, 4);
+            $sql .= ' ORDER BY B.formId,
+                               B.questionId,
+                               A.optionId';
+            $db = $this->getDatabase();
+            $result = $db->query(SAGU::prepare($sql, $args));
+        }
+
+        return $result;
+    }
+
+    /**
+     * Insert a new record
+     *
+     * @param $data (object): An object of the type handled by the class
+     *
+     * @return True if succed, otherwise False
+     *
+     **/
+   public function insertOption($data)
+    {
+        $sql = 'INSERT INTO rshoption
+                            (questionId,
+                             description)
+                     VALUES (?, ?) ';
+
+        $args = array(
+                        $data->questionId,
+                        $data->description
+                        );
+
+        $db     = $this->getDatabase();
+        $result = $db->execute(SAGU::prepare($sql, $args));
+        return $result;
+    }
+
+    /**
+     * Update data from a specific record
+     *
+     * @param $data (object): Data which will replace the old record data
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+
+   public function updateOption($data)
+    {
+        $sql = 'UPDATE rshOption
+                   SET questionId  = ?,
+                       description = ?       
+                 WHERE optionId = ? ';
+
+        $args = array( $data->questionId,
+                       $data->description,
+                       $data->optionId
+                      );
+        $db   = $this->getDatabase();
+
+        $sqls = SAGU::prepare($sql, $args);
+
+        for ( $i=0; $i<count($sqls); $i++ )
+        {
+            $result = $db->execute($sqls[$i]);
+        }
+
+        //$db->close();
+
+        return $result;
+    }
+
+    /**
+     * Delete a record
+     *
+     * @param $courseId (string): Primary key for deletion
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+   public function deleteOption($optionId)
+    {
+        $sql = 'DELETE FROM rshOption
+                      WHERE optionId = ? ';
+
+        $db     = $this->getDatabase();
+        $result = $db->execute(SAGU::prepare($sql, $optionId));
+        return $result;
+    }
+
+}
+?>

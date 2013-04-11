@@ -1,0 +1,206 @@
+<?php
+/**
+ *
+ * @author Hélio Henrique Rodrigues Guimarães [helio@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * Armando Taffarel Neto [taffarel@solis.coop.br]
+ * 
+ * @since
+ * Class created on 26/07/2006
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to manipulate the acdgenerateMultipleLearningPeriod table
+ **/
+class BusinessSelectiveProcessBusInscriptionWeb extends Business
+{
+    public $db;
+    
+    /**
+     * Class constructor
+     **/
+    public function BusinessSelectiveProcessBusInscriptionWeb()
+    {
+        $this->db = $this->getDatabase();
+    }
+    
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module = is_null($module) ? 'selectiveProcess' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+    public function beginTransaction()
+    {
+        $db = $this->getDatabase('basic');
+        $db->execute('BEGIN TRANSACTION');
+
+        $db = $this->getDatabase('selectiveProcess');
+        $db->execute('BEGIN TRANSACTION');
+
+        $db = $this->getDatabase('finance');
+        $db->execute('BEGIN TRANSACTION');
+
+        $db = $this->getDatabase('accountancy');
+        $db->execute('BEGIN TRANSACTION');
+
+        $db = $this->getDatabase('research');
+        $db->execute('BEGIN TRANSACTION');
+
+    }
+
+    public function commit()
+    {
+        $db = $this->getDatabase('basic');
+        $db->execute('COMMIT');
+
+        $db = $this->getDatabase('selectiveProcess');
+        $db->execute('COMMIT');
+
+        $db = $this->getDatabase('finance');
+        $db->execute('COMMIT');
+
+        $db = $this->getDatabase('accountancy');
+        $db->execute('COMMIT');
+
+        $db = $this->getDatabase('research');
+        $db->execute('COMMIT');
+    }
+
+    /**
+     * Do a search on the database table handled by the class
+     *
+     * @param $filters (object): Search filters
+     *
+     * @return (array): An array containing the search results
+     **/
+    public function alreadyExist($courseId, $courseVersion, $turnId, $unitId, $periodId)
+    {
+        $sql = 'SELECT A.courseId || \';\' || A.courseVersion || \';\' || A.turnId || \';\' || A.unitId,
+                       A.courseId,
+                       A.courseVersion,
+                       B.shortname,
+                       C.description,
+                       D.description,
+                       A.status
+                 FROM acdCourseOccurrence A
+                 INNER JOIN acdCourse B
+                    ON (A.courseId = B.courseId )
+                 INNER JOIN basTurn C
+                    ON (A.turnId = C.turnId)
+                 INNER JOIN basUnit D
+                    ON (A.unitId = D.unitId)
+           INNER JOIN acdLearningPeriod E
+                   ON (E.courseId = A.courseId AND
+                       E.courseVersion = A.courseVersion AND
+                       E.turnId = A.turnId AND
+                       E.unitId = A.unitId)
+                 WHERE E.courseId      = ? AND
+                       E.courseVersion = ? AND
+                       E.turnId        = ? AND
+                       E.unitId        = ? AND
+                       E.periodId      = ? AND
+                       A.status = \'t\'';
+
+        $args = array(   $courseId, 
+                         $courseVersion, 
+                         $turnId, 
+                         $unitId, 
+                         $periodId
+                        );
+
+        //$db = $this->getDatabase();
+
+        $result = $db->query(SAGU::prepare($sql, $args));
+
+        return $result;
+    }
+
+    /**
+     * Verify if exist one payment to one selective process
+     * in the same period. If exist, not is generat invoice in
+     * this selective process to pupil
+     *
+     * @param $filters (object): Search filters
+     *
+     * @return (bool): true  => exist payment in the period
+     *                 false => NOT exist payment in the period
+     **/
+    public function verifyBackPayment($filters)
+    {
+        $sql = ' SELECT CASE WHEN balance(A.inscriptionInvoiceId) > 0
+                             THEN \''.DB_FALSE.'\'
+                             ELSE \''.DB_TRUE.'\'
+                        END
+                   FROM sprInscription A,
+                        sprSelectiveProcessOccurrence B,
+                        sprSelectiveProcess C
+                  WHERE A.selectiveProcessId = B.selectiveProcessId
+                    AND C.selectiveProcessId = A.selectiveProcessId
+                    AND A.personId = ?
+                    AND B.isMain = \''.DB_TRUE.'\'
+                    AND A.selectiveProcessId IN (SELECT selectiveProcessId
+                                                   FROM sprSelectiveProcess 
+                                                  WHERE selectiveProcessId <> ?)
+                    AND C.periodId = (SELECT periodId
+                                        FROM sprSelectiveProcess 
+                                       WHERE selectiveProcessId = ?)';
+
+        $args = array(   $filters->personId,
+                         $filters->selectiveProcessId,
+                         $filters->selectiveProcessId,
+                        );
+
+        //$db = $this->getDatabase();
+
+        $result = $this->db->query(SAGU::prepare($sql, $args));
+
+        return $result;
+    }
+
+
+
+
+
+
+
+
+
+
+
+
+
+}
+
+?>

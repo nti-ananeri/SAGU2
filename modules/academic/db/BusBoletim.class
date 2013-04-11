@@ -1,0 +1,159 @@
+<?php
+
+class BusinessAcademicBusBoletim extends Business
+{
+
+    /**
+     * Creates a connection with the specified database. 
+     * If no database is specified, assume the current module name.
+     *
+     * @author Jamiel Spezia [jamiel@solis.coop.br]
+     *
+     * @param $dbname (string): Specifies the database name to which we want to connect.
+     *
+     * @return (object): A database object.
+     *
+     */
+    function getDatabase($dbname=null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic', 'sagu');
+        $module = is_null($module) ? 'academic' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+    function getGroups($contractId, $learningPeriodId)
+    {
+        $db  = $this->getDatabase();
+
+        $sql = 'SELECT A.enrollId,
+                       B.groupId,
+                       C.curriculumId,
+                       C.curricularComponentId,
+                       C.curricularComponentVersion,
+                       E.name,
+                       C.semester,
+                       A.statusId,
+                       D.description,
+                       ROUND(A.note::NUMERIC, \'' . REAL_ROUND_VALUE . '\'),
+                       ROUND(A.examNote::NUMERIC, \'' . REAL_ROUND_VALUE . '\'),
+                       ROUND(A.finalNote::NUMERIC, \'' . REAL_ROUND_VALUE . '\'),
+                       ROUND(A.frequency::NUMERIC,\'' . REAL_ROUND_VALUE . '\'),
+                       E.lessonNumberHours
+                  FROM acdEnroll A
+            INNER JOIN acdGroup B                    ON ( B.groupId = A.groupId )
+            INNER JOIN acdCurriculum C                    ON ( C.curriculumId = A.curriculumId )
+            INNER JOIN acdEnrollStatus D                    ON ( D.statusId = A.statusId )
+            INNER JOIN acdCurriculumType  ACD   USING(curriculumtypeid)
+            INNER JOIN acdCurricularComponent E ON (E.curricularComponentId = C.curricularComponentId AND E.curricularComponentVersion = C.curricularComponentVersion)
+                 WHERE A.contractId       = ?
+                   AND B.learningPeriodId = ?  
+                   AND A.statusId NOT IN (' . ENROLL_STATUS_CANCELLED . ',' . ENROLL_STATUS_EXCUSED . ')
+                   AND acd.curriculumtypeid in (SELECT value::integer FROM basconfig where parameter = \'ACD_CURRICULUM_TYPE_CURRICULAR_INTEGRATE\')
+              ORDER BY C.semester, getCurricularComponentName(C.curricularComponentId)';
+                   
+        $args   = array($contractId, $learningPeriodId);
+
+        $result = $db->query(SAGU::prepare($sql, $args));
+		
+        
+        return $result;
+
+    }
+    function getGroupsByPeriod($contractId, $periodId = null)
+    {
+        $db  = $this->getDatabase();
+
+        $sql = 'SELECT A.enrollId,
+                       B.groupId,
+                       C.curriculumId,
+                       C.curricularComponentId,
+                       C.curricularComponentVersion,
+                       E.name,
+                       C.semester,
+                       A.statusId,
+                       D.description,
+                       ROUND(A.note::NUMERIC, \'' . REAL_ROUND_VALUE . '\'),
+                       ROUND(A.examNote::NUMERIC, \'' . REAL_ROUND_VALUE . '\'),
+                       ROUND(A.finalNote::NUMERIC, \'' . REAL_ROUND_VALUE . '\'),
+                       ROUND(A.frequency::NUMERIC,\'' . REAL_ROUND_VALUE . '\'),
+                       E.lessonNumberHours,
+                       verifyEnrollAbsence (A.enrollId)
+                  FROM acdEnroll A
+            INNER JOIN acdGroup B                    ON ( B.groupId = A.groupId )
+            INNER JOIN acdCurriculum C                    ON ( C.curriculumId = A.curriculumId )
+            INNER JOIN acdEnrollStatus D                    ON ( D.statusId = A.statusId )
+            INNER JOIN acdCurriculumType  ACD   USING(curriculumtypeid)
+            INNER JOIN acdCurricularComponent E ON (E.curricularComponentId = C.curricularComponentId AND E.curricularComponentVersion = C.curricularComponentVersion)
+                 WHERE A.contractId       = ? ';
+        $args[]   = $contractId;
+        if ( strlen((string)$periodId) > 0 )
+        {
+            $sql .=  ' AND B.learningPeriodId IN ( SELECT learningPeriodId FROM acdLearningPeriod WHERE periodid = ? )  ';
+            $args[] = $periodId;
+        }
+        $sql .=' AND A.statusId NOT IN (' . ENROLL_STATUS_CANCELLED . ',' . ENROLL_STATUS_EXCUSED . ')
+                   AND acd.curriculumtypeid in (SELECT value::integer FROM basconfig where parameter = \'ACD_CURRICULUM_TYPE_CURRICULAR_INTEGRATE\')
+              ORDER BY C.semester, getCurricularComponentName(C.curricularComponentId)';
+                   
+
+
+        $result = $db->query(SAGU::prepare($sql, $args));
+		
+        
+        return $result;
+
+    }
+
+
+    function getDegrees($learningPeriodId)
+    {
+        $db  = $this->getDatabase();
+
+        $sql = 'SELECT degreeId,
+                       description
+                  FROM acdDegree
+                 WHERE learningPeriodId = ?
+              ORDER BY degreeNumber';
+
+        $args   = array($learningPeriodId);
+        $result = $db->query(SAGU::prepare($sql, $args));
+
+        return $result;
+    }        
+
+    function getDegreeEnroll($enrollId, $degreeId)
+    {
+        $db  = $this->getDatabase();
+
+        $sql = 'SELECT ROUND(note::NUMERIC, \'' . REAL_ROUND_VALUE . '\')
+                  FROM acdDegreeEnroll
+                 WHERE enrollId = ?
+                   AND degreeId = ?';
+
+        $args   = array($enrollId, $degreeId);
+        $result = $db->query(SAGU::prepare($sql, $args));
+
+        return $result[0][0];
+    }
+    
+    function getDegreesByGroups($groups)
+    {
+        $db  = $this->getDatabase();
+        $sql = 'SELECT DISTINCT degreeId,
+                       description,
+                       degreeNumber
+                  FROM acdDegree
+                INNER JOIN acdGroup USING (learningPeriodId)
+                 WHERE groupId IN ('.$groups.')
+              ORDER BY degreeNumber';
+
+        $result = $db->query($sql);
+
+        return $result;
+    }        
+
+}
+
+?>

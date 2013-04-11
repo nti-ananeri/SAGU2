@@ -1,0 +1,381 @@
+<?php
+
+/**
+ * Technican document form
+ *
+ * @author Guilherme Gregory [guilherme@solis.coop.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * Leovan Tavares da Silva [leovan@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ *
+ * @since
+ * Class created on 19/05/2006
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2005 SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+
+/**
+ * Form to manipulate a contract document
+ **/
+class FrmTechnicanDocument extends MForm
+{
+    private $home;
+
+    /**
+     * Class constructor
+     **/
+    function __construct($data)
+    {
+        $module = MIOLO::getCurrentModule();
+        $this->home   = $data->home;
+
+        parent::__construct(_M('Technican', $module));
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+        $event    = MIOLO::_request('event');
+
+        $toolBar = new MToolBar('toolBar', $MIOLO->getActionURL($module, $action));
+        $toolBar->hideButton('tbBtnNew');
+        $toolBar->hideButton('tbBtnSave');
+        $toolBar->hideButton('tbBtnSearch');
+        $toolBar->hideButton('tbBtnDelete');
+        $toolBar->enableButton('tbBtnPrint');
+
+        //favoritos
+        $enabledImage  = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-20x20.png');
+        $disabledImage = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-disabled-20x20.png');
+        $url           = $MIOLO->getActionURL($module, $this->home, null, array('function' => 'search', 'event' => 'bookmark'));
+        $toolBar->addButton('tbBtnBookmark', _M('Add to bookmarks', 'basic'), $url, null, true, $enabledImage, $disabledImage);
+
+        if ( MIOLO::_request('event') == 'bookmark' )
+        {
+            $MIOLO->getClass('basic', 'access');
+            access::insert('Technican', $this->home, 'technican-16x16.png', true);
+        }
+        //fim favoritos
+
+        $fields[] = $toolBar;
+
+        $fields[] = new MSeparator();
+        $fields[] = new MHiddenField('limbo', '');
+
+        $contractId = new MHiddenField('contractId', $this->getFormValue('contractId', $this->contractId->value));
+        $fields[]  = $contractId;
+        $fields[]  = new MSeparator();
+
+        $personLabel = new MText('personLabel', _M('Person',$module) . ':');
+        $personLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $flds[]      = $personLabel;
+
+//        $personId     = new MLookupTextField('personId', $this->getFormValue('personId', $this->personId->value), _M('Person id',$module), FIELD_LOOKUPFIELD_SIZE, null, null, array('contractId', 'personId', 'personName', 'courseId', 'courseName', 'courseVersion', 'limbo', 'limbo', 'unitId'), $module, 'PersonContract', null, null, true);
+//        $validators[] = new MIntegerValidator('personId', '', 'optional');
+//        $flds[]       = $personId;
+
+        $personId = new MLookupTextField('personId', $this->getFormValue('personId',$data->personId), '', FIELD_ID_SIZE, null, null, 'personName', 'basic', 'PhysicalPerson', null, null, true);
+        $personId->setJsHint(_M('Enter the person code',$module));
+        $validators[] = new MIntegerValidator('personId', _M('Person',$module), 'optional');
+        $flds[] = $personId;
+
+        $personName   = new MTextField('personName', $this->getFormValue('personName', $data->personName), _M('Person name',$module), FIELD_DESCRIPTION_SIZE);
+        $personName->setJsHint(_M('Enter the person name',$module));
+        $personName->setReadOnly(true);
+        $flds[]       = $personName;
+
+        $hctPerson = new MHContainer('hctPerson', $flds);
+        $hctPerson->setShowLabel(false);
+        $fields[]  = $hctPerson;
+        unset($flds);
+
+        $optE   = new MOption('optE', 'E', _M('Enrolled', $module), false);
+        $opts[] = $optE;
+        
+        $optO   = new MOption('optO', 'O', _M('Other', $module), false);
+        $msg    = _M('INFORMATION\\nThis option generate contracts to Contract Unlocks, Transfers, Diploma Carrier...\\nWARNING: Executing this operation the Educational Services Contract\\nNumber (999999/99X) of the pupils will be recodified!!!', $module);
+        $optO->addAttribute('onClick','Javascript:alert(\'' . $msg . '\');document.' . $this->getName() . '.submit();');
+        $opts[] = $optO;
+
+        if ( MODULE_SELECTIVEPROCESS_INSTALLED == 'YES' )
+        {
+            $optF   = new MOption('optF', 'F', _M('Freshmen', $module), false);
+            $msg    = _M('INFORMATION!\\nYou are trying to print the Contract of Rendering of Services for Freshmen\\n. This possible being, informs the code of the Selective Process in the field Selective Process.\\nMoreover, set the option beside for which the candidate classified.\\nWARNING: Executing this operation the Educational Services Contract\\nNumber (999999/99X) of the pupils will be recodified!!!', $module);
+            $optF->addAttribute('onClick','Javascript:alert(\'' . $msg . '\');document.' . $this->getName() . '.submit();');
+            $opts[] = $optF;
+        }
+
+        $radSituationLabel = new MText('radSituationLabel', _M('Situation of pupil', $module) . ':');
+        $radSituationLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $radSituationLabel->setClass('m-caption m-caption-required');
+        $flds[]            = $radSituationLabel;
+
+        $radSituation = new MRadioButtonGroup('radSituation', '', $opts, $this->getFormValue('radSituation', $this->radSituation->value), '', 'vertical');
+        $radSituation->setShowLabel(false);
+        $flds[]       = $radSituation;
+        unset($opts);
+
+        $hctSituation = new MHContainer('hctSituation', $flds);
+        $hctSituation->setShowLabel(false);
+        $hctSituation->setAutoPostBack(true);
+        unset($flds);
+        $fields[]     = $hctSituation;
+
+        if ( strlen((string)$this->getFormValue('radSituation', $this->radSituation->value)) > 0 )
+        {
+            $courseLabel = new MText('courseLabel', _M('Course',$module) . ':');
+            $courseLabel->setWidth(FIELD_CONTAINER_SIZE);
+            $courseLabel->setClass('m-caption m-caption-required');
+
+            $courseId     = new MLookupTextField('courseId', $this->getFormValue('courseId', $this->courseId->value), '', FIELD_LOOKUPFIELD_SIZE, null, null, 'courseVersion, courseName', $module, 'CourseVersion', null, array('courseId' => 'courseId'), true);
+            $validators[] = new MRequiredValidator('courseId', _M('Course',$module));
+            $courseId->setJsHint(_M('Enter the course code',$module));
+
+            $courseName = new MTextField('courseName', null, '', FIELD_DESCRIPTION_SIZE);
+            $courseName->setReadOnly(true);
+            $courseName->setJsHint(_M('Course name',$module));
+
+            $courseVersion = new MTextField('courseVersion', $this->getFormValue('courseVersion', $this->courseVersion->value), '', FIELD_ID_SIZE);
+            //$courseVersion->setReadOnly(true);
+            $courseVersion->setJsHint(_M('Course version',$module));
+
+            $hctCourse = new MHContainer('hctCourse', array($courseLabel, $courseId, $courseVersion, $courseName));
+            $hctCourse->setShowLabel(true);
+            $fields[]  = $hctCourse;
+        }
+
+        if ( $this->getFormValue('radSituation', $this->radSituation->value) == 'O' || $this->getFormValue('radSituation', $this->radSituation->value) == 'E' )
+        {
+            $businessPeriod = $MIOLO->getBusiness($module,'BusPeriod');
+            $periodId = new MComboBox('periodId', strlen((string)$this->getFormValue('periodId', $data->periodId))>0 ? $this->getFormValue('periodId', $data->periodId) : CURRENT_PERIOD_ID, _M('Period',$module), $businessPeriod->listPeriod(), true );
+            $fields[] = $periodId;
+
+            $learningPeriodLabel = new MText('learningPeriodLabel', _M('Learning period',$module) . ':');
+            $learningPeriodLabel->setWidth(FIELD_CONTAINER_SIZE);
+            $learningPeriodLabel->setClass('m-caption m-caption-required');
+            $flds[]              = $learningPeriodLabel;
+
+            $learningPeriodId = new MLookupTextField('learningPeriodId', $this->getFormValue('learningPeriodId',$this->learningPeriodId->value), NULL, FIELD_LOOKUPFIELD_SIZE, null, null, array(null, null, null, null, 'unitId', 'learningPeriodDescription'), $module, 'LearningPeriod', null, array('periodId' => 'periodId', 'courseId' => 'courseId', 'courseVersion' => 'courseVersion'), true);
+            $learningPeriodId->setJsHint(_M('Enter the learning period code',$module));
+            $validators[]     = new MRequiredValidator('learningPeriodId', _M('Learning period',$module), 'required');
+            $flds[]           = $learningPeriodId;
+
+            $learningPeriodDescription = new MTextField('learningPeriodDescription', $this->getFormValue('learningPeriodDescription', $this->learningPeriodDescription->value), '', FIELD_DESCRIPTION_SIZE);
+            $learningPeriodDescription->setJsHint(_M('Learning period description',$module));
+            $learningPeriodDescription->setReadOnly(true);
+            $flds[]                    = $learningPeriodDescription;
+
+            $hctLearningPeriod = new MHContainer('hctLearningPeriod', $flds);
+            unset($flds);
+            $fields[]          = $hctLearningPeriod;
+
+            $business     = $MIOLO->getBusiness('basic', 'BusUnit');
+            $unitId       = new MComboBox('unitId', $this->getFormValue('unitId', $this->unitId->value), _M('Unit id',$module), $business->listUnit());
+            $unitId->setJsHint(_M('Enter the unit code',$module));
+            $validators[] = new MRequiredValidator('unitId');
+            $fields[]     = $unitId;
+
+            $fields[]          = new MSeparator();
+        }
+        elseif ( $this->getFormValue('radSituation', $this->radSituation->value) == 'F')
+        {
+            $business           = $MIOLO->getBusiness('selectiveProcess', 'BusSelectiveProcess');
+            $selectiveProcessId = new MComboBox('selectiveProcessId', $this->getFormValue('selectiveProcessId', $data->selectiveProcessId), _M('Selective process',$module), $business->listSelectiveProcess());
+            $selectiveProcessId->setJsHint(_M('Enter the selective process code',$module));
+            $validators[]       = new MRequiredValidator('selectiveProcessId','', 'required');
+            $fields[]           = $selectiveProcessId;
+            $fields[]           = new MSeparator(); 
+
+/*            $opts[] = new MOption('opt1', '1', _M('1st option', $module), true);
+            $opts[] = new MOption('opt2', '2', _M('2nd option', $module), false);
+            $opts[] = new MOption('opt3', '3', _M('3rd option', $module), false);
+
+            $radOptionLabel = new MText('radOptionLabel', _M('Option', $module) . ':');
+            $radOptionLabel->setWidth(FIELD_CONTAINER_SIZE);
+            $radOptionLabel->setClass('m-caption m-caption-required');
+            $flds[]         = $radOptionLabel;
+
+            $radOption = new MRadioButtonGroup('radOption', '', $opts, $this->getFormValue('radOption', $this->radOption->value), '', 'vertical');
+            $radOption->setShowLabel(false);
+            $flds[]    = $radOption;
+            unset($opts);
+
+            $hctOption = new MHContainer('hctOption', $flds);
+            $hctOption->setShowLabel(false);
+            unset($flds);
+            $fields[] = $hctOption;
+*/
+        }
+
+        $opts[] = new MOption('optPdf', 'pdf', 'pdf', true);
+        $opts[] = new MOption('optSxw', 'sxw', 'sxw', false);
+
+        $radFileTypeLabel = new MText('radFileTypeLabel', _M('File type',$module) . ':');
+        $radFileTypeLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $radFileTypeLabel->setClass('m-caption m-caption-required');
+
+        $radFileType = new MRadioButtonGroup('radFileType', '', $opts, 2, '', 'horizontal', '');
+        $radFileType->setShowLabel(false);
+
+        $hctFileType = new MHContainer('hctFileType', array($radFileTypeLabel, $radFileType));
+        $hctFileType->setShowLabel(false);
+        $fields[]    = $hctFileType;
+
+        $divError = new MDiv('divError', null, null, 'align=center');
+        $fields[] = $divError;
+
+        $fields[] = new MSeparator();
+
+        $this->setFields($fields);
+        $this->setValidators($validators);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+        $this->setClose($MIOLO->getActionURL($module,substr($action,0,strrpos($action,':'))));
+    }
+
+    /**
+     * Event triggered when user chooses Search from the toolbar
+     **/
+    public function tbBtnPrint_click($sender = null)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+        $cd->contractId         = MIOLO::_request('contractId');
+        $cd->personId           = MIOLO::_request('personId');
+        $cd->courseId           = MIOLO::_request('courseId');
+        $cd->courseVersion      = MIOLO::_request('courseVersion');
+        $cd->unitId             = MIOLO::_request('unitId');
+        $cd->learningPeriodId   = MIOLO::_request('learningPeriodId');
+        $cd->selectiveProcessId = MIOLO::_request('selectiveProcessId');
+        $cd->fileType           = MIOLO::_request('radFileType');
+        $cd->situation          = MIOLO::_request('radSituation');
+        $cd->optionId           = MIOLO::_request('radOption');
+
+        set_time_limit(0);
+
+        if ( strlen((string)$cd->situation) == 0 )
+        {
+            $lblMsg1        = new MText('lblMsg1', _M('Select the respective situation option',$module) . '!');
+            $lblMsg1->color = 'red';
+            $sep1           = new Separator('');
+            $cntErrors      = new MVContainer('cntErrors', array($lblMsg1,$sep1));
+            $this->divError->addControl($cntErrors);
+        }
+        elseif ( $cd->situation == 'F' && ( strlen((string)$cd->selectiveProcessId) == 0 || strlen((string)$cd->unitId) == 0 || strlen((string)$cd->courseId) == 0 ) )
+        {
+            $lblMsg1        = new MText('lblMsg1', '');
+            $lblMsg1->color = 'red';
+            $cntErrors      = new MVContainer('cntErrors', array($lblMsg1));
+            $this->divError->addControl($cntErrors);
+        }
+        elseif ( $cd->situation != 'F' && ( strlen((string)$cd->learningPeriodId) == 0 || strlen((string)$cd->unitId) == 0 || strlen((string)$cd->courseId) == 0 ) )
+        {
+            $lblMsg1        = new MText('lblMsg1', '');
+            $lblMsg1->color = 'red';
+            $cntErrors      = new MVContainer('cntErrors', array($lblMsg1));
+            $this->divError->addControl($cntErrors);
+        }
+        else
+        {
+
+            $businessContractDocument = $MIOLO->getBusiness($module, 'BusContractDocument');
+            $data = $businessContractDocument->getGraduationContractDocument($cd);
+
+            if ( $data[0][22] == true || $data[0][9] < 18 )
+            {
+                $contractResource = 'technicanMinorContract.sxw';
+            }
+            else
+            {
+                $contractResource = 'technicanContract.sxw';
+            }
+
+            $businessCompany = $MIOLO->getBusiness('basic', 'BusCompany');
+            $company         = $businessCompany->getCompany(DEFAULT_COMPANY_CONF);
+
+            $businessLegalPerson = $MIOLO->getBusiness('basic', 'BusLegalPerson');
+            $legalPerson         = $businessLegalPerson->getLegalPerson($company->personId);
+
+            $businessCity = $MIOLO->getBusiness('basic', 'BusCity');
+            $city         = $businessCity->getCity($legalPerson->cityId);
+
+            $businessCountry = $MIOLO->getBusiness('basic', 'BusCountry');
+            $country         = $businessCountry->getCountry($city->countryId);
+
+            if ( count($data)>0 )
+            {
+                $MIOLO->uses('/core/AgataAPI.class');
+
+                $api = new AgataAPI;
+
+                $api->setParameter('$companyId', $company->companyId);
+                $api->setParameter('$companyName', $company->name);
+                $api->setParameter('$cnpj', $legalPerson->cnpj);
+                $api->setParameter('$fakeName', $legalPerson->fakeName);
+                $api->setParameter('$companyCity', $city->name);
+                $api->setParameter('$companyStateId', $city->stateId);
+                $api->setParameter('$companyLocation', $legalPerson->location);
+                $api->setParameter('$companyNumber', $legalPerson->number);
+                $api->setParameter('$acronym', $company->acronym);
+                $api->setParameter('$currencySymbol', $country->currencySymbol);
+
+                $api->setLanguage($MIOLO->getConf('i18n.language'));
+                $api->setOutputPath(TEMP_DIR . '/contract.sxw');
+                $api->setDataArray($data);
+
+                $api->setImageReplace('figura1', SAGUFile::getPhotoPath($company->personId));
+
+                $ok = $api->parseOpenOffice($MIOLO->getModulePath('basic', '/documents/') . $contractResource);
+
+                if ( $ok && $cd->fileType == 'pdf' )
+                {
+                    $api->setOutputPath(TEMP_DIR . '/contract.pdf');
+                    $ok = $api->openOffice2pdf(TEMP_DIR . '/contract.sxw');
+                }
+
+                if ( !$ok )
+                {
+                    $lblAgataError        = new MText('lblMsg1', $api->getError());
+                    $lblAgataError->color = 'red';
+                    $sep1                 = new Separator('');
+                    $cntErrors            = new MVContainer('cntErrors', array($lblAgataError,$sep));
+                    $this->divError->addControl($cntErrors);
+                }
+                else
+                {
+                    $api->fileDialog();
+                }
+            }
+        }
+    }
+}
+
+?>

@@ -1,0 +1,179 @@
+<?php
+
+/**
+ * Long term short term process form
+ *
+ * @author William Prigol Lopes [william@solis.coop.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ *
+ * @since
+ * Class created on 07/12/2005
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2005 SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+
+/**
+ * Form to control import return files for bank
+ **/
+class FrmReturnRelation extends MForm
+{
+    private $home;
+
+    /**
+     * Class constructor
+     **/
+    function __construct($data)
+    {
+        $module = MIOLO::getCurrentModule();
+        $this->home   = $data->home;
+
+        parent::__construct(_M('Return relation', $module));
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {   
+        $MIOLO   = MIOLO::getInstance();
+        $module  = MIOLO::getCurrentModule();
+        $action  = MIOLO::getCurrentAction();
+        
+
+        $toolBar = new MToolBar('toolBar', $MIOLO->getActionURL($module, $action));
+        
+        $toolBar->disableButton('tbBtnNew');
+        $toolBar->disableButton('tbBtnSave');
+        $toolBar->disableButton('tbBtnDelete');
+        $toolBar->disableButton('tbBtnSearch');
+        $toolBar->disableButton('tbBtnPrint');
+        
+
+        //favoritos
+        $enabledImage  = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-20x20.png');
+        $disabledImage = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-disabled-20x20.png');
+        $url           = $MIOLO->getActionURL($module, $this->home, null, array('function' => 'search', 'event' => 'bookmark'));
+        $toolBar->addButton('tbBtnBookmark', _M('Add to bookmarks', 'basic'), $url, null, true, $enabledImage, $disabledImage);
+
+        if ( MIOLO::_request('event') == 'bookmark' )
+        {
+            $MIOLO->getClass('basic', 'access');
+            access::insert('Return invoice', $this->home, 'returnInvoice-16x16.png', true);
+        }
+        //fim favoritos
+
+        $fields[] = $toolBar;
+
+        $businessBankAccount = $MIOLO->getBusiness($module, 'BusBankAccount');
+        $dataBankAccount = $businessBankAccount->listBankAccount();
+        $businessReturnInvoice = $MIOLO->getBusiness($module, 'BusReturnInvoice');
+
+        $field = new MSelection('bankAccountId', $this->getFormValue('bankAccountId', $data->bankAccountId), _M('Bank account id', $module), $dataBankAccount);
+        $field->setAutoSubmit(true);
+        $fields[] = $field;
+        $validators[] = new MRequiredValidator('bankAccountId');
+
+        /* begin date */ 
+        $beginDateLabel = new MText('beginDateLabel', _M('Begin date', $module).':');
+        $beginDateLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $beginDate      = new MCalendarField('beginDate', $this->getFormValue('beginDate',$data->beginDate), '', FIELD_DATE_SIZE);
+        /* -- begin date -- */
+
+       	/* end date */
+        $endDateLabel = new MText('endDateLabel', _M('End date', $module).':');
+        $endDate      = new MCalendarField('endDate', $this->getFormValue('endDate',$data->endDate), '', FIELD_DATE_SIZE);
+        
+        $fields[] = new MHContainer('hctBeginEndDate', array($beginDateLabel, $beginDate, $endDateLabel, $endDate));			
+
+        $bankAccountId = $this->getFormValue('bankAccountId', $data->bankAccountId);
+        $dt->bankAccountId = $bankAccountId;
+        $dataReturnInvoice = $businessReturnInvoice->listReturnFileId($dt);
+        if (strlen((string)$bankAccountId)>0)
+        {
+            $bankId = $businessBankAccount->getBankIdByBankAccountId($bankAccountId);
+
+            if (strlen((string)$bankId)>0)
+            {
+                $fields[] = new MSelection('returnFileId', $this->getFormValue('returnFileId', $data->returnFileId), _M('Return file id', $module), $dataReturnInvoice);
+                /*if (ReturnInvoice::returnExists($bankId))
+                {
+                    $fields[] = new MFileField('importInvoiceFile', $this->getFormValue('importInvoiceFile', $data->importInvoiceFile), _M('Import return file', $module));
+                    $validators[] = new MRequiredValidator('importInvoiceFile');
+                }
+                else
+                {
+                    $fields[] = new MSeparator(_M('Sorry, but the system do not have support to import this file', $module));
+                }*/
+            }
+            else
+            {
+                $fields[] = new MSeparator(_M('This bank account do not have a bank registered. Please register one before continue this process.', $module));
+            }
+        }
+        else
+        {
+            $fields[] = new MSeparator(_M('Please, select a bank account to continue this process.', $module));
+        }
+        
+        $this->setFields($fields);
+        if (strlen((string)$event)>0)
+        {
+            $this->setValidators($validators);
+        }
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setClose($MIOLO->getActionURL($module, substr($action, 0, strrpos($action, ':'))));
+    }
+
+    /**
+     * Event triggered when user set new from the toolbar
+     */
+    public function submit_button_Click($sender = null)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+        $data   = $this->getTypesData();
+        $MIOLO->getClass($module, 'RptReturnRelation');
+        $report = new RptReturnRelation($data);
+        
+    }
+
+     
+    /**
+     *
+     * Get the data from form and returns as a object
+     *
+     */
+    public function getTypesData()
+    {
+        $data->bankAccountId = $this->getFormValue('bankAccountId');
+        $data->returnFileId = $this->getFormValue('returnFileId');
+        $data->beginDate    = $this->getFormValue('beginDate');
+        $data->endDate      = $this->getFormValue('endDate');
+        return $data;
+    }
+}
+?>

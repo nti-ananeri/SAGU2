@@ -1,0 +1,460 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for finInvoice table
+ *
+ * @author Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * Rafael Luís Spengler [rafael@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+ *
+ * @since
+ * Class created on 13/12/2005
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to manipulate the Invoice table
+ **/
+class BusinessFinanceBusPrintInvoice extends MBusiness
+{
+    public $db;
+    private $hasSet = false;
+
+    function BusinessFinanceBusPrintInvoice()
+    {
+        $this->db = $this->getDatabase();
+    }
+
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module = 'finance'; //Esta finance por extenso devido a chamadas do módulo processo seletivo
+
+        return $MIOLO->getDatabase($module);
+    }
+
+   /** 
+    * Begins a database transaction whith database connection object
+    * 
+    * @param: No parameters needed
+    *       
+    * @returns: No return
+    *
+    */
+    public function beginTransaction()
+    {
+        $this->db->execute('BEGIN TRANSACTION');
+    }
+
+   /** 
+    * End a database transaction whith database connection object
+    * 
+    * @param: $status (boolean): Status of transaction, if all ok in connection tries a commit, else gives a rollback
+    *       
+    * @returns: No return
+    *
+    */
+    public function endTransaction($status = false)
+    {
+        $this->db->execute($status === true ? 'COMMIT' : 'ROLLBACK');
+    }
+
+
+     /**
+     * get Number e generate a next number
+     *
+     * @param: $data: string to break and analyze
+     *
+     * @return (integer) $numberBankInvoiceId - a value 
+     *
+     * @author  Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+     */
+
+
+
+    /**
+     * List all records from the table handled by the class
+     *
+     * @param: None
+     *
+     * @returns (array): Return an array with the entire table
+     *
+     **/
+    public function listInvoice()
+    {
+    }
+
+    /**
+     * Return a specific record from the database
+     *
+     * @param $invoiceId (integer): Primary key of the record to be retrieved
+     *
+     * @return (object): Return an object of the type handled by the class
+     *
+     **/
+    public function getPrintInvoice($data, $bankAccountId=null)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = 'finance'; //Esta finance por extenso devido a chamadas do módulo processo seletivo
+    
+        $sql = ' SELECT DISTINCT A.bankInvoiceId,
+                        B.name,
+                        B.personid,
+                        B.location|| \' \' ||CASE WHEN LENGTH(COALESCE(B.number, \'\'))>0 THEN COALESCE(B.number, \'\') ELSE \'\' END,
+                        B.complement,
+                        B.neighborhood,
+                        C.name,
+                        B.zipCode,
+                        C.stateId,
+                        round(balance(A.invoiceId), '. REAL_ROUND_VALUE .'),
+                        to_char(A.maturityDate, \'' . MASK_DATE .'\'),
+                        to_char(A.emissionDate, \'' . MASK_DATE .'\'),
+                        E.daysToFine,
+                        E.fine,
+                        E.isFineInPercent,
+                        to_char((A.maturityDate)+(E.daysToFine),\'' . MASK_DATE . '\') as fineDate,
+                        E.daysToInterest,
+                        E.monthlyInterest,
+                        E.isMonthlyInterestInPercent,
+                        to_char((A.maturityDate)+(E.daysToInterest),\'' . MASK_DATE . '\') as monthlyInterestDate,
+                        E.daysToDiscount,
+                        E.discount,
+                        E.isDiscountInPercent,
+                        to_char((A.maturityDate)-E.daysToDiscount,\'' . MASK_DATE . '\') as discountDate,
+                        E.daysToProtest,
+                        to_char((A.maturityDate)+E.daysToProtest,\'' . MASK_DATE . '\') as protestDate,
+                        D.accord,
+                        D.collection,
+                        D.wallet,
+                        D.variation,
+                        F.bankId,
+                        F.bankIdVd,
+                        FF.branchNumber,
+                        FF.branchNumberDigit,
+                        FF.accountNumber,
+                        FF.accountNumberDigit,
+                        FF.assignorCode,
+                        F.description,
+                        A.bankAccountId,
+                        FF.description,
+                        A.comments,
+                        (CASE WHEN BB.name IS NULL OR length(BB.name) = 0 THEN B.name ELSE BB.name END ) as responsable,
+                        (CASE WHEN DD.content IS NULL OR length(DD.content) = 0 THEN G.content ELSE DD.content END ) as cpf,
+                       max(CL.classId),
+                       max(CO.contractId),
+                       max(getturndescription(CO.turnId)),
+                       max(getcoursename(CO.courseId)),
+                       max(CO.courseId),
+                       max(SALA.description),
+                       U.companyId,
+                       D.collectionTypeId
+                   FROM ONLY finReceivableInvoice A
+                        LEFT JOIN finBankAccountContract D USING (bankAccountId,bankContractId)
+                        LEFT JOIN finBankAccount FF ON FF.bankAccountId = A.bankAccountId 
+                        LEFT JOIN finBank F USING(bankId)
+                        LEFT JOIN acdContract CO ON ( CO.contractId = A.contractId )
+                        LEFT JOIN acdEnroll EN ON (EN.contractId = CO.contractId)
+                        LEFT JOIN acdGroup GR USING (groupId) 
+                        LEFT JOIN acdClass CL ON GR.classId = CL.classId
+                        LEFT JOIN acdSchedule SH ON SH.groupId = GR.groupId
+                        LEFT JOIN insphysicalresource SALA USING (physicalresourceid , physicalresourceversion)
+                        LEFT JOIN ONLY basPhysicalPerson B ON B.personId = A.personId
+                        LEFT JOIN ONLY basPerson BB ON BB.personid = B.responsablelegalId
+                        LEFT JOIN basDocument G ON G.personId = B.personId AND G.documentTypeId = '. CPF_CODE . '
+                        LEFT JOIN basDocument DD ON DD.personId = BB.personId AND DD.documentTypeId = '. CPF_CODE .'
+                        LEFT JOIN basCity C ON C.cityID = B.cityId 
+                        LEFT JOIN basUnit U ON ( U.unitId = A.unitId )
+                        INNER JOIN finPolicy E ON E.policyId = A.policyId
+                  WHERE 1 = 1 ';
+        if( strlen((string) $data->invoiceId ) > 0 )
+        {
+            $sql    .= ' AND invoiceId = ? ';
+            $args[]     = $data->invoiceId;
+        }
+       
+        if( strlen((string) $data->maturityDate ) > 0 )
+        {
+            $sql    .= ' AND maturityDate = ? ';
+            $args[]     = $data->maturityDate;
+        }
+        $this->db->execute('SELECT updateBankInvoiceId('.$data->invoiceId.')');
+        $sql = SAGU::prepare($sql, $args);
+        $sql .= ' GROUP BY 1,2,3,4,5,6,7,8,9,10,
+                  11,12,13,14,15,16,17,18,19,20,
+                  21,22,23,24,25,26,27,28,29,30,
+                  31,32,33,34,35,36,37,38,39,40,
+                  41,42,43, U.companyId,  A.invoiceId, D.collectionTypeId
+                  HAVING balance(invoiceId) > '. MINIMAL_VALUE_TO_PRINT_INVOICE ;        
+        $result = $this->db->query($sql);
+        unset($data);
+         
+        list ( $data->bankInvoiceId,
+               $data->name,
+               $data->personId,
+               $data->location,
+               $data->complement,
+               $data->neighborhood,
+               $data->city,
+               $data->cep,
+               $data->state,
+               $data->invoiceValue,
+               $data->maturityDate,
+               $data->emissionDate,
+               $data->daysToFine,
+               $data->fine,
+               $data->isFineInPercent,
+               $data->fineDate,
+               $data->daysToInterest,
+               $data->monthlyInterest,
+               $data->isMonthlyInterestInPercent,
+               $data->monthlyInterestDate,
+               $data->daysToDiscount,
+               $data->discount,
+               $data->isDiscountInPercent,
+               $data->discountDate,
+               $data->daysToProtest,
+               $data->protestDate,
+               $data->accord,
+               $data->collection,
+               $data->wallet,
+               $data->variation,
+               $data->bankId,
+               $data->bankIdDv,
+               $data->branchNumber,
+               $data->branchNumberDigit,
+               $data->accountNumber,
+               $data->accountNumberDigit,
+               $data->assignorCode,
+               $data->bankName,
+               $data->bankAccountId,
+               $data->description,
+               $data->comments,
+               $data->responsable,
+               $data->cpf_responsable,
+               $data->classId,
+               $data->contractId,
+               $data->turnDescription,
+               $data->courseName,
+               $data->courseId,
+               $data->sala,
+               $data->companyId,
+               $data->collectionTypeId) = $result[0];
+        if ( strlen((string) $bankAccountId ) > 0 && USE_INVOICE_TEST == 'TRUE' )
+        {
+            $businessBankAccount = $MIOLO->getBusiness($module, 'BusBankAccount');
+
+            $dataX = $businessBankAccount->getBankAccount($bankAccountId);
+            if ( count($dataX) > 0 )
+            {
+                $data->bankId                = $dataX->bankId;
+                $data->bankIdDv                = $dataX->bankIdDv;
+                $data->branchNumber            = $dataX->branchNumber;
+                $data->branchNumberDigit    = $dataX->branchNumberDigit;
+                $data->accountNumber        = $dataX->accountNumber;
+                $data->accountNumberDigit    = $dataX->accountNumberDigit;
+                $data->assignorCode            = $dataX->assignorCode;
+            }
+        }
+        $data->companyId = strlen((string)$data->companyId) > 0 ? $data->companyId : DEFAULT_COMPANY_CONF;
+        $company = $this->getCompany($data->companyId);
+        
+        foreach ( $company as $item => $value )
+        {
+            $data->$item = $value;
+        }
+        return $data;
+    }
+
+    /**
+     * Return a specific record from the database
+     *
+     * @param $companyId (integer): Primary key of the record to be retrieved
+     *
+     * @return (object): Return an object of the type handled by the class
+     *
+     **/
+
+    public function getCompany($companyId)
+    {
+        
+        $sql = 'SELECT B.shortName,
+                       A.acronym,
+                       B.name,
+                       B.cnpj, 
+                       B.phone, 
+                       D.currency,
+                       D.currencySymbol
+                  FROM basCompanyConf A, 
+                       ONLY basLegalPerson B,
+                       basCity C,
+                       basCountry D
+                 WHERE A.personId = B.personId 
+                   AND B.cityId = C.cityId 
+                   AND C.countryId = D.countryId
+                   AND A.companyId = ? ';
+
+        $result = $this->db->query(SAGU::prepare($sql, $companyId));
+        list ( $data->shortName,
+               $data->acronym,
+               $data->companyName,
+               $data->cnpj,
+               $data->phone,
+               $data->currency,
+               $data->currencySymbol ) = $result[0];
+
+        return $data;
+    }
+
+
+    /**
+     * Return a Factor maturity date of maturity date
+     *
+     * @param $maturityDate (data): 
+     *
+     * @return (integer): Return a number factor
+     *
+     **/
+    public function factorMaturityDate($maturityDate)
+    {
+        $sql = 'SELECT to_date(?,\'' . MASK_DATE . '\')- to_date(?,\'' . MASK_DATE . '\')';
+    
+        $beginDate = '07/10/1997';
+        $result = $this->db->query(SAGU::prepare($sql, array($maturityDate, $beginDate ) ) );
+       
+ 
+        return $result[0][0]; 
+    
+    }
+    public function getDaysFromPeriod($beginDate,$endDate)
+    {
+        $sql = 'SELECT to_date(?,\'' . MASK_DATE . '\')- to_date(?,\'' . MASK_DATE . '\')';
+    
+        $result = $this->db->query(SAGU::prepare($sql, array($endDate, $beginDate ) ) );
+       
+ 
+        return $result[0][0]; 
+    
+    }
+
+
+
+    /**
+     * Return a Messages to invoice
+     *
+     * @param $bankId (integer): Primary Key of Bank
+     * @param $invoiceId (integer): Primary Key of invoice
+     *
+     * @return (object): Result consult messages
+     *
+     **/
+    public function getMessageInvoice( $invoiceId )
+    {
+        $sql = 'SELECT A.messageProtest,
+                       A.messageDiscount,
+                       A.messageFine,
+                       A.messageBank,
+                       I.messageInvoice
+                FROM ONLY finInvoice I
+                    LEFT JOIN finBankAccountContract USING (bankAccountId,bankContractId)
+                    LEFT JOIN finBankAccount USING (bankAccountId)
+                    LEFT JOIN finBank USING (bankId)
+                    LEFT JOIN finMessage A USING (bankId, policyId)
+                WHERE invoiceId = ?';
+        $result = $this->db->query(SAGU::prepare($sql, array( $invoiceId ) ) );
+        return $result[0];
+        
+    }
+
+
+    /**
+     * Calc for finance modules 
+     *
+     * @param $filters (object): Calc 
+     *
+     * @return (value): 
+     **/
+
+    public function calcPercent($value, $percent)
+    {
+        // Calculo com arrendondamento. 
+        $sqlCalc       = ' SELECT  round ( ( '. $value .' * '. $percent .' ) / 100 , 2) ';
+        $resultCalc    = $this->db->Query( $sqlCalc );
+        $discountValue = $resultCalc[0][0];
+        return $discountValue;
+    }   
+
+     /**
+     * Calc for finance modules
+     *
+     * @param $filters (object): Calc
+     *
+     * @return (value):
+     **/
+
+    public function calcMora($value, $percent)
+    {
+        // Calculo com arrendondamento.
+        $sqlCalc       = ' SELECT  round ( ( '. $value .' / 30 * '. $percent .' ) / 100 , 2) ';
+        $resultCalc    = $this->db->Query( $sqlCalc );
+        $discountValue = $resultCalc[0][0];
+        return $discountValue;
+    }
+    
+     /**
+     * Execute COMMIT or ROLLBACK 
+     *
+     * @param $keepGoing : true or false
+     *
+     * @return (true or false)
+     **/
+
+    public function executeCommitSql($keepGoing)
+    {
+        if ($keepGoing == true)
+        {
+            $this->db->execute('COMMIT');
+        }
+        else
+        {
+            $this->db->execute('ROLLBACK');
+        }
+        return $keepGoing;
+    }
+
+    public function executeBeginSql($keepGoing)
+    {
+        $this->db->execute('BEGIN TRANSACTION');
+        return $keepGoing;
+    }   
+}
+
+?>

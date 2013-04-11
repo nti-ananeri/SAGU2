@@ -1,0 +1,173 @@
+<?php
+
+/**
+ *
+ * This file handles the connection and actions for sprPupilsAndSchoolsPerformanceBulletinPupilsData table
+ *
+ * @author Rafael Luís Spengler [rafael@solis.coop.br] 
+ *
+ * @version: $Id$
+ * 
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * Rafael Luís Spengler [rafael@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 05/12/2005
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Form to search the sprPupilsAndSchoolsPerformanceBulletinPupilsData table
+ */
+class FrmPupilsAndSchoolsPerformanceBulletin extends MForm
+{
+    private $home;
+    private $module;
+
+    var $business;
+    var $gridData;
+
+    /**
+     * Class constructor
+     */
+    function __construct($data)
+    {
+        $module = MIOLO::getCurrentModule();
+
+        $this->home   = $data->home;
+
+        parent::__construct(_M('Pupils and schools performance bulletin', $module));
+
+        // hide the 'Submit' button
+        $this->setShowPostButton(false);
+
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+
+    }
+
+    /**
+     *  Default method to define fields
+     */
+    public function createFields()
+    {
+
+        $MIOLO      = MIOLO::getInstance();
+        $module     = MIOLO::getCurrentModule();
+        $action     = MIOLO::getCurrentAction();
+        
+        $toolBar = new MToolBar('toolBar',$MIOLO->getActionURL($module,$action));
+        $toolBar->disableButton('tbBtnSave');
+        $toolBar->disableButton('tbBtnDelete');
+        $toolBar->disableButton('tbBtnPrint');
+        $toolBar->disableButton('tbBtnNew');
+
+        //favoritos
+        $enabledImage  = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-20x20.png');
+        $disabledImage = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-disabled-20x20.png');
+        $url           = $MIOLO->getActionURL($module, $this->home, null, array('function' => 'search', 'event' => 'bookmark'));
+        $toolBar->addButton('tbBtnBookmark', _M('Add to bookmarks', 'basic'), $url, null, true, $enabledImage, $disabledImage);
+
+        if ( MIOLO::_request('event') == 'bookmark' )
+        {
+            $MIOLO->getClass('basic', 'access');
+            access::insert('Pupils and schools performance bulletin', $this->home, 'pupilsAndSchoolsPerformanceBulletin-16x16.png', true);
+        }
+        //fim favoritos
+
+        $fields[] = $toolBar;
+
+        $selectiveProcessLabel = new MText('selectiveProcessLabel', _M('Selective process id',$module).':');
+        $selectiveProcessLabel->setWidth(FIELD_LABEL_SIZE);
+        $selectiveProcessLabel->setClass('m-caption m-caption-required');
+
+        $business           = $MIOLO->getBusiness($module, 'BusSelectiveProcess');
+        $selectiveProcessId = new MComboBox('selectiveProcessId', $this->getFormValue('selectiveProcessId', $data->selectiveProcessId), '', $business->listSelectiveProcess());
+        $selectiveProcessId->setJsHint(_M('Enter the selective process code',$module));
+        $validators[]       = new MRequiredValidator('selectiveProcessId', _M('Selective process id',$module), 'required'); 
+
+        $hctSelectiveProcess = new MHContainer('hctSelectiveProcess', array( $selectiveProcessLabel, $selectiveProcessId));
+        $hctSelectiveProcess->setShowLabel(true);
+        $fields[]  = $hctSelectiveProcess;
+
+        $personLabel = new MText('personLabel', _M('School id',$module).':');
+        $personLabel->setWidth(FIELD_LABEL_SIZE);
+
+        $legalPersonTypeId = new MHiddenField('legalPersonTypeId', 2);
+        $fields[] = $legalPersonTypeId;
+
+        $personId  = new MLookupTextField('personId', $this->getFormValue('personId', $data->personId), '', FIELD_ID_SIZE, null, null, ('personName') , 'basic', 'LegalPerson', null, array('legalPersonTypeId'=>'legalPersonTypeId'), true);
+        $personId->setJsHint(_M('Enter the person code',$module));
+        $validators[] = new MIntegerValidator('personId', '', 'optional');
+
+        $personName  = new MTextField('personName', $this->getFormValue('personName', $data->personName), '', FIELD_DESCRIPTION_SIZE);
+        $personName->setReadOnly(true);
+        $personName->setJsHint(_M('Legal person name',$module));
+
+        $hctPerson = new MHContainer('hctPerson', array( $personLabel, $personId, $personName));
+        $hctPerson->setShowLabel(true);
+        $fields[]  = $hctPerson;
+        $sep1      = new MSeparator('<hr>');
+        $sep1->setWidth('99%');
+        $fields[]  = $sep1;
+        $fields[]  = new MButton('btnSearch',_M('Search',$module));
+        $fields[]  = new MSeparator('');
+
+        $this->setFields($fields);
+        if ( isset($validators) )
+        {
+            $this->setValidators($validators);
+        }
+
+        // get filters values
+        $this->page->onLoad('document.' . $this->name . '.selectiveProcessId.focus();');
+    }
+
+    public function btnSearch_click($sender = null)
+    {
+        $MIOLO             = MIOLO::getInstance();
+        $module            = MIOLO::getCurrentModule();
+        $action            = MIOLO::getCurrentAction();
+
+        $filters->selectiveProcessId = $this->getFormValue('selectiveProcessId', $filters->selectiveProcessId);
+        $filters->personId           = $this->getFormValue('personId',           $filters->personId);
+        $filters->legalPersonTypeId  = $this->getFormValue('legalPersonTypeId',  $filters->legalPersonTypeId);
+
+        $business   = $MIOLO->getBusiness($module,'BusPupilsAndSchoolsPerformanceBulletin');
+
+        //Este personId guarda o código da pessoa jurídica
+        if (strlen((string)$filters->personId)>0) 
+        {
+            $grdResults = $MIOLO->getUI()->getGrid($module, 'GrdPupilsAndSchoolsPerformanceBulletinPupilsData', $filters);
+            $data       = $business->pupilsData($filters);
+        }
+        else
+        {
+            $grdResults = $MIOLO->getUI()->getGrid($module, 'GrdPupilsAndSchoolsPerformanceBulletin', $filters);
+            $data       = $business->searchSchools($filters);
+        }
+
+        $grdResults->setData($data);
+        $this->addField($grdResults);
+        $this->addField(new MSeparator(''));
+    }
+}
+?>

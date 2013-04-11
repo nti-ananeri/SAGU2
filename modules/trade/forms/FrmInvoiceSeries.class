@@ -1,0 +1,269 @@
+<?php
+
+/**
+ * Invoice Series form
+ *
+ * @author Rosemberg Almeida dos Santos [rosbrg@gmail.com]
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Rosemberg Almeida dos Santos [rosbrg@gmail.com]
+ * Daniel Afonso Heisler [daniel.heisler@gmail.com]
+ *
+ * @since
+ * Class created on 11/11/2008
+ *
+ * \b Organization: \n
+ * Isolution [http://www.isolution.inf.br/]
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+
+ **/
+
+
+/**
+ * Form to manipulate a invoice series
+ **/
+class FrmInvoiceSeries extends MForm
+{
+
+    /**
+     * Class constructor
+     **/
+    function __construct()
+    {
+
+        $module = MIOLO::getCurrentModule();
+
+        if ( MIOLO::_request('function') == 'insert' )
+        {
+            parent::__construct(_M('Insert', $module));
+        }
+        else
+        {
+            parent::__construct(_M('Update', $module));
+        }
+$this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+
+        $toolBar = new MToolBar('toolBar',$MIOLO->getActionURL($module,$action));
+
+        if ( $function == 'insert' )
+        {
+            $toolBar->disableButton('tbBtnDelete');
+            $toolBar->disableButton('tbBtnPrint');
+        }
+        elseif ( $function == 'delete' )
+        {
+            $toolBar->disableButton('tbBtnSave');
+        }
+        $fields[] = $toolBar;
+
+        if ( in_array($function,array('update','delete')) )
+        {
+            $invoiceSeriesId = $_GET['invoiceSeriesId'] ? $_GET['invoiceSeriesId'] : $_POST['invoiceSeriesId'];
+            $fields[]  = new MTextLabel('invoiceSeriesId', $invoiceSeriesId, _M('Invoice series id',$module));
+            $fields[]  = new MHiddenField('invoiceSeriesId', $invoiceSeriesId);
+
+            $business = $MIOLO->getBusiness($module,'BusInvoiceSeries');
+            $data     = $business->getInvoiceSeries($invoiceSeriesId);
+        }
+        else
+        {
+            $fields[] = new MTextField('invoiceSeriesId', $this->getFormValue('invoiceSeriesId', $data->invoiceSeriesId), _M('Invoice series id',$module), FIELD_ID_SIZE);
+            $validators[] = new MRequiredValidator('invoiceSeriesId');
+        }
+
+        $data->invoiceSeriesDescription = $this->getFormValue('invoiceSeriesDescription', $data->description);
+        $fields[]     = new MTextField('invoiceSeriesDescription', $data->invoiceSeriesDescription, _M('Description',$module), FIELD_DESCRIPTION_SIZE);
+        $validators[] = new MRequiredValidator('invoiceSeriesDescription');
+
+        if ( $function == 'update' )
+        {
+            $fields[] = new MTextLabel('lastModification', '[' . $data->userName . ' - ' . $data->dateTime . ']', _M('Last modification',$module));
+
+        }
+        
+        $fields[] = new Separator('');
+
+        $this->setFields($fields);
+        $this->setValidators($validators);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+        $this->setClose($MIOLO->getActionURL($module,substr($action,0,strrpos($action,':'))));
+        if ( $function == 'insert' )
+        {
+            $this->page->onLoad('document.' . $this->name . '.invoiceSeriesId.focus();');
+        }
+        else
+        {
+            $this->page->onLoad('document.' . $this->name . '.invoiceSeriesDescription.focus();');
+        }
+
+    }
+
+    /**
+     * Event triggered when user chooses New from the toolbar
+     **/
+    public function tbBtnNew_click($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $data = $this->getTypesData();
+        $vars = get_object_vars($data);
+        foreach ( $vars as $var => $value )
+        {
+            if ( $this->$var && $var != 'name' )
+            {
+                eval('$this->' . $var . '->value = $this->getFormValue(\'' . $var . 'S\') ? $this->getFormValue(\'' . $var . 'S\') : \'\';');
+            }
+        }
+        $this->invoiceSeriesDescription->value = $this->getFormValue('invoiceSeriesDescriptionS') ? $this->getFormValue('invoiceSeriesDescriptionS') : '';
+    }
+
+    /**
+     * Event triggered when user chooses Delete from the toolbar
+     **/
+    public function tbBtnDelete_click($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $data   = $this->getTypesData();
+        $opts   = array('event'    => 'tbBtnDelete_confirm',
+                        'function' => 'delete',
+                        'invoiceSeriesId' => MIOLO::_request('invoiceSeriesId'));
+
+        $gotoYes = $MIOLO->getActionURL( $module, $action, null, $opts );
+        $goto    = SAGU::getStackBackUrl();
+        $gotoNo  = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+        $msg     = _M(MSG_CONFIRM_RECORD_DELETE,$module);
+        $caption = _M('Question',$module);
+        $MIOLO->question($msg, $gotoYes, $gotoNo);
+    }
+
+    /**
+     * Event triggered when user chooses Yes from the Delete prompt dialog
+     **/
+    public function tbBtnDelete_confirm($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $business = $MIOLO->getBusiness($module, 'BusInvoiceSeries');
+        $ok       = $business->deleteInvoiceSeries($this->invoiceSeriesId->value);
+
+        if ( $ok )
+        {
+            $msg  = _M(MSG_RECORD_DELETED,$module);
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Information',$module);
+            $MIOLO->information($msg, $goto);
+        }
+        else
+        {
+            $msg  = _M('Error executing requested operation.',$module);
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Error',$module);
+            $MIOLO->error( $msg, $goto, $caption );
+        }
+    }
+
+    /**
+     * Event triggered when user chooses Save from the toolbar
+     **/
+    public function tbBtnSave_click($sender=NULL)
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+
+        $data     = $this->getTypesData();
+        $business = $MIOLO->getBusiness($module, 'BusInvoiceSeries');
+
+        if ( $function == 'update' )
+        {
+            $ok  = $business->updateInvoiceSeries($data);
+            $msg = _M(MSG_RECORD_UPDATED,$module);
+        }
+        else
+        {
+            $ok  = $business->insertInvoiceSeries($data);
+            $msg = _M(MSG_RECORD_INSERTED,$module);
+        }
+
+        if ( $ok )
+        {
+            $opts = array('invoiceSeriesIdS' => $data->invoiceSeriesId);
+
+            if ( $function == 'update' )
+            {
+                $caption = _M('Information', $module);
+                $MIOLO->information($msg, $MIOLO->getActionURL( $module, $action, null, $opts));
+            }
+            else
+            {
+                unset($opts);
+                $goto = SAGU::getStackBackUrl();
+                $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL( $module, $action, null, $opts);
+                $opts = array('function'=>'insert');
+
+                $gotoYes = $MIOLO->getActionURL($module, $action, null, $opts);
+                $caption = _M('Question',$module);
+                $MIOLO->question($msg, $gotoYes, $goto);
+            }
+        }
+        else
+        {
+            $msg  = _M('Error executing requested operation.',$module);
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action, null, $opts);
+            $caption = _M('Error',$module);
+            $MIOLO->error( $msg, $goto, $caption );
+        }
+    }
+
+    /**
+     * Method to gather all information from the form fields
+     * and put them on a database compatible object
+     **/
+    public function getTypesData()
+    {
+        $data = new trdInvoiceSeries();
+        $vars = get_object_vars($data);
+        foreach ( $vars as $var => $value )
+        {
+            if ( $this->$var && $var != 'description' )
+            {
+                eval('$data->' . $var . ' = $this->' . $var . '->value;');
+            }
+        }
+        $data->description = $this->invoiceSeriesDescription->value;
+
+        return $data;
+    }
+
+}
+
+?>

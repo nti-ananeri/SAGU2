@@ -1,0 +1,299 @@
+<?php
+
+/**
+ * Inscription form
+ *
+ * @author Hélio Henrique Rodrigues Guimarães [helio@solis.coop.br]
+ *
+ * @version: $Id$
+ * 
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * Rafael Luís Spengler [rafael@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ *
+ * @since
+ * Class created on 28/07/2006
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2005 SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+
+/**
+ * Form to manipulate a selectiveProcessOccurrence
+ **/
+class FrmOkInscription extends MForm
+{
+    private $optionsNumber;
+    private $inscriptionData;
+
+    /**
+     * Class constructor
+     **/
+    function __construct()
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+
+        $this->inscriptionData = unserialize(urldecode(stripslashes($MIOLO->session->getValue('inscriptionData'))));
+
+        parent::__construct(_M('Selective process inscription', $module));
+
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+	
+        $this->eventHandler();
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+
+        //Dados que serão subistuídos se encontrados nos corpos das mensagens
+        $searchData  = array( "\$SELECTIVE_PROCESS_CURRENT",
+                              "\$INSCRIPTIONID" );
+
+        //Dados que substituirã os corpos das mensagens
+		$replaceData = array( $this->inscriptionData->inscription->selectiveProcessId ,
+                              $this->inscriptionData->inscription->inscriptionId );
+
+        $msgInscriptionOk = str_replace($searchData, $replaceData, $this->inscriptionData->message->messageConcluedInscription);
+
+        $separator = new Separator('');
+
+        $msgInscriptionOk     = new MText('msgInscriptionOk', $msgInscriptionOk);
+        $cntInscription     = new MHContainer('cntInscription', array($msgInscriptionOk));
+
+        $cntInscription->addBoxStyle('background', 'white');
+        $cntInscription->setDisposition('center');
+
+        $fields[] = $cntInscription;
+
+        $fields[] = new Separator('');
+
+        if ( GENERATE_BANK_INVOICE == DB_TRUE )
+        {
+            if ( strlen((string)$this->inscriptionData->_invoiceId) > 0 )
+            {
+                $msg                   = $this->inscriptionData->message->messageOfInvoice;
+
+                $msgInscriptionOk1     = new MText('msgInscriptionOk', $msg);
+
+                $btnGenerate = new MButton('btnGenerate', 'Gerar boleto');
+
+                $cntInscription1     = new MHContainer('cntInscription1', array($msgInscriptionOk1, $btnGenerate));
+
+                $cntInscription1->addBoxStyle('background', 'white');
+                $cntInscription1->setDisposition('center');
+
+                $fields[] = $cntInscription1;
+            }
+        }
+        
+        if ( GENERATE_TERM_RESERVE == DB_TRUE )
+        {
+                $optsReserve['event']              = 'tbBtnPrint_click';
+        		$optsReserve['selectiveProcessId'] = $this->inscriptionData->inscription->selectiveProcessId;
+        		$optsReserve['inscriptionIdS']     = $this->inscriptionData->inscription->inscriptionId;
+        	
+        	    $btnTermReserve = new MButton('btnTermReserve', 'Imprimir Termo de Reserva',$MIOLO->getActionURL($module, 'main:document:inscriptionReserve', null, $optsReserve));
+
+                $cntInscription2     = new MHContainer('cntInscription2', array($btnTermReserve));
+
+                $cntInscription2->addBoxStyle('background', 'white');
+                $cntInscription2->setDisposition('center');
+
+                $fields[] = $cntInscription2;
+        }
+
+        $btnNewInscription = new MButton('btnNewInscription', _M('New inscription', $module), $MIOLO->getActionURL($module, 'main:process:inscription', null)); 
+        //$fields[] = $btnNewInscription;
+
+        $optsInscriptionVoucher['event']              = 'tbBtnPrint_click';
+        $optsInscriptionVoucher['selectiveProcessId'] = $this->inscriptionData->inscription->selectiveProcessId;
+        $optsInscriptionVoucher['inscriptionIdS']     = $this->inscriptionData->inscription->inscriptionId;
+
+
+        $btnInscriptionVoucher = new MButton('btnInscriptionVoucher', _M('Inscription voucher', $module), $MIOLO->getActionURL($module, 'main:document:inscriptionSheet', null, $optsInscriptionVoucher)); 
+
+        $div1      = new MDiv('div1', array($btnNewInscription, $btnInscriptionVoucher) , null, 'align=center');
+
+        $fields[]  = $div1;
+
+        $div1->addBoxStyle('background', 'white');
+
+        $this->setFields($fields);
+
+        $opts1 = urlencode(serialize($this->inscriptionData));
+
+        $opts = array('event'=>'btnSendMail',
+                     'page' => '9'/*,
+                     'inscriptionData' => $opts1*/);
+
+        if ( strlen((string)$this->inscriptionData->_invoiceId) > 0 )
+        {
+            $this->page->addHttpEquiv('Refresh', '4, ' . $MIOLO->getActionURL($module, $action, null, $opts ));
+        }
+        else
+        {
+            $this->btnSendMail();
+        }
+
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+        $this->setClose($MIOLO->getActionURL($module,substr($action,0,strrpos($action,':'))));
+    }
+
+
+    public function btnGenerate_click($sender = null)
+    {
+        $MIOLO                         = MIOLO::getInstance();
+        $module                        = MIOLO::getCurrentModule();
+        $action                        = MIOLO::getCurrentAction();
+
+        $filters->invoiceId = $this->inscriptionData->_invoiceId;
+
+        $this->btnSendMail();
+    }
+
+    public function btnSendMail($sender = null)
+    {
+        $MIOLO                         = MIOLO::getInstance();
+        $module                        = MIOLO::getCurrentModule();
+        $action                        = MIOLO::getCurrentAction();
+
+        if ( GENERATE_BANK_INVOICE == DB_TRUE )
+        {
+            //Dado para gerar boleto
+            $filters->invoiceId = $this->inscriptionData->_invoiceId;
+
+            if ( strlen((string)$filters->invoiceId) > 0 )
+            {
+                $teste = 'RptPrintInvoice';
+
+                $MIOLO->getClass('finance', $teste);
+                $report = new $teste($filters, true);
+            }
+        }
+        if ( strlen((string)$this->inscriptionData->physicalPerson->email) > 0 ) //se a pessoa tem e-mail
+        {
+            $businessInscriptionSetting    = $MIOLO->getBusiness($module, 'BusInscriptionSetting');
+            $inscriptionSettingsData = $businessInscriptionSetting->getInscriptionSetting($this->inscriptionData->inscription->selectiveProcessId);
+
+            $businessEmail  = $MIOLO->getBusiness('basic', 'BusEmail');
+
+            $getEmail       = $businessEmail->getEmail($inscriptionSettingsData->emailAdmin);
+
+            //Dados para envio do e-mail
+            $searchData  = array("\$EMAILADMIN",
+                                "\$SELECTIVEPROCESSID",
+                                "\$PERSONNAME",
+                                "\$PERSONID",
+                                "\$LANGUAGEDESC",
+                                "\$LOCALDESC",
+                                "\$INVOICEID",
+                                "\$DOCUMENTNUMBERTOHOMEBANKING");
+
+            if ( !(strlen((string)$this->inscriptionData->email->languageDescription) > 0) )
+            {
+                $this->inscriptionData->email->languageDescription = _M('Not is necessary language to this selective process', $module);
+            }
+
+            $replaceData = array($getEmail->from,
+                                $this->inscriptionData->inscription->selectiveProcessId,
+                                $this->inscriptionData->physicalPerson->name,
+                                $this->inscriptionData->physicalPersonStudent->personId,
+                                $this->inscriptionData->email->languageDescription,
+                                $this->inscriptionData->email->cityExamDescription,
+                                $this->inscriptionData->_invoiceId,
+                                $report->openDigitableNumber );
+
+            $subjectNew = str_replace($searchData, $replaceData, $getEmail->subject);
+
+            $body = "<html><head><title>".$subjectNew."</title></head>";
+
+            $businessSelectiveProcess    = $MIOLO->getBusiness($module, 'BusSelectiveProcess');
+            $filters11->selectiveProcessId = $this->inscriptionData->inscription->selectiveProcessId;
+            $selectiveProcessData            = $businessSelectiveProcess->searchSelectiveProcess($filters11);
+
+            $this->optionsNumber = $selectiveProcessData[0][7];
+
+            $optionsAux = " ";
+
+            for ($x = 1; $x <= $this->optionsNumber; $x++)
+            {
+                eval('$op   = $this->inscriptionData->email->courseId'.$x.';');
+                eval('$desc = $this->inscriptionData->email->courseDesc'.$x.';');
+                eval('$unit = $this->inscriptionData->email->courseUnitDesc'.$x.';');
+                eval('$turn = $this->inscriptionData->email->turnDesc'.$x.';');
+
+                eval('$optionsAux .= "Opção '.$x.' : <b>$op</b> -> <b>$desc</b> <br>&nbsp;Campus: <b>$unit</b> <br>&nbsp;Turno : <b>$turn</b><br><br><br>";');
+            }
+
+            $searchData[]  = "$#OPTIONSCOURSE#$";
+
+            $replaceData[] = $optionsAux;
+
+            $body = "<body>";
+
+            $body .= str_replace($searchData, $replaceData, $getEmail->body);
+
+            $body .= "</body></html>";
+
+            $subject = $subjectNew;
+
+            $recipient = $this->inscriptionData->physicalPerson->name . ' <' . $this->inscriptionData->physicalPerson->email . '>';
+
+            $from      = str_replace($searchData, $replaceData, $getEmail->from);
+
+            $host = strtolower($getEmail->server);
+
+            $fp = fsockopen($host, $getEmail->port);
+
+            if ( $fp )
+            {
+                fputs ($fp,"HELO ". $getEmail->server ."\n" .
+                            "MAIL FROM: {$getEmail->from}\n" .
+                            "RCPT TO: {$this->inscriptionData->physicalPerson->email}\n" .
+                            "DATA\n" .
+                            "TO: {$this->inscriptionData->physicalPerson->email}\n" .
+                            "FROM: $from\n" .
+                            "SUBJECT: $subject\n" .
+                            "MIME-Version: {$getEmail->mimeVersion}\n" .
+                            "Content-Type: {$getEmail->contentType}\n" .
+                            "$body\n" .
+                            ".\n" .
+                            "QUIT\n");
+
+                fclose($fp);
+            }
+        }
+
+        if ( strlen((string)$filters->invoiceId) > 0 )
+        {
+            $report->$teste($filters);
+        }
+
+        //$MIOLO->session->setValue('inscriptionData', null);
+    }
+}
+
+?>

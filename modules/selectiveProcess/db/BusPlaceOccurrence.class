@@ -1,0 +1,313 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for sprPlaceOccurrence table
+ *
+ * @author Daniel Afonso Heisler [daniel@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 14/09/2005
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to manipulate the sprPlaceOccurrence table
+ **/
+class BusinessSelectiveProcessBusPlaceOccurrence extends Business
+{
+
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module = is_null($module) ? 'selectiveProcess' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+    /**
+     * List all records from the table handled by the class
+     *
+     * @param $selectiveProcessId (integer): Primary key of the record to be retrieved
+     *
+     * @returns (array): Return an array with the entire table
+     *
+     **/
+    public function listPlaceOccurrence($selectiveProcessId)
+    {
+        $db  = $this->getDatabase();
+        $sql = 'SELECT A.placeId,
+                       A.description
+                  FROM sprPlace A
+            INNER JOIN sprPlaceOccurrence B
+                    ON ( A.placeId = B.placeId )
+                   AND B.selectiveProcessId = ?
+              ORDER BY A.description';
+
+        if ( strlen((string)$selectiveProcessId)>0 )
+        {
+            $result = $db->query(SAGU::prepare($sql, $selectiveProcessId));
+        }
+
+        if ( !$result )
+        {
+            $result = array();
+        }
+
+        //$db->close();
+        return $result;
+    }
+
+
+    /**
+     * Return a specific record from the database
+     *
+     * @param $placeId (integer): Primary key of the record to be retrieved
+     * @param $selectiveProcessId (integer): Primary key of the record to be retrieved
+     *
+     * @return (object): Return an object of the type handled by the class
+     *
+     **/
+    public function getPlaceOccurrence($selectiveProcessId, $placeId)
+    {
+        $sql = 'SELECT A.selectiveProcessId,
+                       C.description,
+                       A.placeId,
+                       B.description,
+                       A.userName,
+                       TO_CHAR(A.dateTime,\'' . MASK_TIMESTAMP . '\'),
+                       A.ipAddress
+                  FROM sprPlaceOccurrence A
+             LEFT JOIN sprPlace B
+                    ON (A.placeId            = B.placeId)
+             LEFT JOIN sprSelectiveProcess C
+                    ON (A.selectiveProcessId = C.selectiveProcessId)
+                 WHERE A.selectiveProcessId  = ?
+                   AND A.placeId             = ?';
+
+        $args = array( $selectiveProcessId,
+                       $placeId );
+
+        $db     = $this->getDatabase();
+
+        $result = $db->query(SAGU::prepare($sql, $args));
+        //$db->close();
+
+        $placeOccurrence = new SprPlaceOccurrence();
+
+        list ( $placeOccurrence->selectiveProcessId,
+               $placeOccurrence->selectiveProcessDescription,
+               $placeOccurrence->placeId,
+               $placeOccurrence->placeDescription,
+               $placeOccurrence->userName,
+               $placeOccurrence->dateTime,
+               $placeOccurrence->ipAddress ) = $result[0];
+
+        return $placeOccurrence; 
+    }
+
+    /**
+     * Do a search on the database table handled by the class
+     *
+     * @param $filters (object): Search filters
+     *
+     * @return (array): An array containing the search results
+     **/
+    public function searchPlaceOccurrence($filters)
+    {
+        $sql = 'SELECT A.selectiveProcessId,
+                       C.description,
+                       A.placeId,
+                       B.description,
+                       A.userName,
+                       TO_CHAR(A.dateTime,\'' . MASK_TIMESTAMP . '\'),
+                       A.ipAddress,
+                       D.name as cityName
+                  FROM sprPlaceOccurrence A
+             LEFT JOIN sprPlace B
+                    ON (A.placeId = B.placeId)
+             LEFT JOIN sprSelectiveProcess C
+                    ON (A.selectiveProcessId     = C.selectiveProcessId) 
+             LEFT JOIN basCity D
+                    ON (D.cityId = B.cityId)';
+
+        if ( strlen((string)$filters->selectiveProcessId) > 0 )
+        {
+            $where .= ' AND A.selectiveProcessId ILIKE ?';
+            $args[] = $filters->selectiveProcessId;
+        }
+        if ( strlen((string)$filters->placeId) > 0 )
+        {
+            $where .= ' AND A.placeId ILIKE ?';
+            $args[] = $filters->placeId;
+        }
+        if ( strlen((string)$filters->cityId) )
+        {
+            $where .= ' AND B.cityId = ?';
+            $args[] = $filters->cityId;
+        }
+
+        unset($result);
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE ' . substr($where, 4) . '
+                   ORDER BY C.description';
+
+            $db = $this->getDatabase();
+            $result = $db->query(SAGU::prepare($sql, $args));
+            //$db->close();
+        }
+
+        return $result;
+    }
+
+    /**
+     * Insert a new record
+     *
+     * @param $data (object): An object of the type handled by the class
+     *
+     * @return True if succed, otherwise False
+     *
+     **/
+    public function insertPlaceOccurrence($data)
+    {
+        $sql = 'INSERT INTO sprPlaceOccurrence
+                            (selectiveProcessId,
+                             placeId)
+                     VALUES (?,?)';
+
+        $args = array( $data->selectiveProcessId,
+                       $data->placeId );
+
+        $db     = $this->getDatabase();
+        $result = $db->execute(SAGU::prepare($sql, $args));
+        //$db->close();
+
+        return $result;
+    }
+
+    /**
+     * Update data from a specific record
+     *
+     * @param $data (object): Data which will replace the old record data
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+    public function updatePlaceOccurrence($data)
+    {
+        $sql = 'UPDATE sprPlaceOccurrence
+                   SET selectiveProcessId = ?,
+                       placeId            = ?
+                 WHERE selectiveProcessId = ?
+                   AND placeId            = ?';
+
+        $args = array( $data->selectiveProcessId,
+                       $data->placeId,
+                       $data->selectiveProcessIdOld,
+                       $data->placeIdOld );
+
+        $db   = $this->getDatabase();
+        $sqls = SAGU::prepare($sql, $args);
+
+        for ( $i=0; $i<count($sqls); $i++ )
+        {
+            $result = $db->execute($sqls[$i]);
+        }
+
+        //$db->close();
+
+        return $result;
+    }
+
+    /**
+     * Delete a record
+     *
+     * @param $placeId (integer): Primary key of the record to be retrieved
+     * @param $selectiveProcessId (integer): Primary key of the record to be retrieved
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+    public function deletePlaceOccurrence($selectiveProcessId, $placeId)
+    {
+        $sql = 'DELETE FROM sprPlaceOccurrence
+                      WHERE selectiveProcessId = ?
+                        AND placeId            = ?';
+
+        $args = array( $selectiveProcessId,
+                       $placeId );
+
+        $db     = $this->getDatabase();
+        $result = $db->execute(SAGU::prepare($sql, $args));
+        //$db->close();
+
+        return $result;
+    }
+
+    /**
+     * List all records from the table handled by the class
+     *
+     * @param $selectiveProcessId (integer): Primary key of the record to be retrieved
+     *
+     * @returns (array): Return an array with the entire table
+     *
+     **/
+    public function listCityExamOccurrence($selectiveProcessId)
+    {
+        $db  = $this->getDatabase();
+        $sql = 'SELECT DISTINCT C.cityId,
+                       C.name AS cityName
+                  FROM sprPlace A
+            INNER JOIN sprPlaceOccurrence B
+                    ON ( A.placeId = B.placeId )
+            INNER JOIN basCity C
+                    ON (C.cityId = A.cityId)
+                 WHERE B.selectiveProcessId = ?
+              ORDER BY C.name';
+
+        if ( strlen((string)$selectiveProcessId)>0 )
+        {
+            $result = $db->query(SAGU::prepare($sql, $selectiveProcessId));
+        }
+
+        if ( !$result )
+        {
+            $result = array();
+        }
+
+        //$db->close();
+        return $result;
+    }
+
+}
+
+?>

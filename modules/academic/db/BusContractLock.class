@@ -1,0 +1,310 @@
+<?php
+
+/**
+ * This class contains methods to get, search, list, insert,
+ * update and delete register into acdContractLock table.
+ *
+ * @author Armando Taffarel Neto [taffarel@solis.coop.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * Armando Taffarel Neto [taffarel@solis.coop.br]
+ *
+ * @since
+ * This class was created 25/01/2005
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2005 SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br
+ *
+ */
+
+class BusinessAcademicBusContractLock extends Business
+{
+
+    public $db;
+
+    /**
+     * Class constructor
+     **/
+    public function BusinessAcademicBusContractLock()
+    {
+        $this->db = $this->getDatabase();
+    }
+
+    /**
+     * Make a connection to the database
+     *
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module = is_null($module) ? 'academic' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+
+    /**
+     * Run de proccess that cancell de enrolls
+     *
+     * @author Jamiel Spezia [jamiel@solis.coop.br]
+     *
+     * @param $data (object): Object (curricular) containing the data to be inserted.
+     *
+     * @return On success, the cancelled enrolls number. Otherwise, returns null.
+     *
+     */
+    function runContractLock($contractId, $learningPeriodId, $reasonCancellationId)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule(); 
+
+        $busLearningPeriod  = $MIOLO->getBusiness($module, 'BusLearningPeriod');
+        $busLearningPeriod->db = $this->db;
+        $learningPeriodData = $busLearningPeriod->getLearningPeriod($learningPeriodId);    
+
+        $sql = '    SELECT A.enrollId
+                      FROM acdenroll A
+                INNER JOIN acdGroup B
+                        ON (A.groupId = B.groupId)
+                INNER JOIN acdLearningPeriod C
+                        ON (B.learningPeriodId = C.learningPeriodId)
+                     WHERE A.contractId = ? 
+                       AND C.periodId = ? 
+                       AND A.statusId IN (' . ENROLL_STATUS_ENROLLED . ')';
+
+        $args = array (
+                       $contractId,
+                       $learningPeriodData->periodId
+                      );
+
+        //$db     = $this->getDatabase();
+
+        $result = $this->db->query(SAGU::prepare($sql, $args));
+
+        $cnt = 0;
+
+        $business     = $MIOLO->getBusiness($module, 'BusEnrollSummary');
+        $business->db = $this->db;
+
+        for ( $i=0; $i<count($result); $i++ )
+        {
+            if ( $this->curricularComponentCancellation($result[$i][0], $reasonCancellationId))
+            {
+                $cnt++;
+            }
+        }
+
+        if ( (MODULE_FINANCE_INSTALLED == 'YES') && ($learningPeriodData->isFinanceGenerate == DB_TRUE) )
+        {
+            $sql = 'SELECT incomeForecastId 
+                      FROM finincomeforecast 
+                     WHERE contractid = ? 
+                       AND isprocessed = false
+                       AND isaccounted = false';
+
+            $args = array($contractId);
+
+            $incomeForecasts = $this->db->query(SAGU::prepare($sql, $args));
+
+            $learningData  = $busLearningPeriod->getLearningPeriod($learningPeriodId);
+
+            $parcels       = $this->getRemainParcels($contractId);
+
+            if ( $parcels > 0 )
+            {
+                $parcelsNumber = $parcels;
+            }
+            elseif ($learningData->parcelsNumber > 0)
+            {
+                $parcelsNumber = $learningData->parcelsNumber;
+            }
+            else
+            {
+                $parcelsNumber = 1;
+            }
+
+            $sql = 'SELECT policyId
+                      FROM acdLearningPeriod
+                     WHERE learningPeriodId = ?';
+
+            $policy = $this->db->query(SAGU::prepare($sql, $learningPeriodId));
+
+            $busPolicy     = $MIOLO->getBusiness('finance', 'BusPolicy');
+            $busPolicy->db = $this->db;
+            $policyData    = $busPolicy->getPolicy($policy[0][0]);
+
+            $sql = 'SELECT cancelCurricularComponentOperation 
+                      FROM finDefaultOperations';
+
+            $cancel = $this->db->query($sql);
+
+            $sql = '  SELECT A.enrollSummaryId
+                        FROM acdEnrollSummary A
+                       WHERE A.contractId = ?
+                         AND A.learningPeriodId = ?
+                         AND A.isProcessed = false';
+
+            $args = array (
+                       $contractId,
+                       $learningPeriodId
+                      );
+
+            $query = $this->db->query(SAGU::prepare($sql, $args));
+
+            if ( count($query) > 0 )
+            {
+                foreach ( $query as $row )
+                {
+                    $enrollSum = $business->getEnrollSummaryById($row[0]);
+
+                    $enrollSum->parcelsNumber = $parcelsNumber;
+                    $enrollSum->isProcessed   = DB_FALSE;
+
+                    if ( $enrollSum->operationId != $policyData->operationId )
+                    {
+                        $multiplier            = (-1) * $enrollSum->multiplier;
+                        $enrollSum->multiplier = number_format($multiplier, 8, '.', '');
+                        $business->insertEnrollSummary($enrollSum);
+                    }
+                    else
+                    {
+                        $enrollSum->operationId = $cancel[0][0];
+                        $business->insertEnrollSummary($enrollSum);
+                    }
+                }
+            }
+
+            if ( count($incomeForecasts) > 0 )
+            {
+                $busIncomeF     = $MIOLO->getBusiness('finance', 'BusIncomeForecast');
+                $busIncomeF->db = $this->db;
+
+                foreach ($incomeForecasts as $incomeForecast)
+                {
+                    $incomeForecastData = $busIncomeF->getIncomeForecast($incomeForecast[0]);  
+                    $enrollSummary      = new AcdEnrollSummary();
+
+                    $enrollSummary->contractId       = $contractId;
+                    $enrollSummary->learningPeriodId = $learningPeriodId;
+                    $enrollSummary->recordDate       = date(MASK_DATE_PHP);
+                    $enrollSummary->parcelsNumber    = $parcelsNumber;
+                    $enrollSummary->isValue          = DB_TRUE;
+
+                    //é a operacao do periodo letivo: $policyData->operationId
+                    //é a operacao da atual previsao: $incomeForecastData->operationId
+                    if ( $incomeForecastData->operationId != $policyData->operationId )
+                    {
+                        $incomeForecastData->value = number_format(((-1) * $incomeForecastData->value), 8, '.', '');
+                    }
+                    else
+                    {
+                        $incomeForecastData->operationId = $cancel[0][0];
+                    }
+
+                    $incomeForecastData->comments = _M('Contract locked in', $module) . ' ' . date(MASK_DATE_PHP);
+                    $busIncomeF->insertIncomeForecast($incomeForecastData);
+
+                }
+            }
+        }
+
+        return $cnt;
+    }
+
+    function getRemainParcels($contractId)
+    {
+        $sql = 'SELECT count(months) 
+                  FROM (SELECT DISTINCT EXTRACT(MONTH FROM maturitydate) as months 
+                          FROM finincomeforecast 
+                         WHERE contractid = ? 
+                           AND isprocessed = \'' . DB_FALSE . '\') 
+                        AS sel'; 
+        
+        $args   = array( $contractId );  
+        $result = $this->db->query(SAGU::prepare($sql, $args));
+        
+        return $result[0][0];
+    }
+    
+    function curricularComponentCancellation($enrollId, $reasonCancellationId)
+    {
+        $sql = 'UPDATE acdenroll
+                   SET statusId                = ' . ENROLL_STATUS_CANCELLED . ', 
+                       dateCancellation        = TO_DATE(?,\'' . MASK_DATE . '\'),
+                       hourCancellation        = (CURRENT_TIME),
+                       reasonCancellationId    = ?
+                 WHERE enrollId                = ?';
+
+        $args = array( 
+                       date(MASK_DATE_PHP),
+                       $reasonCancellationId,
+                       $enrollId
+                       );
+
+        $result = $this->db->execute(SAGU::prepare($sql, $args));
+
+        if (count($this->getErrors) > 0)
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    
+    function getContractPeriodEnrolls($contractId, $learningPeriodId)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule(); 
+
+        $sql = '    SELECT A.enrollId
+                      FROM acdenroll A
+                INNER JOIN acdGroup B
+                        ON (A.groupId = B.groupId)
+                     WHERE A.contractId = ? 
+                       AND B.learningPeriodId = ? 
+                       AND A.statusId IN (' . ENROLL_STATUS_ENROLLED . ')';
+
+        $args = array (
+                       $contractId,
+                       $learningPeriodId
+                      );
+
+        $result = $this->db->query(SAGU::prepare($sql, $args));
+        return $result;
+    }
+
+    function beginTransaction()
+    {
+        //$db = $this->getDatabase();
+        return $this->db->execute('BEGIN TRANSACTION');
+    }
+
+    function endTransaction()
+    {
+        //$db = $this->getDatabase();
+        return $this->db->execute('COMMIT');
+    }
+}
+
+?>

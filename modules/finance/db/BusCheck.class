@@ -1,0 +1,916 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for finCheck table
+ *
+ * @author Daniel Afonso Heisler [daniel@hsti.inf.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * Armando Taffarel Neto [taffarel@solis.coop.br]
+ * 
+ * @since
+ * Class created on 30/10/2007
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to manipulate the finCheck table
+ **/
+class BusinessFinanceBusCheck extends MBusiness
+{
+
+    private $db;
+
+    public function BusinessFinanceBusCheck()
+    {
+        $this->db = $this->getDatabase();
+    }
+
+    /**
+     * Return a specific record from the database
+     *
+     * @param $invoiceId (integer): Primary key of the record to be retrieved
+     *
+     * @return (object): Return an object of the type handled by the class
+     *
+     **/
+    public function listInvoiceCheck($invoiceId)
+    {
+        $sql = "SELECT A.checkId, '" .
+                       _M('Number', 'finance') . ": ' || " . 
+                       " A.checkNumber || '   " .
+                       _M('Check', 'finance') . ": ' || " . 
+                       " ROUND(A.totalValue, '" . REAL_ROUND_VALUE . "') || ' " .
+                       _M('Total value', 'finance') . ": ' || " . 
+                       " ROUND(B.value, '" . REAL_ROUND_VALUE . "')
+                  FROM finCheck A
+            INNER JOIN finCheckInvoice B
+                    ON ( A.checkId = B.checkId )
+                 WHERE B.invoiceId = ?
+                   AND A.downDate is null
+                   AND A.status    = ?";
+
+        $args = array( $invoiceId,
+                       'C');
+
+        $result = $this->db->query(SAGU::prepare($sql,$args));
+
+        return $result; 
+    }
+
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module = is_null($module) ? 'finance' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+    /**
+     * Return a specific record from the database
+     *
+     * @param $checkId (integer): Primary key of the record to be retrieved
+     *
+     * @return (object): Return an object of the type handled by the class
+     *
+     **/
+    public function getCheck($checkId, $invoiceId=null)
+    {
+        $sql = 'SELECT A.checkId,
+                       A.personId,
+                       A.checkNumber,
+                       TO_CHAR(A.emissionDate,\'' . MASK_DATE . '\'),
+                       TO_CHAR(A.maturityDate,\'' . MASK_DATE . '\'),
+                       TO_CHAR(A.newMaturityDate,\'' . MASK_DATE . '\'),
+                       TO_CHAR(A.downDate,\'' . MASK_DATE . '\'),
+                       A.reasonId,
+                       B.description as reasonDescription,
+                       A.issuingName,
+                       A.issuingCPF,
+                       A.issuingCNPJ,
+                       A.observation,
+                       ROUND(A.value, \'' . REAL_ROUND_VALUE . '\'),
+                       ROUND(A.tax, \'' . REAL_ROUND_VALUE . '\'),
+                       ROUND(A.interest, \'' . REAL_ROUND_VALUE . '\'),
+                       ROUND(A.discount, \'' . REAL_ROUND_VALUE . '\'),
+                       ROUND(A.totalValue, \'' . REAL_ROUND_VALUE . '\'),
+                       A.status,
+                       A.bankId,
+                       A.branchNumber,
+                       A.destinationBankAccountId,
+                       A.userName,
+                       TO_CHAR(A.dateTime,\'' . MASK_TIMESTAMP . '\'),
+                       A.ipAddress
+                  FROM finCheck A
+             LEFT JOIN finReason B
+                    ON ( A.reasonId = B.reasonId )
+                 WHERE A.checkId = ?';
+
+        $result = $this->db->query(SAGU::prepare($sql,$checkId));
+
+        $check = new FinCheck();
+
+        list ( $check->checkId,
+               $check->personId,
+               $check->checkNumber,
+               $check->emissionDate,
+               $check->maturityDate,
+               $check->newMaturityDate,
+               $check->downDate,
+               $check->reasonId,
+               $check->reasonDescription,
+               $check->issuingName,
+               $check->issuingCPF,
+               $check->issuingCNPJ,
+               $check->observation,
+               $check->value,
+               $check->tax,
+               $check->interest,
+               $check->discount,
+               $check->totalValue,
+               $check->status,
+               $check->bankId,
+               $check->branchNumber,
+               $check->destinationBankAccountId,
+               $check->userName,
+               $check->dateTime,
+               $check->ipAddress) = $result[0];
+
+               $check->branch = $check->bankId . '/' . $check->branchNumber;
+
+        //pega os vinculos dos cheques com os títulos
+        $sql = 'SELECT checkInvoiceId,
+                       checkId,
+                       invoiceId,
+                       value
+                  FROM finCheckInvoice
+                 WHERE checkId = ?';
+
+        unset($args);
+        $args[] = $checkId;
+
+        if ( strlen((string)$invoiceId) > 0 )
+        {
+            $sql .= ' AND invoiceId = ? ';
+            $args[] = $invoiceId;
+        }
+
+        $result = $this->db->query(SAGU::prepare($sql,$args));
+        if ( count($result)>0 )
+        {
+            $x = 0;
+            foreach ( $result as $invoices)
+            {
+                $check->invoices[$x] = new FinCheckInvoice;
+                $check->invoices[$x]->checkInvoiceId = $invoices[0];
+                $check->invoices[$x]->checkId        = $invoices[1];
+                $check->invoices[$x]->invoiceId      = $invoices[2];
+                $check->invoices[$x]->value          = $invoices[3];
+                $x++;
+            }
+        }
+
+        return $check; 
+    }
+
+    /**
+     * Do a search on the database table handled by the class
+     *
+     * @param $filters (object): Search filters
+     *
+     * @last modification: William Prigol Lopes [william@solis.coop.br]
+     *                     Make the search capable to get partial word search with % in varchar fields
+     *
+     * @return (array): An array containing the search results
+     **/
+    public function searchCheck($data)
+    {
+        $sql = 'SELECT A.checkId,
+                       A.personId,
+                       C.name,
+                       A.checkNumber,
+                       TO_CHAR(A.emissionDate,\'' . MASK_DATE . '\'),
+                       TO_CHAR(A.maturityDate,\'' . MASK_DATE . '\'),
+                       TO_CHAR(A.newMaturityDate,\'' . MASK_DATE . '\'),
+                       TO_CHAR(A.downDate,\'' . MASK_DATE . '\'),
+                       A.reasonId,
+                       B.description as reasonDescription,
+                       A.issuingName,
+                       A.issuingCPF,
+                       A.issuingCNPJ,
+                       A.observation,
+                       ROUND(A.value, \'' . REAL_ROUND_VALUE . '\'),
+                       ROUND(A.tax, \'' . REAL_ROUND_VALUE . '\'),
+                       ROUND(A.interest, \'' . REAL_ROUND_VALUE . '\'),
+                       ROUND(A.discount, \'' . REAL_ROUND_VALUE . '\'),
+                       ROUND(A.totalValue, \'' . REAL_ROUND_VALUE . '\'),
+                       A.status,
+                       A.bankId,
+                       A.branchNumber,
+                       A.destinationBankAccountId,
+                       A.status
+                  FROM finCheck A
+       INNER JOIN ONLY basPerson C
+                    ON ( A.personId = C.personId )
+             LEFT JOIN finReason B
+                    ON ( A.reasonId = B.reasonId ) ';
+
+        $where = '';
+        unset($args);
+        if ( strlen((string)$data->checkId) > 0 )
+        {
+            $where .= '    AND   A.checkId = ?';
+            $args[] = $data->checkId;
+        }
+        if ( strlen((string)$data->personId) > 0 )
+        {
+            $where .= '    AND   A.personId = ?';
+            $args[] = $data->personId;
+        }
+        if ( strlen((string)$data->checkNumber) > 0 )
+        {
+            $where .= '    AND   A.checkNumber ILIKE ?';
+            $args[] = $data->checkNumber . '%';
+        }
+        if ( strlen((string)$data->emissionDate) > 0 )
+        {
+            $where .= '    AND A.emissionDate = TO_DATE(?,\'' . MASK_DATE . '\')';
+            $args[] = $data->emissionDate;
+        }
+        if ( strlen((string)$data->initialEmissionDate) > 0 )
+        {
+            $where .= '    AND A.emissionDate >= TO_DATE(?,\'' . MASK_DATE . '\')';
+            $args[] = $data->initialEmissionDate;
+        }
+        if ( strlen((string)$data->endEmissionDate) > 0 )
+        {
+            $where .= '    AND A.emissionDate <= TO_DATE(?,\'' . MASK_DATE . '\')';
+            $args[] = $data->endEmissionDate;
+        }
+        if ( strlen((string)$data->maturityDate) > 0 )
+        {
+            $where .= '    AND A.maturityDate = TO_DATE(?,\'' . MASK_DATE . '\')';
+            $args[] = $data->maturityDate;
+        }
+
+        if ( strlen((string)$data->initialMaturityDate) > 0 )
+        {
+            $where .= '    AND CASE WHEN A.newMaturityDate IS NOT NULL THEN 
+                                         A.newMaturityDate >= TO_DATE(?,\'' . MASK_DATE . '\')
+                                    ELSE
+                                         A.maturityDate >= TO_DATE(?,\'' . MASK_DATE . '\')
+                                     END ';
+            $args[] = $data->initialMaturityDate;
+            $args[] = $data->initialMaturityDate;
+        }
+        if ( strlen((string)$data->endMaturityDate) > 0 )
+        {
+            $where .= '    AND CASE WHEN A.newMaturityDate IS NOT NULL THEN 
+                                         A.newMaturityDate <= TO_DATE(?,\'' . MASK_DATE . '\')
+                                    ELSE
+                                         A.maturityDate <= TO_DATE(?,\'' . MASK_DATE . '\')
+                                     END ';
+            $args[] = $data->endMaturityDate;
+            $args[] = $data->endMaturityDate;
+        }
+        if ( strlen((string)$data->newMaturityDate) > 0 )
+        {
+            $where .= '    AND A.newMaturityDate = TO_DATE(?,\'' . MASK_DATE . '\')';
+            $args[] = $data->newMaturityDate;
+        }
+        if ( strlen((string)$data->emissionDate) > 0 )
+        {
+            $where .= '    AND A.emissionDate = TO_DATE(?,\'' . MASK_DATE . '\')';
+            $args[] = $data->emissionDate;
+        }
+        if ( is_array($data->status) )
+        {
+            $where .= '    AND   A.status IN (\'' . implode('\',\'', $data->status) . '\')';
+        }
+        elseif ( strlen((string)$data->status) > 0 )
+        {
+            $where .= '    AND   A.status ILIKE ?';
+            $args[] = $data->status;
+        }
+        if ( $data->down == 'Y' )
+        {
+            $where .= '    AND   A.downDate IS NOT NULL';
+        }
+        elseif ( $data->down == 'N' )
+        {
+            $where .= '    AND   A.downDate IS NULL';
+        }
+        if ( strlen((string)$data->value) > 0 )
+        {
+            $where .= '    AND   A.value = ?';
+            $args[] = $data->value;
+        }
+
+        if ( $where != '' )
+        {
+            $sql .= ' WHERE ' . substr($where,8) .
+                    ' ORDER BY C.name, 
+                               A.maturityDate';
+
+            $result = $this->db->query(SAGU::prepare($sql,$args));
+        }
+
+        return $result;
+    }
+
+    /**
+     * Insert a new record
+     *
+     * @param $data (object): An object of the type handled by the class
+     *
+     * @return True if succed, otherwise False
+     *
+     **/
+    public function insertCheck($data)
+    {
+
+        $sql = 'BEGIN TRANSACTION';
+        $this->db->execute($sql);
+
+        $sql     = 'SELECT NEXTVAL(\'seq_checkId\')';
+        $retval  = $this->db->query($sql);
+        $checkId = $retval[0][0];
+
+        if ( strlen((string)$checkId)>0 )
+        {
+            $data->checkId = $checkId;
+
+            $sql = 'INSERT INTO finCheck
+                                (checkId,
+                                 personId,
+                                 checkNumber,
+                                 maturityDate,
+                                 newMaturityDate,
+                                 downDate,
+                                 reasonId,
+                                 issuingName,
+                                 issuingCPF,
+                                 issuingCNPJ,
+                                 observation,
+                                 value,
+                                 tax,
+                                 interest,
+                                 discount,
+                                 totalValue,
+                                 status,
+                                 bankId,
+                                 branchNumber,
+                                 destinationBankAccountId)
+                         VALUES (?,?,?,
+                                 TO_DATE(?,\'' . MASK_DATE . '\'),
+                                 TO_DATE(?,\'' . MASK_DATE . '\'),
+                                 TO_DATE(?,\'' . MASK_DATE . '\'),
+                                 ?,?,?,?,?,?,?,?,?,?,?,?,?,?)';
+
+            $args = array($data->checkId,
+                          $data->personId,
+                          $data->checkNumber,
+                          $data->maturityDate,
+                          $data->newMaturityDate,
+                          $data->downDate,
+                          $data->reasonId,
+                          $data->issuingName,
+                          $data->issuingCPF,
+                          $data->issuingCNPJ,
+                          $data->observation,
+                          $data->value,
+                          $data->tax,
+                          $data->interest,
+                          $data->discount,
+                          $data->totalValue,
+                          $data->status ? $data->status : 'C',
+                          $data->bankId,
+                          $data->branchNumber,
+                          $data->destinationBankAccountId);
+
+            $this->db->execute(SAGU::prepare($sql,$args));
+        }
+
+        if ( count($data->invoices) > 0 )
+        {
+            //pega a operacao de pagamento
+            /*$sql = 'SELECT paymentOperation
+                      FROM finDefaultOperations';
+            $paymentOperation = $this->db->query($sql);
+            $paymentOperation = $paymentOperation[0][0];*/
+
+            //percorre os títulos
+            foreach ( $data->invoices as $invoiceId )
+            {
+                //inser os vínculos entre cheques e titulos
+                $data->invoiceId = $invoiceId;
+                 eval('$data->checkInvoiceValue = $data->invoiceDownValue' . $invoiceId . ';');
+
+                $this->insertCheckInvoice($data);
+
+                //pega o centro de custos
+                /*$sql = 'SELECT costCenterId
+                          FROM finReceivableInvoice
+                         WHERE invoiceId = ?';
+                $costCenterId = $this->db->query(SAGU::Prepare($sql, $invoiceId));
+                $costCenterId = $costCenterId[0][0];
+
+                //insere os lançamentos das baixas
+                eval('$baixa = $data->invoiceDownValue' . $invoiceId . ';');
+
+                if ( $baixa > 0 )
+                {
+                    $sql = ' INSERT INTO finEntry
+                                        ( invoiceId,
+                                          operationId,
+                                          entryDate,
+                                          value,
+                                          costCenterId,
+                                          comments
+                                        )
+                                  VALUES (?,?,to_date(?,\''.MASK_DATE.'\'),?,?,?)';
+                      
+                    $args = array( $invoiceId,
+                                   $paymentOperation,
+                                   $data->downDate,
+                                   $baixa,
+                                   $costCenterId,
+                                   _M('Check number', 'finance') . ': ' . $data->checkNumber
+                                 );
+
+                    $this->db->execute(SAGU::prepare($sql, $args));
+
+                }
+                unset($baixa);*/
+
+            }
+        }
+
+        $sql = 'COMMIT';
+        $ok  = $this->db->execute($sql);
+
+        return $ok;
+    }
+
+    /**
+     * Update data from a specific record
+     *
+     * @param $data (object): Data which will replace the old record data
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+    public function updateCheck($data)
+    {
+        $sql = 'BEGIN TRANSACTION';
+        $this->db->execute($sql);
+
+        //atualiza os dados dos cheques
+        $sql = 'UPDATE finCheck
+                   SET personId                 = ?,
+                       checkNumber              = ?,
+                       maturityDate             = TO_DATE(?,\'' . MASK_DATE . '\'),
+                       newMaturityDate          = TO_DATE(?,\'' . MASK_DATE . '\'),
+                       downDate                 = TO_DATE(?,\'' . MASK_DATE . '\'),
+                       reasonId                 = ?,
+                       issuingName              = ?,
+                       issuingCPF               = ?,
+                       issuingCNPJ              = ?,
+                       observation              = ?,
+                       value                    = ?,
+                       tax                      = ?,
+                       interest                 = ?,
+                       discount                 = ?,
+                       totalValue               = ?,
+                       status                   = ?,
+                       bankId                   = ?,
+                       branchNumber             = ?,
+                       destinationBankAccountId = ?
+                 WHERE checkId                  = ?';
+
+            $args = array($data->personId,
+                          $data->checkNumber,
+                          $data->maturityDate,
+                          $data->newMaturityDate,
+                          $data->downDate,
+                          $data->reasonId,
+                          $data->issuingName,
+                          $data->issuingCPF,
+                          $data->issuingCNPJ,
+                          $data->observation,
+                          $data->value,
+                          $data->tax,
+                          $data->interest,
+                          $data->discount,
+                          $data->totalValue,
+                          $data->status,
+                          $data->bankId,
+                          $data->branchNumber,
+                          $data->destinationBankAccountId,
+                          $data->checkId);
+
+        $sqls = SAGU::prepare($sql,$args);
+        for ( $i=0; $i<count($sqls); $i++ )
+        {
+            $result = $this->db->execute($sqls[$i]);
+        }
+
+        //apaga os titulos relacionados aos cheques
+        $this->deleteAllCheckInvoice($data->checkId);
+
+        //insere os titulos novos, do cheque
+        if ( count($data->invoices) > 0 )
+        {
+            //pega a operacao de pagamento
+            /*$sql = 'SELECT paymentOperation
+                      FROM finDefaultOperations';
+            $paymentOperation = $this->db->query($sql);
+            $paymentOperation = $paymentOperation[0][0];*/
+
+            //percorre os títulos
+            foreach ( $data->invoices as $invoiceId )
+            {
+                //inser os vínculos entre cheques e titulos
+                $data->invoiceId = $invoiceId;
+                eval('$data->checkInvoiceValue = $data->invoiceDownValue' . $invoiceId . ';');
+
+                $this->insertCheckInvoice($data);
+
+                /*//pega o centro de custos
+                $sql = 'SELECT costCenterId
+                          FROM finReceivableInvoice
+                         WHERE invoiceId = ?';
+                $costCenterId = $this->db->query(SAGU::Prepare($sql, $invoiceId));
+                $costCenterId = $costCenterId[0][0];
+
+                //insere os lançamentos das baixas
+                eval('$baixa = (float)$data->invoiceDownValue' . $invoiceId . ';');
+
+                if ( $baixa > 0 )
+                {
+                    $sql = ' INSERT INTO finEntry
+                                        ( invoiceId,
+                                          operationId,
+                                          entryDate,
+                                          value,
+                                          costCenterId,
+                                          comments
+                                        )
+                                  VALUES (?,?,to_date(?,\''.MASK_DATE.'\'),?,?,?)';
+                      
+                    $args = array( $invoiceId,
+                                   $paymentOperation,
+                                   $data->downDate,
+                                   $baixa,
+                                   $costCenterId,
+                                   _M('Check number', 'finance') . ': ' . $data->checkNumber
+                                 );
+
+                    $this->db->execute(SAGU::prepare($sql, $args));
+
+                }
+                unset($baixa);*/
+            }
+        }
+
+        $sql = 'COMMIT';
+        $ok  = $this->db->execute($sql);
+
+        return $ok;
+    }
+
+    /**
+     * Delete a record
+     *
+     * @param $checkId (string): Primary key for deletion
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+    public function deleteCheck($checkId, $invoices)
+    {
+    
+        $sql = 'BEGIN TRANSACTION';
+        $this->db->execute($sql);
+
+        if ( count($invoices)>0 )
+        {
+            foreach ( $invoices as $invoiceId )
+            {
+                $this->deleteCheckInvoice($checkId, $invoiceId);
+            }
+        }
+    
+        $sql    = 'DELETE FROM finCheck
+                         WHERE checkId = ?';
+
+        $args   = array($checkId);
+
+        $this->db->execute(SAGU::prepare($sql,$args));
+
+        $sql = 'COMMIT';
+        $ok  = $this->db->execute($sql);
+
+        return $ok;
+    }
+
+    public function insertCheckInvoice($data)
+    {
+
+        $sql = 'INSERT INTO finCheckInvoice
+                            (checkId,
+                             invoiceId,
+                             value)
+                     VALUES (?,?,?);';
+
+        $args = array($data->checkId,
+                      $data->invoiceId,
+                      $data->checkInvoiceValue);
+
+        $ok = $this->db->execute(SAGU::prepare($sql,$args));
+    }
+
+    public function deleteCheckInvoice($checkId, $invoiceId)
+    {
+        $sql    = 'DELETE FROM finCheckInvoice
+                         WHERE checkId   = ?
+                           AND invoiceId = ?';
+
+        $args   = array($checkId, $invoiceId);
+
+        $result = $this->db->execute(SAGU::prepare($sql,$args));
+
+        return $result;
+    }
+
+    public function deleteAllCheckInvoice($checkId)
+    {
+        $sql    = 'DELETE FROM finCheckInvoice
+                         WHERE checkId   = ?';
+
+        $args   = array($checkId);
+
+        $result = $this->db->execute(SAGU::prepare($sql,$args));
+
+        return $result;
+    }
+
+    public function updateDownDate($checkId, $downDate)
+    {
+        $sql = 'UPDATE finCheck
+                   SET downDate = TO_DATE(?,\'' . MASK_DATE . '\')
+                 WHERE checkId = ?';
+
+        $args = array ( $downDate,
+                        $checkId );
+   
+        $ok = $this->db->execute(SAGU::Prepare($sql, $args));
+        return $ok;
+    }
+    
+    public function updateCheckStatus($checkId, $status)
+    {
+        $sql = 'UPDATE finCheck
+                   SET status  = ?
+                 WHERE checkId = ?';
+
+        $args = array ( $status,
+                        $checkId );
+   
+        $ok = $this->db->execute(SAGU::Prepare($sql, $args));
+        return $ok;
+    }
+    
+    public function updateChecks($checks)
+    {
+        $MIOLO     = MIOLO::getInstance();
+        $module    = 'finance';
+        $keepGoing = true;
+
+        //pega as operações padrão
+        $businessDefaultOperations = $MIOLO->getBusiness($module, 'BusDefaultOperations');
+        $dataDefaultOperations = $businessDefaultOperations->getDefaultOperations();
+
+        $this->db->execute('BEGIN TRANSACTION');
+
+        if ( count($checks)>0 )
+        {
+            foreach ( $checks as $check )
+            {
+                //pega os dados do cheque
+                $getCheck = $this->getCheck($check->checkId);
+
+                /* BAIXA DOS CHEQUES */
+                if ( $this->updateDownDate($check->checkId, $check->downDate) === false )
+                {
+                    $keepGoing = false;
+                }
+                $check->status = $check->status ? $check->status : 'C';
+                if ( $this->updateCheckStatus($check->checkId, $check->status) === false )
+                {
+                    $keepGoing = false;
+                }
+
+                /* LANCAMENTO DO VALOR NO TITULO */
+                if ( count($check->invoices) > 0 )
+                {
+                    //percorre os títulos
+                    foreach ( $check->invoices as $invoiceId )
+                    {
+                        //inser os vínculos entre cheques e titulos
+                        $check->invoiceId = $invoiceId;
+                        foreach ( $getCheck->invoices as $row )
+                        {
+                            if ( $check->invoiceId == $row->invoiceId )
+                            {
+                                $check->checkInvoiceValue = $row->value;
+                            }
+                        }
+
+                        // Pegas os valores do título
+                        $sql = ' SELECT costCenterId,
+                                        balance(invoiceId),
+                                        balanceWithPolicies(invoiceId),
+                                        abs(balance(invoiceId)-balanceWithPolicies(invoiceId)),
+                                        costCenterId,
+                                        CASE WHEN (balance(invoiceId)-balanceWithPolicies(invoiceId)) > 0
+                                             THEN \'D\'
+                                             WHEN (balance(invoiceId)-balanceWithPolicies(invoiceId)) < 0
+                                             THEN \'I\'
+                                             WHEN (balance(invoiceId)-balanceWithPolicies(invoiceId)) = 0
+                                             THEN \'E\'
+                                        END
+                                   FROM finReceivableInvoice
+                                  WHERE invoiceId = ? ';
+
+                        $args = array($check->invoiceId);
+                        $return = $this->db->query(SAGU::prepare($sql, $args));
+
+                        $dataInvoice->costCenterId        = $return[0][0];
+                        $dataInvoice->invoiceId           = $check->invoiceId;
+                        $dataInvoice->balance             = $return[0][1]; //saldo do título
+                        $dataInvoice->balanceWithPolicies = $return[0][2]; //saldo com juros/multas/descontos
+                        $dataInvoice->difference          = $return[0][3]; //apenas juros/multas/descontos
+                        $dataInvoice->costCenterId        = $return[0][4]; //centro de custos
+                        $dataInvoice->situation           = $return[0][5];
+
+                        //Insere o lançamento de pagamento do valor do cheque para o título
+                        $dataEntry->invoiceId    = $dataInvoice->invoiceId;
+                        $dataEntry->operationId  = $dataDefaultOperations->paymentOperation;
+                        $dataEntry->entryDate    = $check->downDate;
+                        $dataEntry->value        = $check->checkInvoiceValue;
+                        $dataEntry->costCenterId = $dataInvoice->costCenterId;
+                        $dataEntry->comments     = _M('Check number', 'finance') . ': ' . $getCheck->checkNumber;
+                        $dataEntry->creationType = 'M';
+
+                        $sql = ' INSERT INTO finEntry
+                                           ( invoiceId,
+                                             operationId,
+                                             entryDate,
+                                             value,
+                                             costCenterId,
+                                             comments,
+                                             creationType
+                                            )
+                                     VALUES (?,?,to_date(?, \''.MASK_DATE.'\'),?,?,?,?)';
+                      
+                        $args = array( $dataEntry->invoiceId,
+                                       $dataEntry->operationId,
+                                       $dataEntry->entryDate,
+                                       $dataEntry->value,
+                                       $dataEntry->costCenterId,
+                                       $dataEntry->comments,
+                                       $dataEntry->creationType
+                                     );
+
+                        if ( $this->db->execute(SAGU::prepare($sql, $args)) === false )
+                        {
+                            $keepGoing = false;
+                        }
+                
+                        // Pega os valores do título atualizados
+                        $sql = ' SELECT costCenterId,
+                                        balance(invoiceId),
+                                        balanceWithPolicies(invoiceId),
+                                        abs(balance(invoiceId)-balanceWithPolicies(invoiceId)),
+                                        CASE WHEN (balance(invoiceId)-balanceWithPolicies(invoiceId)) > 0
+                                             THEN \'D\'
+                                             WHEN (balance(invoiceId)-balanceWithPolicies(invoiceId)) < 0
+                                             THEN \'I\'
+                                             WHEN (balance(invoiceId)-balanceWithPolicies(invoiceId)) = 0
+                                             THEN \'E\'
+                                        END
+                                   FROM finReceivableInvoice
+                                  WHERE invoiceId = ? ';
+
+                        $args   = array($check->invoiceId);
+                        $return = $this->db->query(SAGU::prepare($sql, $args));
+
+                        $dataInvoice->balance = $return[0][1];
+                
+                        //se o valor pago, for menor ou igual ao valor nominal em aberto (sem juros)
+                        if ( (float)SAGU::calcNumber($dataInvoice->balance . ' - ' . $check->checkInvoiceValue) >= 0 )
+                        {
+                            //calcula a diferença dos juros iniciais menos os atuais para deduzir apenas os juros do valor pago
+                            $dataInvoice->difference = SAGU::calcNumber($dataInvoice->difference . ' - ' . $return[0][3], 4);
+                        }
+                        else
+                        {
+                            //pega o valor do título com os juros e subtrai o valor pago
+                            $dataInvoice->difference = SAGU::calcNumber($dataInvoice->balanceWithPolicies . ' - ' . $check->checkInvoiceValue, 4);
+                        }
+
+                        // Insere os juros/multas/descontos do valor pago
+                        if ( $dataInvoice->situation != 'E' )
+                        {
+                            // Insert the entry data
+                            if ( $dataInvoice->situation == 'D' )
+                            {
+                                $situation = $dataDefaultOperations->discountOperation;
+                            }
+                            elseif ( $dataInvoice->situation == 'I' )
+                            {
+                                $situation = $dataDefaultOperations->interestOperation;
+                            }
+                            else
+                            {
+                                return false;
+                            }
+
+                            // Insere o lançamento de pagamento parcial
+                            $dataEntry->operationId  = $situation;
+                            $dataEntry->value        = $dataInvoice->difference;
+  
+                            $sql = ' INSERT INTO finEntry
+                                               ( invoiceId,
+                                                 operationId,
+                                                 entryDate,
+                                                 value,
+                                                 costCenterId,
+                                                 comments,
+                                                 creationType
+                                                )
+                                         VALUES (?,?,to_date(?,\''.MASK_DATE.'\'),?,?,?,?)';
+                      
+                            $args = array( $dataEntry->invoiceId,
+                                           $dataEntry->operationId,
+                                           $dataEntry->entryDate,
+                                           $dataEntry->value,
+                                           $dataEntry->costCenterId,
+                                           $dataEntry->comments,
+                                           $dataEntry->creationType
+                                         );
+
+                            if ( $this->db->execute(SAGU::prepare($sql, $args)) === false )
+                            {
+                                $keepGoing = false;
+                            }
+                            
+                        }
+                    }
+                }
+            }
+        }
+
+        if ( $keepGoing == true )
+        {
+            $this->db->execute('COMMIT');
+        }
+        else
+        {
+            $this->db->execute('ROLLBACK');
+        }
+        return $keepGoing;
+    }
+
+}
+
+?>

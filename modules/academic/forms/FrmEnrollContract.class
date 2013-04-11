@@ -1,0 +1,801 @@
+<?php
+
+/**
+ * Enroll contract form
+ *
+ * @author Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ *
+ * @since
+ * Class created on 29/09/2005
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2005 SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+
+/**
+ * Form to manipulate an enroll
+ **/
+class FrmEnrollContract extends MForm
+{
+    var $enrollData;
+
+    /**
+     * Class constructor
+     **/
+    function __construct()
+    {
+
+        $action = MIOLO::getCurrentAction();
+        $module = MIOLO::getCurrentModule();
+        $MIOLO  = MIOLO::getInstance();
+
+        $session     = $MIOLO->session;
+        $loginUid    = $session->isRegistered('loginUid') ? $session->getValue('loginUid') : null;
+        $loginPasswd = $session->isRegistered('loginPasswd') ? $session->getValue('loginPasswd') : null;
+
+        $this->enrollData = unserialize(urldecode(stripslashes(MIOLO::_request('enrollData'))));
+ 
+
+        parent::__construct(_M('Basic data', $module));
+
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+
+        if ( !( SAGU::authenticate($loginUid, $loginPasswd) || $MIOLO->checkAccess($module, ACD_ENROLL, false, true) ) )
+        {
+            $this->page->mGoto($MIOLO->getActionURL($module, substr($action,0,strrpos($action,':')) . ':enroll'));
+        }
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+        $MIOLO        = MIOLO::getInstance();
+        $module       = MIOLO::getCurrentModule();
+        $action       = MIOLO::getCurrentAction();
+
+        /*
+         * Formulario para os atendentes
+         */
+        if ( $MIOLO->checkAccess($module, ACD_ENROLL, false, true) )
+        {
+            $this->page->onLoad('document.' . $this->name . '.contractPersonId.focus();');
+
+            $busPeriod = $MIOLO->getBusiness($module, 'BusPeriod');
+            $periodValue = $this->getFormValue('periodId',$this->enrollData->periodId) ? $this->getFormValue('periodId',$this->enrollData->periodId) : CURRENT_PERIOD_ID;
+            $periodId = new MComboBox('periodId', $periodValue, _M('Period id', $module), $busPeriod->listPeriod());
+            $validators[] = new MRequiredValidator('periodId');
+            $fields[] = $periodId;
+            $fields[] = new MSeparator();
+            
+            $instLabel1 = new MText( 'instLabel1', _M('To enroll a pupil individually select the respective contract. To enroll all the pupils of a class automatically, keep the person and contract fields empty and inform the class code.', $module) );
+            
+            $contractPersonLabel = new MText('contractPersonLabel', _M('Person',$module) . ':');
+            $contractPersonLabel->setWidth(FIELD_CONTAINER_SIZE);
+            //$contractPersonLabel->setClass('m-caption m-caption-required');
+            $flds[]           = $contractPersonLabel;
+            
+            if ( strlen((string)$this->getFormValue('contractPersonId',$this->enrollData->contractPersonId))>0 )
+            {
+                $contractPersonId = new MTextField('contractPersonId', $this->getFormValue('contractPersonId',$this->enrollData->contractPersonId), '', FIELD_ID_SIZE);
+                $contractPersonId->setReadOnly(true);
+                $contractPersonId->setJsHint(_M('Enter the person name',$module));
+                $flds[]           = $contractPersonId;
+            }
+            else
+            {
+                $contractPersonId = new MLookupTextField('contractPersonId', $this->getFormValue('contractPersonId',$this->enrollData->contractPersonId), '', FIELD_ID_SIZE, null, null, array('contractId', 'contractPersonId', 'contractPersonName', 'contractCourseId', 'contractCourseName', 'contractCourseVersion', 'contractTurnId', 'turnDescription', 'limbo', 'limbo', 'parcelsNumber'), $module, 'ActivePersonContract', null, array('personId' => 'contractPersonId'), true);
+                $contractPersonId->setJsHint(_M('Enter the person code',$module));
+                //$validators[] = new MRequiredValidator('contractPersonId', _M('Person',$module));
+                $flds[]           = $contractPersonId;
+            }
+
+            $contractPersonName = new MTextField('contractPersonName', $this->getFormValue('contractPersonName',$this->enrollData->contractPersonName), '', FIELD_DESCRIPTION_SIZE);
+            $contractPersonName->setReadOnly(true);
+            $contractPersonName->setJsHint(_M('Person name',$module));
+            $flds[]             = $contractPersonName;
+
+            $hctPerson = new MHContainer('hctContract', $flds);
+            $hctPerson->setShowLabel(false);
+            //$fields[]  = $hctPerson;
+            unset($flds);
+
+            $contractCourseLabel = new MText('contractCourseLabel', _M('Contract',$module) . ':');
+            $contractCourseLabel->setWidth(FIELD_CONTAINER_SIZE);
+            //$contractCourseLabel->setClass('m-caption m-caption-required');
+            $flds[]           = $contractCourseLabel;
+            
+            if ( strlen((string)$this->getFormValue('contractId', $this->enrollData->contractId))>0 )
+            {
+                $contractId = new MTextField('contractId', $this->getFormValue('contractId',$this->enrollData->contractId), '', FIELD_ID_SIZE);
+                $contractId->setReadOnly(true);
+                $contractId->setJsHint(_M('Enter the contract code',$module));
+                $flds[]           = $contractId;
+            }
+            else
+            {
+                $contractId = new MLookupTextField('contractId', $this->getFormValue('contractId'), '', FIELD_LOOKUPFIELD_SIZE, null, null, array('contractPersonId', 'contractPersonName', 'contractCourseId', 'contractCourseName', 'contractCourseVersion', 'contractTurnId', 'turnDescription', 'limbo', 'limbo', 'limbo', 'limbo', 'limbo', 'limbo', 'limbo', 'limbo', 'limbo', 'limbo', 'limbo', 'limbo', 'limbo', 'limbo', 'parcelsNumber'), $module, 'ActiveContract', null, array('personId' => 'contractPersonId'), true);
+                $contractId->setJsHint(_M('Enter the contract code',$module));
+                //$validators[] = new MRequiredValidator('contractId', _M('Contract',$module));
+                $flds[]     = $contractId;
+            }
+
+            $contractCourseId = new MTextField('contractCourseId', $this->getFormValue('contractCourseId',$this->enrollData->contractCourseId), '', FIELD_ID_SIZE);
+            $contractCourseId->setReadOnly(true);
+            $contractCourseId->setJsHint(_M('Course code',$module));
+            $flds[]           = $contractCourseId;
+
+            $contractCourseVersion = new MTextField('contractCourseVersion', $this->getFormValue('contractCourseVersion',$this->enrollData->contractCourseVersion), '', FIELD_ID_SIZE);
+            $contractCourseVersion->setReadOnly(true);
+            $contractCourseVersion->setJsHint(_M('Course version',$module));
+            $flds[]                = $contractCourseVersion;
+
+            $turnDescription = new MTextField('turnDescription', $this->getFormValue('turnDescription',$this->enrollData->turnDescription), '', FIELD_ID_SIZE);
+            $turnDescription->setReadOnly(true);
+            $turnDescription->setJsHint(_M('Turn',$module));
+            $flds[]                = $turnDescription;
+
+            $contractCourseName = new MTextField('contractCourseName', $this->getFormValue('contractCourseName',$this->enrollData->contractCourseName), '', 30);
+            $contractCourseName->setReadOnly(true);
+            $contractCourseName->setJsHint(_M('Course name',$module));
+            $flds[]             = $contractCourseName;
+
+            $contractTurnId = new MHiddenField('contractTurnId', $this->getFormValue('contractTurnId',$this->enrollData->contractTurnId), '', FIELD_ID_SIZE);
+            $flds[]                = $contractTurnId;
+
+            $hctContract = new MHContainer('hctContract', $flds);
+            $hctContract->setShowLabel(false);
+            //$fields[]    = $hctContract;
+            unset($flds);
+            
+            $classLabel = new MText('classLabel', _M('Class',$module) . ':');
+            $classLabel->setWidth(FIELD_CONTAINER_SIZE);
+            $flds[]     = $classLabel;
+
+            $classId = new MLookupTextField('classId', $this->getFormValue('classId', $this->enrollData->classId), _M('Class id',$module), FIELD_LOOKUPFIELD_SIZE, null, null, array('className_'), $module, 'Class', null, array('courseId' => 'contractCourseId', 'courseVersion' => 'contractCourseVersion'), true);
+            $flds[]  = $classId;
+        
+            $className = new MTextField('className_', $this->getFormValue('className_', $this->enrollData->className), _M('Class name', $module), FIELD_DESCRIPTION_SIZE);
+            $className->setReadOnly(true);
+            $flds[]    = $className;
+        
+            $hctClass = new MHContainer('hctClass', array($classLabel, $classId, $className));
+            $hctClass->setShowLabel(false);
+            //$fields[] = $hctClass;
+            unset($flds);
+            
+            $bsg1            = new BaseGroup('bsg1', _M('Contract and class data',$module), array($instLabel1, new MSeparator(), $hctPerson, $hctContract, $hctClass), 'vertical');
+            $bsg1->showLabel = true;
+            $bsg1->width     = '100%';
+            $fields[]        = $bsg1;
+
+            if ( MODULE_FINANCE_INSTALLED == 'YES' )
+            {
+                $instLabel2 = new MText('instLabel2', _M('Use this field to inform the number of parcels to be used in the financial data generation. If you let it empty, the system will try to get it from the contract and if it fails, then the number of parcels registered in the selected learning period will be used.', $module) );
+                
+                $parcelsNumberLabel = new MText('parcelsNumberLabel', _M('Parcels number',$module) . ':');
+                $parcelsNumberLabel->setWidth(FIELD_CONTAINER_SIZE);
+                $flds[]           = $parcelsNumberLabel;
+
+                $parcelsNumber = new MTextField('parcelsNumber', $this->getFormValue('parcelsNumber',$this->enrollData->parcelsNumber), '', 10);
+                //$parcelsNumber = new MHiddenField('parcelsNumber', $this->getFormValue('parcelsNumber',$this->enrollData->parcelsNumber));
+                $parcelsNumber->setJsHint(_M('Enter the parcels number',$module));
+                $validators[]       = new MRegExpValidator('parcelsNumber', _M('Parcels number',$module), POSSIBLE_PARCELS_NUMBER);
+                $flds[]             = $parcelsNumber;
+                //$fields[] = $parcelsNumber;
+
+                $hctParcelsNumber = new MHContainer('hctParcelsNumber', $flds);
+                $hctContract->setShowLabel(true);
+                //$fields[]    = $hctParcelsNumber;
+                unset($flds);
+                
+                $fields[] = new MSeparator();
+                
+                $bsg2            = new BaseGroup('bsg2', _M('Financial data', $module), array($instLabel2, new MSeparator(), $hctParcelsNumber), 'vertical');
+                $bsg2->showLabel = true;
+                $bsg2->width     = '100%';
+                $fields[]        = $bsg2;
+            }
+
+            $this->setClose($MIOLO->getActionURL($module,substr($action,0,strrpos($action,':'))));
+        }
+        /*
+         * Formulario para os alunos
+         */
+        else
+        {
+            $personId         = $this->getFormValue('personId',$this->enrollData->personId);
+            $contractPersonId = new MTextField('contractPersonId', $personId, _M('Code',$module), FIELD_ID_SIZE);
+            $contractPersonId->setReadOnly(true);
+            $fields[]         = $contractPersonId;
+
+            $business = $MIOLO->getBusiness('basic', 'BusPerson');
+            $person   = $business->getPerson($this->enrollData->personId);
+
+            $personName = new MTextField('personName', $this->getFormValue('personName',$person->name), _M('Name',$module), FIELD_DESCRIPTION_SIZE);
+            $personName->setReadOnly(true);
+            $fields[]   = $personName;
+
+            $business  = $MIOLO->getBusiness($module,'BusContract');
+            $contracts = $business->listAvailableContractsForEnroll($personId);
+
+            $array = array();
+            for ( $i=0; $i<count($contracts); $i++ )
+            {
+                list ( $contractIdValue,
+                       $courseId,
+                       $courseVersion,
+                       $courseName,
+                       $turnId,
+                       $unitId ) = $contracts[$i];
+
+                $array[$contractIdValue] = $courseId . ' - ' . $courseName;
+            }
+            $contractId   = new MSelection('contractId', $this->getFormValue('contractId',$this->enrollData->contractId), _M('Course', $module), $array);
+            $validators[] = new MRequiredValidator('contractId');
+            $contractId->setAutoSubmit(true);
+            $fields[]     = $contractId;
+
+            $contractId   = $this->getFormValue('contractId',$this->enrollData->contractId);
+            if ( strlen((string)$contractId) > 0 )
+            {
+                if ( $this->enrollData->parcelsNumber == '' )
+                {
+                    $business         = $MIOLO->getBusiness($module, 'BusContract');
+                    $contractData     = $business->getContract($contractId);
+
+                    $parcelsNumber->value = $contractData->parcelsNumber;
+                }
+                
+                $businessEnroll = $MIOLO->getBusiness($module, 'BusEnroll');
+                $isFreshman     = $businessEnroll->isFreshman($contractId);
+                
+                $business       = $MIOLO->GetBusiness($module, 'BusPeriodEnrollDate');
+                $learningPeriod = $business->listPeriodEnrollDate($contractId, $isFreshman);
+
+                if ( count($learningPeriod) == 1 )
+                {
+                    $this->enrollData->learningPeriodId = $learningPeriod[0][0];
+                    $data->learningPeriodId             = $learningPeriod[0][0];
+                }
+
+                $learningPeriodId = new MSelection('learningPeriodId', $this->getFormValue('learningPeriodId', $this->enrollData->learningPeriodId), _M('Period', $module), $learningPeriod);
+                $validators[]     = new MRequiredValidator('learningPeriodId');
+                $flds[]           = $learningPeriodId;
+
+                if ( count($learningPeriod) == 1 )
+                {
+                    $this->learningPeriodId->value      = $learningPeriod[0][0];
+                }
+
+                $divPeriod = new MDiv('divPeriod', $flds, null, 'align=center');
+                $fields[]  = $learningPeriodId;
+                unset($flds);
+            }
+        }
+
+        $fields[]        = new Separator();
+
+        //Error container
+        $divError        = new MDiv('divError', $lblMsg, null, 'align=center');
+        $fields[]        = $divError;
+
+        $fields[]        = new Separator();
+
+        //Buttons
+
+        if ( strlen((string)$contractId->value) > 0 )
+        {
+            $btn1[]     = new MButton('btnPrev', '<< ' . _M('Previous', $module));
+        }
+
+        $btn1[]     = new MButton('btnNext', _M('Next', $module) . ' >>');
+        $div1       = new MDiv('div1', $btn1, null, 'align=center');
+        
+        $fields[] = $div1;
+        $fields[] = new Separator('');
+
+        $this->setFields($fields);
+        if ( count($validators) > 0 )
+        {
+            $this->setValidators($validators);
+        }
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+
+    }
+
+    /**
+     * Event triggered when user click previous
+     **/
+    public function btnPrev_click($sender = null)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        if ( $MIOLO->checkAccess($module, ACD_ENROLL, false, true) )
+        {
+            // formulario de destino para funcionarios
+            $postAction = substr($action,0,strrpos($action,':')) . ':enroll';
+        }
+        else
+        {
+            $data = $this->getData();
+
+            foreach ( $data as $k => $v )
+            {
+                $this->enrollData->$k = $v;
+            }
+
+            $vars = array ( 'enrollData' => urlencode(serialize($this->enrollData)) );
+            // formulario de destino para alunos
+            $postAction = substr($action,0,strrpos($action,':')) . ':enrollPersonData';
+        }
+        $this->page->mGoto($MIOLO->getActionURL($module, $postAction,null,$vars));
+    }
+
+    /**
+     * Event triggered when user click next
+     **/
+    public function btnNext_click($sender = null)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $data = $this->getData();
+
+        foreach ( $data as $k => $v )
+        {
+            $this->enrollData->$k = $v;
+        }
+        
+        $this->enrollData->className = $data->className_;
+
+        $busLearningPeriod = $MIOLO->getBusiness($module, 'BusLearningPeriod');
+        $busClass          = $MIOLO->getBusiness($module, 'BusClass');
+
+        if ( strlen((string)$data->learningPeriodId) == 0 )
+        {
+            if ( $this->enrollData->classId )
+            {
+                $learningPeriod = $busLearningPeriod->getLearningPeriodByClassAndPeriod($this->enrollData->classId, $data->periodId);
+                $data->learningPeriodId = $learningPeriod->learningPeriodId;
+            }
+            else
+            {
+                $learningPeriod = $busLearningPeriod->getLearningPeriodByCourseAndPeriod($data->contractCourseId, $data->contractCourseVersion, $data->periodId, $data->contractTurnId, $data->contractId);
+                $data->learningPeriodId = $learningPeriod->learningPeriodId;
+            }
+        }
+
+        $filters->periodId         = $data->periodId;
+        $filters->learningPeriodId = $data->learningPeriodId;
+
+        $hasErrors = false;
+
+        /* TRATAMENTO INDIVIDUAL PARA ALUNOS */
+        if ( strlen((string)$data->contractId) > 0 )
+        {
+
+            /* VERIFICACAO FINANCEIRA */
+            /* Verifica se algum título financeiro de matrícula já foi lançado */
+            $learningPeriod  = $busLearningPeriod->getLearningPeriod($data->learningPeriodId);
+
+            $businessFinance = $MIOLO->getBusiness('finance', 'BusReceivableInvoice');
+            $res             = $businessFinance->getEnrollFinancialStatus($learningPeriod->periodId, $this->enrollData->contractId, $this->enrollData->classId);
+            if ( $res == false )
+            {
+                $msg           = _M('There are generated monthly. Please contact sector acadmico to make an addition or cancellation of curricular components.', 'academic');
+                $lblMsg        = new MText('lblMsg', $msg);
+                $lblMsg->color = 'red';
+
+                $fields[] = $lblMsg;
+                $fields[] = new Separator('');
+  
+                $this->divError->addControl($fields);
+                
+                $hasErrors = true;
+            }
+
+            $busContract = $MIOLO->getBusiness($module, 'BusContract');
+            $contract    = $busContract->getContract($data->contractId);
+
+            $data->contractCourseId      = $contract->courseId;
+            $data->contractCourseVersion = $contract->courseVersion;
+            $data->contractUnitId        = $contract->unitId;
+            $data->contractTurnId        = $contract->turnId;
+
+            $vars = array ( 'enrollData' => urlencode(serialize($this->enrollData)) );
+            //Testa se é uma matrícula efetuada pelo aluno (internet) ou por um funcionário
+            //Se é feita pelo aluno, a checagem de documentos deve ocorrer neste momento
+            if ( !($MIOLO->checkAccess($module, ACD_ENROLL, false, true)) )
+            {
+                $busDocument = $MIOLO->getBusiness('basic', 'BusDocument');
+                $missingDocs = $busDocument->checkMissingDocuments($data->contractPersonId, $data->contractId);
+                
+                if ( count($missingDocs) > 0 )
+                {
+                    $msg = _M('The documents below need to be delivered to continue the enroll process', $module) . ':<br><br><ul>';
+                    $hasBlockEnrollDocuments = false;
+                    foreach ($missingDocs as $documentTypeId => $missingDoc)
+                    {
+                        if ( $missingDoc->isBlockEnroll )
+                        {
+                            $hasBlockEnrollDocuments = true;
+                            $msg .= '<li>' . $missingDoc->documentName . '</li>';
+                        }
+                    }
+                    $msg .= '</ul>';
+                    
+                    if ( $hasBlockEnrollDocuments )
+                    {
+                        $MIOLO->error($msg, $MIOLO->getActionURL($module, $action, null, $vars), _M('Error', $module));
+                    }
+                }
+                
+                $documentsObs = $busDocument->checkDocumentsObs($data->contractPersonId);
+                
+                if ( count($documentsObs) > 0 )
+                {
+                    $msg = _M('You have the following observations registered', $module) . ':<br><br>';
+                    
+                    $msg .= '<table>';
+                    
+                    foreach ($documentsObs as $obs)
+                    {
+                        $msg .= '<tr><td>' . $obs[1] . ':</td><td>' . $obs[2] . '</td></tr>';
+                    }
+                    
+                    $msg .= '</table><br>';
+                    
+                    $MIOLO->error($msg, $MIOLO->getActionURL($module, $action, null, $vars), _M('Error', $module));
+                }
+            }
+            
+            $contractLastStatus = $busContract->getContractLastMovementStatus($data->contractId);
+
+            //Verifica se o contrato está trancado
+            if ( ( ($contractLastStatus->stateContract == STATE_CONTRACT_ID_LOCKED) || 
+                   ($contractLastStatus->inOutTransition == 'O') ) && (!$hasErrors) )
+            {
+                $msg           = _M('Selected contract is not available for enroll', $module);
+                $lblMsg        = new MText('lblMsg', $msg);
+                $lblMsg->color = 'red';
+
+                $fields[] = $lblMsg;
+                $fields[] = new Separator('');
+
+                $this->divError->addControl($fields);
+                
+                $hasErrors = true;
+            }
+            
+            $busCourseVersion  = $MIOLO->getBusiness($module, 'BusCourseVersion');
+            $courseVersionData = $busCourseVersion->getCourseVersion($data->contractCourseId, $data->contractCourseVersion);
+            
+            //Verifica se é matrícula seriada
+            if ( (in_array($courseVersionData->courseVersionTypeId, explode(',', SERIAL_ENROLL_TYPE_IDS))) && (!$hasErrors) )
+            {
+                $busClassPupil   = $MIOLO->getBusiness($module, 'BusClassPupil');
+                $contractClassId = $busClassPupil->getContractCurrentClass($data);
+
+                //Verifica se o contrato está relacionado a uma turma
+                if ( strlen((string)$contractClassId) == 0 )
+                {
+                    $msg = _M('Can not obtain a class for this contract. Verify if it is correctly registered in a valid class.', $module);
+                    
+                    $lblMsg        = new MText('lblMsg', $msg);
+                    $lblMsg->color = 'red';
+                    
+                    $fields[] = $lblMsg;
+                    $fields[] = new Separator('');
+                    
+                    $this->divError->addControl($fields);
+                    
+                    $hasErrors = true;
+                }
+                //Caso além de informar o contrato, o funcionário informar também a turma, verifica se esta está correta
+                elseif ( strlen((string)$data->classId) > 0 )
+                {
+                    
+                    $classData = $busClass->getClass($contractClassId);
+
+                    if ( $contractClassId != $data->classId )
+                    {
+                        $msg = _M('The informed class don\'t match with the contract class, that is', $module) . ' ' . $classData->classId . ' - ' . $classData->className_ . '.';
+                        
+                        $lblMsg        = new MText('lblMsg', $msg);
+                        $lblMsg->color = 'red';
+                        
+                        $fields[] = $lblMsg;
+                        $fields[] = new MSeparator('');
+                        
+                        $this->divError->addControl($fields);
+                        
+                        $hasErrors = true;
+                    }
+                    else
+                    {
+                        $this->enrollData->classId   = $classData->classId;
+                        $this->enrollData->className = $classData->className_;
+                    }
+                }
+                else
+                {   
+
+                    $classData                   = $busClass->getClass($contractClassId);
+                    $this->enrollData->classId   = $contractClassId;
+                    $this->enrollData->className = $classData->className_;
+
+                    $learningPeriod            = $busLearningPeriod->getLearningPeriodByClassAndPeriod($classData->classId, $data->periodId);
+                    $data->learningPeriodId    = $learningPeriod->learningPeriodId;
+                    $filters->learningPeriodId = $learningPeriod->learningPeriodId;
+                    $learningPeriod            = $busLearningPeriod->getLearningPeriod($data->learningPeriodId);
+                }
+
+                // na matrícula seriada, verifica se o aluno possui
+                // um número de dependências maior que o permitido
+                $busCourseOccurrence = $MIOLO->getBusiness($module, 'BusCourseOccurrence');
+                $courseOccurrence    = $busCourseOccurrence->getCourseOccurrence($data->contractCourseId, $data->contractCourseVersion, $data->contractTurnId, $data->contractUnitId);
+
+                $businessEnroll = $MIOLO->getBusiness($module, 'BusEnroll');
+                $totalDep       = $businessEnroll->getTotalDependent($data->contractId, $data->learningPeriodId);
+                $totalDep       = strlen((string)$totalDep)>0 ? $totalDep : 0;
+
+                if ( $totalDep > $courseOccurrence->maximumDependent )
+                {
+                    $msg           = _M('The pupil have the respective curricular components in dependence:', $module);
+                    $dependencies  = $businessEnroll->getPupilDependencies($data->contractId, $data->learningPeriodId);
+                    $msg .= '<p align="justify">';
+                    foreach ( $dependencies as $ccd )
+                    {
+                        $msg .= '<br>' . $ccd[0] . '/' . $ccd[1] . ' - ' . $ccd[2];
+                    }
+                    $msg .= '</p>';
+                    $lblMsg        = new MText('lblMsg', $msg);
+                    $lblMsg->color = 'red';
+
+                    $fields[] = $lblMsg;
+                    $fields[] = new Separator('');
+
+                    $this->divError->addControl($fields);
+                
+                    $hasErrors = true;
+                }
+            }
+            
+            if ( MODULE_FINANCE_INSTALLED == 'YES' )
+            {
+                $business = $MIOLO->getBusiness('finance','BusGeneralQueries');
+                $debt     = $business->getDefaulterDebt($data->contractId, false);
+            }
+            else
+            {
+                $debt = 0;
+            }
+
+            //Verifica se o aluno possui débitos financeiros
+            if ( ($debt > 0) && (!$hasErrors) )
+            {
+                $lblMsg1 = new MText('lblMsg1',_M('The system has detected you\'re in debt with the institution.',$module));
+                $lblMsg1->color = 'red';
+                $lblMsg2 = new MText('lblMsg2',_M('The actual debt value is @1',$module,$debt) . '.' );
+                $lblMsg2->color = 'red';
+                
+                if ( !($MIOLO->checkAccess($module, ACD_ENROLL, false, true)) )
+                {
+                    $lblMsg3 = new MText('lblMsg2',_M('Click the link below to see your financial situation or contact us for more informations',$module) . '.' );
+                    $lblMsg3->color = 'red';
+                    
+                    $financialSituation = new MLink('lnkFinancialSituation', _M('Financial Situation', $module));
+                    $financialSituation->setAction('services', 'main:pupil:financialConsultation');
+                    
+                    $sep = new Separator('');
+
+                    $cntErrors = new MVContainer('cntErrors', array($lblMsg1, $lblMsg2, $lblMsg3, $financialSituation, $sep));
+                }
+                else
+                {
+                    $cntErrors = new MVContainer('cntErrors', array($lblMsg1, $lblMsg2, $sep));
+                }
+                
+                $cntErrors->setShowLabel(false);
+                
+                $this->divError->addControl($cntErrors);
+                
+                $hasErrors = true;
+            }
+
+            if ( $this->enrollData->classId )
+            {
+                $filters->courseId      = $learningPeriod->courseId;
+                $filters->courseVersion = $learningPeriod->courseVersion;
+                $filters->unitId        = $learningPeriod->unitId;
+                $filters->turnId        = $learningPeriod->turnId;
+            }
+            else
+            {
+                $filters->courseId      = $data->contractCourseId;
+                $filters->courseVersion = $data->contractCourseVersion;
+                $filters->unitId        = $data->contractUnitId;
+                $filters->turnId        = $data->contractTurnId;
+            }
+
+            $learningData = $busLearningPeriod->searchLearningPeriod($filters);
+
+            if ( count($learningData) == 1 )
+            {
+                $data->learningPeriodId = $learningData[0][0];
+            }
+            elseif ( count($learningData) >= 2 )
+            {
+                $msg           = count($learningData) . ' ' . _M('learning periods registered. Please select one to continue.', $module);
+                $lblMsg        = new MText('lblMsg', $msg);
+                $lblMsg->color = 'red';
+                
+                foreach ( $learningData as $learningPeriodData )
+                {
+                    $selArray[] = array($learningPeriodData[0], $learningPeriodData[1]);
+                }
+                
+                $selLearningPeriod = new MComboBox('learningPeriodId', $this->getFormValue('learningPeriodId', $data->learningPeriodId), _M('Learning period', $module), $selArray);
+                
+                $cntLearningData = new MVContainer('cntLearningData', array($lblMsg, $selLearningPeriod));
+                
+                $this->divError->addControl($cntLearningData);
+                
+                if (strlen((string)$this->getFormValue('learningPeriodId', $data->learningPeriodId)) > 0)
+                {
+                    $data->learningPeriodId = $this->getFormValue('learningPeriodId', $data->learningPeriodId);
+                }
+                else
+                {
+                    $hasErrors = true;
+                }
+            }
+        }
+        /* TRATAMENTO PARA TURMAS */
+        elseif (strlen((string)$data->classId) > 0)
+        {
+            $classData = $busClass->getClass($data->classId);
+
+            $classLearningPeriod = $busLearningPeriod->getLearningPeriod($classData->initialLearningPeriodId);
+
+            $this->enrollData->classCourseId      = $classLearningPeriod->courseId;
+            $this->enrollData->classCourseVersion = $classLearningPeriod->courseVersion;
+            $this->enrollData->classUnitId        = $classLearningPeriod->unitId;
+            $this->enrollData->classTurnId        = $classLearningPeriod->turnId;
+            
+            $filters->courseId      = $classLearningPeriod->courseId;
+            $filters->courseVersion = $classLearningPeriod->courseVersion;
+            $filters->unitId        = $classLearningPeriod->unitId;
+            $filters->turnId        = $classLearningPeriod->turnId;
+            
+            $learningData = $busLearningPeriod->searchLearningPeriod($filters);
+
+            if ( count($learningData) == 1)
+            {
+                $data->learningPeriodId = $learningData[0][0];
+                $learningPeriod         = $busLearningPeriod->getLearningPeriod($data->learningPeriodId);
+
+                /* VERIFICACAO FINANCEIRA */
+                /* Verifica se algum título financeiro de matrícula já foi lançado */
+                $businessFinance = $MIOLO->getBusiness('finance', 'BusReceivableInvoice');
+                $res             = $businessFinance->getEnrollFinancialStatus($learningPeriod->periodId, $this->enrollData->contractId, $this->enrollData->classId);
+                if ( $res == false )
+                {
+                    $msg           = _M('There are generated monthly. Please contact sector acadmico to make an addition or cancellation of curricular components.', 'academic');
+                    $lblMsg        = new MText('lblMsg', $msg);
+                    $lblMsg->color = 'red';
+
+                    $fields[] = $lblMsg;
+                    $fields[] = new Separator('');
+      
+                    $this->divError->addControl($fields);
+                
+                    $hasErrors = true;
+                }
+            }
+            elseif ( count($learningData) >= 2 )
+            {
+                $msg           = count($learningData) . ' ' . _M('learning periods registered. Please select one to continue.', $module);
+                $lblMsg        = new MText('lblMsg', $msg);
+                $lblMsg->color = 'red';
+                
+                foreach ($learningData as $learningPeriodData)
+                {
+                    $selArray[] = array($learningPeriodData[0], $learningPeriodData[1]);
+                }
+                
+                $selLearningPeriod = new MComboBox('learningPeriodId', $this->getFormValue('learningPeriodId', $data->learningPeriodId), _M('Learning period', $module), $selArray);
+                
+                $cntLearningData = new MVContainer('cntLearningData', array($lblMsg, $selLearningPeriod));
+                
+                $this->divError->addControl($cntLearningData);
+                
+                if (strlen((string)$this->getFormValue('learningPeriodId', $data->learningPeriodId)) > 0)
+                {
+                    $data->learningPeriodId = $this->getFormValue('learningPeriodId', $data->learningPeriodId);
+                }
+                else
+                {
+                    $hasErrors = true;
+                }
+            }
+        }
+        else
+        {
+            $msg           = _M('You must inform a contract or a class to continue.', $module);
+            $lblMsg        = new MText('lblMsg', $msg);
+            $lblMsg->color = 'red';
+            
+            $fields[] = $lblMsg;
+            $fields[] = new Separator('');
+            
+            $this->divError->addControl($fields);
+            
+            $hasErrors = true;
+        }
+
+        if ( (strlen((string)$data->learningPeriodId) == 0) && (!$hasErrors) )
+        {
+            $msg           = _M('Can not obtain learning period. Check if it is correctly registered for this course and period.', $module);
+            $lblMsg        = new MText('lblMsg', $msg);
+            $lblMsg->color = 'red';
+
+            $fields[] = $lblMsg;
+            $fields[] = new Separator('');
+
+            $this->divError->addControl($fields);
+            
+            $hasErrors = true;
+        }
+        
+        if ( strlen((string)$this->enrollData->learningPeriodId) == 0 )
+        {
+            $this->enrollData->learningPeriodId = $data->learningPeriodId;
+        }
+        
+        if ( !$hasErrors )
+        {
+            $vars = array ( 'returnTo' => $action,
+                            'enrollData' => urlencode(serialize($this->enrollData)) );
+                            
+            if (!($MIOLO->checkAccess($module, ACD_ENROLL, false, true)))
+            {
+                $postAction = substr($action,0,strrpos($action,':')) . ':enrollContractMessages';
+            }
+            else
+            {               
+                $postAction = substr($action,0,strrpos($action,':')) . ':enrollCurricularComponents';
+            }
+            $this->page->mGoto($MIOLO->getActionURL($module, $postAction, null, $vars));
+        }
+    }
+}
+
+?>

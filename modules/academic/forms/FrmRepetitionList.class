@@ -1,0 +1,265 @@
+<?php
+
+/**
+ * Repetition listing form
+ *
+ * @author Leovan Tavares da Silva [leovan@solis.coop.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * Armando Taffarel Neto [taffarel@solis.coop.br]
+ *
+ * @since
+ * Class created on 14/09/2006
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2005 SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+
+/**
+ * Form for the repetition listing
+ **/
+class FrmRepetitionList extends MForm
+{
+    private $home;
+    public $filters;
+    /**
+     * Class constructor
+     **/
+    function __construct($data)
+    {
+
+        $module = MIOLO::getCurrentModule();
+
+        $this->home   = $data->home;
+
+        parent::__construct(_M('Repetition listing', $module));
+
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+
+
+        $toolBar = new MToolBar('toolBar',$MIOLO->getActionURL($module,$action));
+
+        $toolBar->disableButton('tbBtnNew');
+        $toolBar->disableButton('tbBtnDelete');
+        $toolBar->disableButton('tbBtnPrint');
+        $toolBar->disableButton('tbBtnSave');
+        $toolBar->disableButton('tbBtnSearch');
+
+        //favoritos
+        $enabledImage  = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-20x20.png');
+        $disabledImage = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-disabled-20x20.png');
+        $url           = $MIOLO->getActionURL($module, $this->home, null, array('function' => 'search', 'event' => 'bookmark'));
+        $toolBar->addButton('tbBtnBookmark', _M('Add to bookmarks', 'basic'), $url, null, true, $enabledImage, $disabledImage);
+
+        if ( MIOLO::_request('event') == 'bookmark' )
+        {
+            $MIOLO->getClass('basic', 'access');
+            access::insert('Repetition listing', $this->home, 'repetitionListing-16x16.png', true);
+        }
+        //fim favoritos
+
+        $fields[] = $toolBar;
+
+        $business = $MIOLO->getBusiness($module, 'BusFormationLevel');
+        $formationLevelId = new MComboBox('formationLevelId',
+                                $this->getFormValue('formationLevelId',$data->formationLevelId),
+                                _M('Formation level id',$module),
+                                $business->listFormationLevel());
+        $fields[] = $formationLevelId;
+
+        $businessPeriod = $MIOLO->getBusiness($module, 'BusPeriod');
+        $periodId       = new MComboBox('periodId', strlen((string)$this->getFormValue('periodId', $data->periodId))>0 ? $this->getFormValue('periodId', $data->periodId) : CURRENT_PERIOD_ID, _M('Period',$module), $businessPeriod->listPeriod() );
+        $validators[]   = new MRequiredValidator('periodId');
+        $fields[]         = $periodId;
+        
+        unset($opts);
+		$opts = array( array(_M('Pupil', $module), 1),
+		               array(_M('Course and curricular component', $module), 2) );
+
+        $orderByLabel = new MText('orderByLabel', _M('Order by',$module) . ':');
+        $orderByLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $orderByLabel->setClass('m-caption m-caption-required');
+        
+        $marked  = $this->getFormValue('orderBy', $data->orderBy) ? $this->getFormValue('orderBy', $data->orderBy) : 1;
+        $orderBy = new MRadioButtonGroup('orderBy', '', $opts, $marked, '', 'vertical', '');
+        $orderBy->setShowLabel(false);
+
+        $hctOrderBy = new MHContainer('hctOrderBy', array($orderByLabel, $orderBy));
+        $hctOrderBy->setShowLabel(false);
+        $fields[]    = $hctOrderBy;
+
+        $btn1     = new MButton('btnList', _M('List', $module));
+        $fields[] = $btn1;
+        
+        $fields[] = new MSeparator();
+        
+        $this->setFields($fields);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+        $this->setClose($MIOLO->getActionURL($module,substr($action,0,strrpos($action,':'))));
+        
+        $this->filters->formationLevelId = $this->formationLevelId->value;
+        $this->filters->periodId         = $this->periodId->value;
+
+    }
+
+    /**
+     * Event triggered when user chooses Generate from the toolbar
+     **/
+    public function btnList_click($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $business = $MIOLO->getBusiness($module,'BusRepetitionList');
+
+        $data = $this->getData();
+
+        $listData = $business->getRepetitionList($data->periodId, $data->formationLevelId, $data->orderBy);
+
+        if ( count($listData) > 0 )
+        {
+            if ( $data->orderBy == 1 )
+            {    
+                //Laço para obter os dados necessários a listagem de tipo 1 (Ordenada por aluno)
+                foreach ( $listData as $row )
+                {
+                    list ( $contractId,
+                           $personId,
+                           $personName,
+                           $curricularComponentId,
+                           $curricularComponentVersion,
+                           $curricularComponentName,
+                           $academicCredits,
+                           $periodId,
+                           $finalNote ) = $row;
+
+                    $curricularComponent = $curricularComponentId . '(' . $curricularComponentVersion . ')';
+                    $rowData = array($curricularComponent, $curricularComponentName, $academicCredits, $periodId, $finalNote); 
+
+                    $tableData[$personId]->desc   = $personId . ' - ' . $personName;
+                    $tableData[$personId]->data[] = $rowData;
+                }
+
+                $columns[] = "<div style=\"text-align: center;\">" . _M('Id', $module) . "</div>";
+                $columns[] = "<div style=\"text-align: center;\">" . _M('Curricular component', $module) . "</div>";
+                $columns[] = "<div style=\"text-align: center;\">" . _M('Credits', $module) . "</div>";
+                $columns[] = "<div style=\"text-align: center;\">" . _M('Period', $module) . "</div>";
+                $columns[] = "<div style=\"text-align: center;\">" . _M('Final note', $module) . "</div>";
+
+                if ( count($tableData) > 0 )
+                {
+                    //Laço para criar as tabelas
+                    foreach ( $tableData as $tableRow )
+                    {
+                        $tableRaw = new MTableRaw($tableRow->desc, $tableRow->data, $columns);
+                        $tableRaw->setAlternate(true);
+                        $tableRaw->addStyle('width', '100%');
+                        $tableRaw->setCellAttribute(0, 0, 'width', '10%');
+                        $tableRaw->setCellAttribute(0, 1, 'width', '60%');
+                        $tableRaw->setCellAttribute(0, 2, 'width', '10%');
+                        $tableRaw->setCellAttribute(0, 3, 'width', '10%');
+                        $tableRaw->setCellAttribute(0, 4, 'width', '10%');
+                        $this->addField($tableRaw);
+                    }
+                }
+            }
+            elseif ( $data->orderBy == 2 )
+            {
+                //Laço para obter os dados necessários a listagem de tipo 2 (ordenada por curso e disciplina)
+                foreach ( $listData as $row )
+                {
+                    list ( $courseId,
+                            $courseVersion,
+                            $courseShortName,
+                            $turnId,
+                            $turnDesc,
+                            $unitId,
+                            $unitDesc,
+                            $contractId,
+                            $personId,
+                            $personName,
+                            $curricularComponentId,
+                            $curricularComponentVersion,
+                            $curricularComponentName,
+                            $academicCredits,
+                            $periodId,
+                            $finalNote ) = $row;
+                            
+                    $course = $courseId . '(' . $courseVersion . ') - ' . $courseShortName . ' - ' . $turnDesc . ' - ' . $unitDesc;
+                    $curricularComponent = $curricularComponentId . '(' . $curricularComponentVersion . ') - ' . $curricularComponentName;
+                    $rowData = array($personId, $personName, $periodId, $finalNote);
+                    
+                    $courseIndex   = $courseId . '-' . $courseVersion . '-' . $turnId . '-' . $unitId;
+                    $currCompIndex = $curricularComponentId . '-' . $curricularComponentVersion;
+                    
+                    $tableData[$courseIndex]->desc                         = $course;
+                    $tableData[$courseIndex]->data[$currCompIndex]->desc   = $curricularComponent;
+                    $tableData[$courseIndex]->data[$currCompIndex]->data[] = $rowData;
+                }
+                
+                $columns[] = "<div style=\"text-align: center;\">" . _M('Id', $module) . "</div>";
+                $columns[] = "<div style=\"text-align: center;\">" . _M('Name', $module) . "</div>";
+                $columns[] = "<div style=\"text-align: center;\">" . _M('Period', $module) . "</div>";
+                $columns[] = "<div style=\"text-align: center;\">" . _M('Final note', $module) . "</div>";
+                
+                if ( count($tableData) > 0 )
+                {
+                    //Laço para separar por curso
+                    foreach ( $tableData as $courseIndex => $tableRow )
+                    {
+                        $text = new MText($courseIndex, '<b>' . $tableRow->desc . '</b>', 'red');
+                        $this->addField($text);
+                        $this->addField(new MSeparator(''));
+                        
+                        //Laço para criar as tabelas para cada disciplina
+                        foreach ( $tableRow->data as $tData )
+                        {
+                            $tableRaw = new MTableRaw($tData->desc, $tData->data, $columns);
+                            $tableRaw->setAlternate(true);
+                            $tableRaw->addStyle('width', '100%');
+                            $tableRaw->setCellAttribute(0, 0, 'width', '10%');
+                            $tableRaw->setCellAttribute(0, 1, 'width', '70%');
+                            $tableRaw->setCellAttribute(0, 2, 'width', '10%');
+                            $tableRaw->setCellAttribute(0, 3, 'width', '10%');
+                            $this->addField($tableRaw);
+                        }
+                        $this->addField(new MSeparator('<hr>'));
+                    }
+                }
+            }
+        }
+    }
+}
+
+?>

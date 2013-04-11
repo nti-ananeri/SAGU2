@@ -1,0 +1,402 @@
+<?php
+
+/**
+ * Price form
+ *
+ * @author Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ *
+ * @since
+ * Class created on 16/11/2005
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2005 SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+
+/**
+ * Form to manipulate a price
+ **/
+class FrmPrice extends MForm
+{
+
+    /**
+     * Class constructor
+     **/
+    function __construct()
+    {
+
+        $module = MIOLO::getCurrentModule();
+
+        if ( MIOLO::_request('function') == 'insert' )
+        {
+            parent::__construct(_M('Insert', $module));
+        }
+        else
+        {
+            parent::__construct(_M('Update', $module));
+        }
+
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+
+        $toolBar = new MToolBar('toolBar',$MIOLO->getActionURL($module,$action));
+
+        if ( $function == 'insert' )
+        {
+            $toolBar->disableButton('tbBtnDelete');
+            $toolBar->disableButton('tbBtnPrint');
+        }
+        elseif ( $function == 'delete' )
+        {
+            $toolBar->disableButton('tbBtnSave');
+        }
+        $fields[] = $toolBar;
+        
+        $fields[] = new MHiddenField('backTo', MIOLO::_request('backTo'));
+
+        $businessPeriod = $MIOLO->getBusiness('academic','BusPeriod');
+        if ( defined('CURRENT_PERIOD_ID') )
+        {
+            $currentPeriodId = $businessPeriod->getPeriod(CURRENT_PERIOD_ID);
+            $currentPeriodId = strlen((string)$currentPeriodId->periodId)>0 ? CURRENT_PERIOD_ID : '';
+        }
+
+        if ( in_array($function,array('update','delete')) )
+        {
+            $learningPeriodId = MIOLO::_request('learningPeriodId');
+            $startDate        = MIOLO::_request('startDate');
+            $endDate          = MIOLO::_request('endDate');
+
+            $business = $MIOLO->getBusiness($module,'BusPrice');
+            $pk->learningPeriodId = $learningPeriodId;
+            $pk->startDate        = $startDate;
+            $pk->endDate          = $endDate;
+            $data                 = $business->getPrice($pk, true);
+
+            $periodIdLabel = new MText('periodIdLabel', _M('Period',$module) . ':');
+            $periodIdLabel->setWidth(FIELD_CONTAINER_SIZE);
+            $periodId = new MTextField('periodId', strlen((string)$this->getFormValue('periodId', $data->periodId))>0 ? $this->getFormValue('periodId', $data->periodId) : $currentPeriodId);
+            $periodId->setReadOnly(true);
+            $fields[] = new MHContainer('hctPeriodId', array($periodIdLabel, $periodId));
+
+            $learnigPeriodLabel = new MText('learnigPeriodLabel', _M('Learning period id', $module).':');
+            $learnigPeriodLabel->setWidth(FIELD_CONTAINER_SIZE);
+            $learnigPeriodLabel->setClass('m-caption m-caption-required');
+            $learningPeriodId = new MLookupTextField('learningPeriodId', $this->getFormValue('learningPeriodId', $data->learningPeriodId), _M('',$module), FIELD_ID_SIZE, null, null, 'limbo, limbo, limbo, limbo, limbo, learningPeriodDescription, limbo, oldStartDate, oldEndDate, limbo, limbo, limbo, limbo, limbo, courseName', 'academic', 'LearningPeriod', null, array('periodId' => 'periodId'), true);
+            $learningPeriodId->setReadOnly(true);
+
+            $learningPeriodDescription = new MTextField('learningPeriodDescription', $this->getFormValue('learningPeriodDescription', $data->learningPeriodDescription), '', FIELD_DESCRIPTION_SIZE);
+            $learningPeriodDescription->setReadOnly(true);
+            $learningPeriodDescription->setJsHint(_M('Enter the contract state description', $module));
+
+            $fields[] = new MHContainer('hctLearningPeriodDescription', array($learnigPeriodLabel, $learningPeriodId, $learningPeriodDescription));
+
+            $MHStartDate = new MHiddenField('oldStartDate', $data->startDate );
+            $fields[]    = $MHStartDate;
+
+            $MHEndDate   = new MHiddenField('oldEndDate', $data->endDate );
+            $fields[]    = $MHEndDate;
+        }
+        else
+        {
+
+            $businessPeriod = $MIOLO->getBusiness('academic','BusPeriod');
+            $periodId = new MComboBox('periodId', strlen((string)$this->getFormValue('periodId', $data->periodId))>0 ? $this->getFormValue('periodId', $data->periodId) : $currentPeriodId, _M('Period', $module), $businessPeriod->listPeriod(), true );
+            $fields[] = $periodId;
+            $validators[] = new MRequiredValidator('periodId');
+
+            // permitir localizar por curso
+            $courseLabel = new MText('courseLabel', _M('Course',$module).':');
+            $courseLabel->setWidth(FIELD_CONTAINER_SIZE);
+            $courseId = new MLookupTextField('courseId', $this->getFormValue('courseId', $data->courseId), null, FIELD_ID_SIZE, null, null,
+                array('courseVersion','courseName'),
+                'academic', 'CourseOccurrence', null, array('courseId' => 'courseId'), !$this->page->isPostBack());
+            $courseId->setJsHint(_M('Select the course id', $module));
+
+            $courseVersion = new MTextField('courseVersion', $this->getFormValue('courseVersion', $data->courseVersion), null, FIELD_ID_SIZE);
+            $courseVersion->setReadOnly(true);
+
+            $couseVersionDescription = new MText('couseVersionDescription',_M('Version',$module).':'); 
+
+            $courseName = new MTextField('courseName', $this->getFormValue('courseName', $data->courseName), null, FIELD_DESCRIPTION_SIZE);
+            $courseName->setReadOnly(true);
+            $hctCourse = new MHContainer('hctCourse', array($courseLabel,$courseId,$couseVersionDescription,$courseVersion,$courseName));
+            $hctCourse->setShowLabel(true);
+            $fields[]   = $hctCourse;
+
+            $learningPeriodLabel = new MText('learningPeriodLabel', _M('Learning period id', $module).':');
+            $learningPeriodLabel->setWidth(FIELD_CONTAINER_SIZE);
+            $learningPeriodLabel->setClass('m-caption m-caption-required');
+            $learningPeriodId = new MLookupTextField('learningPeriodId', $this->getFormValue('learningPeriodId', $data->learningPeriodId), _M('',$module), FIELD_ID_SIZE, null, null, 'limbo, limbo, limbo, limbo, limbo, learningPeriodDescription, limbo, startDate, endDate', 'academic', 'LearningPeriod', null, array('periodId' => 'periodId', 'courseId' => 'courseId', 'courseVersion' => 'courseVersion'), true);
+            $validators[] = new MRequiredValidator('learningPeriodId', _M('Learning period id', $module));
+
+            $learningPeriodDescription = new MTextField('learningPeriodDescription', $this->learningPeriodDescription->value, _M('',$module), FIELD_DESCRIPTION_SIZE);
+            $learningPeriodDescription->setReadOnly(true);
+            $learningPeriodDescription->setJsHint(_M('Enter the contract state description',$module));
+            $fields[] = new MHContainer('hctLearningPeriodDescription', array($learningPeriodLabel, $learningPeriodId, $learningPeriodDescription));
+        }        
+
+        $startDate = new MCalendarField('startDate', $this->getFormValue('startDate', $data->startDate), _M('Begin date price', $module), FIELD_DATE_SIZE);
+        $startDate->setValidator(new MDATEDMYValidator('startDate', _M('Begin date price', $module), 'required'));
+        $fields[] = $startDate;
+
+        $endDate = new MCalendarField('endDate', $this->getFormValue('endDate', $data->endDate), _M('End date', $module), FIELD_DATE_SIZE);
+        $endDate->setValidator(new MDATEDMYValidator('endDate', _M('End date', $module), 'required'));
+        $fields[] = $endDate;
+
+        //valor do curso
+        $value = new MTextField('value', SAGU::formatNumber($this->getFormValue('value', $data->value)), _M('Value',$module) . ' 1', FIELD_MONETARY_SIZE/*, _M('If the course following the serial regime, the value is the total price that the pupil pay in the semester. If the course follow the rules for credits, the value is the price of 1 credit and the total price will be calculated as the number of credits registered.', $module)*/);
+        $value->setJsHint(_M('Enter the value',$module));
+        $validators[] = new MFloatValidator('value', _M('Value', $module). ' 1', FLOAT_SEPARATOR, REAL_ROUND_VALUE, 'required');
+        //$validators[] = new MRequiredValidator('value', _M('Value',$module));
+        $fields[] = $value;
+
+        //valor do curso (2)
+        $value2 = new MTextField('value2', SAGU::formatNumber($this->getFormValue('value2', $data->value2)), _M('Value',$module) . ' 2', FIELD_MONETARY_SIZE/*, _M('If the course following the serial regime, the value is the total price that the pupil pay in the semester. If the course follow the rules for credits, the value is the price of 1 credit and the total price will be calculated as the number of credits registered.', $module)*/);
+        $value2->setJsHint(_M('Enter the value',$module));
+        $validators[] = new MFloatValidator('value2', _M('Value', $module) . ' 2', FLOAT_SEPARATOR, REAL_ROUND_VALUE, 'required');
+        //$validators[] = new MRequiredValidator('value', _M('Value',$module));
+        $fields[] = $value2;
+
+        //taxa de matrícula
+        $value = new MTextField('enrollValue', SAGU::formatNumber($this->getFormValue('enrollValue', $data->enrollValue)), _M('Enroll value',$module), FIELD_MONETARY_SIZE, _M('If informed, will be generated a invoice to the pupil, with their value.', $module));
+        $value->setJsHint(_M('Enter the enroll value',$module));
+        $validators[] = new MFloatValidator('enrollValue', _M('Enroll value', $module), FLOAT_SEPARATOR, REAL_ROUND_VALUE,'');
+        $fields[] = $value;
+
+        //minimo de disciplinas
+        $minimumCurricularComponent = new MTextField('minimumCurricularComponent', $this->getFormValue('minimumCurricularComponent', $data->minimumCurricularComponent), _M('Minimum of curricular components',$module), FIELD_MONETARY_SIZE, _M('Minimum of curricular componentes that the student must be enrolled to be charged the full value of the semester. Valid only for the serial regimen.', $module));
+        $minimumCurricularComponent->setJsHint(_M('Enter minimum of curricular components',$module));
+        $validators[] = new MIntegerValidator('minimumCurricularComponent');
+        $fields[]     = $minimumCurricularComponent;
+   
+        //preco por disciplina
+        $curricularComponentPrice = new MTextField('curricularComponentPrice', SAGU::formatNumber($this->getFormValue('curricularComponentPrice', $data->curricularComponentPrice)), _M('Curricular component value',$module), FIELD_MONETARY_SIZE, _M('Curricular component value if the student does not meet the minimum of curricular components in its enrollment. Valid only for the serial regimen.', $module));
+        $curricularComponentPrice->setJsHint(_M('Enter the curricular component value',$module));
+        $validators[] = new MFloatValidator('curricularComponentPrice', '', FLOAT_SEPARATOR, REAL_ROUND_VALUE, 'optional');
+        $fields[]     = $curricularComponentPrice;
+   
+        $returnTo = new MHiddenField('returnTo', $this->getFormValue('returnTo', strlen((string)MIOLO::_request('returnTo'))>0 ? MIOLO::_request('returnTo') : MIOLO::_request('returnTo', 'GET')));
+        $fields[] = $returnTo;        
+ 
+        if ( $function == 'update' )
+        {
+            $fields[] = new MTextLabel('lastModification', '[' . $data->userName . ' - ' . $data->dateTime . ']', _M('Last modification',$module));
+        }
+        
+        $fields[] = new Separator('');
+
+        $this->setFields($fields);
+        $this->setValidators($validators);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+        $this->setClose($MIOLO->getActionURL($module,substr($action,0,strrpos($action,':'))));
+        if ( !in_array($function,array('update','delete')) )  $this->page->onLoad('document.' . $this->name . '.courseId.focus();');
+    }
+
+    /**
+     * Event triggered when user chooses New from the toolbar
+     **/
+    public function tbBtnNew_click($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $data = $this->getTypesData();
+        $vars = get_object_vars($data);
+        foreach ( $vars as $var => $value )
+        {
+            if ( $this->$var )
+            {
+                eval('$this->' . $var . '->value = $this->getFormValue(\'' . $var . 'S\') ? $this->getFormValue(\'' . $var . 'S\') : \'\';');
+            }
+        }
+    }
+
+    /**
+     * Event triggered when user chooses Delete from the toolbar
+     **/
+    public function tbBtnDelete_click($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $data   = $this->getTypesData();
+        $opts   = array('event'=>'tbBtnDelete_confirm',
+                        'function'=>'delete',
+                        'learningPeriodId'=>MIOLO::_request('learningPeriodId'),
+                        'startDate'=>MIOLO::_request('startDate'),
+                        'endDate'=>MIOLO::_request('endDate'));
+        $gotoYes = $MIOLO->getActionURL( $module, $action, null, $opts );
+        $goto    = SAGU::getStackBackUrl();
+        $gotoNo  = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+        $msg     = MSG_CONFIRM_RECORD_DELETE;
+        $caption = _M('Question',$module);
+        $MIOLO->question($msg, $gotoYes, $gotoNo);
+    }
+
+    /**
+     * Event triggered when user chooses Yes from the Delete prompt dialog
+     **/
+    public function tbBtnDelete_confirm($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $business = $MIOLO->getBusiness($module, 'BusPrice');
+        $pk     = array($this->learningPeriodId->value, $this->startDate->value, $this->endDate->value);
+        $ok = $business->deletePrice($pk);
+
+        if ( $ok )
+        {
+            $msg  = MSG_RECORD_DELETED;
+            
+            if ( $this->getFormValue('backTo') == 'generateMultiplePrice' )
+            {
+                $goto = $MIOLO->getActionURL($module, 'main:process:generationInLot:generateMultiplePriceCourse', null, $opts);
+            }
+            else            
+            {
+                $goto = SAGU::getStackBackUrl();
+                $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            }
+            $caption = _M('Information',$module);
+            $MIOLO->information($msg, $goto);
+        }
+        else
+        {
+            $msg  = _M('Error executing requested operation.',$module);
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Error',$module);
+            $MIOLO->error( $msg, $goto, $caption );
+        }
+    }
+
+    /**
+     * Event triggered when user chooses Save from the toolbar
+     **/
+    public function tbBtnSave_click($sender=NULL)
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+
+        $data     = $this->getTypesData();
+
+        $business = $MIOLO->getBusiness($module, 'BusPrice');
+
+        if ( $function == 'update' )
+        {
+            $ok  = $business->updatePrice($data);
+            $msg = MSG_RECORD_UPDATED;
+        }
+        else
+        {
+            $ok  = $business->insertPrice($data);
+            $msg = MSG_RECORD_INSERTED;
+        }
+
+        if ( $ok )
+        {
+            $opts = array('learningPeriodIdS'=>$data->learningPeriodId,
+                          'startDateS'=>$data->startDate,
+                          'endDateS'=>$data->endDate);
+            
+            if ( $this->getFormValue('backTo') == 'generateMultiplePrice' )
+            {
+                $goto = $MIOLO->getActionURL($module, 'main:process:generationInLot:generateMultiplePriceCourse', null, $opts);
+            }
+            else
+            {
+                $goto = SAGU::getStackBackUrl();
+                $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action, null, $opts);
+            }
+            
+            if ( $function == 'update' )
+            {
+                $MIOLO->information($msg, $goto);
+            }
+            elseif (strlen((string)$this->getFormValue('returnTo'))>0)
+            {
+                $goto = 'javascript:window.close();';
+                $MIOLO->information($msg, $goto);
+            }
+            else
+            {
+                $opts    = array('event'=>'tbBtnNew_click',
+                                 'function'=>'insert');
+
+                $gotoYes = $MIOLO->getActionURL($module, $action, null, $opts);
+                $MIOLO->question($msg, $gotoYes, $goto);
+            }
+        }
+        else
+        {
+            $msg  = _M('Error executing requested operation.',$module);
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Error',$module);
+            $MIOLO->error( $msg, $goto, $caption );
+        }
+    }
+
+    /**
+     * Method to gather all information from the form fields
+     * and put them on a database compatible object
+     **/
+    public function getTypesData()
+    {
+        $data = new FinPrice();
+        $vars = get_object_vars($data);
+        foreach ( $vars as $var => $value )
+        {
+            if ( $this->$var )
+            {
+                eval('$data->' . $var . ' = $this->' . $var . '->value;');
+            }
+        }
+       
+        $data->oldStartDate = $this->oldStartDate->value;
+        $data->oldEndDate   = $this->oldEndDate->value;
+
+        return $data;
+    }
+}
+
+?>

@@ -1,0 +1,203 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions to SAGU2 access Gnuteca database
+ *
+ * @author Leovan Tavares da Silva [leovan] [leovan@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Leovan Tavares da Silva [leovan@solis.coop.br]
+ * 
+ * @since
+ * Class created on 23/08/2006
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to manipulate Gnuteca data
+ **/
+class BusinessGnutecaBusGnutecaToSagu2 extends Business
+{
+
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic', 'sagu');
+        $module = is_null($module) ? 'gnuteca' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+    /**
+     * Search bibliography data
+     *
+     * @param $filters (object): Object query filters
+     *
+     * @returns (array): Return an array with query result
+     *
+     **/
+    public function searchBibliographyData($filters, $returnType='list')
+    {
+        $db  = $this->getDatabase();
+
+        $unitTable = DEFAULT_GNUTECA_TABLE_SEARCH;
+
+        if (strlen((string)$filters->unit) > 0)
+        {
+            $unitInitials = strtolower(substr($filters->unit, 0, 3));
+            $unitTable    = 'gtc_busca_' . $unitInitials;
+        }
+        
+        $sql = 'SELECT numerodecontrole,
+                       etiqueta,
+                       subcampo,
+                       conteudo
+                  FROM gtc_material
+                 WHERE subcampo <> \'#\' ';
+        
+        if (strlen((string)$filters->controlNumber) > 0)            
+        {
+            $filterSql .= ' AND numerodecontrole = ' . $filters->controlNumber;
+        }
+        if (strlen((string)$filters->content) > 0)
+        {
+            $filterSql .= ' AND numerodecontrole IN (SELECT DISTINCT numerodecontrole
+                                                       FROM ' . $unitTable . '
+                                                      WHERE conteudo ILIKE \'%' . $filters->content . '%\') ';
+        }
+        if (strlen((string)$filterSql) > 0)
+        {
+            $sql .= $filterSql;
+            $sql .= ' ORDER BY numerodecontrole, etiqueta, subcampo ';
+
+            $ret  = $db->query($sql);
+        }
+
+        //Organizando os dados de acordo com as etiquetas para montar uma linha contendo todos
+        //os dados referentes a determinada obra
+        if (count($ret) > 0)
+        {
+            foreach ($ret as $row)
+            {
+                //Dados do autor
+                if ((($row[1] == '100') || ($row[1] == '700') && ($row[2] == 'a')))
+                {
+                    $autorName    = explode(',', $row[3]);
+                    $autorName[0] = strtoupper($autorName[0]);
+                    $row[3]       = implode(',', $autorName);
+                    
+                    if (strlen((string)$books[$row[0]]->author) > 0)
+                    {
+                        $books[$row[0]]->author .= '; ' . $row[3];
+                    }
+                    else
+                    {
+                        $books[$row[0]]->author = $row[3];
+                    }
+                }
+                //Dados do título
+                if (($row[1] == '245') && ($row[2] == 'a'))
+                {
+                    if (strlen((string)$books[$row[0]]->title))
+                    {
+                        $books[$row[0]]->title .= '. ' . $row[3];
+                    }
+                    else
+                    {
+                        $books[$row[0]]->title = $row[3];
+                    }
+                }
+                //Dados da edição
+                if (($row[1] == '250') && ($row[2] == 'a'))
+                {
+                    if (strlen((string)$books[$row[0]]->issue) > 0)
+                    {
+                        $books[$row[0]]->issue .= '. ' . $row[3] . '. ed';
+                    }
+                    else
+                    {
+                        $books[$row[0]]->issue = $row[3] . '. ed';
+                    }
+                }
+                //Local
+                if (($row[1] == '260') && ($row[2] == 'a'))
+                {
+                    if (strlen((string)$books[$row[0]]->local) > 0)
+                    {
+                        $books[$row[0]]->local .= ', ' . $row[3];
+                    }
+                    else
+                    {
+                        $books[$row[0]]->local = $row[3];
+                    }
+                }
+                //Editora
+                if (($row[1] == '260') && ($row[2] == 'b'))
+                {
+                    if (strlen((string)$books[$row[0]]->publisher) > 0)
+                    {
+                        $books[$row[0]]->publisher .= ', ' . $row[3];
+                    }
+                    if (strlen((string)$publisher[$row[0]]) > 0)
+                    {
+                        $books[$row[0]]->publisher = $row[3];
+                    }
+                }
+                //Ano
+                if (($row[1] == '260') && ($row[2] == 'c'))
+                {
+                    if (strlen((string)$books[$row[0]]->year) > 0)
+                    {
+                        $books[$row[0]]->year .= ', ' . $row[3];
+                    }
+                    else
+                    {
+                        $books[$row[0]]->year = $row[3];
+                    }
+                }
+
+                $books[$row[0]]->controlNumber = $row[0];
+            }
+        }
+
+        if ($returnType == 'get')
+        {
+            return $books;
+        }
+
+        if (count($books) > 0)
+        {
+            foreach ($books as $bookData)
+            {
+                $bookRow = array($bookData->controlNumber, $bookData->title, $bookData->author, $bookData->issue, $bookData->local, $bookData->publisher, $bookData->year);
+                $return[$bookData->controlNumber] = $bookRow;
+            }
+        }
+
+        //$db->close();
+        return $return;
+    }
+}
+?>

@@ -1,0 +1,345 @@
+<?php
+/**
+ *
+ * Shows a list of pupils enrolled in the specified group and allow the professor
+ * to register their frequencies
+ *
+ * @author Armando Taffarel Neto [taffarel@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Armando Taffarel Neto [taffarel@solis.coop.br]
+ * 
+ * @since
+ * Class created on 10/09/2007
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Report to show pupils ou employees financial situations
+ */
+class FrmFrequency extends MForm
+{
+    
+    /**
+     * Class constructor
+     */
+    function __construct()
+    {
+        $MIOLO  = MIOLO::getInstance();
+
+        parent::__construct(_M('Frequency', 'academic'));
+
+        // hide the 'Submit' button
+        $this->setShowPostButton(false);
+
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+        if (($f = $this->page->request('cpaint_function')) != "") 
+        {
+            $this->manager->getTheme()->clearContent();
+            $this->$f($this->page->request('cpaint_argument'));
+            $this->page->generateMethod = 'generateAJAX';
+        }
+        else
+        {
+             $this->defineFields();
+             $this->eventHandler();
+        }
+    }
+
+    /**
+     *  Default method to define fields
+     */
+    public function defineFields()
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $action = MIOLO::getCurrentAction();
+
+        $busPeriod    = $MIOLO->getBusiness('academic', 'BusPeriod');
+        $periodValue  = $this->getFormValue('periodId',$this->enrollData->periodId) ? $this->getFormValue('periodId',$this->enrollData->periodId) : CURRENT_PERIOD_ID;
+        $periodId     = new MComboBox('periodId', $periodValue, _M('Period', 'academic'), $busPeriod->listPeriod());
+        $periodId->setAutoPostBack(true);
+        $validators[] = new MRequiredValidator('periodId', _M('Period','academic'), 'required');
+        $fields[]     = $periodId;
+        
+        $fields[]     = new MSeparator();
+        
+        $this->setFields($fields);
+        $this->setValidators($validators);
+        $this->page->onLoad('document.' . $this->name . '.periodId.focus();');
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setClose($MIOLO->getActionURL('services', substr($action, 0, strrpos($action, ':'))));
+        $this->setShowPostButton(false);
+        if ( $this->periodId->value )
+        {
+
+            $data->periodId     =   $this->periodId->value;
+            
+             $mioloUserName = trim($MIOLO->getLogin()->id);
+            $busPerson     = $MIOLO->getBusiness('basic', 'BusPerson');
+            //se for um usuÃ¡rio do sistema logado
+            if ( strlen((string)$mioloUserName) >  0 )
+            {
+                $personData = $busPerson->getPersonByMioloUserName($mioloUserName);
+            }
+            else //caso for um aluno
+            {
+                $personData->personId = $MIOLO->session->getValue('loginUid');
+            }
+
+            $data->personId = $personData->personId;
+
+            //define funcoes AJAX que serao chamadas ao clique do botao para armazenar dados
+        
+            //carrega arquivo externo com funções JS
+
+           //busca lista de alunos e de calendário academico
+            $businessContract = $MIOLO->getBusiness('academic', 'BusContract');
+            
+            $contracts = $businessContract->getPersonActiveContracts($data->personId);
+            if ( count($contracts) == 0 )
+            {
+                return ;
+            }
+            else
+            {
+                $this->page->scripts->add( $MIOLO->getActionURL( 'services', 'html:scripts:professorFrequencyNew.js' ));
+    
+                $img0h           = $MIOLO->getActionUrl('services', 'html:images:presence-0h.png');
+                $img1h           = $MIOLO->getActionUrl('services', 'html:images:presence-1h.png');
+                $img2h           = $MIOLO->getActionUrl('services', 'html:images:presence-2h.png');
+                $img3h           = $MIOLO->getActionUrl('services', 'html:images:presence-3h.png');
+                $img4h           = $MIOLO->getActionUrl('services', 'html:images:presence-4h.png');
+                $img5h           = $MIOLO->getActionUrl('services', 'html:images:presence-5h.png');
+                $img6h           = $MIOLO->getActionUrl('services', 'html:images:presence-6h.png');
+                $img7h           = $MIOLO->getActionUrl('services', 'html:images:presence-7h.png');
+                $img8h           = $MIOLO->getActionUrl('services', 'html:images:presence-8h.png');
+                $img9h           = $MIOLO->getActionUrl('services', 'html:images:presence-9h.png');
+                $imgAddOn        = $MIOLO->getActionUrl('services', 'html:images:add-on.png');
+                $imgAddOff       = $MIOLO->getActionUrl('services', 'html:images:add-off.png');
+                $this->page->AddJsCode("setImageSources('$imgAddOn', '$imgAddOff', '$img0h', '$img1h', '$img2h', '$img3h', '$img4h', '$img5h', '$img6h', '$img7h', '$img8h', '$img9h')");
+                $business = $MIOLO->getBusiness('services', 'BusProfessorFrequencyNew');
+                $busGroup = $MIOLO->getBusiness('academic', 'BusGroup');
+            }
+
+            foreach ( $contracts as $contract )
+            {
+                list ( $data->contractId,
+                       $data->courseId,
+                       $data->courseVersion,
+                       $data->courseName,
+                       $data->unitId,
+                       $data->unitDescription,
+                       $data->turnId,
+                       $data->turnDescription ) = $contract;
+
+                $businessBoletim = $MIOLO->getBusiness('academic', 'BusBoletim');
+                
+                $groups = $businessBoletim->getGroupsByPeriod($data->contractId, $data->periodId);
+                $contractLabel = new MTextLabel('contractLabel', _M('Contract', 'academic').':');
+                $contractLabel->setWidth(FIELD_CONTAINER_SIZE);
+                $contractId    = new MText('contractId', $data->contractId );
+                $separator = new MText('separator', '-');
+                $course  = new MText('course', $data->courseName . ' / ' . $data->courseVersion . ' / ' . '(' . $data->courseId . ')');
+                $hctContract   = new MHContainer('hctPerson', array($contractLabel, $contractId, $separator, $course));
+                $field2[]    = $hctContract;
+                if ( count ( $groups ) == 0 ) 
+                {
+                    return ;
+                }
+                foreach ( $groups as $group )
+                {
+                    unset($data, $cols, $title, $dataX, $academicCalendar, $professorGroup, $pupilsFrequence, $dataC);
+                    
+                    list ( $data->enrollId,
+                           $data->groupId ) = $group;
+                    $academicCalendar   = $business->getAcademicCalendar($data);
+                    $professorGroup     = $busGroup->getGroup($data->groupId);
+                    
+                    $pupilsFrequence    = $business->listGroupPupilsEnrolledFrequency($data);    
+                    //busca alunos
+
+                    $title    = $professorGroup->curriculumCurricularComponentId . '/' . $professorGroup->curriculumCurricularComponentVersion . ' - '. $professorGroup->curriculumCurricularComponentName;
+        
+                    //cria as primeiras colunas da tabela (numero, nome e codigo)
+                    if ( count($pupilsFrequence->enrollFrequence) > 0 )
+                    {
+                        foreach ( $pupilsFrequence->enrollFrequence as $enrollId => $item )
+                        {
+                            $code[]        = "this.enrolls.push(new objEnroll($enrollId))";
+                        }
+                        $this->page->AddJsCode(implode($code, "\n"));
+                    }
+                    //cria componentes da tabela que relaciona aluno a horarios
+                    $x = -1;
+                    if ( count($academicCalendar) > 0 ) 
+                    {
+                        unset($cols);
+                        foreach ( $academicCalendar as $occurrenceDate => $day )
+                        {
+                            $x++;
+                            $dataC[$x] = $day;
+                            $head = $day->day . '/' . $day->month . '<br>' ;
+                            $divDay   = new MDiv('divDay', $head, null, 'align=center');
+                            $divDay->setJsHint($weekDay);
+                            $cols[]   = $divDay->generate();
+                        }
+                    }
+                    $cols[] = _M('Absences', 'services');
+                    foreach ( $dataC as $x => $day )
+                    {
+                        unset($str);
+                        foreach ( $pupilsFrequence->enrollFrequence as $enrollId => $occurrenceDates )
+                        {
+                            if ( array_key_exists ( $day->occurrenceDate, $occurrenceDates ) )
+                            {
+                                $absences += ( $occurrenceDates[$day->occurrenceDate]['frequency'] - $day->lessonNumberHours );
+                                $code['setData'][$day->occurrenceDate][$enrollId] ="setData('$enrollId', '$day->occurrenceDate', " . $occurrenceDates[$day->occurrenceDate]['frequency'] . ", true)";
+                                $str = $occurrenceDates[$day->occurrenceDate]['frequency'] . " H/A " . _M('from', 'services') . ' ' . $day->lessonNumberHours . " H/A" . "\r\n" .  _M('Content', 'academic') . ': '. $day->content;
+                                break;
+                            }
+                        }
+                        $image   = new MImage('imgFreq[' . $enrollId . '][' . $day->occurrenceDate . ']', $str, null);
+                        $divFreq = new MDiv('divFreq_' . $enrollId . '_' . $x, array($image), null, 'align=center');
+                        $dataX[0][$x] = $divFreq;
+                        $data->totalOfferedHours = $day->totalOfferedHours;
+                    }
+                    $labelSuffix = new MText('lbSuf', _M('H/L', 'services'));
+                    $labelSuffix->color = 'red';
+                
+                    $label  = new MText('lbAbs2_' . $enrollId, ($absences * -1));
+                    $label->setBold(true);
+                    $label->color = 'red';
+                                         
+                    $labelPercent = new MText('lbPercentAbs2_' . $enrollId, '(' . ((round((100/$data->totalOfferedHours)*$absences,2))*-1) . '%)');
+                    $labelPercent->color = 'red';
+                    $divAbs = new MDiv('divAbs_' . $enrollId, array($label, $labelSuffix, $labelPercent, new MHiddenField('lbPres_'.$enrollId), new MHiddenField('lbPercentPres_'.$enrollId), new MHiddenField('lbAbs_'.$enrollId), new MHiddenField('lbPercentAbs_'. $enrollId) ), null, 'align=center');
+                    $divAbs->addBoxStyle('white-space', 'nowrap');
+                                        //
+                    $dataX[0][count($cols)-1] = $divAbs;
+                    //cria campos
+                    $pupilsTable = new MTableRaw($title, $dataX, $cols);
+                    $field2[] = $pupilsTable;
+                    $field2[] = new MSeparator();
+                }
+                $bgContract = new MBaseGroup('bgContract', _M('Course information', 'academic'), $field2);
+                $bgContract->setDisposition('vertical');
+                $fields[] = $bgContract;
+            }
+        }
+        if  ( count($code) > 0 )
+        {
+            foreach($code as $item => $value)
+            {
+                if (is_array($value))
+                {
+                    foreach( $value as $item2 => $value2 )
+                    {
+                        if ( is_array($value2) )
+                        {
+                            foreach ($value2 as $item3 => $value3 )
+                            {
+                                $this->page->AddJsCode($value3);
+                            }
+                        }
+                        else
+                        {
+                            $this->page->AddJsCode($value2);
+                        }
+                    }
+                }
+            }
+        }
+        $this->setFields($fields);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+    }
+
+    public function tbBtnContent_click($enroll = NULL)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $data->groupId      = MIOLO::_REQUEST('groupId');
+        $data->professorId  = MIOLO::_REQUEST('professorId');
+
+        $class = 'RptLessonsContent'; 
+        $MIOLO->getClass('academic', $class);
+        $report = new $class($data); 
+        return;
+    }
+    /**
+     * Event triggered when user click on the save button
+     **/
+    public function ajax_btnSave($enrolls)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $action = MIOLO::getCurrentAction();
+
+        $gotError = false;
+        $data                 = unserialize(stripslashes($enrolls[0]));
+
+        $professorObservation = $data['professorObservation'];
+        unset($data['professorObservation']);
+        $groupId              = $_REQUEST['groupId'];
+
+        $business = $MIOLO->getBusiness('services', 'BusProfessorFrequencyNew');
+        $business->beginTransaction();
+
+        foreach ( $data as $enrolls )
+        {
+            $enrollId    = $enrolls->enrollId;
+            $frequencies = $enrolls->frequencies;
+            foreach ( $frequencies as $frequency )
+            {   
+                $acdFrequenceEnroll->userName      = trim($MIOLO->getLogin()->id);
+                $acdFrequenceEnroll->ipAddress     = $_SERVER['REMOTE_ADDR'];
+                $acdFrequenceEnroll->enrollId      = $enrollId;
+                $acdFrequenceEnroll->frequencyDate = str_replace('_', '-', $frequency->frequencyDate);
+                $acdFrequenceEnroll->frequency     = $frequency->frequency ? $frequency->frequency : 0;
+                $acdFrequenceEnroll->professorId   = $_REQUEST['professorId'];
+             
+                try
+                {
+                    $business->insertFrequence ($acdFrequenceEnroll);
+                }
+                catch( Exception $e )
+                {
+                    $msg  = _M('Error inserting or updating data', 'services') . ': ' . $e->getMessage();
+                    $gotError = true;
+                } 
+            }
+        }
+        if ( $gotError )
+        {
+            $business->rollback();
+        }
+        else
+        {
+            //Atualiza as observações do professor
+            $business->updateProfessorObservation($groupId, $professorObservation);
+
+            $business->commit();   
+            $msg = _M('Data saved successfully', 'services') . '!';
+        }
+        $fld33[]  = new MTextLabel('labelInfo', '<br><font color=red>' . $msg . '</font><br>&nbsp;');
+        $fields[] = new MDiv('divInfo', $fld33, null, 'align=center');
+        unset($fld33);
+        
+        $this->manager->getTheme()->setContent($fields);
+    }
+}
+
+?>

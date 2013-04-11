@@ -1,0 +1,389 @@
+<?php
+
+/**
+ * Sattle of matter form
+ *
+ * @author Jamiel Spezia [jamiel@solis.coop.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ *
+ * @since
+ * Class created on 21/10/2005
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2005 SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+
+/**
+ * Form to manipulate a selective process
+ **/
+class FrmSattleOfMatter extends MForm
+{
+
+    /**
+     * Class constructor
+     **/
+    function __construct()
+    {
+
+        $module = MIOLO::getCurrentModule();
+
+        if ( MIOLO::_request('function') == 'insert' )
+        {
+            parent::__construct(_M('Insert', $module));
+        }
+        else
+        {
+            parent::__construct(_M('Update', $module));
+        }
+
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+
+        $toolBar = new MToolBar('toolBar',$MIOLO->getActionURL($module,$action));
+
+        if ( $function == 'insert' )
+        {
+            $toolBar->disableButton('tbBtnDelete');
+            $toolBar->disableButton('tbBtnPrint');
+        }
+        elseif ( $function == 'delete' )
+        {
+            $toolBar->disableButton('tbBtnSave');
+        }
+        $fields[] = $toolBar;
+
+        $fields[] = new MHiddenField('limbo', $limbo);
+
+        if ( in_array($function,array('update','delete')) )
+        {
+            $sattleOfMatterId = MIOLO::_request('sattleOfMatterId');
+
+            $fields[] = new MTextLabel('sattleOfMatterId', $sattleOfMatterId, _M('Sattle of matter id',$module));
+            $fields[] = new MHiddenField('sattleOfMatterId', $sattleOfMatterId);
+
+            $business = $MIOLO->getBusiness($module,'BusSattleOfMatter');
+            $data = $business->getSattleOfMatter($sattleOfMatterId);
+        }
+
+         $this->page->onLoad('document.' . $this->name . '.examOccurrenceId.focus();');
+        /*
+         * MLookupTextField class constructor prototype:
+         *
+         * function __construct($name = '', $value     = '',       $label   = '', $size         = 10,
+         *                      $hint = '', $validator = null,     $related = '', $module       = '',
+         *                      $item = '', $event     = 'filler', $filter  = '', $autocomplete = false)
+         */
+//         $examOccurrenceId = new MLookupTextField('examOccurrenceId', $this->getFormValue('examOccurrenceId', $data->examOccurrenceId), _M('Exam occurrence id',$module), FIELD_LOOKUPFIELD_SIZE, null, null, '', 'selectiveProcess', 'ExamOccurrence', null, null, true);
+//         $examOccurrenceId->setJsHint(_M('Enter the exam occurrence id',$module));
+        $insertFor = new MSelection('insertFor', $this->getFormValue('insertFor', 0), _M('Insert for', $module), array('0'=>_M('Vacancy', $module), '1'=>_M('Selective process', $module)));
+        $insertFor->setAutoSubmit(true);
+        $fields[] = $insertFor;
+
+
+        $business           = $MIOLO->getBusiness($module,'BusSelectiveProcess');
+        $selectiveProcessId = new MComboBox('selectiveProcessId', $this->getFormValue('selectiveProcessId', $data->selectiveProcessId), _M('Selective process id',$module), $business->listSelectiveProcess());
+        $selectiveProcessId->setJsHint(_M('Enter the selective process code',$module));
+        $selectiveProcessId->addAttribute('onChange','document.' . $this->getName() . '.submit()' );
+        $selectiveProcessId->setAutoPostBack(true);
+        $fields[]           = $selectiveProcessId;
+        $validators[] = new MRequiredValidator('selectiveProcessId');
+
+
+        if(strlen((string)$selectiveProcessId->value) > 0)
+        {
+            $businessExamOccurrence = $MIOLO->getBusiness($module,'BusExamOccurrence');
+            $examOccurrenceId = new MComboBox('examOccurrenceId', $this->getFormValue('examOccurrenceId', $data->examOccurrenceId), _M('Exam occurrence id',$module), $businessExamOccurrence->listExamOccurrence($selectiveProcessId->value));
+            //$examOccurrenceId->setAutoPostBack(true);
+
+            $examOccurrenceId->setJsHint(_M('Enter the exam occurrence code',$module));
+            $fields[]           = $examOccurrenceId;
+            $validators[]       = new MRequiredValidator('examOccurrenceId');
+//             $examOccurrenceDescription = new MTextField('examOccurrenceDescription', $this->getFormValue('examOccurrenceDescription', $data->examOccurrenceDescription), '', FIELD_DESCRIPTION_SIZE);
+//             $examOccurrenceDescription->setReadOnly(true);
+        }
+        //$hctExamOccurrence = new MHContainer('hctExamOccurrence', array($examOccurrenceLabel, $examOccurrenceId, $examOccurrenceDescription));
+        //$fields[]  = $hctExamOccurrence;
+
+//        $validators[] = new MIntegerValidator('examOccurrenceId', '', 'required');
+        //$fields[] = $examOccurrenceId;
+        
+
+        if ( $this->getFormValue('insertFor') == 0 )
+        {
+            $courseVacantLabel = new MText('courseVacantLabel', _M('Vacancy',$module) . ':');
+            $courseVacantLabel->setWidth(FIELD_CONTAINER_SIZE);
+            $courseVacantLabel->setClass('m-caption m-caption-required');
+
+            $courseVacantId = new MLookupTextField('courseVacantId', $this->getFormValue('courseVacantId', $data->courseVacantId), '', FIELD_LOOKUPFIELD_SIZE, null, null, 'selectiveProcessId, limbo, limbo, courseVacantDescription', 'selectiveProcess', 'CourseVacant', null, array('selectiveProcessId' => 'selectiveProcessId'), true);
+            $courseVacantId->setJsHint(_M('Enter the vacancy id',$module));
+            $validators[] = new MIntegerValidator('courseVacantId', _M('Vacancy',$module), 'required');
+            
+
+            $courseVacantDescription = new MTextField('courseVacantDescription', $this->getFormValue('courseVacantDescription', $data->courseVacantDescription), '', FIELD_DESCRIPTION_SIZE);
+            $courseVacantDescription->setReadOnly(true);
+
+            $hctVacant = new MHContainer('hctVacant', array( $courseVacantLabel, $courseVacantId, $CourseVacantDescription, $courseVacantDescription) );
+            $hctVacant->setShowLabel(true);
+            $fields[]  = $hctVacant;
+
+        }
+        else
+        {
+//             $business           = $MIOLO->getBusiness($module,'BusSelectiveProcess');
+//             $selectiveProcessId = new MComboBox('selectiveProcessId', $this->getFormValue('selectiveProcessId', $data->selectiveProcessId), _M('Selective process id',$module), $business->listSelectiveProcess());
+//             $selectiveProcessId->setJsHint(_M('Enter the selective process code',$module));
+//             $validators[] = new MRequiredValidator('selectiveProcessId');
+// 
+//             $fields[]           = $selectiveProcessId;
+        }
+
+        $priority = new MTextField('priority', $this->getFormValue('priority', $data->priority), _M('Priority',$module), 8);
+        $priority->setJsHint(_M('Enter the priority',$module));
+        $validators[] = new MIntegerValidator('priority', '', 'required');
+
+        $fields[] = $priority;
+
+        if ( $function == 'update' )
+        {
+            $fields[] = new MTextLabel('lastModification', '[' . $data->userName . ' - ' . $data->dateTime . ']', _M('Last modification',$module));
+        }
+        
+        $fields[] = new Separator('');
+
+        $this->setFields($fields);
+        if ( isset($validators) )
+        {
+            $this->setValidators($validators);
+        }
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+        $this->setClose($MIOLO->getActionURL($module,substr($action,0,strrpos($action,':'))));
+
+    }
+
+    /**
+     * Event triggered when user chooses New from the toolbar
+     **/
+    public function tbBtnNew_click($sender=NULL)
+    {
+        /*
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $data = $this->getTypesData();
+        $vars = get_object_vars($data);
+
+        foreach ( $vars as $var => $value )
+        {
+            $this->$var->value = $this->getFormValue($var . 'S','');
+        }
+        */
+    }
+
+    /**
+     * Event triggered when user chooses Delete from the toolbar
+     **/
+    public function tbBtnDelete_click($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $data   = $this->getTypesData();
+        $opts   = array('event'              => 'tbBtnDelete_confirm',
+                        'function'           => 'delete',
+                        'sattleOfMatterId' => MIOLO::_request('sattleOfMatterId'));
+
+        $gotoYes = $MIOLO->getActionURL( $module, $action, null, $opts );
+
+        // This return the primary key to the search form so that user
+        // can see the record he would delete
+        $opts    = array('sattleOfMatterIdS' => MIOLO::_request('sattleOfMatterId'));
+        $goto    = SAGU::getStackBackUrl();
+        $gotoNo  = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+
+        $caption = _M('Question',$module);
+        $MIOLO->question(MSG_CONFIRM_RECORD_DELETE, $gotoYes, $gotoNo);
+    }
+
+    /**
+     * Event triggered when user chooses Yes from the Delete prompt dialog
+     **/
+    public function tbBtnDelete_confirm($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $business = $MIOLO->getBusiness($module, 'BusSattleOfMatter');
+        $ok = $business->deleteSattleOfMatter($this->sattleOfMatterId->value);
+
+        if ( $ok )
+        {
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Information',$module);
+            $MIOLO->information(MSG_RECORD_DELETED, $goto);
+        }
+        else
+        {
+            $msg  = _M('Error executing requested operation.',$module);
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Error',$module);
+            $MIOLO->error( $msg, $goto, $caption );
+        }
+    }
+
+    /**
+     * Event triggered when user chooses Save from the toolbar
+     **/
+    public function tbBtnSave_click($sender=NULL)
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+
+        $data     = $this->getTypesData();
+        $business = $MIOLO->getBusiness($module, 'BusSattleOfMatter');
+
+        if ( $function == 'update' )
+        {
+            //if ( $this->insertFor->value == 0 )
+            //{
+                $ok  = $business->updateSattleOfMatter($data);
+            //}
+            //else
+            //{
+              //  $filters->selectiveProcessId = $this->selectiveProcessId->value;
+                //$filters->examOccurrenceId   = $data->examOccurrenceId;
+                //$result = $business->searchSattleOfMatter($filters);
+
+                //if ( $result )
+                //{
+                  //  foreach( $result as $key=>$r )
+                    //{
+                      //  $data->sattleOfMatterId = $r[0];
+                        //$data->courseVacantId   = $r[2];
+                        $ok  = $business->updateSattleOfMatter($data);
+                    //}
+                //}
+            //}
+
+            $msg = MSG_RECORD_UPDATED;
+        }
+        else
+        {
+            //if ( $this->insertFor->value == 0 )
+            //{
+                //Insert para um determinado número de ocorrência de vagas
+                //$ok  = $business->insertSattleOfMatter($data);
+            //}
+            //else
+            //{
+                //Insert para todo o processo seletivo
+                //$filters->selectiveProcessId = $this->selectiveProcessId->value;
+                //$filters->examOccurrenceId   = $data->examOccurrenceId;
+
+                //$result = $business->searchSattleOfMatterSelectiveProcessId($filters);
+
+                //if ( is_array($result) && (count($result) > 0) )
+                //{
+                    //foreach( $result as $key => $r )
+                    //{
+                      //  $data->courseVacantId = $r[0];
+            $ok  = $business->insertSattleOfMatter($data);
+                    //}
+                //}
+                //else
+                //{
+                    //$ok = true;
+                //}
+            //}
+            $msg = MSG_RECORD_INSERTED;
+        }
+
+        if ( $ok )
+        {
+            // This returns the primary key data to the search form
+            // so that the user can see the inserted/updated record.
+            $opts = array('sattleOfMatterIdS' => $data->sattleOfMatterId);
+
+            if ( $function == 'update' )
+            {
+                $caption = _M('Information', $module);
+                $MIOLO->information($msg, $MIOLO->getActionURL( $module, $action, null, $opts));
+            }
+            else
+            {
+                unset($opts);
+                $goto = SAGU::getStackBackUrl();
+                $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL( $module, $action, null, $opts);
+                $opts = array('function'=>'insert');
+
+                $gotoYes = $MIOLO->getActionURL($module, $action, null, $opts);
+                $caption = _M('Question',$module);
+                $MIOLO->question($msg, $gotoYes, $goto);
+            }
+        }
+        else
+        {
+            $msg  = _M('Error executing requested operation.',$module);
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action, null, $opts);
+            $caption = _M('Error',$module);
+            $MIOLO->error( $msg, $goto, $caption );
+        }
+    }
+
+    /**
+     * Method to gather all information from the form fields
+     * and put them on a database compatible object
+     **/
+    public function getTypesData()
+    {
+        $data = new SprSattleOfMatter();
+        $vars = get_object_vars($data);
+        foreach ( $vars as $var => $value )
+        {
+            $data->$var = $this->$var->value;
+        }
+
+        return $data;
+    }
+
+}
+
+?>

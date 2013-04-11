@@ -1,0 +1,811 @@
+<?php
+
+/**
+ * Inscription form
+ *
+ * @author Hélio Henrique Rodrigues Guimarães [helio@solis.coop.br]
+ *
+ * @version: $Id$
+ * 
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * Rafael Luís Spengler [rafael@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ *
+ * @since
+ * Class created on 05/07/2006
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2005 SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+
+/**
+ * Form to manipulate a selectiveProcessOccurrence
+ **/
+class FrmQuestionAnswers extends MForm
+{
+    var $inscriptionData;
+    var $optionsNumber;
+    var $formId;
+    var $personId;
+    var $mioloUserName;
+    var $othersSelectiveProcessNumbers;
+    /**
+     * Class constructor
+     **/
+    function __construct($data)
+    {
+    	$MIOLO    = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+
+        $this->inscriptionData = unserialize(urldecode(stripslashes($MIOLO->session->getValue('inscriptionData'))));
+        $this->personId      = $data->personId;
+        $this->mioloUserName = $data->mioloUserName;
+        parent::__construct();
+
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+        set_time_limit(0);
+
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+        $event    = MIOLO::_request('event');
+
+        $separator = new Separator('');
+
+        $fontText  = new MHiddenField('fontText',  "<font color=" . INSCRIPTION_TEXT_COLOR . ">");
+        $fontText1 = new MHiddenField('fontText1', "</font>");
+        $fontSize3 = new MHiddenField('fontText3', "<font size=3>");
+
+        $head2     = new MText('head2',      "<h6>");
+        $closeHead2= new MText('closeHead2', "</h6>");
+
+        $fields[] = $fontText;
+
+        $businessForm        = $MIOLO->getBusiness('research', 'BusForm');
+        $businessFormSetting = $MIOLO->getBusiness('research', 'BusFormSetting');
+        $businessQuestions   = $MIOLO->getBusiness('research', 'BusQuestion');
+        $businessOption      = $MIOLO->getBusiness('research', 'BusOption');
+
+        $this->formId = MIOLO::_request('formId','GET');
+        $setting      = $businessFormSetting->getFormSettingByFormId($this->formId);
+        $form         = $businessForm->getForm($this->formId);
+
+        if ( strlen((string)$MIOLO->getLogin()->id) > 0 && $form->isIdentified == DB_TRUE )
+        {
+            $personIdLabel = new MText('personIdLabel', _M('Person id', $module) . ':');
+            $personIdLabel->setWidth(FIELD_CONTAINER_SIZE);
+            $personIdLabel->setClass('m-caption m-caption-required');
+            $flds[] = $personIdLabel;
+
+            $personId = new MLookupTextField('personIdForm', $this->getFormValue('personIdForm', $this->personId), '', FIELD_LOOKUPFIELD_SIZE, null, null, 'personName', 'basic', 'PhysicalPerson', null, null, true);
+            $personId->setJsHint(_M('Enter the person id',$module));
+            $flds[] = $personId;
+            $validators[] = new MRequiredValidator('personIdForm', _M('Person id', $module));
+
+            $personName = new MTextField('personName', $this->getFormValue('personName', $data->personName), '', FIELD_DESCRIPTION_SIZE);
+            $personName->setJsHint(_M('Enter the person name',$module));
+            $personName->setReadOnly(true);
+            $flds[] = $personName;
+
+            $hctPerson = new MHContainer('hctPerson', $flds);
+            $hctPerson->setShowLabel(false);
+            $fields[] = $hctPerson;
+            unset($flds);
+        }
+
+        $filters->formId = $this->formId;
+
+        //Error container
+        $divError = new MDiv('divError', $lblMsg, null, 'align=center');
+        $flds[]   = $divError;
+
+        /* FORMULARIO NORMAL */
+
+        if ( $this->formId ) 
+        {
+            $questionForm = $businessForm->getForm($this->formId);
+
+            $filters->isByCurricularComponent = DB_FALSE;
+            $questionsNormal    = $businessQuestions->searchQuestion($filters);
+
+            $auxQuestions = 0;  //Contador para a quantidade de questões do formulário
+
+            if ( count($questionsNormal) > 0 )
+            {
+                foreach ( $questionsNormal as $questionNormal )  //Laço para cada questão
+                {
+                    $allowAnswerComment   = $questionNormal[13];
+                    $filters2->questionId = $questionNormal[0];
+                    $questionsOptions     = $businessOption->searchOption($filters2);
+
+                    eval('$questionNormal'.$questionsNormal[0].' = new MText(\'question'.$questionsNormal[0].'\', $auxQuestions + 1 . \' - \' . $questionNormal[1]); ');
+
+                    $auxQuestions++;
+
+                    eval('$flds[] = $questionNormal'.$questionsNormal[0].';');
+
+                    $flds[] = $separator;
+
+                    $numberChoices = count($questionsOptions);
+
+                    //array com as possíveis respostas
+                    if ( count($questionsOptions) > 0 )
+                    {
+                        foreach ( $questionsOptions as $questionsOption )
+                        {
+                            eval('$choices'.$questionNormal[0].'[] = array(  \''.$questionsOption[3].'\' , \''.$questionsOption[0].'\');');
+                        }
+                    }
+
+                    //se for uma questão de escolha única
+                    if ( $questionNormal[2] == DB_FALSE && $questionNormal[3] == DB_FALSE)
+                    {
+                        if ( $numberChoices > 0 )
+                        {
+                            $auxQuestionssUse2;
+                            $countauxQuestionssUse2 = 0;
+                            eval('foreach($choices'.$questionNormal[0].' as $auxQuestionsUse) 
+                                {
+                                    $auxQuestionssUse2 = $auxQuestionsUse[1];
+                                    $choices'.$questionNormal[0].'[$countauxQuestionssUse2][1] = $choices'.$questionNormal[0].'[$countauxQuestionssUse2][0];
+                                    $choices'.$questionNormal[0].'[$countauxQuestionssUse2][0] = $auxQuestionssUse2;
+                                    unset($auxQuestionssUse2);
+                                    $countauxQuestionssUse2++;
+                                }
+                                ');
+
+                            eval('$cbChoices'.$questionNormal[0].' = new MSelection(\'cbChoices'.$questionNormal[0].'\', $this->getFormValue(\'cbChoices'.$questionNormal[0].'\', $this->inscriptionData->answer->o'.$questionNormal[0].'->optionId), \'\', $choices'.$questionNormal[0].');');
+
+                            eval('$flds[] = $cbChoices'.$questionNormal[0].';');
+                                                      $validators[] = new MRequiredValidator('cbChoices'.$questionNormal[0],'A questão N.'. $auxQuestions);
+
+
+                            eval('$this->inscriptionData->answer->o'.$questionNormal[0].'->optionId = $cbChoices'.$questionNormal[0].'->value;');
+
+                        //}
+                        }
+                    }
+                    else if ( $questionNormal[2] == DB_FALSE && $questionNormal[3] == DB_TRUE)
+                    {
+                        eval('$optionText'.$questionNormal[0].' = new MTextField(\'optionText'.$questionNormal[0].'\',$this->getFormValue(\'optionText'.$questionNormal[0].'\',$this->inscriptionData->answer->o'.$questionNormal[0].'->optionId),\'\', 20);');
+                        eval('$optionText'.$questionNormal[0].'->setJsHint(_M(\'Enter the text\',$module));');
+                        eval('$optionText'.$questionNormal[0].'->setReadOnly(false);');
+                        eval('$flds[] = $optionText'.$questionNormal[0].';');
+                        $validators[] = new MRequiredValidator('optionText'.$questionNormal[0],'A questão N.'. $auxQuestions);
+
+                        eval('$this->inscriptionData->answer->o'.$questionNormal[0].'->optionText = $optionText'.$questionNormal[0].'->value;');
+                        eval('$this->inscriptionData->answer->o'.$questionNormal[0].'->optionId = NULL;');
+
+                    }
+                    else //se for uma questão de múltipla escolha
+                    {
+                        //Codigo que utiliza checkBox
+                        //begin
+
+                        //Codigo da questao
+                        $questionId   = $questionNormal[0];
+
+                        //todas opçoes da questao estao nesta variavel
+                        $choicesTotal = ${'choices'.$questionId};
+
+                        //Object question
+                        $questionAux  = $this->inscriptionData->answer->{'o'. $questionId};
+
+                        //Numero de opçoes
+                        $countOptions[$questionId] = count($questionAux->optionId);
+
+                        if ( is_array($choicesTotal) && (count($choicesTotal)>0) )
+                        {
+                            //Laço para cada uma das opçoes possiveis
+                            foreach ( $choicesTotal as $choice )
+                            {
+                                $choiceVar          = 'choice_' . $questionId . '_' . $choice[1];
+
+                                //For para ver se cada uma das opçoes possiveis de resposta
+                                //ja estao respondidas ou nao
+                                for ( $i = 0; $i < $countOptions[$questionId]; $i++ )
+                                {
+                                    if ( $questionAux->optionId[$i] == $choice[1])
+                                    {
+                                        //questao que ja foi respondida anteriormente, e igual a esta
+                                        //que sera impressa na tela. Armazenar na variavel este valor
+                                        ${$choiceVar} = $choice[1];
+                                    }
+                                }
+
+                                $choiceGetFormValue = $this->getFormValue($choiceVar, ${$choiceVar});
+
+                                ${$choiceVar}       = new MCheckBox($choiceVar,
+                                                                    $choice[1],
+                                                                    '',
+                                                                    $choiceGetFormValue,
+                                                                    $choice[0]);
+                                $flds[]             = ${$choiceVar};
+                                //$validators[] = new MRequiredValidator($choiceVar);
+                            }
+                        }
+                    }
+                    //se permitir comentários nas respostas
+                    if ( $allowAnswerComment == DB_TRUE )
+                    {
+                        eval('$optionComment' . $questionNormal[0] . ' = new MTextField(\'optionComment' . $questionNormal[0] . '\',$this->getFormValue(\'optionComment' . $questionNormal[0] . '\',$this->inscriptionData->answer->o'.$questionNormal[0].'->optionComment),_M(\'Comment\',\'research\') . \'s:\', 80);');
+                        eval('$hct1 = new MHContainer(\'hct1' . $questionNormal[0] . '\', array($optionComment' . $questionNormal[0] . '));');
+                        eval('$flds[] = $hct1;');
+                        eval('$this->inscriptionData->answer->o' . $questionNormal[0] . '->optionComment = $optionComment' . $questionNormal[0] . '->value;');
+                    }
+                }
+            }
+            $flds[] = new MSeparator('<hr>');
+        }
+
+
+
+
+
+
+
+
+
+
+
+
+        /* FORMULÁRIO DA AVALIACAO INSTITUCIONAL */
+        if ( $this->formId && $setting->isInstitutionalEvaluation == DB_TRUE ) 
+        {
+            //pega os contratos ativos do aluno
+            $businessContract = $MIOLO->getBusiness('academic', 'BusContract');
+            $contracts        = $businessContract->getPersonActiveContracts($this->personId);
+
+            $auxQuestions = 0;  //Contador para a quantidade de questões do formulário
+
+            $disciplines = array();
+            if ( count($contracts) )
+            {
+                $businessEnroll = $MIOLO->getBusiness('academic', 'BusEnroll');
+                foreach ( $contracts as $contract )
+                {
+                    list ( $contractId,
+                           $courseId,
+                           $courseVersion,
+                           $courseName,
+                           $unitId,
+                           $unitDescription,
+                           $turnId,
+                           $turnDescription,
+                           $iscontractout ) = $contract;
+
+                    if ( $iscontractout == DB_FALSE )
+                    {
+                        $enrolls = $businessEnroll->getContractEnroll($contractId);
+                        if ( count($enrolls)>0 )
+                        {
+                            foreach ( $enrolls as $enroll )
+                            {
+                                $disciplines[] = $enroll;
+                            }
+                        }
+                    }
+                }
+            }
+
+            $filters->isByCurricularComponent = DB_TRUE;
+            $questionForm = $businessForm->getForm($this->formId);
+            $questionsAvaliacao = $businessQuestions->searchQuestion($filters);
+
+            $auxQuestions = 0;  //Contador para a quantidade de questões do formulário
+
+            /* PERCORRE AS QUESTOES */
+            if ( count($questionsAvaliacao) > 0 )
+            {
+                foreach ( $questionsAvaliacao as $question )  //Laço para cada questão
+                {
+
+                    $auxQuestions++;
+
+                    /* PERCORRE AS DISCIPLINAS MONTANDO O QUESTIONÁRIO DAS QUESTOES POR DISCIPLINA */
+                    if ( count($disciplines)>0 )
+                    {
+/*
+                        $fldsAux[] = new Mtext('fldsAux', '');
+
+                        $hctLabelAux = new MHContainer('hctLabelAux', $fldsAux);
+                        $hctLabelAux->setShowLabel(false);
+                        $fields[] = $hctLabelAux;
+                        unset($fldsAux);
+
+                        $fields[] = new MText('idexLabel', '');
+*/
+                        foreach ( $disciplines as $discipline )
+                        {
+                            list ( $enrollId,
+                                   $courseId,
+                                   $courseVersion,
+                                   $course,
+                                   $turnId,
+                                   $turn,
+                                   $unitId,
+                                   $unit,
+                                   $curricularComponentId,
+                                   $curricularComponentVersion,
+                                   $curricularComponent ) = $discipline;
+
+                            $filters->isByCurricularComponent = DB_TRUE;
+                            $questionForm = $businessForm->getForm($this->formId);
+                            $questionsAvaliacao = $businessQuestions->searchQuestion($filters);
+
+                            $allowAnswerComment      = $question[13];
+                            $isByCurricularComponent = $question[14];
+                            $filters2->questionId    = $question[0];
+                            $questionsOptions        = $businessOption->searchOption($filters2);
+
+                            $numberChoices = count($questionsOptions);
+
+                            //array com as possíveis respostas
+                            eval('unset($choices'.$question[0].');');
+                            if ( count($questionsOptions) > 0 )
+                            {
+                                foreach ( $questionsOptions as $questionsOption )
+                                {
+                                    eval('$choices'.$question[0].'_'.$enrollId.'[] = array(  \''.$questionsOption[3].'\' , \''.$questionsOption[0].'\');');
+                                }
+                            }
+                                
+                            //se for uma questão de escolha única
+                            if ( $question[2] == DB_FALSE && $question[3] == DB_FALSE)
+                            {
+                                if ( $numberChoices > 0 )
+                                {
+                                    $auxQuestionssUse2;
+                                    $countauxQuestionssUse2 = 0;
+                                    eval('foreach($choices'.$question[0].'_'.$enrollId.' as $auxQuestionsUse) 
+                                        {
+                                            $auxQuestionssUse2 = $auxQuestionsUse[1];
+                                            $choices'.$question[0].'_'.$enrollId.'[$countauxQuestionssUse2][1] = $choices'.$question[0].'_'.$enrollId.'[$countauxQuestionssUse2][0];
+                                            $choices'.$question[0].'_'.$enrollId.'[$countauxQuestionssUse2][0] = $auxQuestionssUse2;
+                                            unset($auxQuestionssUse2);
+                                            $countauxQuestionssUse2++;
+                                        }
+                                        ');
+
+                                    eval('$question'.$questionsAvaliacao[0].'_'.$enrollId.' = new MText(\'question'.$questionsAvaliacao[0].'_'.$enrollId.'\',$curricularComponent); ');
+                                    eval('$cbChoices'.$question[0].'_'.$enrollId.' = new MSelection(\'cbChoices'.$question[0].'_'.$enrollId.'\', $this->getFormValue(\'cbChoices'.$question[0].'_'.$enrollId.'\', $this->inscriptionData->answer->o'.$question[0].'_'.$enrollId.'->optionId), \'\', $choices'.$question[0].'_'.$enrollId.');');
+
+                                    eval('$ar[] = $question'.$questionsAvaliacao[0].'_'.$enrollId.';');
+                                    eval('$ar[] = $cbChoices'.$question[0].'_'.$enrollId.';');
+
+                                    $validators[] = new MRequiredValidator('cbChoices'.$question[0] . '_' . $enrollId,'A questão N.'. $auxQuestions . ' da disciplina ' . $curricularComponent);
+
+                                    $hctDiscipline  = new MVContainer('hctDiscipline' . $enrollId . $question[0], $ar);
+                                    $flds2[] = $hctDiscipline;
+
+                                    unset($hctDiscipline, $ar);
+
+                                    eval('$this->inscriptionData->answer->o'.$question[0].'_'.$enrollId.'->optionId = $cbChoices'.$question[0].'_'.$enrollId.'->value;');
+
+                                }
+                            }
+                            else if ( $question[2] == DB_FALSE && $question[3] == DB_TRUE)
+                            {
+
+
+                                //eval('$flds2[] = $optionText'.$question[0].'_'.$enrollId.';');
+
+                                eval('$question'.$questionsAvaliacao[0].'_'.$enrollId.' = new MText(\'question'.$questionsAvaliacao[0].'_'.$enrollId.'\',$curricularComponent); ');
+
+                                eval('$optionText'.$question[0].'_'.$enrollId.' = new MTextField(\'optionText'.$question[0].'_'.$enrollId.'\',$this->getFormValue(\'optionText'.$question[0].'_'.$enrollId.'\',$this->inscriptionData->answer->o'.$question[0].'_'.$enrollId.'->optionId),\'\', 20);');
+                                eval('$optionText'.$question[0].'_'.$enrollId.'->setJsHint(_M(\'Enter the text\',\'academic\'));');
+                                eval('$optionText'.$question[0].'_'.$enrollId.'->setReadOnly(false);');
+
+                                eval('$ar[] = $question'.$questionsAvaliacao[0].'_'.$enrollId.';');
+                                eval('$ar[] = $optionText'.$question[0].'_'.$enrollId.';');
+
+                                $hctDiscipline  = new MVContainer('hctDiscipline' . $enrollId . $question[0], $ar);
+                                unset($ar);
+                                $flds2[] = $hctDiscipline;
+
+                                $validators[] = new MRequiredValidator('optionText'.$question[0].'_'.$enrollId,'A questão N.'. $auxQuestions);
+
+                                eval('$this->inscriptionData->answer->o'.$question[0].'_'.$enrollId.'->optionText = $optionText'.$question[0].'_'.$enrollId.'->value;');
+                                eval('$this->inscriptionData->answer->o'.$question[0].'_'.$enrollId.'->optionId = NULL;');
+
+                            }
+                            else //se for uma questão de múltipla escolha
+                            {
+                                //Codigo da questao
+                                $questionId   = $question[0];
+
+                                //todas opçoes da questao estao nesta variavel
+                                $choicesTotal = ${'choices'.$questionId.'_'.$enrollId};
+
+                                //Object question
+                                $questionAux  = $this->inscriptionData->answer->{'o'. $questionId.'_'.$enrollId};
+
+                                //Numero de opçoes
+                                $countOptions[$questionId.'_'.$enrollId] = count($questionAux->optionId);
+
+                                if ( is_array($choicesTotal) && (count($choicesTotal)>0) )
+                                {
+                                    //Laço para cada uma das opçoes possiveis
+                                    foreach ( $choicesTotal as $choice )
+                                    {
+                                        $choiceVar = 'choice_' . $questionId.'_'.$enrollId . '_' . $choice[1];
+
+                                        //For para ver se cada uma das opçoes possiveis de resposta
+                                        //ja estao respondidas ou nao
+                                        for ( $i = 0; $i < $countOptions[$questionId.'_'.$enrollId]; $i++ )
+                                        {
+                                            if ( $questionAux->optionId[$i] == $choice[1])
+                                            {
+                                                //questao que ja foi respondida anteriormente, e igual a esta
+                                                //que sera impressa na tela. Armazenar na variavel este valor
+                                                ${$choiceVar} = $choice[1];
+                                            }
+                                        }
+
+                                        $choiceGetFormValue = $this->getFormValue($choiceVar, ${$choiceVar});
+
+                                        ${$choiceVar}       = new MCheckBox($choiceVar,
+                                                                            $choice[1],
+                                                                            '',
+                                                                            $choiceGetFormValue,
+                                                                            $choice[0]);
+
+                                        $flds2[]            = ${$choiceVar};
+                                        //$validators[] = new MRequiredValidator($choiceVar);
+                                    }
+                                }
+                            }
+                            //se permitir comentários nas respostas
+/*                            if ( $allowAnswerComment == DB_TRUE )
+                            {
+                                eval('$optionComment' . $question[0] . '_'.$enrollId.' = new MTextField(\'optionComment' . $question[0] . '_'.$enrollId.'\',$this->getFormValue(\'optionComment' . $question[0] . '_'.$enrollId.'\',$this->inscriptionData->answer->o'.$question[0].'_'.$enrollId.'->optionComment),$auxQuestions.\' - \' . _M(\'Comment\',\'research\') . \'s:\', 30);');
+                                eval('$hct1 = new MHContainer(\'hct1' . $question[0] . '_'.$enrollId.'\', array($optionComment' . $question[0] . '_'.$enrollId.'));');
+                                eval('$flds2[] = $hct1;');
+                                eval('$this->inscriptionData->answer->o' . $question[0] . '_'.$enrollId.'->optionComment = $optionComment' . $question[0] . '_'.$enrollId.'->value;');
+                            }*/
+                        }
+                    }
+
+                    $hctQuestion = new MHContainer('hctQuestion' . $question[0] . $enrollId, $flds2);
+                    $flds[] = new MBaseGroup('questionBSG' . $question[0] . $enrollId,'<b>' . ++$t . ' - ' . $question[1] . '</b>', array($hctQuestion), null, 1);
+                    $flds[] = new MSeparator();
+                    $flds[] = new MSeparator();
+                    unset($flds2, $hctQuestion);
+
+                }
+            }
+        }
+
+        //$flds[]      = new MHiddenField('formIdS', $this->getFormValue('formId', $data->formId));
+        $btnSave   = new MButton('btnSave', _M('Save inscription', $module));
+        $flds[] = $separator;
+
+//      $btnBack   = new MButton('btnBack', '<< '. _M('Step', $module) . ' 5');
+        $div1    = new MDiv('div1', $btnSave, null, 'align=center');
+
+        $flds[] = $separator;
+        $flds[] = $div1;
+        $flds[] = $separator;
+
+        $flds[] = $fontText1;
+
+        $cntInscription = new MHContainer('cntInscription', $flds);
+
+        $cntInscription->addBoxStyle('background', 'white');
+        $cntInscription->addBoxStyle('color', INSCRIPTION_TEXT_COLOR);
+        $cntInscription->setDisposition('center');
+
+        $fields[] = $cntInscription;
+        $fields[] = new Separator('');
+
+        $this->setFields($fields);
+        $this->setValidators($validators);
+
+        //Este codigo vai depois do setFields porque e checkBox
+
+        /* AVALIACAO INSTITUCIONAL */
+        if ( $this->formId && $setting->isInstitutionalEvaluation == DB_TRUE ) 
+        {
+            if ( count($disciplines)>0 )
+            {
+                foreach ( $disciplines as $discipline )
+                {
+                    list ( $enrollId,
+                           $courseId,
+                           $courseVersion,
+                           $course,
+                           $turnId,
+                           $turn,
+                           $unitId,
+                           $unit,
+                           $curricularComponentId,
+                           $curricularComponentVersion,
+                           $curricularComponent ) = $discipline;
+
+                    if ( count($questionsAvaliacao) > 0 )
+                    {
+                        foreach ( $questionsAvaliacao as $question )  //Laço para cada questão
+                        {
+                            //se for uma questão multipla
+                            if ( $question[2] == DB_TRUE )
+                            {
+                                $questionId = $question[0];
+
+                                //unset($this->inscriptionData->answer->{'o'. $questionId}->optionId);
+                                $this->inscriptionData->answer->{'o'. $questionId.'_'.$enrollId}->optionId = NULL;
+                                $choicesTotal = ${'choices'.$questionId.'_'.$enrollId};
+
+                                //Object question
+                                $questionAux  = $this->inscriptionData->answer->{'o'. $questionId.'_'.$enrollId};
+
+                                //Numero de opçoes
+                                $countOptions[$questionId] = count($questionAux->optionId);
+
+                                if ( is_array($choicesTotal) && (count($choicesTotal)>0) )
+                                {
+                                    //Laço para cada uma das opçoes possiveis
+                                    foreach ( $choicesTotal as $choice )
+                                    {
+                                        $choiceVar          = 'choice_' . $questionId.'_'.$enrollId . '_' . $choice[1];
+                                        if ( ${$choiceVar}->checked )
+                                        {
+                                            $this->inscriptionData->answer->{'o'. $questionId.'_'.$enrollId}->optionId[] = ${$choiceVar}->value;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        /* NORMAL */
+        if ( $this->formId )
+        {
+            //se for uma questão multipla
+            if ( $questionNormal[2] == DB_TRUE )
+            {
+                $questionId = $questionNormal[0];
+
+                //unset($this->inscriptionData->answer->{'o'. $questionId}->optionId);
+                $this->inscriptionData->answer->{'o'. $questionId}->optionId = NULL;
+                $choicesTotal = ${'choices'.$questionId};
+
+                //Object question
+                $questionAux  = $this->inscriptionData->answer->{'o'. $questionId};
+
+                //Numero de opçoes
+                $countOptions[$questionId] = count($questionAux->optionId);
+
+                if ( is_array($choicesTotal) && (count($choicesTotal)>0) )
+                {
+                    //Laço para cada uma das opçoes possiveis
+                    foreach ( $choicesTotal as $choice )
+                    {
+                        $choiceVar = 'choice_' . $questionId . '_' . $choice[1];
+                        if ( ${$choiceVar}->checked )
+                        {
+                            $this->inscriptionData->answer->{'o'. $questionId}->optionId[] = ${$choiceVar}->value;
+                        }
+                    }
+                }
+            }
+        }
+        //$this->setFields($fields);
+        //$this->setValidators($validators);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+        $this->setClose($MIOLO->getActionURL($module, substr($action, 0, strrpos($action, ':'))));
+    }
+
+    /**
+     * Event triggered when user click next
+     **/
+    public function btnSave_click($sender = null)
+    {
+
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $businessForm        = $MIOLO->getBusiness('research', 'BusForm');
+        $businessFormSetting = $MIOLO->getBusiness('research', 'BusFormSetting');
+
+        $form    = $businessForm->getForm($this->formId);
+        $setting = $businessFormSetting->getFormSettingByFormId($this->formId);
+
+        /* AVALIACAO INSTITUCIONAL */
+        if ( $setting->isInstitutionalEvaluation == DB_TRUE )
+        {
+            $businessAnswer = $MIOLO->getBusiness('research', 'BusAnswer3');
+            if ( strlen((string)$MIOLO->getLogin()->id) == 0 )
+            {
+                $personId = $this->personId;
+            }
+            else
+            {
+                $personId = $this->personIdForm->value;
+            }
+
+            $businessAnswer->beginTransaction();
+
+            foreach ( $this->inscriptionData->answer as $question => $answer )
+            {
+                //se for para todas as disciplinas
+                if ( strstr($question, '_') )
+                {
+                    $answerS = new RshAnswerInstitutionalEvaluation();
+                    list ( $answerS->questionId,
+                           $answerS->enrollId ) = explode('_', substr($question,1));
+
+                    if ( $answer->optionId || $answer->optionText )
+                    {
+                        $answerS->personId      = $personId;
+                        $answerS->optionComment = $answer->optionComment;
+
+                        //múltipla escolha
+                        if ( is_array($answer->optionId) )
+                        {
+                            for ( $x = 0;$x < count($answer->optionId); $x++ )
+                            {
+                                $answerS->optionId = $answer->optionId[$x];
+                                $businessAnswer->insertAnswer($answerS);
+                            }
+                        }
+                        else
+                        {
+                            //campo textual
+                            if ( strlen((string)$answer->optionId) )
+                            {
+                                $answerS->optionId = $answer->optionId;
+                            }
+                            //campo de seleção
+                            elseif ( $answer->optionText )
+                            {
+                                $answerS->optionText = $answer->optionText;
+                            }
+                            $businessAnswer->insertAnswer($answerS);
+                        }
+                    }
+                }
+                //geral
+                else
+                {
+                    $answerS                = new RshAnswer();
+                    $answerS->personId      = $personId;
+                    $answerS->questionId    = substr($question,1);
+                    $answerS->optionComment = $answer->optionComment;
+
+                    //múltipla escolha
+                    if ( is_array($answer->optionId) )
+                    {
+                        for ( $x = 0;$x < count($answer->optionId); $x++ )
+                        {
+                            $answerS->optionId = $answer->optionId[$x];
+                            $businessAnswer->insertAnswer($answerS);
+                        }
+                    }
+                    else
+                    {
+                        //campo textual
+                        if ( strlen((string)$answer->optionId) )
+                        {
+                            $answerS->optionId = $answer->optionId;
+                        }
+                        //campo de seleção
+                        elseif ( $answer->optionText )
+                        {
+                            $answerS->optionText = $answer->optionText;
+                        }
+                        $businessAnswer->insertAnswer($answerS);
+                    }
+                }
+            }
+            $businessAnswer->commit();
+        }
+        else
+        {
+            /* IDENTIFICADO */
+            if ( $form->isIdentified == DB_TRUE )
+            {
+                $businessAnswer = $MIOLO->getBusiness('research', 'BusAnswer');
+                if ( strlen((string)$MIOLO->getLogin()->id) == 0 )
+                {
+                    $personId = $this->personId;
+                }
+                else
+                {
+                    $personId = $this->personIdForm->value;
+                }
+
+            }
+            /* NÃO IDENTIFICADO */
+            else
+            {
+                $businessAnswer = $MIOLO->getBusiness('research', 'BusAnswer2');
+            }
+
+            $businessAnswer->beginTransaction();
+
+            foreach ( $this->inscriptionData->answer as $question => $answer )
+            {
+
+                if ( $answer->optionId || $answer->optionText )
+                {
+                    $answerS                = new RshAnswer();
+                    $answerS->personId      = $personId;
+                    $answerS->questionId    = substr($question,1);
+                    $answerS->optionComment = $answer->optionComment;
+
+                    //múltipla escolha
+                    if ( is_array($answer->optionId) )
+                    {
+                        for ( $x = 0;$x < count($answer->optionId); $x++ )
+                        {
+                            $answerS->optionId = $answer->optionId[$x];
+                            $businessAnswer->insertAnswer($answerS);
+                        }
+                    }
+                    else
+                    {
+                        //campo textual
+                        if ( strlen((string)$answer->optionId) )
+                        {
+                            $answerS->optionId = $answer->optionId;
+                        }
+                        //campo de seleção
+                        elseif ( $answer->optionText )
+                        {
+                            $answerS->optionText = $answer->optionText;
+                        }
+                        $businessAnswer->insertAnswer($answerS);
+                    }
+                }
+            }
+            $businessAnswer->commit();
+        }
+
+        if ( strlen((string)$MIOLO->getLogin()->id) == 0 )
+        {
+            $action = 'main';
+            $module = 'services';
+            $opts   = NULL;
+        }
+
+        $gotoYes = $MIOLO->getActionURL( $module, $action, null, $opts );
+        $goto    = SAGU::getStackBackUrl();
+        $gotoNo  = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+        $msg     = 'Obrigado pela participação';
+        $caption = _M('Question',$module);
+        $MIOLO->information($msg, $gotoYes, $gotoNo);
+        $this->page->mGoto($MIOLO->getActionURL($module, $action, null, $opts));
+    }
+
+}
+
+?>

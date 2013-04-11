@@ -1,0 +1,279 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for finEntry table
+ *
+ * @author William Prigol Lopes [william@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * Rafael Luís Spengler [rafael@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * Armando Taffarel Neto [taffarel@solis.coop.br]
+ *
+ * @since
+ * Class created on 13/12/2005
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to manipulate the Entry table
+ **/
+class BusinessFinanceBusIncomeEstimates extends MBusiness
+{
+    public $db;
+    
+    function __construct()
+    {
+        $this->db = $this->getDatabase();
+    }
+
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module = is_null($module) ? 'finance' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+    /**
+     * List all records from the table handled by the class
+     *
+     * @param: None
+     *
+     * @returns (array): Return an array with the entire table
+     *
+     **/
+    public function getIncomeEstimatesAnal( $filters )
+    {
+        $sql = "SELECT
+                    TO_CHAR(A.maturityDate, '".MASK_DATE."') as vencimento,
+                    A.invoiceId,
+                    A.personId,
+                    getPersonName(A.personId),
+                    getIncomeSourceDescription(A.incomeSourceId) as origem,
+                    round(SUM(balancerp(A.invoiceId))-COALESCE((SELECT sum(value) FROM ONLY finEntry WHERE invoiceid = A.invoiceId AND operationId IN(SELECT operationId FROM finOperation WHERE operationGroupId = 'I' AND operationtypeid = 'C')),0),2) as receitaPrevista,
+                    round(COALESCE((SELECT sum(value) FROM ONLY finEntry WHERE invoiceid = A.invoiceId AND operationId IN(SELECT operationId FROM finOperation WHERE operationGroupId = 'N' AND operationtypeid = 'D')),0),2) as receitaNominal,
+                    round(COALESCE((SELECT sum(value) FROM ONLY finEntry WHERE invoiceid = A.invoiceId AND operationId IN(SELECT operationId FROM finOperation WHERE operationGroupId = 'P' AND operationtypeid = 'C')),0),2) as receitaRealizada,
+                    round(COALESCE((SELECT sum(value) FROM ONLY finEntry WHERE invoiceid = A.invoiceId AND operationId IN(SELECT operationId FROM finOperation WHERE operationGroupId = 'I' AND operationtypeid = 'C')),0),2) as Incentivos,
+                    round(COALESCE((SELECT sum(value) FROM ONLY finEntry WHERE invoiceid = A.invoiceId AND operationId IN(SELECT operationId FROM finOperation WHERE operationGroupId = 'D' AND operationtypeid = 'C')),0),2) as Descontos,
+                    round(COALESCE((SELECT sum(value) FROM ONLY finEntry WHERE invoiceid = A.invoiceId AND operationId IN(SELECT operationId FROM finOperation WHERE operationGroupId = 'J' AND operationtypeid = 'D')),0),2) as JurosRecebidos,
+                    round((SUM(CASE WHEN balance(A.invoiceid) > 0 AND A.maturitydate <= now()::date-2 THEN balance(A.invoiceId) ELSE 0 END )),2) as valorEmAberto,
+                    round((SUM(CASE WHEN balance(A.invoiceid) > 0 AND A.maturitydate <= now()::date-2 THEN balanceWithPoliciesDated(A.invoiceId,now()::date) ELSE 0 END )),2) as valorEmAbertoAtualizado
+                FROM
+                    ONLY finInvoice A ";
+        
+        if ( strlen((string)$filters->year) > 0 ) 
+        {
+            $where .= ' AND extract(year from A.maturityDate) = ? ';
+            $args[] = $filters->year;
+        }
+        if ( is_array($filters->incomeSourceId) || strlen((string)$filters->incomeSourceId) > 0 )
+        {
+            if( is_array($filters->incomeSourceId) && count($filters->incomeSourceId) > 0 )
+            {
+             $operacoes = implode(',',$filters->incomeSourceId);
+            }
+            else if ( strlen((string)$filters->incomeSourceId) > 0 )
+            {
+                $operacoes = $filters->incomeSourceId;
+            }
+            $where .= ' AND A.incomeSourceId IN ('.$operacoes.')';
+            
+        }
+        else
+        {
+            $operacoes = 0;
+        }
+
+        if ( is_array($filters->month) || strlen((string)$filters->month) > 0 )
+        {
+            if( is_array($filters->month) && count($filters->month) > 0 )
+            {
+             $meses = implode(',',$filters->month);
+            }
+            else if ( strlen((string)$filters->month) > 0 )
+            {
+                $meses = $filters->month;
+            }
+            $where .= ' AND extract(month from A.maturityDate) IN ('.$meses.')';
+        }
+        $sql .= ' WHERE A.status IS NULL '. $where;
+        $sqlPrepare = SAGU::prepare($sql, $args);
+        $sqlPrepare .= ' GROUP BY A.maturityDate, A.invoiceId, A.personId, A.incomeSourceId';
+        $sqlPrepare .= ' ORDER BY A.maturityDate, getPersonName(A.personId), A.incomeSourceId';
+        $result = $this->db->query($sqlPrepare);
+        return $result;
+    }
+    public function getIncomeEstimatesSyn( $filters )
+    {
+        $sql = "SELECT
+                    TO_CHAR(A.maturityDate, '".MASK_DATE."') as vencimento,
+                    A.invoiceId,
+                    A.personId,
+                    getPersonName(A.personId),
+                    getIncomeSourceDescription(A.incomeSourceId) as origem,
+                    round(SUM(balancerp(A.invoiceId))-COALESCE((SELECT sum(value) FROM ONLY finEntry WHERE invoiceid = A.invoiceId AND operationId IN(SELECT operationId FROM finOperation WHERE operationGroupId = 'I' AND operationtypeid = 'C')),0),2) as receitaPrevista,
+                    round(COALESCE((SELECT sum(value) FROM ONLY finEntry WHERE invoiceid = A.invoiceId AND operationId IN(SELECT operationId FROM finOperation WHERE operationGroupId = 'N' AND operationtypeid = 'D')),0),2) as receitaNominal,
+                    round(COALESCE((SELECT sum(value) FROM ONLY finEntry WHERE invoiceid = A.invoiceId AND operationId IN(SELECT operationId FROM finOperation WHERE operationGroupId = 'P' AND operationtypeid = 'C')),0),2) as receitaRealizada,
+                    round(COALESCE((SELECT sum(value) FROM ONLY finEntry WHERE invoiceid = A.invoiceId AND operationId IN(SELECT operationId FROM finOperation WHERE operationGroupId = 'I' AND operationtypeid = 'C')),0),2) as Incentivos,
+                    round(COALESCE((SELECT sum(value) FROM ONLY finEntry WHERE invoiceid = A.invoiceId AND operationId IN(SELECT operationId FROM finOperation WHERE operationGroupId = 'D' AND operationtypeid = 'C')),0),2) as Descontos,
+                    round(COALESCE((SELECT sum(value) FROM ONLY finEntry WHERE invoiceid = A.invoiceId AND operationId IN(SELECT operationId FROM finOperation WHERE operationGroupId = 'J' AND operationtypeid = 'D')),0),2) as JurosRecebidos,
+                    round((SUM(CASE WHEN balance(A.invoiceid) > 0 AND A.maturitydate <= now()::date-2 THEN COALESCE((SELECT sum(value) FROM ONLY finEntry WHERE invoiceid = A.invoiceId AND operationId IN(SELECT operationId FROM finOperation WHERE operationGroupId = 'N' AND operationtypeid = 'D')),0) ELSE 0 END )),2) as valorEmAberto,
+                    round((SUM(CASE WHEN balance(A.invoiceid) > 0 AND A.maturitydate <= now()::date-2 THEN balanceWithPoliciesDated(A.invoiceId,now()::date) ELSE 0 END )),2) as valorEmAbertoAtualizado
+                FROM
+                    ONLY finInvoice A ";
+        
+        if ( strlen((string)$filters->year) > 0 ) 
+        {
+            $where .= ' AND extract(year from A.maturityDate) = ? ';
+            $args[] = $filters->year;
+        }
+        if ( is_array($filters->incomeSourceId) || strlen((string)$filters->incomeSourceId) > 0 )
+        {
+            if( is_array($filters->incomeSourceId) && count($filters->incomeSourceId) > 0 )
+            {
+             $operacoes = implode(',',$filters->incomeSourceId);
+            }
+            else if ( strlen((string)$filters->incomeSourceId) > 0 )
+            {
+                $operacoes = $filters->incomeSourceId;
+            }
+            $where .= ' AND A.incomeSourceId IN ('.$operacoes.')';
+            
+        }
+        else
+        {
+            $operacoes = 0;
+        }
+
+        if ( is_array($filters->month) || strlen((string)$filters->month) > 0 )
+        {
+            if( is_array($filters->month) && count($filters->month) > 0 )
+            {
+             $meses = implode(',',$filters->month);
+            }
+            else if ( strlen((string)$filters->month) > 0 )
+            {
+                $meses = $filters->month;
+            }
+            $where .= ' AND extract(month from A.maturityDate) IN ('.$meses.')';
+        }
+        $sql .= ' WHERE A.status IS NULL '. $where;
+        $sqlPrepare = SAGU::prepare($sql, $args);
+        $sqlPrepare .= ' GROUP BY A.maturityDate, A.invoiceId, A.personId, A.incomeSourceId';
+        $sqlPrepare .= ' ORDER BY A.maturityDate, getPersonName(A.personId), A.incomeSourceId';
+        
+        $sql = 'SELECT 
+                    extract(year from TO_DATE(A.vencimento, \''. MASK_DATE.'\')),
+                    extract(month from TO_DATE(A.vencimento, \''. MASK_DATE .'\')),
+                    A.origem,
+                    count(distinct A.personId),
+                    SUM(CASE WHEN A.valorEmAberto > 0 AND TO_DATE(A.vencimento,\''. MASK_DATE .'\') <= now()::date-2 THEN 1 ELSE 0 END) as titulosEmAberto,
+                    count(distinct A.invoiceId) as totalDeTitulos,
+                    SUM(A.receitaPrevista) as receitaPrevista,
+                    SUM(A.receitaNominal) as receitaNominal,
+                    (SUM(A.receitaNominal)-SUM(A.incentivos)) as receitaNominalComIncentivos,
+                    SUM(A.receitaRealizada) as receitaRealizada,
+                    SUM(A.incentivos) as Incentivos,
+                    SUM(A.descontos) as Descontos,
+                    SUM(A.jurosRecebidos) as JurosRecebidos,
+                    ROUND((SUM(CASE WHEN A.valorEmAberto > 0 AND TO_DATE(A.vencimento,\''.MASK_DATE.'\') <= now()::date-2 THEN 1 ELSE 0 END)::numeric(14,2)/(count(distinct A.invoiceId))::numeric(14,2))*100.00,2) as percentualDeInadimplencia,
+                    (SUM(A.receitaPrevista)-SUM(A.receitaRealizada)) as valorAReceber,
+                    SUM(A.valorEmAbertoAtualizado) as valorEmAbertoAtualizado
+                FROM (' . $sqlPrepare . ') A GROUP BY extract (year FROM TO_DATE(A.vencimento, \''.MASK_DATE.'\')), extract(month from TO_DATE(A.vencimento, \''.MASK_DATE.'\')), A.origem ';
+        $result = $this->db->query($sql);
+        return $result;
+    }
+    public function getIncomeEstimates( $operations , $months, $year )
+    {
+        $sql = 'SELECT 
+                    B1.description, 
+                    (CASE WHEN sum(A.value) IS NULL THEN 0 ELSE sum(A.value) END)-(CASE WHEN sum(E.value) IS NULL THEN 0 ELSE sum(E.value) END) as ReceitaPrevista, 
+                    extract(month from A1.maturityDate) as month,
+                    (CASE WHEN sum(C.value) IS NULL THEN 0 ELSE sum(C.value) END) as receitaRealizada,
+                    0 as Inadimplencia,
+                    CASE WHEN sum(D.value) IS NULL THEN 0 ELSE sum(D.value) END as DescontosConcedidos,
+                    CASE WHEN sum(E.value) IS NULL THEN 0 ELSE sum(E.value) END as jurosRecebidos
+                FROM 
+                    finReceivableInvoice A1 INNER JOIN 
+                    finEntry A ON ( A1.invoiceId = A.invoiceId AND A.operationId IN (SELECT operationId FROM finOperation WHERE operationGroupId IN (\'' . RECEIVABLE_OPERATION_GROUP_ID . '\') ) ) INNER JOIN 
+                    finIncomeSource B1 ON ( A1.incomeSourceId = B1.incomeSourceId ) LEFT JOIN
+                    finOperation B ON ( B.operationId = A.operationId ) LEFT JOIN
+                    finEntry C ON ( A.invoiceId = C.invoiceId AND C.operationId IN (SELECT operationId FROM finOperation WHERE operationGroupId IN (\'' . PAYMENT_OPERATION_GROUP_ID . '\') ) ) LEFT JOIN
+                    finEntry D ON ( D.invoiceId = A.invoiceId AND D.operationId IN (SELECT operationId FROM finOperation WHERE operationGroupId IN (\'' . DISCOUNT_OPERATION_GROUP_ID . '\') ) )  LEFT JOIN
+                    finEntry E ON ( E.invoiceId = A.invoiceId AND E.operationId IN (SELECT operationId FROM finOperation WHERE operationGroupId IN (\'' . INTEREST_OPERATION_GROUP_ID . '\') ) ) 
+                WHERE 1 = 1 ';
+        if ( strlen((string)$year) > 0 ) 
+        {
+            $sql .= ' AND extract(year from A1.maturityDate) = ? ';
+            $args[] = $year;
+        }
+        $where = '';
+        if ( is_array($operations) || strlen((string)$operations) > 0 )
+        {
+            if( is_array($operations) && count($operations) > 0 )
+            {
+             $operacoes = implode(',',$operations);
+            }
+            else if ( strlen((string)$operations) > 0 )
+            {
+                $operacoes = $operations;
+            }
+            $where .= ' AND A1.incomeSourceId IN ('.$operacoes.')';
+            
+        }
+        else
+        {
+            $operacoes = 0;
+        }
+
+        if ( is_array($months) || strlen((string)$months) > 0 )
+        {
+            if( is_array($months) && count($months) > 0 )
+            {
+             $meses = implode(',',$months);
+            }
+            else if ( strlen((string)$months) > 0 )
+            {
+                $meses = $months;
+            }
+            $where .= ' AND extract(month from A1.maturityDate) IN ('.$meses.')';
+        }
+        $sql .= $where;
+
+        $sqlPrepare = SAGU::prepare($sql, $args);
+        $sqlPrepare .= ' GROUP BY extract(month from A1.maturityDate), A1.incomeSourceId, B1.description';
+        $result = $this->db->query($sqlPrepare);
+        return $result;
+    }
+}
+
+?>

@@ -1,0 +1,285 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for finEntry table
+ *
+ * @author Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+ * @maintainer William Prigol Lopes [william@solis.coop.br]
+ *
+ * @last modification: Rewrite the structure of actions and some part of search
+ *
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Armando Taffarel Neto [taffarel@solis.coop.br]
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Eduardo Beal Miglioransa [eduardo@solis.coop.br]   
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 16/12/2005
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 05 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Form to search the finInvoice table
+ */
+class FrmIncomeForecastReportSearch extends MForm
+{
+    private $home;
+    private $module;
+    public  $showForm;
+    public  $btnFunction;
+    private $generate;
+    private $function;
+    public  $enableToolbar = false;
+
+   /**
+    * Class constructor
+    */
+    function __construct($data)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $this->module = $module;
+        $this->generate = true;
+        $this->home   = $data->home;
+        parent::__construct(_M('Search', $module));
+
+        // hide the 'Submit' button
+        $this->setShowPostButton(false);
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+        $this->defineFields();
+        $this->eventHandler();
+    }
+    
+   /**
+    *  Default method to define fields
+    */
+    public function defineFields()
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+        $this->showForm = true;
+        
+        if ($this->enableToolbar == true)
+        {
+            $toolBar = new MToolBar('toolBar',$MIOLO->getActionURL($module,$action));
+           
+            $toolBar->disableButton('tbBtnDelete');
+            $toolBar->disableButton('tbBtnPrint');
+            $toolBar->disableButton('tbBtnSave');
+            $fields[] = $toolBar;
+        }
+        
+        //favoritos
+        $enabledImage  = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-20x20.png');
+        $disabledImage = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-disabled-20x20.png');
+        $url           = $MIOLO->getActionURL($module, $this->home, null, array('function' => 'search', 'event' => 'bookmark'));
+        if ( MIOLO::_request('event') == 'bookmark' )
+        {
+            $MIOLO->getClass('basic', 'access');
+            access::insert('Income forecast', $this->home, 'incomeForecast-16x16.png', true);
+        }
+
+        //Fim favoritos
+        $data->contractIdS     = MIOLO::_request('contractIdS') ? MIOLO::_request('contractIdS') : MIOLO::_request('contractIdS', 'GET');
+        $data->learningPeriodS = MIOLO::_request('learningPeriodS') ? MIOLO::_request('learningPeriodS') : MIOLO::_request('learningPeriodS', 'GET');
+        $data->periodIdS       = MIOLO::_request('periodIdS') ? MIOLO::_request('periodIdS') : MIOLO::_request('periodIdS', 'GET');
+        // Contract person id
+        $contractPersonIdLabelS = new MText('contractPersonIdLabelS', _M('Person id', $module).':');
+        $contractPersonIdLabelS->setWidth(FIELD_CONTAINER_SIZE);
+        $contractPersonIdLabelS->setClass('m-caption m-caption-required');
+        $autoComplete = (strlen((string)$this->getFormValue('contractIdS', $data->contractIdS)) == 0);
+        $contractPersonIdS      = new MLookupTextField('contractPersonIdS', strlen((string)$this->getFormValue('contractIdS', $data->contractId))>0 ? '' : $this->getFormValue('contractPersonIdS',$data->contractPersonId), '', FIELD_ID_SIZE, null, null, array('contractIdS', 'contractPersonIdS', 'contractPersonNameS', 'contractCourseIdS', 'contractCourseNameS', 'contractCourseVersionS', 'contractTurnIdS', 'contractUnitIdS'), 'academic', 'PersonContract', null, array('personId' => 'contractPersonIdS'), $autoComplete);
+        if ($autoComplete == false)
+        {
+            $contractPersonIdS->setAttribute('onChange',"MIOLO_AutoComplete_Ajax({$contractPersonIdS->lookup_name},'$contractPersonIdS->baseModule')");
+        }
+        $validators[]           = new MIntegerValidator('contractPersonIdS', _M('Person id', $module), 'required');
+        $contractPersonIdS->setJsHint(_M('Enter the person code', $module));
+        $contractPersonNameS    = new MTextField('contractPersonNameS', $this->getFormValue('contractPersonNameS',$data->contractPersonNameS), '', FIELD_DESCRIPTION_SIZE);
+        $contractPersonNameS->setReadOnly(true);
+        $fields[]               = new MHContainer('hctPersonIdS', array($contractPersonIdLabelS, $contractPersonIdS, $contractPersonNameS));
+
+        // Contract id
+        $contractIdLabelS       = new MText('contractIdLabelS', _M('Contract id', $module).':');
+        $contractIdLabelS->setWidth(FIELD_CONTAINER_SIZE);
+        $contractIdLabelS->setClass('m-caption m-caption-required');
+        $contractIdS            = new MLookupTextField('contractIdS', $this->getFormValue('contractIdS',$data->contractIdS), '', FIELD_ID_SIZE, null, null, array('contractPersonIdS', 'contractPersonNameS', 'contractCourseIdS', 'contractCourseNameS', 'contractCourseVersionS', 'contractTurnIdS', $limbo, 'contractUnitIdS'), 'academic', 'Contract', null, array('personId' => 'contractPersonIdS'), true);
+        $contractIdS->setJsHint(_M('Enter the contract code', $module));
+        $validators[]           = new MIntegerValidator('contractIdS', _M('Contract id', $module), 'required');
+        $contractCourseIdS      = new MTextField('contractCourseIdS', $this->getFormValue('contractCourseIdS',$data->contractCourseIdS), _M('',$module), FIELD_ID_SIZE);
+        $contractCourseIdS->setReadOnly(true);
+        $contractCourseVersionS = new MTextField('contractCourseVersionS', $this->getFormValue('contractCourseVersionS',$data->contractCourseVersionS), '', 3);
+        $contractCourseVersionS->setReadOnly(true);
+        $contractCourseNameS    = new MTextField('contractCourseNameS', $this->getFormValue('contractCourseNameS',$data->contractCourseNameS), '', FIELD_DESCRIPTION_SIZE);
+        $contractCourseNameS->setReadOnly(true);
+        $fields[]               = new MHContainer('hctContractS', array($contractIdLabelS, $contractIdS, $contractCourseIdS, $contractCourseVersionS, $contractCourseNameS));
+
+        // Period
+        $currentPeriodId = defined('CURRENT_PERIOD_ID') ? CURRENT_PERIOD_ID : '';
+        $businessPeriod = $MIOLO->getBusiness('academic','BusPeriod');
+        $periodId       = new MComboBox('periodId', strlen((string)$this->getFormValue('periodId', $data->periodId))>0 ? $this->getFormValue('periodId', $data->periodId) : $currentPeriodId, _M('Period',$module), $businessPeriod->listPeriod(), true );
+        $fields[]       = $periodId;
+        
+        // LearningPeriod
+        $learningPeriodLabelS       = new MText('learningPeriodLabelS', _M('Learning period id',$module).':');
+        $learningPeriodLabelS->setClass('m-caption m-caption-required');
+        $learningPeriodLabelS->setWidth(FIELD_CONTAINER_SIZE);
+        $learningPeriodIdS          = new MLookupTextField('learningPeriodIdS', $this->getFormValue('learningPeriodIdS', $data->learningPeriodIdS), null, FIELD_ID_SIZE, null, null, 'limbo,limbo,limbo,limbo,limbo,learningPeriodDescriptionS', 'academic', 'LearningPeriod', null, array('periodId' => 'periodId', 'courseId'=>'contractCourseIdS'), true);
+        $validators[]               = new MIntegerValidator('learningPeriodIdS', _M('Learning period id', $module), 'required');
+        $learningPeriodDescriptionS = new MTextField('learningPeriodDescriptionS', $this->getFormValue('learningPeriodDescriptionS', $data->learningPeriodDescriptionS), null, FIELD_DESCRIPTION_SIZE);
+        $learningPeriodDescriptionS->setReadOnly(true);
+        $hctLearningPeriodS         = new MHContainer('hctLearningPeriodS', array($learningPeriodLabelS, $learningPeriodIdS, $learningPeriodDescriptionS));
+        $hctLearningPeriodS->setShowLabel(true);
+        $fields[]                   = $hctLearningPeriodS;
+        $fields[]                   = new MSeparator('');
+        $fields[]                   = new MButton('btnSearch', _M('Search', $module));
+        $fields[]                   = new MSeparator('');        
+        $this->setFields($fields);
+        $this->setValidators($validators);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+
+    }
+
+   /** 
+    *
+    * Action executed when button "btnSearch" is called
+    *          
+    */
+    public function btnSearch_click($sender = null)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $from = $MIOLO->_request('from');
+        if ($from == 'enroll')
+        {
+            $this->clearFields();
+        }
+
+        // Get filters data
+        $filters->personId                  = $this->contractPersonIdS->value;
+        $filters->personName                = $this->contractPersonNameS->value;
+        $filters->contractId                = $this->contractIdS->value;
+        $filters->learningPeriodId          = MIOLO::_request('learningPeriodId', 'GET') ? MIOLO::_request('learningPeriodId', 'GET') : $this->learningPeriodIdS->value; 
+        $filters->periodId                  = $this->periodId->value;
+        $filters->courseId                  = $this->contractCourseIdS->value;
+        $filters->courseName                = $this->contractCourseNameS->value;
+        $filters->courseVersion             = $this->contractCourseVersionS->value;
+        $filters->learningPeriodDescription = $this->learningPeriodDescriptionS->value;
+        // End get filters data
+         
+        $this->addField(new MSeparator(''));
+        $businessPerson = $MIOLO->getBusiness('basic', 'BusPerson');
+        $businessContract = $MIOLO->getBusiness('academic', 'BusContract');
+        
+        $filters->personId = strlen((string)$filters->personId)>0 ? $filters->personId : $businessContract->getPersonIdByContract($filters->contractId);
+        $personName = $businessPerson->getPersonName($filters->personId);
+        $fldPersonName = new MText('fldPersonName', _M('Income forecasts for @1', $module, $personName));
+        $fieldName = new MDiv('divName', $fldPersonName, null, 'align="center"');
+        $this->addField($fieldName);
+
+        // Itens do menu principal
+        $goto = $MIOLO->getActionURL($module, 'main:report:incomeForecast', null, array('contractIdS'=>$filters->contractId, 'learningPeriodIdS'=>$filters->learningPeriodId, 'event'=>'btnSearch_click'));
+        $url = $MIOLO->getActionURL($module, 'main:register:incomeForecast', null, array('personId'=>$filters->personId, 'contractId'=>$filters->contractId, 'courseId'=>$filters->courseId, 'learningPeriodId'=>$filters->learningPeriodId, 'goto'=>urlencode($goto), 'function'=>'insert'));
+        $fieldsTop[] = new MLink('lnkNewIncomeForecast', _M('New income forecast', $module), $url);
+        $fieldsTop[] = new MText('sep1', ' - ');
+        
+        if (MODULE_ACADEMIC_INSTALLED == 'YES')
+        {
+            $url = $MIOLO->getActionURL('academic', 'main:report:curricularComponentSimpleList', null, array('contractId'=>$filters->contractId, 'periodId'=>$filters->periodId));
+            $fieldsTop[] = new MOpenWindow('lnkAcademic', _M('Academic', $module), $url);
+            $fieldsTop[] = new MText('sepA', ' - ');
+        }
+            
+        $url = $MIOLO->getActionURL($module, 'main:process:individualIncomeForecastGeneration', null, array('personId'=>$filters->personId, 'contractId'=>$filters->contractId, 'courseId'=>$filters->courseId, 'learningPeriodId'=>$filters->learningPeriodId, 'goto'=>urlencode($goto), 'function'=>'insert'));
+        $fieldsTop[] = new MLink('lnkIncomeForecastsGenerate', _M('New individual income forecast generate', $module), $url);
+        $fieldsTop[] = new MText('sep2', ' - ');        
+        
+        $url = $MIOLO->getActionURL($module, 'main:process:incentives', null, array('contractId'=>$filters->contractId, 'learningPeriodId'=>$filters->learningPeriodId));
+        $fieldsTop[] = new MOpenWindow('lnkIncentive', _M('Incentives', $module), $url, '_new');
+        
+        if (MODULE_GNUTECA_INSTALLED == 'YES')
+        {
+            $url = $MIOLO->getActionURL($module, 'main:report:libraryFines', null, array('personId'=>$filters->personId, 'learningPeriodId'=>$filters->learningPeriodId));
+        
+            $fieldsTop[] = new MText('sepL', ' - ');
+            $fieldsTop[] = new MOpenWindow('lnkLibraryfines',               _M('Library fines', $module), $url);
+        } 
+
+        $this->addField(new MDiv('divTop', $fieldsTop, null, 'align="center"'));
+        $hr1 = new MSeparator('<hr>');
+        $hr1->setWidth('99%');
+        $this->addField($hr1);
+        $this->addField(new MSeparator(''));
+
+        $field = new MHContainer('hctTop', $fields);
+        // Fim itens menu principal
+
+        // Get income forecast data
+        $business   = $MIOLO->getBusiness($module, 'BusIncomeForecast');
+        $month      = $business->getMonth($filters);
+        $dataV      = $business->getMonthValue($filters);
+        $space  = str_repeat('&nbsp;', 80);
+        $space1 = str_repeat('&nbsp;', 7);
+        
+        // Pega a quantidade de meses dentro da variável
+        $e = count ($month)-1;
+
+        if ($e>=0)
+        {
+            // Gera uma grid pra cada mês
+            for ($i = 0; $i <= $e; $i++)
+            {
+                $data[$i]       = $business->getIncomeForecastPerson($filters, $month[$i][0]);
+                $add            = count($data[$i]);
+                $grdResults[$i] = $MIOLO->getUI()->getGrid($module,'GrdIncomeForecastReport', $filters);
+                $grdResults[$i]->setData($data[$i]);
+                $grdResults[$i]->setFooter(new MText('text' . $i , '&nbsp;' . $space1 . 'Mês corrente : '. $month[$i][0] . $space . ' Total no mês: '. $dataV[$i][1]));
+                $this->addField($grdResults[$i]);
+                $sep = new MSeparator('<hr>');
+                $sep->setWidth('99%');
+                $this->addField($sep);
+            }
+        }
+        else
+        {
+            $warning = new MText('warning', '<b>'._M('No income forecasts found', $module).'</b>', 'red');
+            $field   = new MDiv('divWarning', $warning, null, 'align="center"');
+            $this->addField($field);
+            $this->addField(new MSeparator(''));
+        }
+    }
+    
+    /**
+     * Function executed to call MIOLO functions... needed to generate the form correctly
+     */
+    function generate()
+    {
+        if ($this->generate)
+        {
+            return parent::generate();
+        }
+    }
+}
+?>

@@ -1,0 +1,230 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for ccpRule table
+ *
+ * @author Jamiel Spezia [jamiel@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 14/09/2005
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to manipulate the ccpRule table
+ **/
+class BusinessControlCopiesBusRule extends Business
+{
+
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module = is_null($module) ? 'controlCopies' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+    /**
+     * Return a specific record from the database
+     *
+     * @param $examOccurrenceId (integer): Primary key of the record to be retrieved
+     *
+     * @return (object): Return an object of the type handled by the class
+     *
+     **/
+    public function getRule($obj)
+    {
+        $sql = 'SELECT B.description as formationLevelDescription,
+                       A.amount,
+                       A.copiesNumber,
+                       A.userName,
+                       TO_CHAR(A.dateTime,\'' . MASK_TIMESTAMP . '\'),
+                       A.ipAddress
+                  FROM ccpRule A
+            INNER JOIN acdFormationLevel B
+                    ON ( B.formationLevelId = A.formationLevel )
+                 WHERE A.isProfessor = ?
+                   AND A.formationLevel = ?';
+
+        $db     = $this->getDatabase();
+        $args = array ($obj->isProfessor, 
+                       $obj->formationLevelId);
+        $result = $db->query(SAGU::prepare($sql, $args));
+        //$db->close();
+
+        $rule = new ccpRule();
+        list ( $rule->formationLevelDescription,
+               $rule->amount,
+               $rule->copiesNumber,
+               $rule->userName,
+               $rule->dateTime,
+               $rule->ipAddress ) = $result[0];
+
+        return $rule;
+    }
+    
+    /**
+     * Do a search on the database table handled by the class
+     *
+     * @param $filters (object): Search filters
+     *
+     * @return (array): An array containing the search results
+     **/
+    public function searchRule($filters)
+    {
+        $sql = 'SELECT A.isProfessor,
+                       A.isProfessor,
+                       A.formationLevel,
+                       B.description as formationLevelDescription,
+                       A.amount,
+                       A.copiesNumber,
+                       A.userName,
+                       TO_CHAR(A.dateTime,\'' . MASK_TIMESTAMP . '\'),
+                       A.ipAddress
+                  FROM ccpRule A
+            INNER JOIN acdFormationLevel B
+                    ON ( B.formationLevelId = A.formationLevel )';
+
+        if ( strlen((string)$filters->isProfessor) > 0 )
+        {
+            $where .= ' AND A.isProfessor = ? ';
+            $args[] = $filters->isProfessor;
+        }
+
+        if ( strlen((string)$filters->formationLevelId) > 0 )
+        {
+            $where .= ' AND B.formationLevelId = ? ';
+            $args[] = $filters->formationLevelId;
+        }
+
+        unset($result);
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE ' . substr($where, 4);// . ' ORDER BY B.description';
+            $db = $this->getDatabase();
+
+            $result = $db->query(SAGU::prepare($sql, $args));
+            //$db->close();
+        }
+
+        return $result;
+    }
+
+    /**
+     * Insert a new record
+     *
+     * @param $data (object): An object of the type handled by the class
+     *
+     * @return True if succed, otherwise False
+     *
+     **/
+    public function insertRule($data)
+    {
+        $sql = 'INSERT INTO ccpRule
+                            (isProfessor,
+                             formationLevel,
+                             amount,
+                             copiesNumber )
+                     VALUES (?, ?, ?, ?)';
+
+        $db     = $this->getDatabase();
+        $args   = array ( $data->isProfessor,
+                          $data->formationLevelId,
+                          $data->amount,
+                          $data->copiesNumber );
+
+        $result = $db->execute(SAGU::prepare($sql, $args));
+        //$db->close();
+
+        return $result;
+    }
+
+    /**
+     * Update data from a specific record
+     *
+     * @param $data (object): Data which will replace the old record data
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+    public function updateRule($data)
+    {
+        $sql = 'UPDATE ccpRule
+                   SET amount       = ?,
+                       copiesNumber = ?
+                 WHERE isProfessor  = ?
+                   AND formationLevel = ?';
+
+        $args = array( $data->amount,
+                       $data->copiesNumber,
+                       $data->isProfessor,
+                       $data->formationLevelId );
+
+        $db   = $this->getDatabase();
+        $sqls = SAGU::prepare($sql, $args);
+
+        for ( $i=0; $i<count($sqls); $i++ )
+        {
+            $result = $db->execute($sqls[$i]);
+        }
+
+        //$db->close();
+
+        return $result;
+    }
+
+    /**
+     * Delete a record
+     *
+     * @param $examOccurrenceId (string): Primary key for deletion
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+    public function deleteRule($obj)
+    {
+        $sql = 'DELETE FROM ccpRule
+                      WHERE isProfessor = ?
+                        AND formationLevel = ?';
+
+        $db     = $this->getDatabase();
+        $args = array( $obj->isProfessor,
+                       $obj->formationLevelId );
+        $result = $db->execute(SAGU::prepare($sql, $args));
+        //$db->close();
+
+        return $result;
+    }
+
+}
+
+?>

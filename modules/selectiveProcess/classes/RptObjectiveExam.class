@@ -1,0 +1,397 @@
+<?php
+
+/**
+ * Default defines 
+ * To report identification
+ */
+$MIOLO  = MIOLO::getInstance();
+$module = MIOLO::getCurrentModule();
+
+define('REPORT_ID', 'SP001'); 
+define('FPDF_FONTPATH', $MIOLO->getModulePath('basic', '/classes/fpdf/font/'));
+
+$MIOLO->Uses('classes/fpdf/fpdf.php', 'basic');
+
+/**
+ * Create header and footer information
+ */
+class PDF extends FPDF
+{
+    var $type = 0;
+    /**
+     * Defines the footer for this report
+     */
+    public function Footer()
+    {
+        $module = MIOLO::getCurrentModule();
+    }
+
+    /**
+     * Defines the header for this report
+     */
+    public function Header()
+    {
+        $module = MIOLO::getCurrentModule();
+        if ($this->type == 1)
+        {
+            $this->ln();
+            $this->ln();
+            $this->ln();
+            $this->ln();
+        }
+    }
+
+
+    function Circle($x,$y,$r,$style='')
+    {
+        $this->Ellipse($x,$y,$r,$r,$style);
+    }
+    
+    function Ellipse($x,$y,$rx,$ry,$style='D')
+    {
+        if($style=='F')
+            $op='f';
+        elseif($style=='FD' or $style=='DF')
+            $op='B';
+        else
+            $op='S';
+        $lx=4/3*(M_SQRT2-1)*$rx;
+        $ly=4/3*(M_SQRT2-1)*$ry;
+        $k=$this->k;
+        $h=$this->h;
+        $this->_out(sprintf('%.2f %.2f m %.2f %.2f %.2f %.2f %.2f %.2f c',
+            ($x+$rx)*$k,($h-$y)*$k,
+            ($x+$rx)*$k,($h-($y-$ly))*$k,
+            ($x+$lx)*$k,($h-($y-$ry))*$k,
+            $x*$k,($h-($y-$ry))*$k));
+        $this->_out(sprintf('%.2f %.2f %.2f %.2f %.2f %.2f c',
+            ($x-$lx)*$k,($h-($y-$ry))*$k,
+            ($x-$rx)*$k,($h-($y-$ly))*$k,
+            ($x-$rx)*$k,($h-$y)*$k));
+        $this->_out(sprintf('%.2f %.2f %.2f %.2f %.2f %.2f c',
+            ($x-$rx)*$k,($h-($y+$ly))*$k,
+            ($x-$lx)*$k,($h-($y+$ry))*$k,
+            $x*$k,($h-($y+$ry))*$k));
+        $this->_out(sprintf('%.2f %.2f %.2f %.2f %.2f %.2f c %s',
+            ($x+$lx)*$k,($h-($y+$ry))*$k,
+            ($x+$rx)*$k,($h-($y+$ly))*$k,
+            ($x+$rx)*$k,($h-$y)*$k,
+            $op));
+    }
+}
+
+
+/**
+ * PDF extension to generate report
+ */
+class RptObjectiveExam 
+{
+    /**
+     * Method to generate the report
+     */
+    public function RptObjectiveExam($data = null)
+    {
+        $rdata  = $this->getReportData($data);
+        $module = MIOLO::getCurrentModule();
+
+        $this->pdf = new PDF();
+        $this->generateContent($rdata);
+
+        $this->pdf->close();
+        $this->pdf->output();
+    }
+
+    /**
+     * Get report data information
+     */
+    private function getReportData($data)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+
+        // Inscription information
+        $busInscription            = $MIOLO->getBusiness($module, 'BusInscription');
+
+        $rdata->inscriptions       = $busInscription->searchInscriptionToWrittingAndAnswerSheet($data);
+        $rdata->selectiveProcessId = $data->selectiveProcessId;
+        $rdata->numberSheet        = $data->numberSheet;
+        $rdata->PageInformations   = $data->PageInformations;
+
+        $busCompany  = $MIOLO->getBusiness(basic, 'BusCompany');
+        $company     = $busCompany->getCompany(DEFAULT_COMPANY_CONF);
+        $rdata->file = $company->personId;
+
+        $busSelectiveProcess = $MIOLO->getBusiness($module, 'BusSelectiveProcess');
+        $getSelectiveProcess = $busSelectiveProcess->getSelectiveProcess($data->selectiveProcessId);
+        $rdata->isLanguage   = $getSelectiveProcess->isLanguage;
+
+        return $rdata;
+    }
+
+    private function generateContent($rdata)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+
+        set_time_limit(0);
+
+        //Parte comentada para gerar logotipo
+        //$this->pdf->Image(SAGUFile::getPhotoPath($rdata->file),10,8,33, PHOTO_FORMAT);
+        //$this->pdf->cell(7, 5,'','',0,'C');
+        //$this->pdf->cell(190, 8, _M('Room @1 - building @2', $module, $rdata->room, $rdata->build), 8, '','C');
+
+        //Tamanho A4 = 210 cm x 297 cm... unit of library FPDF is mm(milimeters)
+        //margem superior = 3 cm
+        //margem esquerda = 1 cm
+        //margem direita  = 2 cm
+        //margem inferior = 1 cm
+
+        //por default use leftMargin with 1 cm.
+
+        foreach($rdata as $id1 => $value1)
+        {
+            if($id1 == 'inscriptions')
+            {
+                $dataInscription = $value1;
+                break;
+            }
+        }
+
+        foreach($dataInscription AS $value2)
+        {
+            $this->pdf->addPage('P', 'mm', 'A4');
+
+            $rightMargin  = $rdata->PageInformations->rightMarginOfPage; 
+            $this->pdf->setLeftMargin(8);
+            $widthPageUse = 210 - $rightMargin /*margem direita*/;          //Largura da célula padrão
+
+            //Título
+            $this->pdf->setFont($rdata->PageInformations->titleFont, $rdata->PageInformations->styleTitleFont, $rdata->PageInformations->lengthTitle);
+            $this->pdf->cell($widthPageUse, $rdata->PageInformations->heightTitle, $rdata->PageInformations->titleDescription, 8, '', $rdata->PageInformations->alignTitleFont);
+            $this->pdf->ln(6);
+
+            //Information
+            $this->pdf->setFont($rdata->PageInformations->informationFont, $rdata->PageInformations->styleinformationFont, $rdata->PageInformations->lengthinformation);
+            $this->pdf->cell($widthPageUse, $rdata->PageInformations->heightinformation, $rdata->PageInformations->informationDescription, 8, 'C',$rdata->PageInformations->aligninformationFont);
+            $this->pdf->ln();
+
+            //Subtítulo
+            $this->pdf->setFont($rdata->PageInformations->subtitleFont, $rdata->PageInformations->stylesubtitleFont , $rdata->PageInformations->lengthsubtitle);
+            $this->pdf->cell($widthPageUse, $rdata->PageInformations->heightsubtitle, $rdata->PageInformations->subtitleDescription, 8, 'C', $rdata->PageInformations->alignsubtitleFont);
+            $this->pdf->ln(6);
+
+            //Grade number
+            $this->pdf->setFont($rdata->PageInformations->sheetCodeFont, $rdata->PageInformations->stylesheetCodeFont, $rdata->PageInformations->lengthsheetCode);
+
+            $this->pdf->text($rdata->PageInformations->xPositionsheetCode, $rdata->PageInformations->heightsheetCode, $rdata->numberSheet);
+
+            //Draw rect of upper-left
+                $this->pdf->rect($rdata->PageInformations->upperLeftMarcPositionX, $rdata->PageInformations->upperLeftMarcPositionY, $rdata->PageInformations->upperLeftMarcThickness, $rdata->PageInformations->upperLeftMarcHeigth , 'F'); //x, y, width, height, style
+                $this->pdf->rect($rdata->PageInformations->upperLeftMarcPositionX, $rdata->PageInformations->upperLeftMarcPositionY, $rdata->PageInformations->upperLeftMarcHeigth , $rdata->PageInformations->upperLeftMarcThickness, 'F');
+            //Draw rect of upper-right
+                $this->pdf->rect($rdata->PageInformations->upperRightMarcPositionX    , $rdata->PageInformations->upperRightMarcPositionY, $rdata->PageInformations->upperRightMarcThickness, $rdata->PageInformations->upperRightMarcHeigth, 'F');
+                $this->pdf->rect($rdata->PageInformations->upperRightMarcPositionX - $rdata->PageInformations->upperRightMarcHeigth, $rdata->PageInformations->upperRightMarcPositionY, $rdata->PageInformations->upperRightMarcHeigth, $rdata->PageInformations->upperRightMarcThickness, 'F');
+            //Draw rect of bottow-left
+                $this->pdf->rect($rdata->PageInformations->bottomLeftMarcPositionX, $rdata->PageInformations->bottomLeftMarcPositionY, $rdata->PageInformations->bottomLeftMarcThickness, $rdata->PageInformations->bottomLeftMarcHeigth * (-1) , 'F'); //x, y, width, height, style
+                $this->pdf->rect($rdata->PageInformations->bottomLeftMarcPositionX, $rdata->PageInformations->bottomLeftMarcPositionY, $rdata->PageInformations->bottomLeftMarcHeigth , $rdata->PageInformations->bottomLeftMarcThickness, 'F');
+            //Draw rect of bottow-right
+                $this->pdf->rect($rdata->PageInformations->bottomRightMarcPositionX    , $rdata->PageInformations->bottomRightMarcPositionY, $rdata->PageInformations->bottomRightMarcThickness, $rdata->PageInformations->bottomRightMarcHeigth  * (-1), 'F');
+                
+                $this->pdf->rect($rdata->PageInformations->bottomRightMarcPositionX - $rdata->PageInformations->bottomRightMarcHeigth, $rdata->PageInformations->bottomRightMarcPositionY, $rdata->PageInformations->bottomRightMarcHeigth + $rdata->PageInformations->bottomRightMarcThickness, $rdata->PageInformations->bottomRightMarcThickness, 'F');
+
+            //############################################################
+            //laço para desenhar o número de inscrição(quadradinhos)
+            //############################################################
+                $this->pdf->setFont($rdata->PageInformations->inscriptionNumberFont  , $rdata->PageInformations->styleinscriptionNumberFont , $rdata->PageInformations->aligninscriptionNumberFont);
+                $this->pdf->text(10, $rdata->PageInformations->heightinscriptionNumber , 'Número da inscrição');
+                $this->pdf->ln(4);
+
+                $spaceTitleValueNumberInscription = $rdata->PageInformations->spaceTitleNumberInscription;
+                $numberOfRects                    = 8 ;
+                $rectNumberInscriptionX           = 1;           //esta é a posição do primeiro quadrado em X (upper-left)
+                $rectNumberInscriptionY           = $rdata->PageInformations->heightinscriptionNumber + $spaceTitleValueNumberInscription;           //esta é a posição do primeiro quadrado em Y (upper-left)
+                $rectNumberInscriptionWidth       = 10;
+                $rectNumberInscriptionHeight      = 10;
+
+                for($xNumberInscription = 1; $xNumberInscription < ($numberOfRects+1); $xNumberInscription++)
+                {
+                    $this->pdf->rect($rectNumberInscriptionX + ($rectNumberInscriptionWidth * $xNumberInscription), $rectNumberInscriptionY, $rectNumberInscriptionWidth, $rectNumberInscriptionHeight, 'D');
+                }
+                $this->pdf->ln();
+            //############################################################
+
+            //############################################################
+            //laço para preencher estes quadradinhos com um array de mesma quantidade
+            //############################################################
+                $positionUpperLeftDateY = 7;
+                $positionUpperLeftDateX = 3;
+
+                for($xNumberInscription = 1; $xNumberInscription < ($numberOfRects+1); $xNumberInscription++)
+                {
+                    $this->pdf->setFont($rdata->PageInformations->titleFont, 'B', 14);
+                    $this->pdf->text(($rectNumberInscriptionX + ($rectNumberInscriptionWidth * $xNumberInscription))+$positionUpperLeftDateX, $rectNumberInscriptionY+$positionUpperLeftDateY, substr($value2[0], $xNumberInscription-1 , 1));
+                }
+            //############################################################
+
+            //############################################################
+            //Informações dos alunos (curso, sala, campus, lingua estrangeira)
+            //############################################################
+                $yStudentePosition = $rdata->PageInformations->heightStudentsInformation;
+
+                $this->pdf->setFont($rdata->PageInformations->studentsInformationFont, $rdata->PageInformations->styleStudentsInformationFont, $rdata->PageInformations->lengthStudentsInformation);
+
+                $this->pdf->text($rdata->PageInformations->XpositionStudentsInformation, $yStudentePosition, ' Candidato: ' . $value2[3]);
+
+                $yStudentePosition += $rdata->PageInformations->spaceTitleStudentsInformation;
+                $this->pdf->text($rdata->PageInformations->XpositionStudentsInformation, $yStudentePosition, ' Identidade: ' . $value2[17]);
+
+                $yStudentePosition += $rdata->PageInformations->spaceTitleStudentsInformation;
+                $this->pdf->text($rdata->PageInformations->XpositionStudentsInformation, $yStudentePosition, ' Curso 1ª Opção: ' . $value2[10] . ' - ' . $value2[11]);
+
+                if ( $rdata->isLanguage == DB_TRUE )
+                {
+                    $yStudentePosition += $rdata->PageInformations->spaceTitleStudentsInformation;
+                    $this->pdf->text($rdata->PageInformations->XpositionStudentsInformation, $yStudentePosition, ' Língua estrangeira: ' . $value2[7]);
+                }
+
+                $yStudentePosition += $rdata->PageInformations->spaceTitleStudentsInformation + 3;
+                $this->pdf->text($rdata->PageInformations->XpositionStudentsInformation, $yStudentePosition, ' Sala: ' . $value2[15] . ' / ' . $value2[16] . ' - ' . $value2[5]);
+
+                $yStudentePositionEnd = $yStudentePosition - $rdata->PageInformations->heightStudentsInformation + $rdata->PageInformations->lengthStudentsInformation * 0.264583333 + 2;
+
+                $this->pdf->rect($rdata->PageInformations->XpositionStudentsInformation, $rdata->PageInformations->heightStudentsInformation - $rdata->PageInformations->lengthStudentsInformation * 0.264583333 - 1, $widthPageUse + 10 - $rdata->PageInformations->XpositionStudentsInformation, $yStudentePositionEnd, 'D');
+            //############################################################
+
+
+            //############################################################
+            //Instruções de preenchimento
+            //############################################################
+                $this->pdf->setFont($rdata->PageInformations->studentsInformationFont, $rdata->PageInformations->styleStudentsInformationFont, $rdata->PageInformations->lengthStudentsInformation);
+
+                $this->pdf->setFillColor(160, 160, 160);
+                $this->pdf->rect(10, $rdata->PageInformations->heightStudentsInformation - $rdata->PageInformations->lengthStudentsInformation * 0.264583333 - 1 + $yStudentePositionEnd + 5, $widthPageUse, 5, 'DF');
+
+                $this->pdf->setFont($rdata->PageInformations->titleFont, $rdata->PageInformations->styleTitleFont, 12);
+
+                $this->pdf->text((200/2)- strlen((string)'Instrução de Preenchimento'), $rdata->PageInformations->heightStudentsInformation - $rdata->PageInformations->lengthStudentsInformation * 0.264583333 - 1 + $yStudentePositionEnd + 5 + 4, 'Instrução de Preenchimento ');
+
+                $this->pdf->setFillColor(255, 255, 255);
+                $this->pdf->rect(10, $rdata->PageInformations->heightStudentsInformation - $rdata->PageInformations->lengthStudentsInformation * 0.264583333 - 1 + $yStudentePositionEnd + 5 + 5, $widthPageUse, 20, 'DF');
+
+                $this->pdf->setFont('Courier', 'I', 15);
+
+                $this->pdf->text(20, $rdata->PageInformations->heightStudentsInformation - $rdata->PageInformations->lengthStudentsInformation * 0.264583333 - 1 + $yStudentePositionEnd + 5 + 12, 'Preencha as bolinhas completamente');
+
+                $this->pdf->text(20, $rdata->PageInformations->heightStudentsInformation - $rdata->PageInformations->lengthStudentsInformation * 0.264583333 - 1 + $yStudentePositionEnd + 5 + 19, 'Não faça marcas assim:');
+
+                $this->pdf->setFillColor(0, 0, 0);
+                $this->pdf->Circle(135, $rdata->PageInformations->heightStudentsInformation - $rdata->PageInformations->lengthStudentsInformation * 0.264583333 - 1 + $yStudentePositionEnd + 5 + 10, 3, 'F');        //x, y, r, style
+
+                $this->pdf->Circle(97, $rdata->PageInformations->heightStudentsInformation - $rdata->PageInformations->lengthStudentsInformation * 0.264583333 - 1 + $yStudentePositionEnd + 5 + 16, 3, 'F');        //x, y, r, style
+                $this->pdf->Circle(95, $rdata->PageInformations->heightStudentsInformation - $rdata->PageInformations->lengthStudentsInformation * 0.264583333 - 1 + $yStudentePositionEnd + 5 + 17, 3, 'D');        //x, y, r, style
+
+                $this->pdf->Circle(107, $rdata->PageInformations->heightStudentsInformation - $rdata->PageInformations->lengthStudentsInformation * 0.264583333 - 1 + $yStudentePositionEnd + 5 + 17, 1.5, 'F');        //x, y, r, style
+                $this->pdf->Circle(107, $rdata->PageInformations->heightStudentsInformation - $rdata->PageInformations->lengthStudentsInformation * 0.264583333 - 1 + $yStudentePositionEnd + 5 + 17, 3, 'D');        //x, y, r, style
+
+
+                $this->pdf->setFont('Arial', 'B', 12);
+                $this->pdf->Circle(117, $rdata->PageInformations->heightStudentsInformation - $rdata->PageInformations->lengthStudentsInformation * 0.264583333 - 1 + $yStudentePositionEnd + 5 + 17, 3, 'D');        //x, y, r, style
+                $this->pdf->text(116, $rdata->PageInformations->heightStudentsInformation - $rdata->PageInformations->lengthStudentsInformation * 0.264583333 - 1 + $yStudentePositionEnd + 5 + 18, 'x');
+
+                $this->pdf->text(10, $rdata->PageInformations->heightStudentsInformation - $rdata->PageInformations->lengthStudentsInformation * 0.264583333 - 1 + $yStudentePositionEnd + 5 + 33, 'OBSERVAÇÃO IMPORTANTE: Questões rasuradas ou assinaldas duplamente serão anuladas.');
+
+                $this->pdf->text(10, $rdata->PageInformations->heightStudentsInformation - $rdata->PageInformations->lengthStudentsInformation * 0.264583333 - 1 + $yStudentePositionEnd + 5 + 38, 'Pinte toda a bolinha que contiver a letra desejada que corresponde a alternativa correta, de');
+
+                $this->pdf->text(10, $rdata->PageInformations->heightStudentsInformation - $rdata->PageInformations->lengthStudentsInformation * 0.264583333 - 1 + $yStudentePositionEnd + 5 + 43, 'acordo com o enunciado da questão.');
+
+
+                //#####################################
+                //Quadrado 1  --- GR_EXAMS_USE => Número de provas para fazer os quadrados
+                //#####################################
+                for($numExamUseAux = 1; $numExamUseAux <= GR_EXAMS_USE; $numExamUseAux++)
+                {
+                    eval('$quad' . $numExamUseAux . 'ChoiceFont                    =  $rdata->PageInformations->quad' . $numExamUseAux . 'ChoiceFont;');
+                    eval('$quad' . $numExamUseAux . 'ChoiceStyle                   =  $rdata->PageInformations->quad' . $numExamUseAux . 'ChoiceStyle ;');
+                    eval('$quad' . $numExamUseAux . 'ChoiceLength                  =  $rdata->PageInformations->quad' . $numExamUseAux . 'ChoiceLength ;');
+
+                    eval('$quad' . $numExamUseAux . 'TitleLine1Font                = $rdata->PageInformations->quad' . $numExamUseAux . 'TitleLine1Font;');
+                    eval('$quad' . $numExamUseAux . 'TitleLine1Style               = $rdata->PageInformations->quad' . $numExamUseAux . 'TitleLine1Style;');
+                    eval('$quad' . $numExamUseAux . 'TitleLine1Length              = $rdata->PageInformations->quad' . $numExamUseAux . 'TitleLine1Length;');
+                    eval('$quad' . $numExamUseAux . 'TitleLine1                    = $rdata->PageInformations->quad' . $numExamUseAux . 'TitleLine1Description;');
+
+                    eval('$quad' . $numExamUseAux . 'TitleLine2Font                = $rdata->PageInformations->quad' . $numExamUseAux . 'TitleLine2Font;');
+                    eval('$quad' . $numExamUseAux . 'TitleLine2Style               = $rdata->PageInformations->quad' . $numExamUseAux . 'TitleLine2Style ;');
+                    eval('$quad' . $numExamUseAux . 'TitleLine2Length              = $rdata->PageInformations->quad' . $numExamUseAux . 'TitleLine2Length;');
+                    eval('$quad' . $numExamUseAux . 'TitleLine2                    = $rdata->PageInformations->quad' . $numExamUseAux . 'TitleLine2Description;');
+
+                    eval('$quad' . $numExamUseAux . 'NumberFont                    = $rdata->PageInformations->quad' . $numExamUseAux . 'number2Font;');
+                    eval('$quad' . $numExamUseAux . 'NumberStyle                   = $rdata->PageInformations->quad' . $numExamUseAux . 'number2Style;');
+                    eval('$quad' . $numExamUseAux . 'NumberLength                  = $rdata->PageInformations->quad' . $numExamUseAux . 'number2Length;');
+
+                    eval('$choicesUse                                              = $rdata->PageInformations->quad' . $numExamUseAux . 'ChoicesUse;');
+                    eval('$quad' . $numExamUseAux . 'X                             = $rdata->PageInformations->quad' . $numExamUseAux . 'X;');
+                    eval('$quad' . $numExamUseAux . 'Y                             = $rdata->PageInformations->quad' . $numExamUseAux . 'Y;');
+                    eval('$quad' . $numExamUseAux . 'Widht                         = $rdata->PageInformations->quad' . $numExamUseAux . 'Widht ;');
+                    eval('$quad' . $numExamUseAux . 'Heigth                        = $rdata->PageInformations->quad' . $numExamUseAux . 'Heigth;');
+                    eval('$quad' . $numExamUseAux . 'Rad                           = $rdata->PageInformations->quad' . $numExamUseAux . 'Rad;');
+                    eval('$quad' . $numExamUseAux . '_2Height                      = $rdata->PageInformations->quad' . $numExamUseAux . '_2Height ;');
+                    eval('$quad' . $numExamUseAux . 'Part2Heigth                   = $quad' . $numExamUseAux . 'Heigth + $quad' . $numExamUseAux . '_2Height;');
+                    eval('$quad' . $numExamUseAux . 'NumberQuestions               = $rdata->PageInformations->quad' . $numExamUseAux . 'NumberQuestions;');
+                    eval('$quad' . $numExamUseAux . 'SpaceBetweenQuestionsX        = $rdata->PageInformations->quad' . $numExamUseAux . 'SpaceBetweenQuestionsX ;');
+                    eval('$quad' . $numExamUseAux . 'SpaceBetweenQuestionsY        = $rdata->PageInformations->quad' . $numExamUseAux . 'SpaceBetweenQuestionsY;');
+                    eval('$quad' . $numExamUseAux . 'SpaceBetweenQuadFirstQuestionY = $rdata->PageInformations->quad' . $numExamUseAux . 'SpaceBetweenQuadFirstQuestionY;');
+                    eval('$quad' . $numExamUseAux . 'SpaceBetweenQuadFirstQuestionX = $rdata->PageInformations->quad' . $numExamUseAux . 'SpaceBetweenQuadFirstQuestionX;');
+                    eval('$quad' . $numExamUseAux . 'NumberChoices                 = $rdata->PageInformations->quad' . $numExamUseAux . 'NumberChoices;');
+                    eval('$quad' . $numExamUseAux . 'SpaceNumberCircle             = $rdata->PageInformations->quad' . $numExamUseAux . 'SpaceNumberCircle;');
+                    eval('$quad' . $numExamUseAux . 'NumberBeginToWriter           = $rdata->PageInformations->quad' . $numExamUseAux . 'NumberBeginToWriter;');
+
+                    eval('$this->pdf->rect($quad' . $numExamUseAux . 'X, $quad' . $numExamUseAux . 'Y, $quad' . $numExamUseAux . 'Widht, $quad' . $numExamUseAux . 'Heigth, \'D\');');
+                    eval('$this->pdf->rect($quad' . $numExamUseAux . 'X, $quad' . $numExamUseAux . 'Y + $quad' . $numExamUseAux . 'Heigth, $quad' . $numExamUseAux . 'Widht, $quad' . $numExamUseAux . 'Part2Heigth, \'D\');');
+
+                    eval('$this->pdf->setFont($quad' . $numExamUseAux . 'TitleLine1Font, $quad' . $numExamUseAux . 'TitleLine1Style, $quad' . $numExamUseAux . 'TitleLine1Length);');
+                    eval('$this->pdf->text($quad' . $numExamUseAux . 'X + ($quad' . $numExamUseAux . 'Widht)/2 - $this->pdf->getStringWidth($quad' . $numExamUseAux . 'TitleLine1)/2, $quad' . $numExamUseAux . 'Y + $quad' . $numExamUseAux . 'TitleLine1Length * 0.264583333 + 1, $quad' . $numExamUseAux . 'TitleLine1);');   //Linha 1 do título
+
+                    eval('$this->pdf->setFont($quad' . $numExamUseAux . 'TitleLine2Font, $quad' . $numExamUseAux . 'TitleLine2Style, $quad' . $numExamUseAux . 'TitleLine2Length);');
+                    eval('$this->pdf->text($quad' . $numExamUseAux . 'X + ($quad' . $numExamUseAux . 'Widht)/2 - $this->pdf->getStringWidth($quad' . $numExamUseAux . 'TitleLine2)/2, $quad' . $numExamUseAux . 'Y + $quad' . $numExamUseAux . 'TitleLine2Length * 0.264583333 + 3 + ($quad' . $numExamUseAux . 'TitleLine1Length * 0.264583333) , $quad' . $numExamUseAux . 'TitleLine2);'); //Linha 2 do título
+
+                    eval('$quad' . $numExamUseAux . 'YAux = $quad' . $numExamUseAux . 'Y;');
+                    eval('for($quad' . $numExamUseAux . 'AuxCont = 1; $quad' . $numExamUseAux . 'AuxCont <= $quad' . $numExamUseAux . 'NumberQuestions; $quad' . $numExamUseAux . 'AuxCont++ )
+                    {
+                        for($quad' . $numExamUseAux . 'NumberChoicesAux = 1; $quad' . $numExamUseAux . 'NumberChoicesAux <= $quad' . $numExamUseAux . 'NumberChoices; $quad' . $numExamUseAux . 'NumberChoicesAux++)
+                        {
+                            $this->pdf->Circle($quad' . $numExamUseAux . 'X + $quad' . $numExamUseAux . 'SpaceBetweenQuestionsX * $quad' . $numExamUseAux . 'NumberChoicesAux + $quad' . $numExamUseAux . 'SpaceBetweenQuadFirstQuestionX,  $quad' . $numExamUseAux . 'YAux + $quad' . $numExamUseAux . 'Heigth + ($quad' . $numExamUseAux . 'Heigth/$quad' . $numExamUseAux . 'NumberChoices) + $quad' . $numExamUseAux . 'SpaceBetweenQuadFirstQuestionY , $quad' . $numExamUseAux . 'Rad, \'D\');        //x, y, r, style
+                        }
+                        $quad' . $numExamUseAux . 'YAux += $quad' . $numExamUseAux . 'SpaceBetweenQuestionsY;
+                    }');
+
+                    eval('$quad' . $numExamUseAux . 'YAux = $quad' . $numExamUseAux . 'Y;');
+                    eval('for($quad' . $numExamUseAux . 'AuxCont = 1; $quad' . $numExamUseAux . 'AuxCont <= $quad' . $numExamUseAux . 'NumberQuestions; $quad' . $numExamUseAux . 'AuxCont++ )
+                    {
+                        $this->pdf->setFont($quad' . $numExamUseAux . 'NumberFont, $quad' . $numExamUseAux . 'NumberStyle, $quad' . $numExamUseAux . 'NumberLength);
+                        $this->pdf->text($quad' . $numExamUseAux . 'X + $quad' . $numExamUseAux . 'SpaceBetweenQuadFirstQuestionX/2, $quad' . $numExamUseAux . 'YAux + $quad' . $numExamUseAux . 'Heigth + ($quad' . $numExamUseAux . 'Heigth/$quad' . $numExamUseAux . 'NumberChoices) + $quad' . $numExamUseAux . 'SpaceBetweenQuadFirstQuestionY + $quad1Rad/2, $quad' . $numExamUseAux . 'NumberBeginToWriter);
+
+                        $quad' . $numExamUseAux . 'NumberBeginToWriter++;
+
+                        $this->pdf->setFont($quad' . $numExamUseAux . 'ChoiceFont, $quad' . $numExamUseAux . 'ChoiceStyle, $quad' . $numExamUseAux . 'ChoiceLength);
+                        for($quad' . $numExamUseAux . 'NumberChoicesAux = 1; $quad' . $numExamUseAux . 'NumberChoicesAux <= $quad' . $numExamUseAux . 'NumberChoices; $quad' . $numExamUseAux . 'NumberChoicesAux++)
+                        {
+                            $this->pdf->text($quad' . $numExamUseAux . 'X + $quad' . $numExamUseAux . 'SpaceBetweenQuestionsX * $quad' . $numExamUseAux . 'NumberChoicesAux + $quad' . $numExamUseAux . 'SpaceBetweenQuadFirstQuestionX - $quad' . $numExamUseAux . 'Rad/2 , $quad' . $numExamUseAux . 'YAux + $quad' . $numExamUseAux . 'Heigth + ($quad' . $numExamUseAux . 'Heigth/$quad' . $numExamUseAux . 'NumberChoices) + $quad' . $numExamUseAux . 'SpaceBetweenQuadFirstQuestionY + $quad' . $numExamUseAux . 'Rad/2, $choicesUse[$quad' . $numExamUseAux . 'NumberChoicesAux-1]);
+                        }
+                        $quad' . $numExamUseAux . 'YAux += $quad' . $numExamUseAux . 'SpaceBetweenQuestionsY;
+                    }');
+                }
+                //#####################################
+
+                $this->pdf->Line(20, 280, 70, 280);
+                $this->pdf->text(33, 280 + 3, 'Local e data');
+
+                $this->pdf->Line(80, 280, 130, 280);
+                $this->pdf->text(93, 280 + 3, 'Fiscal de sala');
+
+                $this->pdf->Line(140, 280, 190, 280);
+                $this->pdf->text(140, 280 + 3, 'Rubrica do(a) candidato(a)');
+        }
+    }
+}
+
+?>

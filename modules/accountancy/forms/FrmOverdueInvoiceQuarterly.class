@@ -1,0 +1,316 @@
+<?php
+/**
+ *
+ * This file handles view of Overdue invoice (quarterly)
+ *
+ * @author Armando Taffarel Neto [taffarel@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Armando Taffarel Neto [taffarel@solis.coop.br]
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 11/07/2006
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ */
+class FrmOverdueInvoiceQuarterly extends MForm
+{
+    private $home;
+    private $module;
+
+    /**
+     * Class constructor
+     */
+    function __construct($data)
+    {
+        $module = MIOLO::getCurrentModule();
+
+        $this->home   = $data->home;
+
+        parent::__construct(_M('Overdue invoice (quarterly)', $module));
+
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+
+    }
+
+    /**
+     *  Default method to define fields
+     */
+    public function createFields()
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+
+        $toolBar = new MToolBar('toolBar',$MIOLO->getActionURL($module,$action));
+        
+        $toolBar->disableButton('tbBtnDelete');
+        $toolBar->disableButton('tbBtnPrint');
+        $toolBar->disableButton('tbBtnSave');
+        $toolBar->disableButton('tbBtnSearch');
+        $toolBar->disableButton('tbBtnNew');
+
+        //favoritos
+        $enabledImage  = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-20x20.png');
+        $disabledImage = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-disabled-20x20.png');
+        $url           = $MIOLO->getActionURL($module, $this->home, null, array('function' => 'search', 'event' => 'bookmark'));
+        $toolBar->addButton('tbBtnBookmark', _M('Add to bookmarks', 'basic'), $url, null, true, $enabledImage, $disabledImage);
+
+        if ( MIOLO::_request('event') == 'bookmark' )
+        {
+            $MIOLO->getClass('basic', 'access');
+            access::insert('Overdue invoice (quarterly)', $this->home, 'overdueInvoiceQuarterly-16x16.png', true);
+        }
+        //fim favoritos
+       
+        $fields[] = $toolBar;
+
+        // limitDate
+        $limitDateLabel = new MText('limitDateLabel', _M('Limit date', $module).':');
+        $limitDateLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $limitDateLabel->setClass('m-caption m-caption-required');
+        $limitDate      = new MCalendarField('limitDate', $this->getFormValue('limitDate',$data->limitDate), '', FIELD_DATE_SIZE);
+        $limitDate->setJsHint(_M('Enter the limit date',$module));
+        $validators[] = new MDATEDMYValidator('limitDate', '', 'required');
+        $fields[] = new MHContainer('hctLimitDate', array($limitDateLabel, $limitDate));
+
+        // baseDate
+        $baseDateLabel = new MText('baseDateLabel', _M('Base date', $module).':');
+        $baseDateLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $baseDateLabel->setClass('m-caption m-caption-required');
+        $baseDate      = new MCalendarField('baseDate', $this->getFormValue('baseDate',$data->baseDate), '', FIELD_DATE_SIZE);
+        $baseDate->setJsHint(_M('Enter the base date',$module));
+        $validators[] = new MDATEDMYValidator('baseDate', '', 'required');
+        $fields[] = new MHContainer('hctBaseDate', array($baseDateLabel, $baseDate));
+        
+        $fields[] = new MButton('btnGenerate',_M('Generate',$module));
+        $fields[] = new Separator('');
+
+        $this->setFields($fields);
+        $this->setValidators($validators);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+        $this->setClose($MIOLO->getActionURL($module, substr($action, 0, strrpos($action, ':'))));
+
+    }
+
+    /**
+     * Event triggered when user chooses Generate button
+     **/
+    public function btnGenerate_click($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+        
+        set_time_limit(0);
+        
+        $filters->limitDate = $this->getFormValue('limitDate');
+        $filters->baseDate  = $this->getFormValue('baseDate');
+        
+        $business = $this->manager->getBusiness($module,'BusOverdueInvoiceQuarterly');
+        
+        $dates = $business->getQuarterlyDates($filters);
+
+        $business->createTempTable();
+        
+        foreach ( $dates as $key => $value )
+        {
+            $filters->limitDate   = $value;
+            $filters->previousDate = $dates[$key+1];
+            
+            if ( strlen((string)$filters->previousDate) > 0 )
+            {
+                $filters->description = _M('Month', $module) . ' ' . ($key+1) . ' - ' . $filters->previousDate .
+                                        ' ' . _M('to', $module) . ' ' . $filters->limitDate;
+            }
+            else
+            {
+                $filters->description = _M('Month', $module) . ' ' . ($key+1) . ' - ' . $filters->limitDate .
+                                        ' ' . _M('backwards', $module);
+            }
+
+            $business->insertIntoTempTable($filters);
+        }
+        
+
+        $data = $business->getData();
+        
+        $header = array(
+                        _M('Course',       $module),
+                        _M('Description',  $module),
+                        _M('Balance',      $module)
+                       );    
+                       
+        $content[] = array(null, null, null);
+
+        $content[] = array(
+                            FINANCE::formatAccountSchemeId($data[0][0]),
+                            ' - ' . $data[0][2],
+                            null
+                            );
+
+        $line->accountSchemeId = $data[0][0];
+        
+        $fileContent[] = _M('Overdue invoice (quarterly) report', $module);
+        $fileContent[] = null;
+        $fileContent[] = _M('Account name', $module) . ';' .
+                         _M('Course id',    $module) . ';' .
+                         _M('Period',       $module) . ';' .
+                         _M('Course name',  $module) . ';' .
+                         _M('Balance', $module);
+
+        foreach ( $data as $value )
+        {
+            if ( $value[0] != $line->accountSchemeId )
+            {
+                if ( is_array($total) )
+                {
+                    $total = SAGU::calcNumber(implode(' + ', $total));
+                    $totalTotal[] = $total;
+                }                         
+
+                $content[] = array(
+                                    null,
+                                    null,
+                                    _M('Total', $module) . ': ' . FINANCE::formatFinanceReportNumber($total)
+                                   );
+
+                $content[] = array(null, null, null);
+                
+                $fileContent[] = _M('Account total', $module) . ';' .
+                                 ';' .
+                                 ';' .
+                                 ';' .
+                                 FINANCE::formatFinanceReportNumber($total);
+                                 
+                unset($total);
+                
+                $content[] = array(
+                                    FINANCE::formatAccountSchemeId($value[0]),
+                                    ' - ' . $value[2],
+                                    null
+                                   );
+            }
+            
+            list (
+                    $line->accountSchemeId,
+                    $line->courseId,
+                    $line->courseName,
+                    $line->balance,
+                    $line->description
+                  ) = $value;
+                  
+            $content[] = array(
+                                $line->courseId,
+                                $line->description . ': ' . $line->courseName,
+                                FINANCE::formatFinanceReportNumber($line->balance)
+                               );
+                               
+            $fileContent[] = FINANCE::formatAccountSchemeId($value[0]) . ' - ' . $value[2] . ';' .
+                             $line->courseId . ';' .
+                             $line->description . ';' .
+                             $line->courseName . ';' .
+                             FINANCE::formatFinanceReportNumber($line->balance);
+            
+            $total[] = $line->balance;
+        }
+
+
+        if ( is_array($total) )
+        {
+            $total = SAGU::calcNumber(implode(' + ', $total));
+            $totalTotal[] = $total;
+        }                         
+        $content[] = array(
+                            null,
+                            null,
+                            _M('Total', $module) . ': ' . FINANCE::formatFinanceReportNumber($total)
+                            );
+                            
+        $fileContent[] = _M('Account total', $module) . ';' .
+                            ';' .
+                            ';' .
+                            ';' .
+                            FINANCE::formatFinanceReportNumber($total);
+        unset($total);
+
+        if ( is_array($totalTotal) )
+        {
+            $total = SAGU::calcNumber(implode(' + ', $totalTotal));
+        }
+        
+        $fileContent[] = null;
+        $fileContent[] = _M('Grand total', $module) . ';' .
+                         ';' . 
+                         ';' .
+                         ';' .
+                         FINANCE::formatFinanceReportNumber($total);
+        
+        $content[] = array(null, null, null);
+        $content[] = array(
+                            '<b>' . _M('Balance', $module) . '</b>',
+                            null,
+                            '<b>' . FINANCE::formatFinanceReportNumber($total) . '</b>'
+                           );
+
+        $table = new MTableRaw('', $content, $header);
+        $table->setAlternate(true);
+        
+        $tables[] = $table;
+        $tables[] = new MSeparator();
+        $this->addFields($tables);
+
+        
+        $hiddenData = new MHiddenField('hiddenData', urlencode(serialize($fileContent)));
+        $fields[] = $hiddenData;
+        
+        $fields[] = new MButton('btnFile',_M('Generate',$module) . ' balance.txt');
+        $fields[] = new Separator('');
+
+        $this->addFields($fields);
+    }
+    /**
+     * Event triggered when user chooses File from the toolbar
+     **/
+    public function btnFile_click($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $fileContent = implode(unserialize(urldecode(stripslashes($this->getFormValue('hiddenData')))), chr(hexdec("\X0D\X0A")));
+        $fileContent.= chr(hexdec("\X0D\X0A"));        
+        
+        SAGU::returnAsFile('balance-' . date(dmY) . '.txt', $fileContent, 'text/incentive-file');
+        
+    }
+    
+}
+
+?>

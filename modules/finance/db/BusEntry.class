@@ -1,0 +1,1039 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for finEntry table
+ *
+ * @author William Prigol Lopes [william@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * Rafael Luís Spengler [rafael@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * Armando Taffarel Neto [taffarel@solis.coop.br]
+ *
+ * @since
+ * Class created on 13/12/2005
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to manipulate the Entry table
+ **/
+class BusinessFinanceBusEntry extends MBusiness
+{
+    public $db;
+    
+    function __construct()
+    {
+        $this->db = $this->getDatabase();
+    }
+
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module = is_null($module) ? 'finance' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+    /**
+     * List all records from the table handled by the class
+     *
+     * @param: None
+     *
+     * @returns (array): Return an array with the entire table
+     *
+     **/
+    public function listEntry()
+    {
+    }
+
+
+   /** 
+    * Get all date and descriptions of operations
+    * 
+    * @args: $invoiceId (int): InvoiceId
+    *
+    * @param: An array containing information about agreements
+    *
+    */
+    public function listEntryWithAgreements($invoiceId, $operationTypeId = null)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+
+        $sql = 'SELECT TO_CHAR( B.entryDate, \''. MASK_DATE . '\'),
+                       A.operationId || \' - \' || description 
+                  FROM finOperation A,
+                       finEntry B
+                 WHERE A.operationId = B.operationId
+                   AND invoiceId = ? ';
+        $args[] = $invoiceId;
+        
+        if (strlen((string)$operationTypeId)>0)
+        {
+            $sql.= ' AND operationTypeId = ? ';
+            $args[] = $operationTypeId;
+        }
+        $return = $this->db->query(SAGU::prepare($sql, $args));
+        return $return; 
+    }
+    
+    /**
+     * List all manual records from the table handled by the class by a specific period
+     *
+     * @param: $data (object): Initial and final date 
+     *
+     * @returns (array): Return an array with the entire table
+     *
+     **/
+    public function listManualEntries($data)
+    {
+        $sql = ' SELECT B.personId,
+                        (SELECT name 
+                      FROM ONLY basPerson
+                          WHERE basPerson.personId = B.personId ),
+                        A.invoiceId,
+                        A.operationId,
+                        C.description as operationDescription,
+                        ROUND(A.value, '.REAL_ROUND_VALUE.'),
+                        TO_CHAR(A.entryDate, \''.MASK_DATE.'\'),
+                        TO_CHAR(A.dateTime, \''.MASK_DATE.' '.MASK_TIME.'\'),
+                        A.userName
+                   FROM finEntry A
+             INNER JOIN finInvoice B
+                  USING (invoiceId)
+             INNER JOIN finOperation C
+                  USING (operationId)
+                  WHERE
+                  ( A.entryDate BETWEEN TO_DATE(?, \''.MASK_DATE.'\')
+                                    AND TO_DATE(?, \''.MASK_DATE.'\')
+                  OR
+                    A.dateTime BETWEEN TO_DATE(?, \''.MASK_DATE.'\')
+                                   AND TO_DATE(?, \''.MASK_DATE.'\')
+                  )
+                    AND creationType = \''.MANUAL_ENTRY_CREATION_TYPE.'\'
+               GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9, entryDate
+               ORDER BY entryDate, 
+                        2 ';
+
+        $args = array($data->beginRegisterDate,
+                      $data->endRegisterDate,
+                      $data->beginRegisterDate,
+                      $data->endRegisterDate
+                      );
+        
+        $return = $this->db->query(SAGU::prepare($sql, $args));
+
+        return $return;
+    }
+
+    
+
+    /**
+     * Return a specific record from the database
+     *
+     * @param $invoiceId (integer): Primary key of the record to be retrieved
+     *
+     * @return (object): Return an object of the type handled by the class
+     *
+     **/
+    public function getCostCenterEntry($invoiceId)
+    {
+        $sql = 'SELECT A.costcenterId
+                  FROM finEntry A
+                 WHERE A.invoiceId = ?
+                 GROUP BY 1
+                 LIMIT 1 ';
+
+        $result = $this->db->query(SAGU::prepare($sql,$invoiceId));
+
+        $entry = new FinEntry();
+
+        list ( $entry->costCenterId ) = $result[0];
+
+        return $entry;
+
+    }
+
+    /**
+     * Return a specific record from the database
+     *
+     * @param $entryId (integer): Primary key of the record to be retrieved
+     *
+     * @return (object): Return an object of the type handled by the class
+     *
+     **/
+    public function getEntry($entryId)
+    {
+        $sql = 'SELECT A.invoiceId,
+                        A.operationId,
+                        TO_CHAR(A.entryDate,\'' . MASK_DATE . '\'),
+                        A.value,
+                        A.costCenterId,
+                        A.comments,
+                        A.bankReturnCode,
+                        A.isAccounted,
+                        A.userName,
+                        TO_CHAR(A.dateTime,\'' . MASK_DATE . '\')
+                  FROM finEntry A
+                 WHERE A.entryId = ?';
+
+        $result = $this->db->query(SAGU::prepare($sql,$entryId));
+
+        $entry = new FinEntry();
+
+        list ($entry->invoiceId,
+               $entry->operationId,
+               $entry->entryDate,
+               $entry->value,
+               $entry->costCenterId,
+               $entry->comments,
+               $entry->bankReturnCode,
+               $entry->isAccounted,
+               $entry->userName,
+               $entry->dateTime,
+               $entryId ) = $result[0];
+
+        return $entry;
+
+    }
+
+    /**
+     * Do a search on the database table handled by the class
+     *
+     * @param $filters (object): Search filters
+     *
+     * @return (array): An array containing the search results
+     **/
+    public function searchEntry($data)
+    {        
+        $sql = 'SELECT A.entryId,
+                        A.invoiceId,
+                        A.operationId,
+                        B.description,
+                        TO_CHAR(A.entryDate,\'' . MASK_DATE . '\'),
+                        ROUND(A.value, \'' . REAL_ROUND_VALUE . '\'),
+                        A.costCenterId,
+                        C.description,
+                        A.bankReturnCode,
+                        isAccounted,
+						TO_CHAR(A.datetime,\'dd/mm/yyyy hh:mm:ss\'),
+   						TO_CHAR(A.datetime,\'ddmmyyyyhhmmss\')
+              FROM finEntry A
+            LEFT JOIN finOperation B
+                   ON (A.operationId = B.operationId)
+            LEFT JOIN accCostCenter C
+                   ON (A.costCenterId = C.costCenterId)
+            LEFT JOIN ( SELECT invoiceId,
+                               personId 
+                     FROM ONLY finReceivableInvoice) AS D
+                   ON (A.invoiceId = D.invoiceId)
+            LEFT JOIN (SELECT personId,
+                              name 
+                    FROM ONLY basPerson ) AS E
+                   ON (D.personId = E.personId) ';
+
+        $where = '';
+        unset($args);
+        if ( strlen((string)$data->entryId) > 0 )
+        {
+            $where .= '    AND   A.entryId = ?';
+            $args[] = $data->entryId;
+        }
+        if ( strlen((string)$data->personId) > 0 )
+        {
+            $where .= '    AND   E.personId = ?';
+            $args[] = $data->personId;
+        }
+        if ( strlen((string)$data->personName) > 0 )
+        {
+            $where .= '    AND   E.name ilike ? ';
+            $args[] = $data->personName.'%';
+        }
+        if ( strlen((string)$data->invoiceId) > 0 )
+        {
+            $where .= '    AND   A.invoiceId = ?';
+            $args[] = $data->invoiceId;
+        }
+        if ( strlen((string)$data->operationId) > 0 )
+        {
+            $where .= '    AND   A.operationId = ?';
+            $args[] = $data->operationId;
+        }
+        if ( strlen((string)$data->entryDate) > 0 )
+        {
+            $where .= '    AND   A.entryDate = TO_DATE(?,\'' . MASK_DATE . '\')';
+            $args[] = $data->entryDate;
+        }
+        if ( strlen((string)$data->value) > 0 )
+        {
+            $where .= '    AND   A.value = ?';
+            $args[] = $data->value;
+        }
+        if ( strlen((string)$data->costCenterId) > 0 )
+        {
+            $where .= '    AND   A.costCenterId = ?';
+            $args[] = $data->costCenterId;
+        }
+        if ( strlen((string)$data->bankReturnCode) > 0 )
+        {
+            $where .= '    AND   A.bankReturnCode ILIKE ?';
+            $args[] = $data->bankReturnCode;
+        }
+        if ( strlen((string)$data->isAccounted) > 0 )
+        {
+            $where .= '    AND   A.isAccounted = ?';
+            $args[] = $data->isAccounted;
+        }
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE ' . substr($where,8) .
+                    ' ORDER BY B.description';
+            $result = $this->db->query(SAGU::prepare($sql,$args));
+        }
+
+        return $result;
+
+    }
+
+    /**
+     * Insert a new record
+     *
+     * @param $data (object): An object of the type handled by the class
+     *
+     * @return If succed, return the invoice id. Otherwise return FALSE.
+     *
+     **/
+    public function insertEntry($data)
+    {
+        $sql = ' INSERT INTO finEntry
+                            ( invoiceId,
+                              operationId,
+                              entryDate,
+                              value,
+                              costCenterId,
+                              comments,
+                              bankReturnCode,
+                              isAccounted,
+                              creationType
+                            )
+                      VALUES (?, ?, to_date(?, \''.MASK_DATE.'\'), ?, ?, ?, ?, ?, ?) ';
+        
+        if (is_null($data->isAccounted))
+        {
+            $data->isAccounted = DB_FALSE;    
+        }
+        $args = array( $data->invoiceId,
+                       $data->operationId,
+                       $this->compareDates($data->entryDate), 
+                       $data->value,
+                       $data->costCenterId,
+                       $data->comments, 
+                       $data->bankReturnCode,
+                       $data->isAccounted,
+                       $data->creationType 
+                     );
+
+         $return = $this->db->execute(SAGU::prepare($sql, $args));
+     
+         if ($this->db->getErrors())
+         {
+            $return = false;
+         }
+         return $return;
+           
+    }
+
+    /**
+     * Update data from a specific record
+     *
+     * @param $data (object): Data which will replace the old record data
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+    public function updateEntry($data)
+    {
+        $sql = 'UPDATE finEntry
+                   SET invoiceId = ?,
+                       operationId = ?,
+                       entryDate = to_date(?, \''.MASK_DATE.'\'),
+                       value = ?,
+                       costCenterId = ?,
+                       comments = ?,
+                       bankReturnCode = ?,
+                       isAccounted = ?
+                 WHERE entryId  = ?';
+        
+        $args = array($data->invoiceId,
+                        $data->operationId,
+                        $this->compareDates($data->entryDate),
+                        $data->value,
+                        $data->costCenterId,
+                        $data->comments,
+                        $data->bankReturnCode,
+                        $data->isAccounted,
+                        $data->entryId);
+
+        $sqls = SAGU::prepare($sql,$args);
+        for ( $i=0; $i<count($sqls); $i++ )
+        {
+            $result = $this->db->execute($sqls[$i]);
+        }
+
+        return $result;
+
+    }
+
+    /**
+     *
+     * Update the entry comments
+     *
+     * @param: $entryData
+     *
+     * @return: True if runs otherwise false
+     * 
+     */    
+     public function updateEntryComments($entryData)
+     {
+        $sql = ' UPDATE finEntry
+                    SET comments = ? 
+                  WHERE entryId = ? ';
+        
+        $args = array($entryData->comments,
+                      $entryData->entryId);
+                      
+        
+        $return = $this->db->execute(SAGU::prepare($sql, $args));
+        return $return;
+     }
+
+    /**
+     * Delete a record
+     *
+     * @param $invoiceId (integer): Primary key for deletion
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+    public function deleteEntry($entryId, $deleteCounterMovement = false)
+    {
+
+        $this->db->execute('BEGIN');
+
+        if ( $deleteCounterMovement == true )
+        {
+            $sql = 'DELETE FROM finCounterMovement
+                          WHERE entryId = ?';
+            $this->db->execute(SAGU::prepare($sql,$entryId));
+        }
+
+        $sql = 'DELETE FROM finEntry
+                      WHERE entryId = ?';
+        $this->db->execute(SAGU::prepare($sql,$entryId));
+
+        return $this->db->execute('COMMIT');;
+
+    }
+
+
+    /**
+     * List all entries for a invoice
+     *
+     * @param $invoiceId (int): Primary key for invoice (foreign key for entry)
+     *        $operationTypeModel(int): Model for operationTypeModel: 1 - OperationType: description
+     *                                                                2 - description
+     *                                                                3 - description$comments
+     *
+     * @returns (array): Array contanining entries for the invoice
+     *
+     */
+     public function listEntryData($invoiceId, $operationTypeModel = 1)
+     {
+                $sql = '     SELECT A.invoiceId,
+                                    A.entryId, 
+                                    A.operationId, ';
+
+            if ($operationTypeModel == 2)
+            {
+                $sql.='
+                                B.description, ';
+            }
+            elseif ($operationTypeModel == 3)
+            {
+                $sql.='
+                                B.description||COALESCE(\' - \'||A.comments, \'\'), ';
+            }
+            elseif ($operationTypeModel == 4)
+            {
+                $sql.='     
+                                B.operationTypeId|| \': \' ||B.description||\'<br>\'||COALESCE(A.comments, \'\'), ';
+            }
+            else
+            {
+                $sql.='
+                                B.operationTypeId || \': \' || B.description, ';
+            }
+
+            $sql.='           TO_CHAR(A.entryDate, \'' . MASK_DATE . '\'),
+                              creationType,
+                              ROUND(A.value, 2),
+                              isAccounted,
+                              C.bankInvoiceId,
+                              C.status
+                         FROM finEntry A
+                   INNER JOIN ONLY finInvoice C ON A.invoiceId = C.invoiceId
+                   INNER JOIN finOperation B
+                        USING (operationId)
+                        WHERE A.invoiceId = ?
+                     ORDER BY A.entryDate ';
+
+            $args   = array($invoiceId);
+            $return = $this->db->query(SAGU::prepare($sql, $args));
+            return $return;
+     }
+
+
+    /**
+     * List all payments
+     *
+     * @param: $personId (int): Id for person to list the payments
+     *
+     * @return (array): Array containing the payments
+     *
+     */
+    public function listPayments($personId)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $sql = '     SELECT B.invoiceId,
+                            TO_CHAR(B.maturityDate, \'' . MASK_DATE . '\'),
+                            B.courseId,
+                            A.operationId||\' - \'||(SELECT description
+                                                       FROM finOperation
+                                                      WHERE finOperation.operationId=A.operationId),
+                            TO_CHAR(A.entryDate, \'' . MASK_DATE . '\'),
+                            round(A.value, ' . REAL_ROUND_VALUE . '),
+                            (SELECT bankTaxValue
+                               FROM finPolicy
+                              WHERE finPolicy.policyId = B.policyId)
+                       FROM (SELECT invoiceId,
+                                    operationId,
+                                    entryDate,
+                                    value
+                               FROM finEntry 
+                              WHERE operationId IN (' . PUPIL_PAYMENT_OPERATIONS . ')
+                            ) AS A
+                 INNER JOIN (SELECT invoiceId,
+                                    maturityDate,
+                                    courseId,
+                                    policyId
+                          FROM ONLY finReceivableInvoice
+                              WHERE personId = ? ) AS B
+                      USING (invoiceId)
+                   ORDER BY entryDate DESC';
+
+        
+        if (strlen((string)PUPIL_PAYMENT_OPERATIONS)>0)
+        {
+            $args = array($personId);
+            $return = $this->db->query(SAGU::prepare($sql, $args));
+            return $return;
+        }
+        else
+        {
+            $MIOLO->error(_M('The system constant PUPIL_PAYMENT_OPERATIONS does not exists. Please create correctly to enable this function.', $module));
+            return false;
+        }
+    }
+    
+    /**
+     * Get a sum for all payments
+     *
+     * @param: $personId (int): Id for person to list the payments
+     *
+     * @return (array): Array containing the payments
+     *
+     */
+    public function getTotalPayments($personId)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $sql = '     SELECT round(sum(A.value), ' . REAL_ROUND_VALUE . ')
+                       FROM (SELECT invoiceId,
+                                    value
+                               FROM finEntry 
+                              WHERE operationId IN (' . PUPIL_PAYMENT_OPERATIONS . ')
+                            ) AS A
+                 INNER JOIN (SELECT invoiceId
+                          FROM ONLY finReceivableInvoice
+                              WHERE personId = ? ) AS B
+                      USING (invoiceId) ';
+        
+        if (strlen((string)PUPIL_PAYMENT_OPERATIONS)>0)
+        {
+            $args = array($personId);
+
+            $return = $this->db->query(SAGU::prepare($sql, $args));
+            if (is_array($return[0]))
+            {
+                return $return[0][0];
+            }
+            else
+            {
+                return SAGU::formatNumber('0');
+            }
+        }
+        else
+        {
+            $MIOLO->error(_M('The system constant PUPIL_PAYMENT_OPERATIONS does not exists. Please create correctly to enable this function.', $module));
+            return false;
+        }
+    }
+
+    public function closeAgreementsInvoice($invoices, $comments = 'TÍTULOS FECHADOS PELO PROCESSO DE FECHAMENTO AUTOMATICO DE TITULOS')
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $this->db->execute('BEGIN TRANSACTION');
+        $sql[] = 'INSERT INTO finEntry( username, 
+                                        datetime, 
+                                        ipaddress, 
+                                        invoiceId, 
+                                        value, 
+                                        costcenterId, 
+                                        entryDate, 
+                                        operationId,
+                                        comments) SELECT
+                                        \''.$MIOLO->getLogin()->id.'\' as username,
+                                        now() as datetime,
+                                        \''.$_SERVER['REMOTE_ADDR'].'\'::inet as ipaddress,
+                                        invoiceId,
+                                        balanceWithPolicies(invoiceid)-balance(invoiceId) as interestValue, 
+                                        costcenterid, 
+                                        now()::date as entrydate,
+                                        (SELECT interestoperation FROM ONLY finDefaultOperations LIMIT 1) as operationId,
+                                        \''.$comments.'\' as comments
+                              FROM ONLY finInvoice 
+                                  WHERE (balanceWithPolicies(invoiceid)-balance(invoiceId)) > 0 
+                                    AND invoiceId in ('.implode($invoices,',').')';
+        $sql[] = 'INSERT INTO finEntry( username, 
+                                        datetime, 
+                                        ipaddress, 
+                                        invoiceId, 
+                                        value, 
+                                        costcenterId, 
+                                        entryDate, 
+                                        operationId,
+                                        comments) SELECT
+                                        \''.$MIOLO->getLogin()->id.'\' as username,
+                                        now() as datetime,
+                                        \''.$_SERVER['REMOTE_ADDR'].'\'::inet as ipaddress,
+                                        invoiceId,
+                                        balance(invoiceId) as Value, 
+                                        costcenterid, 
+                                        now()::date as entrydate,
+                                        (SELECT agreementoperation FROM ONLY finDefaultOperations LIMIT 1) as operationId,
+                                        \''.$comments.'\' as comments
+                              FROM ONLY finInvoice 
+                                  WHERE balance(invoiceId) > 0 
+                                    AND invoiceId in ('.implode($invoices,',').')';
+        for($x=0;$x<count($sql);$x++)
+        {
+            $this->db->execute($sql[$x]);
+        }
+        return $this->db->execute('COMMIT');
+    }
+
+    public function insertAgreementsInvoice($data, $invoices)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $this->db->execute('BEGIN TRANSACTION'); 
+        //insert history agreement
+        $sqlX = 'INSERT INTO finAgreementHistory (
+                                                   discount, 
+                                                   balance, 
+                                                   balanceWithPolicies, 
+                                                   parcelsNumber, 
+                                                   inputValue, 
+                                                   maturityDateInput) 
+                                          VALUES (?, ?, ?, ?, ?, TO_DATE(?, \''.MASK_DATE.'\'))';
+        $values = array( 
+            $data->totalDiscountValue, 
+            $data->totalValue, 
+            $data->totalValue, 
+            $data->parcelsNumber,
+            $data->inputValue, 
+            $data->maturityDateInput ); 
+        $this->db->execute(SAGU::prepare($sqlX, $values));
+        $res = $this->db->query('SELECT currval(\'seq_agreementId\')');
+        $data->agreementId = $res[0][0];
+        unset($res);
+        unset($values);
+        unset($sqlX);
+
+        if((float)$data->inputValue > 0)
+        {
+            $sql[] = SAGU::prepare('INSERT INTO finInvoice 
+                      (personId,
+                       value,
+                       policyId, 
+                       accountSchemeId,
+                       costCenterId,
+                       incomeSourceId,
+                       parcelNumber, 
+                       courseId, 
+                       unitId, 
+                       courseVersion, 
+                       comments, 
+                       messageInvoice, 
+                       bankAccountid, 
+                       bankContractId, 
+                       maturityDate, 
+                       emissionDate,
+                       periodId) 
+                       VALUES
+                       (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, TO_DATE(?,\''.MASK_DATE.'\'),now()::date, ?)', 
+                       array($data->personId,
+                        SAGU::formatNumber($data->inputValue),
+                        (strlen((string)$data->policyId) > 0 ) ? $data->policyId : DEFAULT_AGREEMENT_POLICY_ID,
+                        $data->accountSchemeId,
+                        $data->costCenterId,
+                        (strlen((string)$data->incomeSourceId) > 0 ) ? $data->incomeSourceId : AGREEMENT_INCOME_SOURCE_ID,
+                        1,
+                        $data->courseId,
+                        $data->unitId,
+                        $data->courseVersion,
+                        $data->comments,
+                        $data->messageInvoiceInput,
+                        $data->bankAccountId,
+                        $data->bankContractId,
+                        $data->maturityDateInput,
+                        $data->periodId));
+            
+        }
+        for($x=1; $x <= $data->parcelsNumber; $x++)
+        {
+            if( is_array($data->parcelValue) )
+            {
+                $data->parcelValueX = $data->parcelValue[$x];
+                $data->maturityDateX = $data->maturityDate[$x];
+                $data->entryDateX    = $data->entryDate[$x];
+                $data->commentsX = $data->comments[$x];
+                $data->messageInvoiceX = $data->messageInvoice[$x];
+            }
+            else
+            {
+                $data->parcelValueX = $data->parcelValue;
+                $data->maturityDateX = $data->maturityDateInput;
+                $data->entryDateX    = date('d/m/Y');
+                $data->commentsX = $data->comments;
+            }
+            $sql[] = SAGU::prepare('INSERT INTO finInvoice 
+                      (personId,
+                       value,
+                       policyId, 
+                       accountSchemeId,
+                       costCenterId,
+                       incomeSourceId,
+                       parcelNumber, 
+                       courseId, 
+                       unitId, 
+                       courseVersion, 
+                       comments, 
+                       messageInvoice, 
+                       bankAccountid, 
+                       bankContractId, 
+                       maturityDate, 
+                       emissionDate,
+                       periodId ) 
+                       VALUES
+                       (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '. 
+                        ( ( is_array ( $data->maturityDate ) ) ? ' TO_DATE(\''.$data->maturityDateX.'\',\''.MASK_DATE.'\')' : 'TO_DATE(\''.$data->maturityDateX.'\',\''.MASK_DATE.'\')+ interval \''.$x.' month\'') .',now()::date, ?)', 
+                       array($data->personId,
+                        SAGU::formatNumber($data->parcelValueX),
+                        (strlen((string)$data->policyId) > 0 ) ? $data->policyId : DEFAULT_AGREEMENT_POLICY_ID,
+                        $data->accountSchemeId,
+                        $data->costCenterId,
+                        (strlen((string)$data->incomeSourceId) > 0 ) ? $data->incomeSourceId : AGREEMENT_INCOME_SOURCE_ID,
+                        (((float)$data->inputValue > 0 ) ? $x+1 : $x),
+                        $data->courseId,
+                        $data->unitId,
+                        $data->courseVersion,
+                        $data->commentsX,
+                        $data->messageInvoiceX,
+                        $data->bankAccountId,
+                        $data->bankContractId,
+                        $data->periodId));
+        }
+        $ok = true;
+        $sql[] = 'INSERT INTO finAgreementHistoryParcels (agreementId, invoiceId, invoiceType, userName, ipAddress, dateTime) SELECT '.$data->agreementId.',I.invoiceId, \'O\',I.userName, I.ipAddress, I.dateTime FROM ONLY finInvoice I LEFT JOIN ONLY finReceivableInvoice II USING (invoiceId) WHERE II.invoiceId IS NULL';
+        $sql[] = 'INSERT INTO finAgreementHistoryParcels (agreementId, invoiceId, invoiceType, userName, ipAddress, dateTime)
+        SELECT '.$data->agreementId.', I.invoiceId, \'I\',\''.$MIOLO->getLogin()->id.'\', \''.$_SERVER['REMOTE_ADDR'].'\', now() FROM ONLY finInvoice I WHERE I.invoiceId IN ('.implode($invoices,',').')';
+        $sql[] = 'insert into finreceivableinvoice
+                (invoiceid,
+                username,
+                datetime,
+                ipaddress,
+                personid,' . ( strlen((string)$data->contractId) > 0 ? 'contractId, ': '') . '
+                accountschemeid,
+                costcenterid,
+                unitid,
+                parcelnumber,
+                emissiondate,
+                maturitydate,
+                value,
+                policyid,
+                bankinvoiceid,
+                comments,
+                incomesourceid,
+                bankaccountid,
+                bankcontractid,
+                messageinvoice,
+                periodId) 
+            SELECT I.invoiceid,I.username,
+                I.datetime,
+                I.ipaddress,
+                I.personid, ' . ( strlen((string)$data->contractId) > 0 ? ( $data->contractId . ',' ) : '') . '
+                I.accountschemeid,
+                I.costcenterid,
+                I.unitid,
+                I.parcelnumber,
+                I.emissiondate,
+                I.maturitydate,
+                I.value,
+                I.policyid,
+                I.bankinvoiceid,
+                I.comments,
+                I.incomesourceid,
+                I.bankaccountid,
+                I.bankcontractid,
+                I.messageinvoice,
+                I.periodId
+                FROM only fininvoice I 
+                left join only finreceivableinvoice II using (invoiceid) 
+                WHERE II.invoiceid IS Null';
+        $sql[] = '
+            INSERT INTO finEntry 
+            (username, 
+            ipaddress, 
+            datetime, 
+            invoiceid, 
+            operationid, 
+            entrydate, 
+            value, 
+            costcenterid )
+            SELECT 
+            R.username,
+            R.ipaddress,
+            R.datetime,
+            R.invoiceid, 
+            '.$data->operationId.', 
+            R.emissiondate as entrydate, 
+            R.value, 
+            R.costcenterid FROM 
+            finEntry E RIGHT JOIN 
+            finReceivableInvoice R USING (invoiceid)
+            WHERE E.invoiceid IS NULL';
+
+        for($x=0;$x<count($sql) && $ok;$x++)
+        {
+            $ok = $this->db->execute($sql[$x]);
+        }
+        $ok = $this->db->execute('COMMIT');
+        if( $ok )
+        {
+            return $data;
+        }
+        return $ok;
+    }
+
+    /**
+     * Get a sum for all payments in a month
+     *
+     * @param: $operations (array): All operations codes to be searched
+     * @param: $month (int): Month to be searched
+     * @param: $year (int): year to be searched
+     *
+     * @return (array): Array containing the payments
+     *
+     */
+    public function getMonthTotalPayments($operations, $month, $year)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $sql = 'SELECT B.description,
+                       ROUND(SUM(A.value), ' . REAL_ROUND_VALUE . ')
+                  FROM finEntry A
+            INNER JOIN finOperation B
+                    ON ( A.operationId = B.operationId and not (B.operationgroupid in (\'D\',\'I\')) )
+       INNER JOIN ONLY finInvoice C
+                    ON ( A.invoiceId = C.invoiceId )
+                 WHERE B.operationId IN ( ' . implode(',', $operations) . ')';
+
+        if ( is_array($month)>0 )
+        {
+            $sql .= '           AND EXTRACT( month FROM A.EntryDate ) IN ( ' . implode(',', $month) . ' )';
+        }
+        else
+        {
+            $sql .= '           AND EXTRACT( month FROM A.EntryDate ) = ?';
+            $args[] = $month;
+        }
+
+        $sql .= '           AND EXTRACT( year FROM A.EntryDate ) = ?
+              GROUP BY B.description,B.operationgroupid
+              ORDER BY 2 DESC';
+        $args[] = $year;
+
+        $return = $this->db->query(SAGU::prepare($sql, $args));
+        return $return;
+    }
+
+    /**
+     * Get a sum for all payments in a month
+     *
+     * @param: $operations (array): All operations codes to be searched
+     * @param: $month (int): Month to be searched
+     * @param: $year (int): year to be searched
+     *
+     * @return (array): Array containing the payments
+     *
+     */
+    public function getMonthTotalPaymentsPerCourse($operations, $month, $year)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $sql = 'SELECT C.courseId || \' - \' || getCourseName(C.courseId) as course,
+                       B.description,
+                       ROUND(SUM(A.value), ' . REAL_ROUND_VALUE . ')
+                  FROM finEntry A
+            INNER JOIN finOperation B
+                    ON ( A.operationId = B.operationId )
+            INNER JOIN finReceivableInvoice C
+                    ON ( A.invoiceId = C.invoiceId )
+                 WHERE B.operationId IN ( ' . implode(',', $operations) . ')
+                   AND EXTRACT( month FROM A.entryDate ) = ?
+                   AND EXTRACT( year FROM A.entryDate ) = ?
+              GROUP BY course, B.description
+              ORDER BY 1,3 DESC';
+
+        $args   = array($month, $year);
+        $return = $this->db->query(SAGU::prepare($sql, $args));
+        return $return;
+    }
+
+    public function getMonthlyDefaulter($operations, $month, $year)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $sql = 'SELECT B.invoiceId,
+                       C.personId,
+                       C.name,
+                       ROUND(balanceWithPolicies(B.invoiceid), ' . REAL_ROUND_VALUE . '),
+                       TO_CHAR(B.maturityDate, \'' . MASK_DATE . '\')
+                  FROM finReceivableInvoice B
+       INNER JOIN ONLY basPhysicalPerson C
+                    ON ( B.personId = C.personId )
+                 WHERE EXTRACT( month FROM B.maturityDate ) = ?
+                   AND EXTRACT( year FROM B.maturityDate ) = ?
+                   AND balanceWithPolicies(B.invoiceid) > 0
+                   AND B.invoiceId IN (SELECT invoiceId 
+                                         FROM finEntry
+                                        WHERE operationId IN (' . implode(',', $operations) . ')
+                                          AND EXTRACT( month FROM maturityDate ) = ?
+                                          AND EXTRACT( year FROM maturityDate ) = ? )
+              ORDER BY B.maturityDate,
+                       C.name';
+
+        $args   = array($month, $year, $month, $year);
+        $return = $this->db->query(SAGU::prepare($sql, $args));
+        return $return;
+    }
+
+    /**
+     * Get a sum for all payments in a month
+     *
+     * @param: $operations (array): All operations codes to be searched
+     * @param: $month (int): Month to be searched
+     * @param: $year (int): year to be searched
+     *
+     * @return (array): Array containing the payments
+     *
+     */
+    public function getMonthTotalPaymentsPerCostCenter($operations, $month, $year)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $sql = 'SELECT D.costCenterId || \' - \' || D.description as costCenter,
+                       B.description,
+                       ROUND(SUM(A.value), ' . REAL_ROUND_VALUE . ')
+                  FROM finEntry A
+            INNER JOIN finOperation B
+                    ON ( A.operationId = B.operationId )
+            INNER JOIN finReceivableInvoice C
+                    ON ( A.invoiceId = C.invoiceId )
+            INNER JOIN accCostCenter D
+                    ON ( D.costCenterId = C.costCenterId )
+                 WHERE B.operationId IN ( ' . implode(',', $operations) . ')
+                   AND EXTRACT( month FROM A.entryDate ) = ?
+                   AND EXTRACT( year FROM A.entryDate ) = ?
+              GROUP BY costCenter, B.description
+              ORDER BY 1,3 DESC';
+
+        $args   = array($month, $year);
+
+        $return = $this->db->query(SAGU::prepare($sql, $args));
+        return $return;
+    }
+    public function compareDates($date1)
+    {
+        $sql = 'SELECT CASE WHEN TO_DATE(?, \'' . MASK_DATE . '\') > now()::date THEN TO_CHAR(now()::date, \'' . MASK_DATE . '\') ELSE TO_CHAR(TO_DATE(?, \'' . MASK_DATE . '\'), \'' . MASK_DATE .'\') END';
+        $args[] = $date1;
+        $args[] = $date1;
+        $sql = SAGU::prepare($sql, $args);
+        $result = $this->db->query($sql);
+        return $result[0][0];
+    }
+}
+
+?>

@@ -1,0 +1,246 @@
+<?
+/**
+*
+* @author Giovani Murilo Dantas Correa [gmurilo@isolution.inf.br]
+*
+* $version: $Id$
+*
+* \b Maintainers \n
+* Daniel Afonso Heisler [daniel@isolution.inf.br]
+*
+* @since
+* Class created on 23/03/2009
+*
+* \b Organization: \n
+* iSolution - Soluções de Internet \n
+* The iSolution TEAM
+*
+* \b CopyLeft: \n
+* CopyLeft (L) 2007 iSolution - Soluções de Internet \n
+*
+* \b License \n
+* Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+*
+* \b History \n
+* See history in CVS repository: http://isolution.inf.br   
+*
+**/
+class BusinessAcademicBusResultFinalAct  extends Business
+{
+    public $db;
+
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module = is_null($module) ? 'academic' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+    public function __construct()
+    {
+        parent::__construct();
+        $this->db = $this->getDatabase();
+    }
+    
+    public function resultFinalAct($data)
+    {
+        return ;
+    }
+
+    public function getGroups($data)
+    {
+        $sql = 'SELECT 
+                    A.groupId,
+                    getCurricularComponentShortName(B.curricularComponentId),
+                    getGroupOfferedHours(A.groupId)
+                FROM
+                    acdGroup A INNER JOIN
+                    acdCurriculum B ON ( A.curriculumId = B.curriculumId ) INNER JOIN
+                    acdLearningPeriod C ON ( C.learningPeriodId = A.learningPeriodId )
+                WHERE
+                    A.isCancellation IS FALSE';
+        if  ( strlen((string)$data->classId) > 0 )
+        {
+            $sql .= ' AND A.classId = ? ';
+            $args[] = $data->classId ;
+        }
+
+        if  ( strlen((string)$data->periodId) > 0 )
+        {
+            $sql .= ' AND C.periodId = ? ';
+            $args[] = $data->periodId ;
+        }
+
+        if ( strlen((string)$data->groupId) > 0 )
+        {
+            $sql .= ' AND A.groupId = ?::integer ';
+            $args[] = $data->groupId;
+        }
+                
+        $sql .= 'ORDER BY 2';
+        $sql = SAGU::prepare($sql, $args);
+        $groups = $this->db->query($sql);
+        return $groups;
+    }
+
+    public function getClassPupils($data)
+    {
+        $sql = 'SELECT DISTINCT
+                    contractId,
+                    personId,
+                    name,
+                    isEnd,
+                    mode
+                FROM
+                ( SELECT
+                    A.contractId,
+                    B.personId,
+                    getPersonName(B.personId) as name,
+                    C.periodId,
+                    CASE WHEN A.endDate BETWEEN C.beginDate AND C.endDate THEN true ELSE false END as isEnd,
+                    \'class\'::varchar as mode
+                FROM
+                    acdClassPupil A INNER JOIN
+                    acdContract B ON ( A.contractId = B.contractId ) LEFT JOIN
+                    acdLearningPeriod C ON ( C.courseId = B.courseId AND
+                                             C.courseVersion = B.courseVersion AND
+                                             C.turnId = B.turnId AND
+                                             C.unitId = B.unitId )
+                WHERE
+                    A.classId = ?
+                UNION
+                SELECT
+                    A.contractId,
+                    C.personId,
+                    getPersonName(C.personId) as name,
+                    D.periodId,
+                    CASE WHEN A.statusId = ' . ENROLL_STATUS_CANCELLED . ' THEN true ELSE false END as isEnd,
+                    \'enroll\'::varchar as mode
+                FROM
+                    acdEnroll A INNER JOIN
+                    acdGroup B ON ( A.groupId = B.groupId ) INNER JOIN
+                    acdContract C ON ( C.contractId = A.contractId ) LEFT JOIN
+                    acdLearningPeriod D ON ( D.learningPeriodId = B.learningPeriodId )
+                WHERE
+                    B.classId = ? ) A
+                WHERE 
+                    a.periodId = ? 
+                ORDER BY
+                    A.name ';
+
+        $sql = SAGU::prepare($sql, array($data->classId, $data->classId, $data->periodId ));
+        
+        $pupils = $this->db->query($sql);
+        $result = $pupils;
+
+        foreach ( $pupils as $item => $values )
+        {
+            if ( $values[4] == 'class' && $values[3] == DB_FALSE )
+            {
+                unset($result[$item]);
+            }
+        }
+
+        foreach ( $pupils as $item => $values )
+        {
+            if ( $values[3] == DB_TRUE && $data->printCancelled == DB_FALSE )
+            {
+                unset($result[$item]);
+            }
+        }
+        return $result;
+    }
+
+    public function getGroupPupilInformation($data)
+    {
+        $sql = 'SELECT 
+                    B.note::numeric(14,2) as degreeNote,
+                    A.finalNote,
+                    A.examNote,
+                    A.absences,
+                    C.degreeNumber,
+                    C.isSubstitutive,
+                    A.groupId,
+                    A.contractId,
+                    A.enrollId,
+                    A.statusId,
+		    A.note::numeric(14,2) as media
+                FROM ( SELECT
+                    A.finalNote::numeric(14,2) as finalNote,
+                    A.examnote::numeric(14,2) as examNote,
+                    verifyEnrollAbsence(A.enrollId) as absences, 
+                    A.groupId,
+                    A.contractId,
+                    C.periodId,
+                    B.classId,
+                    A.enrollId,
+                    A.statusId,
+                    A.note
+                FROM
+                    acdEnroll A INNER JOIN
+                    acdGroup B ON ( A.groupId = B.groupId ) INNER JOIN
+                    acdLearningPeriod C ON ( C.learningPeriodId = B.learningPeriodId ) ) A LEFT JOIN
+                    acdDegreeEnroll B ON ( B.enrollId = A.enrollId ) LEFT JOIN
+                    acdDegree C ON ( C.degreeId = B.degreeId )
+                WHERE 
+                    1 = 1 ';
+        if ( strlen((string)$data->groupId) > 0 )
+        {
+            $where .= ' AND A.groupId = ?::integer ';
+            $args[] = $data->groupId;
+        }
+        if ( strlen((string)$data->classId) > 0 )
+        {
+            $where .= ' AND A.classId = ? ';
+            $args[] = $data->classId;
+        }
+        if ( strlen((string)$data->periodId) > 0 )
+        {
+            $where .= ' AND A.periodId = ? ';
+            $args[] = $data->periodId;
+        }
+        if ( strlen((string)$data->contractId) > 0 )
+        {
+            $where .= ' AND A.contractId = ?::integer ';
+            $args[] = $data->contractId;
+        }
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql = SAGU::prepare($sql.$where, $args );
+            $result = $this->db->query($sql);
+            if ( count($result) > 0 )
+            {
+                foreach ( $result as $item => $value )
+                {
+                    if ( $lastContractId <> $value[7] || is_null($lastContractId)  )
+                    {
+                       $lastContractId = $value[7];
+                       unset($datax);
+                    }
+                    //Quanto a nota for substitutiva
+                    $datax['NF']   = $value[1];
+                    $datax['PF']   = $value[2];
+                    $datax['F']    = $value[3];
+                    $datax['enrollId'] = $value[8];
+                    $datax['statusId'] = $value[9];
+		    $datax['N']    = $value[10];
+                    if ( $value[5] == DB_TRUE )
+                    {
+                        $datax['S'.$value[4]]   = $value[0];
+                    }
+                    else
+                    {
+                        $datax['N'.$value[4]]   = $value[0];
+                    }
+                    $datax2[$value[7]][$value[6]] = $datax;
+                }
+                return $datax2;
+            }
+            return $result;
+        }
+        return null;
+    }
+}
+?>

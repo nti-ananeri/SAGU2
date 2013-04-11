@@ -1,0 +1,274 @@
+<?php
+
+/**
+ *
+ * This file handles the connection and actions for finInvoice table
+ *
+ * @author Giovani Murilo Dantas Corr�a [gmurilo@isolution.inf.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Daniel Afonso Heisler [daniel@isolution.inf.br]
+ *
+ * @since
+ * Class created on 28/01/2008
+ *
+ * \b @organization \n
+ * iSolution - Solu��es em TI \n
+ * The iSolution Development Team
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br
+ *
+ **/
+
+/**
+ * Class to manipulate the Invoice table
+ **/
+$MIOLO = MIOLO::getInstance();
+$MIOLO->uses('db/BusInvoice.class','finance');
+
+class BusinessFinanceBusFinancialBalance extends BusinessFinanceBusInvoice
+{
+
+  public function getInvoices($filters)
+  {
+    $sql = "SELECT
+				A.parcelNumber, 
+				O.description, 
+				(SELECT round(sum(value),". REAL_ROUND_VALUE .") FROM finEntry INNER JOIN finOperation USING (operationid) WHERE operationGroupId = '".RECEIVABLE_OPERATION_GROUP_ID."' AND invoiceId = A.invoiceId AND operationTypeId = 'D') as Value, 
+				(SELECT round(sum(value),". REAL_ROUND_VALUE .") FROM finEntry INNER JOIN finOperation USING (operationid) WHERE operationGroupId = '".PAYMENT_OPERATION_GROUP_ID."' AND invoiceId = A.invoiceId AND operationTypeId = 'C') as PayedValue,
+				--(SELECT round(sum(value),". REAL_ROUND_VALUE .") FROM finEntry INNER JOIN finOperation USING (operationid) WHERE operationId IN ( SELECT * FROM (SELECT interestOperation FROM findefaultoperations LIMIT 1) F UNION SELECT * FROM (SELECT fineOperation FROM findefaultOperations LIMIT 1) F ) AND invoiceId = A.invoiceId AND operationTypeId = 'D') as Fine, 
+				balanceWithFineDated(A.invoiceId,now()::date)-balance(A.invoiceid) as Fine,
+				(SELECT round(sum(value),". REAL_ROUND_VALUE .") FROM finEntry INNER JOIN finOperation USING (operationid) WHERE operationGroupId = '".DISCOUNT_OPERATION_GROUP_ID."' AND invoiceId = A.invoiceId AND operationTypeId = 'C') as Discount,
+				TO_CHAR(A.maturityDate,'". MASK_DATE ."'),
+				balanceWithPolicies(A.invoiceId)::numeric(14,2),
+				balance(A.invoiceId)::numeric(14,2),
+                (SELECT TO_CHAR(entryDate, '". MASK_DATE . "')  FROM ONLY finEntry WHERE invoiceId = A.invoiceId AND operationId IN (3,4,13,15,16,27,56)  LIMIT 1 ) as entryDate,   
+                round((CASE WHEN balance(A.invoiceid) > 0 AND A.maturitydate <= now()::date-2 THEN balanceWithPoliciesDated(A.invoiceId,now()::date) ELSE 0 END ),2) as valorEmAbertoAtualizado,
+                round((CASE WHEN balance(A.invoiceid) > 0 AND A.maturitydate <= now()::date-2 THEN balanceWithPoliciesDated(A.invoiceId,now()::date)-balanceWithFineDated(A.invoiceId,now()::date) ELSE 0 END ),2) as valorJuros
+				FROM ONLY finInvoice A 
+				LEFT JOIN finIncomeSource O USING (incomeSourceId)
+                LEFT JOIN finEntry C ON ( C.invoiceId = A.invoiceId AND C.operationId = ".DEFAULT_OPERATIONID_FROM_CLOSE_ALL_INVOICES." )
+				WHERE personId = ".$filters->personId." AND status IS NULL
+                AND C.invoiceId IS NULL
+                ORDER BY A.maturityDate ";
+    $sql =SAGU::prepare($sql,$args);
+    $result = $this->db->query($sql);
+    $data[0]->totalValue = '0.00';
+    $data[0]->totalDiscount = '0.00';
+    $data[0]->totalReceived = '0.00';
+    $data[0]->totalToReceiv = '0.00';
+    $data[0]->adjustedValue = '0.00';
+    for( $x=0;$x < count($result); $x++)
+    {
+      $data[$x]->ref = $result[$x][0];
+      $data[$x]->operation = $result[$x][1];
+      $data[$x]->value = $result[$x][2];
+      $data[$x]->payedValue = $result[$x][3];
+      $data[$x]->fine = $result[$x][4];
+      $data[$x]->discount = $result[$x][5];
+      $data[$x]->maturityDate = $result[$x][6];
+      $data[$x]->balanceWPolicies = $result[$x][7];
+      $data[$x]->entryDate = $result[$x][9];
+      $data[$x]->valorAbertoAtualizado = $result[$x][10];
+      $data[$x]->valorJuros = $result[$x][11];
+      $data[0]->totalValue += (float)$result[$x][2];
+      if((float)$result[$x][5] > 0)
+      {
+        $data[0]->totalDiscount += (float)$result[$x][5];
+      }
+      if((float)$result[$x][3] > 0)
+      {
+        $data[0]->totalReceived += (float)$result[$x][3];
+      }
+      if((float)$result[$x][8] > 0)
+      {
+        $data[0]->totalToReceiv += (float)$result[$x][8];
+      }
+      if((float)$result[$x][7])
+      {
+        $data[0]->adjustedValue += (float)$result[$x][7];
+      }
+    }
+    foreach($data[0] as $new => $valor)
+    {
+      if( (stristr($new,'Value') !== FALSE || stristr($new,'Total') ) && stristr($valor,'.') === FALSE )
+      {
+        if(strlen((string)$valor) == 0)
+        {
+          $valor = '0';
+        }
+        $data[0]->$new = $valor;
+      }
+    }
+    return $data;
+  }
+
+  public function searchInvoiceBtDates($data)
+  {
+    $sql = 'SELECT A.invoiceId,
+					   A.bankInvoiceId,
+                       A.personId,
+					   P.name,
+					   balanceWithPolicies(invoiceId),
+                       TO_CHAR(A.maturityDate,\'' . MASK_DATE . '\'),
+                       TO_CHAR(A.emissionDate,\'' . MASK_DATE . '\'),
+                       A.courseId,
+                       A.courseVersion,
+                       A.accountSchemeId,
+                       A.costCenterId,
+                       A.unitId,
+                       A.parcelNumber,
+                       A.value,
+                       A.policyId,
+                       A.bankInvoiceId,
+                       A.automaticDebit,
+                       A.comments,
+                       A.incomeSourceId,
+                       A.bankAccountId,
+                       A.bankContractId,
+                       A.sagu1InvoiceId,
+					   A.messageInvoice,
+					   B.bankId
+             FROM ONLY finInvoice A
+			 LEFT JOIN ONLY basPerson P USING(personId) 
+			 LEFT JOIN finBankAccount B USING (bankAccountId) ';
+
+    $where = '';
+    unset($args);
+    if ( strlen((string)$data->invoiceId) > 0 )
+    {
+      $where .= '    AND   A.invoiceId = ?';
+      $args[] = $data->invoiceId;
+    }
+    if ( strlen((string)$data->personId) > 0 )
+    {
+      $where .= '    AND   A.personId = ?';
+      $args[] = $data->personId;
+    }
+    if ( strlen((string)$data->accountSchemeId) > 0 )
+    {
+      $where .= '    AND   A.accountSchemeId ILIKE ?';
+      $args[] = $data->accountSchemeId;
+    }
+    if ( strlen((string)$data->costCenterId) > 0 )
+    {
+      $where .= '    AND   A.costCenterId ILIKE ?';
+      $args[] = $data->costCenterId;
+    }
+    if ( strlen((string)$data->courseId) > 0 )
+    {
+      $where .= '    AND   A.courseId ILIKE ?';
+      $args[] = $data->courseId;
+    }
+    if ( strlen((string)$data->courseVersion) > 0 )
+    {
+      $where .= '    AND   A.courseVersion = ?';
+      $args[] = $data->courseVersion;
+    }
+    if ( strlen((string)$data->unitId) > 0 )
+    {
+      $where .= '    AND   A.unitId = ?';
+      $args[] = $data->unitId;
+    }
+    if ( strlen((string)$data->parcelNumber) > 0 )
+    {
+      $where .= '    AND   A.parcelNumber = ?';
+      $args[] = $data->parcelNumber;
+    }
+    if ( strlen((string)$data->emissionDate) > 0 )
+    {
+      $where .= '    AND   A.emissionDate = TO_DATE(?,\'' . MASK_DATE . '\')';
+      $args[] = $data->emissionDate;
+    }
+    if ( strlen((string)$data->maturityDate) > 0 )
+    {
+      $where .= '    AND   A.maturityDate = TO_DATE(?,\'' . MASK_DATE . '\')';
+      $args[] = $data->maturityDate;
+    }
+    if ( strlen((string)$data->value) > 0 )
+    {
+      $where .= '    AND   A.value = ?';
+      $args[] = $data->value;
+    }
+    if ( strlen((string)$data->policyId) > 0 )
+    {
+      $where .= '    AND   A.policyId = ?';
+      $args[] = $data->policyId;
+    }
+    if ( strlen((string)$data->bankInvoiceId) > 0 )
+    {
+      $where .= '    AND   A.bankInvoiceId ILIKE ?';
+      $args[] = $data->bankInvoiceId;
+    }
+    if ( strlen((string)$data->automaticDebit) > 0 )
+    {
+      $where .= '    AND   A.automaticDebit = ?';
+      $args[] = $data->automaticDebit;
+    }
+    if ( strlen((string)$data->comments) > 0 )
+    {
+      $where .= '    AND   A.comments ILIKE ?';
+      $args[] = $data->comments;
+    }
+    if ( strlen((string)$data->incomeSourceId) > 0 )
+    {
+      $where .= '    AND   A.incomeSourceId = ?';
+      $args[] = $data->incomeSourceId;
+    }
+    if ( strlen((string)$data->bankAccountId) > 0 )
+    {
+      $where .= '    AND   A.bankAccountId = ?';
+      $args[] = $data->bankAccountId;
+    }
+    if ( strlen((string)$data->bankContractId) > 0 )
+    {
+      $where .= '    AND   A.bankContractId = ?';
+      $args[] = $data->bankContractId;
+    }
+    if ( strlen((string)$data->sagu1InvoiceId) > 0 )
+    {
+      $where .= '    AND   A.sagu1InvoiceId ILIKE ?';
+      $args[] = $data->sagu1InvoiceId;
+    }
+    if ( strlen((string)$data->messageInvoice) > 0 )
+    {
+      $where .= '    AND   A.messageInvoice ILIKE ?';
+      $args[] = $data->messageInvoice;
+    }
+    if ( strlen((string)$data->startDate) > 0  && strlen((string)$data->endDate) > 0 )
+    {
+      $where .= '    AND   A.maturityDate BETWEEN TO_DATE(?,\'' . MASK_DATE . '\') AND TO_DATE(?,\'' . MASK_DATE . '\')';
+      $args[] = $data->startDate;
+      $args[] = $data->endDate;
+    }
+    elseif ( strlen((string)$data->startDate) > 0 )
+    {
+      $where .= '    AND   A.maturityDate BETWEEN BETWEEN TO_DATE(?,\'' . MASK_DATE . '\') AND now()::date ';
+      $args[] = $data->startDate;
+    }
+    elseif ( strlen((string)$data->endDate) > 0 )
+    {
+      $where .= '    AND   A.maturityDate BETWEEN now()::date AND BETWEEN TO_DATE(?,\'' . MASK_DATE . '\')';
+      $args[] = $data->endDate;
+    }
+
+    if ( strlen((string)$where) > 0 )
+    {
+      $sql .= ' WHERE status IS NULL AND '. substr($where, 8) .
+                    '   ORDER BY A.invoiceId,
+                              A.emissionDate';
+      $result = $this->db->query(SAGU::prepare($sql,$args));
+    }
+
+    return $result;
+
+  }
+
+}
+?>

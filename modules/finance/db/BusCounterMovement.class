@@ -1,0 +1,481 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for finCounterMovement table
+ *
+ * @author Armando Taffarel Neto [taffarel@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * Armando Taffarel Neto [taffarel@solis.coop.br]
+ * 
+ * @since
+ * Class created on 03/01/2006
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to manipulate the finCounterMovement table
+ **/
+class BusinessFinanceBusCounterMovement extends MBusiness
+{
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module = is_null($module) ? 'finance' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+    /**
+     * List all records from the table handled by the class
+     *
+     * @param: None
+     *
+     * @returns (array): Return an array with the entire table
+     *
+     **/
+    public function listCounterMovement()
+    {
+    }
+
+    /** 
+     * Return a specific record from the database
+     *
+     * @param $voucherMessagesId (integer): Primary key of the record to be retrieved
+     *
+     * @return (object): Return an object of the type handled by the class
+     *
+     **/
+    public function getCounterMovement($counterMovementId)
+    {
+        $sql = 'SELECT A.counterMovementId,
+                        A.counterId,
+                        A.operatorId,
+                        A.value,
+                        TO_CHAR(A.movementDate,\'' . MASK_DATE . '\'),
+                        A.operation,
+                        A.speciesId,
+                        A.entryId,
+                        A.description,
+                        A.userName,
+                        TO_CHAR(A.dateTime,\'' . MASK_TIMESTAMP . '\')
+                  FROM finCounterMovement   A
+                 WHERE A.counterMovementId = ?';
+
+        $db = $this->getDatabase();
+        $result = $db->query(SAGU::prepare($sql,$counterMovementId));
+        //$db->close();
+        $counterMovement = new FinCounterMovement();
+
+        list ( $counterMovement->counterMovementId,
+               $counterMovement->counterId,
+               $counterMovement->operatorId,
+               $counterMovement->value,
+               $counterMovement->movementDate,
+               $counterMovement->operation,
+               $counterMovement->speciesId,
+               $counterMovement->entryId,
+               $counterMovement->description,
+               $counterMovement->userName,
+               $counterMovement->dateTime ) = $result[0];
+
+        return $counterMovement;
+    }
+
+    /**
+     * Do a search on the database table handled by the class
+     *
+     * @param $filters (object): Search filters
+     *
+     * @return (array): An array containing the search results
+     **/
+    public function searchCounterMovement($data)
+    {
+        $sql = 'SELECT  A.counterMovementId,
+                        A.counterId,
+                        A.operatorId,
+                        ';
+        $sql.= (strlen((string)$data->operatorId) > 0)  ? ' B.name, ' : ' \'Todos\' as name, '; 
+        $sql.=   '
+                        ROUND(A.value, 2),
+                        TO_CHAR(A.movementDate,\'' . MASK_TIMESTAMP . '\'),
+                        A.operation,
+                        A.speciesId,
+                        C.description,
+                        BB.name,
+                        TO_CHAR(I.maturitydate,\'' . MASK_DATE . '\'),
+                        (SELECT ROUND( sum(value), '. REAL_ROUND_VALUE .') FROM finEntry WHERE invoiceId = I.invoiceId AND operationid in (SELECT operationId FROM finOperation WHERE operationGroupId IN (\'D\',\'I\'))) as Desconto,
+                        (SELECT ROUND(sum(value), '. REAL_ROUND_VALUE . ') FROM finEntry WHERE invoiceId = I.invoiceId AND operationid in (SELECT operationId FROM finOperation WHERE operationGroupId = \'J\')) as Acrescimo,
+                        ROUND(I.value, '. REAL_ROUND_VALUE . ')
+
+                 FROM finCounterMovement A
+                 INNER JOIN ONLY basPhysicalPerson B
+                        ON (A.operatorId = B.personId) 
+                 INNER JOIN ONLY finSpecies C
+                        ON (A.speciesId = C.speciesId) 
+                 LEFT JOIN ONLY finEntry D ON  ( D.entryId = A.entryId  )
+                 LEFT JOIN ONLY finInvoice I ON ( I.invoiceId = D.invoiceId )
+                 LEFT JOIN ONLY basPhysicalPerson BB ON I.personid = BB.personid';
+
+        $where = '';
+        unset($args);
+        if ( strlen((string)$data->counterId) > 0 )
+        {
+            $where .= '    AND   A.counterId = ?';
+            $args[] = $data->counterId;
+        }
+        if ( strlen((string)$data->operatorId) > 0 )
+        {
+            $where .= '    AND   A.operatorId = ?';
+            $args[] = $data->operatorId;
+        }
+        if ( strlen((string)$data->operatorName) > 0 )
+        {
+            $where .= '    AND   B.name ILIKE ?';
+            $args[] = $data->operatorName.'%';
+        }
+
+        if ( strlen((string)$data->value) > 0 )
+        {
+            $where .= '    AND   A.value = ?';
+            $args[] = $data->value;
+        }
+        if ( strlen((string)$data->movementDate) > 0 )
+        {
+            $where .= '    AND   A.movementDate::date = TO_DATE(?,\'' . MASK_DATE . '\')';
+            $args[] = $data->movementDate;
+        }
+        else if ( strlen((string)$data->initialDate) > 0 && strlen ($data->endDate) > 0 )
+        {
+            $where .= '     AND A.movementDate::date BETWEEN TO_DATE(?,\'' . MASK_DATE . '\')
+                            AND TO_DATE(?,\'' . MASK_DATE . '\') ';
+            $args[] = $data->initialDate;
+            $args[] = $data->endDate;
+        }
+        else
+        {
+            $where .= '    AND   A.movementDate::date = TO_DATE(TO_CHAR(now() ,\'' . MASK_DATE . '\'), \'' . MASK_DATE . '\')';
+
+        }
+        if ( strlen((string)$data->operation) > 0 )
+        {
+            $where .= '    AND   A.operation = ?';
+            $args[] = $data->operation;
+        }        
+        if ( strlen((string)$data->speciesId) > 0 )
+        {
+            $where .= '    AND   A.speciesId = ?';
+            $args[] = $data->speciesId;
+        }
+
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE ' . substr($where,8) .
+                    ' GROUP BY 1,2,3,4,5,6,7,8,9,10,11,I.value, A.movementDate, I.invoiceId '.
+                    ' ORDER BY A.movementDate DESC ';
+            $db = $this->getDatabase();
+            $result = $db->query(SAGU::prepare($sql,$args));
+          //  $db->close();
+        }
+
+        return $result;
+    }
+
+/**
+     * Do a search on the database table handled by the class
+     *
+     * @param $filters (object): Search filters
+     *
+     * @return (array): An array containing the search results
+     **/
+    public function searchCounterMovementGrid($data)
+    {
+        $sql = 'SELECT  A.counterMovementId,
+                        A.counterId,
+                        A.operatorId,
+                        B.name,
+                        ROUND(A.value, 2),
+                        TO_CHAR(A.movementDate,\'' . MASK_TIMESTAMP . '\'),
+                        A.operation,
+                        A.speciesId,
+                        C.description,
+                        BB.name,
+                        TO_CHAR(I.maturitydate,\'' . MASK_DATE . '\'),
+                        (SELECT ROUND( sum(value), '. REAL_ROUND_VALUE .') FROM finEntry WHERE invoiceId = I.invoiceId AND operationid in (SELECT operationId FROM finOperation WHERE operationGroupId IN (\'D\',\'I\'))) as Desconto,
+                        (SELECT ROUND(sum(value), '. REAL_ROUND_VALUE . ') FROM finEntry WHERE invoiceId = I.invoiceId AND operationid in (SELECT operationId FROM finOperation WHERE operationGroupId = \'J\')) as Acrescimo,
+                        ROUND(I.value, '. REAL_ROUND_VALUE . ')
+
+                 FROM finCounterMovement A
+                 INNER JOIN ONLY basPhysicalPerson B
+                        ON (A.operatorId = B.personId) 
+                 INNER JOIN ONLY finSpecies C
+                        ON (A.speciesId = C.speciesId) 
+                 LEFT JOIN ONLY finEntry D ON  ( D.entryId = A.entryId  )
+                 LEFT JOIN ONLY finInvoice I ON ( I.invoiceId = D.invoiceId )
+                 LEFT JOIN ONLY basPhysicalPerson BB ON I.personid = BB.personid';
+
+        $where = '';
+        unset($args);
+        if ( strlen((string)$data->counterId) > 0 )
+        {
+            $where .= '    AND   A.counterId = ?';
+            $args[] = $data->counterId;
+        }
+        if ( strlen((string)$data->operatorId) > 0 )
+        {
+            $where .= '    AND   A.operatorId = ?';
+            $args[] = $data->operatorId;
+        }
+        if ( strlen((string)$data->operatorName) > 0 )
+        {
+            $where .= '    AND   B.name ILIKE ?';
+            $args[] = $data->operatorName.'%';
+        }
+
+        if ( strlen((string)$data->value) > 0 )
+        {
+            $where .= '    AND   A.value = ?';
+            $args[] = $data->value;
+        }
+        if ( strlen((string)$data->movementDate) > 0 )
+        {
+            $where .= '    AND   A.movementDate::date = TO_DATE(?,\'' . MASK_DATE . '\')';
+            $args[] = $data->movementDate;
+        }
+        else if ( strlen((string)$data->initialDate) > 0 && strlen ($data->endDate) > 0 )
+        {
+            $where .= '     AND A.movementDate::date BETWEEN TO_DATE(?,\'' . MASK_DATE . '\')
+                            AND TO_DATE(?,\'' . MASK_DATE . '\') ';
+            $args[] = $data->initialDate;
+            $args[] = $data->endDate;
+        }
+        else
+        {
+            $where .= '    AND   A.movementDate::date = TO_DATE(TO_CHAR(now() ,\'' . MASK_DATE . '\'), \'' . MASK_DATE . '\')';
+
+        }
+        if ( strlen((string)$data->operation) > 0 )
+        {
+            $where .= '    AND   A.operation = ?';
+            $args[] = $data->operation;
+        }        
+        if ( strlen((string)$data->speciesId) > 0 )
+        {
+            $where .= '    AND   A.speciesId = ?';
+            $args[] = $data->speciesId;
+        }
+
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE ' . substr($where,8) .
+                    ' GROUP BY 1,2,3,4,5,6,7,8,9,10,11,I.value, A.movementDate, I.invoiceId '.
+                    ' ORDER BY A.movementDate DESC ';
+            $db = $this->getDatabase();
+            $result = $db->query(SAGU::prepare($sql,$args));
+          //  $db->close();
+        }
+
+        return $result;
+    }
+    
+    /**
+     * Insert a new record
+     *
+     * @param $data (object): An object of the type handled by the class
+     *
+     * @return True if succed, otherwise False
+     *
+     **/
+    public function insertCounterMovement($data)
+    {
+
+        $sql = 'INSERT INTO finCounterMovement
+                            (counterId,
+                             operatorId,
+                             value,
+                             operation,
+                             speciesId,
+                             entryId,
+                             description )
+                     VALUES (?,?,?,?,?,'.(strlen((string)$data->entryId) > 0 ? $data->entryId : 'NULL' ).',?)';
+
+        $args = array( $data->counterId,
+                         $data->operatorId,
+                         $data->value,
+                         $data->operation,
+                         $data->speciesId,
+                         $data->description );
+        
+        $db     = $this->getDatabase();
+        $result = $db->execute(SAGU::prepare($sql, $args));
+
+        return $result;
+    }
+
+    /**
+     * Update data from a specific record
+     *
+     * @param $data (object): Data which will replace the old record data
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+    public function updateCounterMovement($data)
+    {
+        $sql = 'UPDATE finCounterMovement
+                   SET counterId = ?,
+                       operatorId = ?,
+                       value = ?,
+                       movementDate = TO_DATE(?,\'' . MASK_DATE . '\'),
+                       operation = ?,
+                       speciesId = ?,
+                       description = ?
+                 WHERE counterMovementId  = ?';
+
+        $args = array($data->counterId,
+                        $data->operatorId,
+                        $data->value,
+                        $data->movementDate,
+                        $data->operation,
+                        $data->speciesId,
+                        $data->description,
+                        $data->counterMovementId );
+
+        $db = $this->getDatabase();
+        $sqls = SAGU::prepare($sql,$args);
+        for ( $i=0; $i<count($sqls); $i++ )
+        {
+            $result = $db->execute($sqls[$i]);
+        }
+
+        return $result;
+    }
+
+
+    /**
+     * Delete a record
+     *
+     * @param $counterMovementId (string): Primary key for deletion
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+    public function deleteCounterMovement($counterMovementId)
+    {
+       $sql = 'DELETE FROM finCounterMovement
+                      WHERE counterMovementId = ?';
+
+        $db = $this->getDatabase();
+        $result = $db->execute(SAGU::prepare($sql,$counterMovementId));
+
+        return $result;
+
+    }
+    
+     /**
+     * Calculate a value from operator
+     *
+     * @param $operationId (integer): 
+     * @param $date (date): 
+     * @operation (char): C or D
+     * @counterId (integer): caixa em que efetua a operação
+     *
+     * @return (result): Value
+     *
+     **/
+     public function getValue($operatorId, $date, $operation, $counterId)
+     {
+        $sql = ' SELECT ROUND( sum( value ), 2 ) 
+                   FROM finCounterMovement
+                  WHERE operatorId = ? 
+                    AND movementDate::date = TO_DATE( ? , \'' . MASK_DATE . '\') 
+                    AND operation = ? 
+                    AND counterId = ? ';
+        $args =  array($operatorId,
+                       $date,
+                       $operation,
+                       $counterId);
+
+        $db = $this->getDatabase();
+        $result = $db->query(SAGU::prepare($sql,$args));
+        if($result[0][0] == null)
+        {
+            $return[0][0] = 0;
+        }
+        else
+        {
+            $return[0][0] =  $result[0][0];
+        }
+        return $return[0][0];
+      } 
+
+     /**
+     * Calculate a value from operator
+     *
+     * @param $valueC (numeric): Value of credit
+     * @param $valueD (numeric): Value of debit
+     *
+     * @return (result) Value
+     *
+     **/
+     public function totalValue($valueC, $valueD)
+     {
+        $sql = ' SELECT SUM('. $valueC .' - '. $valueD .') ' ;
+        
+        $db = $this->getDatabase();
+        $result = $db->query($sql);
+
+        return $result[0][0];        
+     }
+    
+     /**
+     * Calculate a value from operator
+     *
+     * @param $valueC (numeric): Value of credit
+     * @param $valueD (numeric): Value of debit
+     *
+     * @return (result) Value
+     *
+     **/
+     public function totalValueD($valueC, $valueD)
+     {
+        $sql = ' SELECT SUM('. $valueC .' - (-1 * '. $valueD .') ) ' ;
+
+        $db = $this->getDatabase();
+        $result = $db->query($sql);
+
+        return $result[0][0];
+     }
+
+ 
+}
+
+?>

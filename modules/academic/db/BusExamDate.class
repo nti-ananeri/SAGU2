@@ -1,0 +1,404 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for basCenter table
+ *
+ * @author Leovan Tavares da Silva [leovan@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 24/07/2006
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to manipulate the basCenter table
+ **/
+class BusinessAcademicBusExamDate extends Business
+{
+    public $db;
+
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+
+    function __construct()
+    {
+        $this->db = $this->getDatabase();
+    }
+
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic', 'sagu');
+        $module = is_null($module) ? 'academic' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+    /**
+     * List all records from the table handled by the class
+     *
+     * @param: None
+     *
+     * @returns (array): Return an array with the entire table
+     *
+     **/
+    public function listExamDate()
+    {
+        return 'Not implemented';
+    }
+    
+    /**
+     * Return a specific record from the database
+     **/
+    public function getExamDate($learningPeriodId, $weekDayId)
+    {
+        $sql = 'SELECT A.learningPeriodId,
+                       A.weekDayId,
+                       B.description,
+                       TO_CHAR(A.examDate, \'' . MASK_DATE . '\'),
+                       A.userName,
+                       TO_CHAR(A.dateTime,\'' . MASK_TIMESTAMP . '\'),
+                       A.ipAddress
+                  FROM acdExamDate A
+            INNER JOIN basWeekDay B
+                    ON (B.weekDayId = A.weekDayId)
+                 WHERE A.learningPeriodId = ?
+                   AND A.weekDayId = ? ';
+
+        $args   = array($learningPeriodId, $weekDayId);
+
+        $db = $this->db;
+
+        $result = $db->query(SAGU::prepare($sql, $args));
+        //$db->close();
+
+        $examDate = new acdExamDate();
+        list ( $examDate->learningPeriodId,
+               $examDate->weekDayId,
+               $examDate->description,
+               $examDate->examDate,
+               $examDate->userName,
+               $examDate->dateTime,
+               $examDate->ipAddress ) = $result[0];
+
+        return $examDate; 
+    }
+
+    /**
+     * Do a search on the database table handled by the class
+     **/
+    public function searchExamDate($filters)
+    {
+        $sql= 'SELECT A.learningPeriodId,
+                      B.courseId,
+                      B.courseVersion,
+                      D.shortName,
+                      B.unitId,
+                      E.description,
+                      B.turnId,
+                      F.description,
+                      A.weekDayId,
+                      C.description,
+                      TO_CHAR(A.examDate, \'' . MASK_DATE . '\')
+                 FROM acdExamDate A
+           INNER JOIN acdLearningPeriod B
+                   ON (B.learningPeriodId = A.learningPeriodId)
+           INNER JOIN basWeekDay C
+                   ON (C.weekDayId = A.weekDayId)
+           INNER JOIN acdCourse D
+                   ON (D.courseId = B.courseId)
+           INNER JOIN basUnit E
+                   ON (E.unitId = B.unitId)
+           INNER JOIN basTurn F
+                   ON (F.turnId = B.turnId)';
+
+        if ( strlen((string)$filters->learningPeriodId) > 0 )
+        {
+            $where .= ' AND A.learningPeriodId = ? ';
+            $args[] = $filters->learningPeriodId;
+        }
+        if ( strlen((string)$filters->learningPeriodDescription) > 0)
+        {
+            $where .= ' AND TO_ASCII(B.description) ILIKE TO_ASCII(?) ';
+            $args[] = $filters->learningPeriodDescription.'%';
+        }
+        if ( strlen((string)$filters->courseId) > 0 )
+        {
+            $where .= ' AND B.courseId = ? ';
+            $args[] = $filters->courseId;
+        }
+        if ( strlen((string)$filters->courseName) > 0 )
+        {
+            $where .= ' AND (TO_ASCII(D.shortName) ILIKE TO_ASCII(?) OR TO_ASCII(D.name) ILIKE TO_ASCII(?))';
+            $args[] = $filters->courseName.'%';
+            $args[] = $filters->courseName.'%';
+        }
+        if ( strlen((string)$filters->unitId) > 0 )
+        {
+            $where .= ' AND B.unitId = ? ';
+            $args[] = $filters->unitId;
+        }
+        if ( strlen((string)$filters->unitDescription) > 0 )
+        {
+            $where .= ' AND TO_ASCII(E.description) ILIKE TO_ASCII(?)';
+            $args[] = $filters->unitDescription.'%';
+        }
+        if ( strlen((string)$filters->turnId) > 0 )
+        {
+            $where .= ' AND B.turnId = ? ';
+            $args[] = $filters->turnId;
+        }
+        if ( strlen((string)$filters->turnDescription) > 0 )
+        {
+            $where .= ' AND TO_ASCII(F.turnDescription) ILIKE TO_ASCII(?)';
+            $args[] = $filters->turnDescription.'%';
+        }
+        if ( strlen((string)$filters->weekDayId) > 0 )
+        {
+            $where .= ' AND A.weekDayId = ? ';
+            $args[] = $filters->weekDayId;
+        }
+        if ( strlen((string)$filters->weekDayDescription) > 0 )
+        {
+            $where .= ' AND TO_ASCII(C.description) ILIKE TO_ASCII(?)';
+            $args[] = $filters->weekDayDescription.'%';
+        }
+        if ( strlen((string)$filters->examDate) > 0 )
+        {
+            $where .= ' AND A.examDate = TO_DATE(?, \'' . MASK_DATE . '\')';
+            $args[] = $filters->examDate;
+        }
+        if ( strlen((string)$filters->periodId) > 0 )
+        {
+            $where .= ' AND B.periodId = ?';
+            $args[] = $filters->periodId;
+        }
+
+        unset($result);
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql.= ' WHERE ' . substr($where, 4) . '
+                  ORDER BY D.shortName,
+                           B.courseId,
+                           B.courseVersion,
+                           B.unitId,
+                           B.turnId,
+                           A.weekDayId ';
+
+            $db = $this->db;
+
+            $result = $db->query(SAGU::prepare($sql, $args));
+            //$db->close();
+        }
+
+        return $result;
+    }
+
+    public function searchExamDateFormGrid($filters)
+    {
+        $sql= 'SELECT A.learningPeriodId,
+                      B.courseId || \' / \' || B.courseVersion,
+                      D.shortName,
+                      B.unitId,
+                      E.description,
+                      B.turnId,
+                      F.description,
+                      A.weekDayId,
+                      C.description,
+                      TO_CHAR(A.examDate, \'' . MASK_DATE . '\')
+                 FROM acdExamDate A
+           INNER JOIN acdLearningPeriod B
+                   ON (B.learningPeriodId = A.learningPeriodId)
+           INNER JOIN basWeekDay C
+                   ON (C.weekDayId = A.weekDayId)
+           INNER JOIN acdCourse D
+                   ON (D.courseId = B.courseId)
+           INNER JOIN basUnit E
+                   ON (E.unitId = B.unitId)
+           INNER JOIN basTurn F
+                   ON (F.turnId = B.turnId)';
+
+        if ( strlen((string)$filters->learningPeriodId) > 0 )
+        {
+            $where .= ' AND A.learningPeriodId = ? ';
+            $args[] = $filters->learningPeriodId;
+        }
+        if ( strlen((string)$filters->learningPeriodDescription) > 0)
+        {
+            $where .= ' AND TO_ASCII(B.description) ILIKE TO_ASCII(?) ';
+            $args[] = $filters->learningPeriodDescription.'%';
+        }
+        if ( strlen((string)$filters->courseId) > 0 )
+        {
+            $where .= ' AND B.courseId = ? ';
+            $args[] = $filters->courseId;
+        }
+        if ( strlen((string)$filters->courseName) > 0 )
+        {
+            $where .= ' AND (TO_ASCII(D.shortName) ILIKE TO_ASCII(?) OR TO_ASCII(D.name) ILIKE TO_ASCII(?))';
+            $args[] = $filters->courseName.'%';
+            $args[] = $filters->courseName.'%';
+        }
+        if ( strlen((string)$filters->unitId) > 0 )
+        {
+            $where .= ' AND B.unitId = ? ';
+            $args[] = $filters->unitId;
+        }
+        if ( strlen((string)$filters->unitDescription) > 0 )
+        {
+            $where .= ' AND TO_ASCII(E.description) ILIKE TO_ASCII(?)';
+            $args[] = $filters->unitDescription.'%';
+        }
+        if ( strlen((string)$filters->turnId) > 0 )
+        {
+            $where .= ' AND B.turnId = ? ';
+            $args[] = $filters->turnId;
+        }
+        if ( strlen((string)$filters->turnDescription) > 0 )
+        {
+            $where .= ' AND TO_ASCII(F.turnDescription) ILIKE TO_ASCII(?)';
+            $args[] = $filters->turnDescription.'%';
+        }
+        if ( strlen((string)$filters->weekDayId) > 0 )
+        {
+            $where .= ' AND A.weekDayId = ? ';
+            $args[] = $filters->weekDayId;
+        }
+        if ( strlen((string)$filters->weekDayDescription) > 0 )
+        {
+            $where .= ' AND TO_ASCII(C.description) ILIKE TO_ASCII(?)';
+            $args[] = $filters->weekDayDescription.'%';
+        }
+        if ( strlen((string)$filters->examDate) > 0 )
+        {
+            $where .= ' AND A.examDate = TO_DATE(?, \'' . MASK_DATE . '\')';
+            $args[] = $filters->examDate;
+        }
+        if ( strlen((string)$filters->periodId) > 0 )
+        {
+            $where .= ' AND B.periodId = ?';
+            $args[] = $filters->periodId;
+        }
+
+        unset($result);
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql.= ' WHERE ' . substr($where, 4) . '
+                  ORDER BY D.shortName,
+                           B.courseId,
+                           B.courseVersion,
+                           B.unitId,
+                           B.turnId,
+                           A.weekDayId ';
+
+            $db = $this->db;
+
+            $result = $db->query(SAGU::prepare($sql, $args));
+            //$db->close();
+        }
+
+        return $result;
+    }
+
+    /**
+     * Insert a new record
+     *
+     * @param $data (object): An object of the type handled by the class
+     *
+     * @return True if succed, otherwise False
+     *
+     **/
+    public function insertExamDate($data)
+    {
+        $sql = 'INSERT INTO acdExamDate
+                            (learningPeriodId,
+                             weekDayId,
+                             examDate)
+                     VALUES (?,?, TO_DATE(?, \'' . MASK_DATE . '\')) ';
+
+        $args = array( $data->learningPeriodId,
+                       $data->weekDayId,
+                       $data->examDate );
+
+        $db = $this->db;
+        $result = $db->execute(SAGU::prepare($sql, $args));
+        //$db->close();
+        return $result;
+    }
+
+    /**
+     * Update data from a specific record
+     *
+     * @param $data (object): Data which will replace the old record data
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+   public function updateExamDate($data)
+    {
+        $sql = 'UPDATE acdExamDate
+                   SET examDate   = TO_DATE(?, \'' . MASK_DATE . '\')
+                 WHERE learningPeriodId = ?
+                   AND weekDayId = ? ';
+
+        $args = array( $data->examDate,
+                       $data->learningPeriodId,
+                       $data->weekDayId );
+
+        $db = $this->db;
+        $sqls = SAGU::prepare($sql, $args);
+
+        for ( $i=0; $i<count($sqls); $i++ )
+        {
+            $result = $db->execute($sqls[$i]);
+        }
+
+        //$db->close();
+
+        return $result;
+    }
+
+    /**
+     * Delete a record
+     **/
+   public function deleteExamDate($learningPeriodId, $weekDayId)
+    {
+        $sql = 'DELETE FROM acdExamDate
+                      WHERE learningPeriodId = ?
+                        AND weekDayId = ? ';
+
+        $args   = array($learningPeriodId, $weekDayId);
+
+        $db = $this->db;
+        $result = $db->execute(SAGU::prepare($sql, $args));
+        //$db->close();
+        return $result;
+    }
+}
+?>

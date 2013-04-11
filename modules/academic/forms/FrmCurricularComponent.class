@@ -1,0 +1,349 @@
+<?php
+
+/**
+ * Curricular Component Group form
+ *
+ * @author Jamiel Spezia [jamiel@solis.coop.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ *
+ * @since
+ * Class created on 25/08/2005
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2005 SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+
+/**
+ * Form to manipulate a curricular component 
+ **/
+class FrmCurricularComponent extends MForm
+{
+
+    /**
+     * Class constructor
+     **/
+    function __construct()
+    {
+        $module = MIOLO::getCurrentModule();
+        if ( MIOLO::_request('function') == 'insert' )
+        {
+            parent::__construct(_M('Insert', $module));
+        }
+        else
+        {
+            parent::__construct(_M('Update', $module));
+        }
+
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+
+        $toolBar = new MToolBar('toolBar', $MIOLO->getActionURL($module, $action));
+
+        if ( $function == 'insert' )
+        {
+            $toolBar->disableButton('tbBtnDelete');
+            $toolBar->disableButton('tbBtnPrint');
+        }
+        elseif ( $function == 'delete' )
+        {
+            $toolBar->disableButton('tbBtnSave');
+        }
+        $fields[] = $toolBar;
+
+        if ( in_array($function, array('update', 'delete')) )
+        {
+            $curricularComponentId      = MIOLO::_request('curricularComponentId');
+            $curricularComponentVersion = MIOLO::_request('curricularComponentVersion');
+
+            $business = $MIOLO->getBusiness($module, 'BusCurricularComponent');
+            $data     = $business->getCurricularComponent($curricularComponentId, $curricularComponentVersion);
+
+            $fields[] = new MHiddenField('curricularComponentId', $curricularComponentId);
+            $fields[] = new MTextLabel('curricularComponentId', $curricularComponentId, _M('Curricular component id', $module));
+            $fields[] = new MHiddenField('curricularComponentVersion', $curricularComponentVersion);
+            $fields[] = new MTextLabel('curricularComponentVersion', $curricularComponentVersion, _M('Curricular component version', $module));
+        }
+        else
+        {
+            $curricularComponentId = new MTextField('curricularComponentId', $this->GetFormValue('curricularComponentId', $data->curricularComponentId), _M('Curricular component id', $module), FIELD_ID_SIZE);
+            $validators[]          = new MRequiredValidator('curricularComponentId');
+            $fields[]              = $curricularComponentId;
+
+            $curricularComponentVersion = new MTextField('curricularComponentVersion', $this->GetFormValue('curricularComponentVersion', $data->curricularComponentVersion), _M('Curricular component version', $module), FIELD_ID_SIZE);
+            $validators[]               = new MIntegerValidator('curricularComponentVersion', '', 'required');
+            $fields[]                   = $curricularComponentVersion;
+        }
+
+        $curricularComponentGroupLabel = new MText('curricularComponentGroupLabel', _M('Curricular component group for scholarship',$module) . ':');
+        $curricularComponentGroupLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $curricularComponentGroupLabel->setClass('m-caption m-caption-required');
+
+        $curricularComponentGroupId = new MLookupTextField('curricularComponentGroupId',// Name
+                            $this->getFormValue('curricularComponentGroupId', $data->curricularComponentGroupId), //value
+                            '', //label
+                            FIELD_LOOKUPFIELD_SIZE, //size
+                            null, //hint
+                            null, // validator
+                            'curricularComponentGroupDescription', //related
+                            $module, //module
+                            'CurricularComponentGroup', //item
+                            null, null, true);
+        $curricularComponentGroupId->setJsHint(_M('Enter the curricular component group code',$module));
+        $validators[]               = new MRequiredValidator('curricularComponentGroupId', _M('Curricular component group',$module), 'required');
+
+        $curricularComponentGroupDescription = new MTextField('curricularComponentGroupDescription', $this->getFormValue('curricularComponentGroupDescription', $data->curricularComponentGroupDescription), '', FIELD_DESCRIPTION_SIZE);
+        $curricularComponentGroupDescription->setJsHint(_M('Curricular component group description',$module));
+        $curricularComponentGroupDescription->setReadOnly(true);
+
+        $hctGroup = new MHContainer('hctGroup', array($curricularComponentGroupLabel, $curricularComponentGroupId, $curricularComponentGroupDescription));
+        $hctGroup->setShowLabel(true);
+        $fields[] = $hctGroup;
+
+        $business     = $this->manager->getBusiness($module,'BusCenter');
+        $dataCenter   = $business->listCenter();
+        $centerId     = new MComboBox('centerId', $this->getFormValue('centerId', $data->centerId), _M('Center id',$module), $dataCenter );
+        $validators[] = new MRequiredValidator('centerId', '', 'required');
+        $fields[]     = $centerId;
+
+        $curricularComponentName = new MTextField('curricularComponentName', $this->getFormValue('curricularComponentName', $data->name), _M('Curricular component name', $module), 50);
+        $validators[]            = new MRequiredValidator('curricularComponentName', '', 'required');
+        $fields[]                = $curricularComponentName;
+
+        $shortName    = new MTextField('shortName', $this->getFormValue('shortName', $data->shortName), _M('Short name', $module), 50);
+        $shortName->addAttribute('maxlength', CURRICULAR_COMPONENT_SHORT_NAME_MAX_LENGTH);
+        $validators[] = new MRequiredValidator('shortName');
+        $fields[]     = $shortName;
+
+        $fields[] = new MMultiLineField('summary', $this->getFormValue('summary',$data->summary), _M('Summary',$module), 40, 5, 40);
+
+        $fields[]     = new MTextField('academicCredits', $this->getFormValue('academicCredits', $data->academicCredits), _M('Academic credits', $module), 10);
+        $validators[] = new MRequiredValidator('academicCredits', '', 'required');
+    
+        if ( MODULE_FINANCE_INSTALLED == 'YES' )
+        {
+            $fields[]     = new MTextField('financeCredits', $this->getFormValue('financeCredits', $data->financeCredits), _M('Finance credits', $module), 10);
+            $validators[] = new MRequiredValidator('financeCredits', '', 'required'); 
+        }
+
+        $fields[]     = new MTextField('lessonCredits', $this->getFormValue('lessonCredits', $data->lessonCredits), _M('Lesson credits', $module), 10);
+        $validators[] = new MRequiredValidator('lessonCredits', '', 'required');
+
+        $fields[]     = new MTextField('academicNumberHours', $this->getFormValue('academicNumberHours', $data->academicNumberHours), _M('Academic number hours', $module), 10);
+        $validators[] = new MRequiredValidator('academicNumberHours', '', 'required');
+        
+        $fields[]     = new MTextField('financeNumberHours', $this->getFormValue('financeNumberHours', $data->financeNumberHours), _M('Finance number hour', $module), 10);
+        $validators[] = new MRequiredValidator('financeNumberHours', '', 'required');
+        
+        $fields[]     = new MTextField('lessonNumberHours', $this->getFormValue('lessonNumberHours', $data->lessonNumberHours), _M('Lesson number hour', $module), 10);
+        $validators[] = new MRequiredValidator('lessonNumberHours', '', 'required');
+
+		$fields[]     = new MTextField('practiceHours', $this->getFormValue('practiceHours', $data->practiceHours), _M('Practice number hour', $module), 10);
+        //$validators[] = new MRequiredValidator('lessonNumberHours', '', 'required');
+
+        $beginDate    = new MCalendarField('beginDate', $this->getFormValue('beginDate', $data->beginDate), _M('Begin date', $module), FIELD_DATE_SIZE);
+        $validators[] = new MDATEDMYValidator('beginDate', '', 'required');
+        $fields[]     = $beginDate;
+
+        if ( in_array($function, array('update', 'delete')) )
+        {
+            $endDate      = new MCalendarField('endDate', $this->getFormValue('endDate',    $data->endDate), _M('End date', $module), FIELD_DATE_SIZE);
+            $validators[] = new MDATEDMYValidator('endDate', '');
+            $fields[]     = $endDate;
+        }
+
+        $businessEducationArea = $MIOLO->getBusiness($module,'BusEducationArea');
+
+        $educationAreaId = new MComboBox('educationAreaId', $this->getFormValue('educationAreaId', $data->educationAreaId ? $data->educationAreaId : ''), _M('Education area (technician)',$module), $businessEducationArea->listEducationArea()); 
+
+        $fields[] = $educationAreaId;
+
+        if ( $function == 'update' )
+        {
+            $fields[] = new MTextLabel('lastModification', '['.$data->userName.' - '.$data->dateTime.']', _M('Last modification', $module));
+        }
+        $fields[] = new Separator('');
+
+        $this->setFields($fields);
+        $this->setValidators($validators);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+        $this->setClose($MIOLO->getActionURL($module, substr($action, 0, strrpos($action, ':'))));
+
+    }
+
+    /**
+     * Event triggered when user chooses New from the toolbar
+     **/
+    public function tbBtnNew_click($sender = null)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $this->curricularComponentName->value = $this->getFormValue('curricularComponentNameS') ? $this->getFormValue('curricularComponentNameS') : '';
+    }
+
+    /**
+     * Event triggered when user chooses Delete from the toolbar
+     **/
+    public function tbBtnDelete_click($sender = null)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $data   = $this->getTypesData();
+        $opts   = array('event'=>'tbBtnDelete_confirm',
+                        'function'=>'delete',
+                        'curricularComponentId'=>MIOLO::_request('curricularComponentId'),
+                        'curricularComponentVersion'=>MIOLO::_request('curricularComponentVersion')
+                       );
+
+        $gotoYes = $MIOLO->getActionURL( $module, $action, null, $opts );
+        $goto    = SAGU::getStackBackUrl();
+        $gotoNo  = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+        $msg     = MSG_CONFIRM_RECORD_DELETE;
+        $caption = _M('Question',$module);
+        $MIOLO->question($msg, $gotoYes, $gotoNo);
+    }
+
+    /**
+     * Event triggered when user chooses Yes from the Delete prompt dialog
+     **/
+    public function tbBtnDelete_confirm($sender = null)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $business = $MIOLO->getBusiness($module, 'BusCurricularComponent');
+        $ok = $business->deleteCurricularComponent($this->curricularComponentId->value, $this->curricularComponentVersion->value);
+
+        if ( $ok )
+        {
+            $msg  = MSG_RECORD_DELETED;
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Information',$module);
+            $MIOLO->information($msg, $goto);
+        }
+        else
+        {
+            $msg  = _M('Error executing requested operation.',$module);
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Error', $module);
+            $MIOLO->error( $msg, $goto, $caption );
+        }
+    }
+
+    /**
+     * Event triggered when user chooses Save from the toolbar
+     **/
+    public function tbBtnSave_click($sender = null)
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+
+        $data     = $this->getTypesData();
+        $business = $MIOLO->getBusiness($module, 'BusCurricularComponent');
+
+        if ( $function == 'update' )
+        {
+            $ok  = $business->updateCurricularComponent($data);
+            $msg = MSG_RECORD_UPDATED;
+        }
+        else
+        {
+            $ok  = $business->insertCurricularComponent($data);
+            $msg = MSG_RECORD_INSERTED;
+        }
+
+        if ( $ok )
+        {
+            $opts = array('curricularComponentIdS'=>$data->curricularComponentId);
+
+            if ( $function == 'update' )
+            {
+                $caption = _M('Information', $module);
+                $MIOLO->information($msg, $MIOLO->getActionURL( $module, $action, null, $opts));
+            }
+            else
+            {
+                unset($opts);
+                $goto = SAGU::getStackBackUrl();
+                $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL( $module, $action, null, $opts);
+                $opts = array('function'=>'insert');
+
+                $gotoYes = $MIOLO->getActionURL($module, $action, null, $opts);
+                $caption = _M('Question',$module);
+                $MIOLO->question($msg, $gotoYes, $goto);
+            }
+        }
+        else
+        {
+            $msg  = _M('Error executing requested operation.', $module);
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Error', $module);
+            $MIOLO->error( $msg, $goto, $caption );
+        }
+    }
+
+    /**
+     * Method to gather all information from the form fields
+     * and put them on a database compatible object
+     **/
+    public function getTypesData()
+    {
+        $data = new acdCurricularComponent();
+        $vars = get_object_vars($data);
+        foreach ( $vars as $var => $value )
+        {
+            if ( $this->$var && $var != 'name' )
+            {
+                $data->$var = $this->$var->value;
+            }
+        }
+        $data->name               = $this->curricularComponentName->value;
+        $data->financeCredits     = strlen((string)$this->financeCredits->value) > 0 ? $this->financeCredits->value : $this->academicCredits->value;
+        $data->financeNumberHours = strlen((string)$this->financeNumberHours->value) > 0 ? $this->financeNumberHours->value : $this->academicNumberHours->value;
+		$data->practiceHours = strlen((string)$this->practiceHours->value) > 0 ? $this->practiceHours->value : 0;
+        return $data;
+    }
+
+}
+
+?>

@@ -1,0 +1,160 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for acdEnroll table
+ *
+ * @author Leovan Tavares da Silva [leovan@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 06/02/2006
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+
+/**
+ * Class to manipulate the acdEnroll table
+ **/
+class BusinessAcademicBusEnrollConfirmation extends Business
+{
+
+    var $db;
+
+    function BusinessAcademicBusEnrollConfirmation()
+    {
+        $this->db = $this->getDatabase();
+    }
+
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module = is_null($module) ? 'academic' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+    function getEnrollConfirmation($contractId, $learningPeriodId)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        
+        $busLearningPeriod  = $MIOLO->getBusiness($module, 'BusLearningPeriod');
+        $learningPeriodData = $busLearningPeriod->getLearningPeriod($learningPeriodId);
+
+        $sql = 'SELECT I.shortdescription,
+                       G.shortdescription,
+                       J.room,
+                       J.building,
+                       TO_CHAR(F.beginDate,\'' . MASK_DATE . '\') AS beginDate,
+                       H.description,
+                       B.curricularComponentId,
+                       B.curricularComponentVersion,
+                       CASE WHEN C.shortName = P.shortName THEN C.shortName 
+                       ELSE C.shortName || \'(\' || P.shortName || \')\' END AS curricularComponentName,
+                       M.name,
+                       A.curriculumId,
+                       D.groupId,
+                       D.vacant,
+                       D.totalEnrolled,
+                       N.personId
+                  FROM acdEnroll A
+            INNER JOIN acdCurriculum B
+                    ON (B.curriculumId = A.curriculumId)
+            INNER JOIN acdCurricularComponent C
+                    ON (C.curricularComponentId = B.curricularComponentId
+                        AND C.curricularComponentVersion = B.curricularComponentVersion)
+            INNER JOIN acdGroup D
+                    ON (D.groupId = A.groupId)
+            INNER JOIN acdSchedule E
+                    ON (D.groupId = E.groupId)
+            INNER JOIN acdScheduleLearningPeriod F
+                    ON (F.scheduleLearningPeriodId = E.scheduleLearningPeriodId)
+            INNER JOIN basTurn G
+                    ON (G.turnId = F.turnId)
+            INNER JOIN basUnit H
+                    ON (H.unitId = E.unitId)
+            INNER JOIN basWeekDay I
+                    ON (I.weekDayId = E.weekDayId)
+             LEFT JOIN insPhysicalResource J
+                    ON (J.physicalResourceId = E.physicalResourceId
+                        AND J.physicalResourceVersion = E.physicalResourceVersion )
+            INNER JOIN acdScheduleProfessor L
+                    ON (L.scheduleId = E.scheduleId)
+            INNER JOIN ONLY basPhysicalPersonProfessor M
+                    ON (M.personId = L.professorId)
+            INNER JOIN acdContract N
+                    ON (A.contractId = N.contractId)
+            INNER JOIN acdCurriculum O
+                    ON (O.curriculumId = D.curriculumId)
+            INNER JOIN acdCurricularComponent P
+                    ON (P.curricularComponentId = O.curricularComponentId
+                        AND P.curricularComponentVersion = O.curricularComponentVersion)
+            INNER JOIN acdLearningPeriod Q
+                    ON (Q.learningPeriodId = D.learningPeriodId)
+                 WHERE A.contractId = ?
+                   AND Q.periodId = ?
+                   AND A.statusId NOT IN(' . ENROLL_STATUS_CANCELLED . ')
+                  ORDER BY C.name, A.groupId';
+
+        $args = array (
+                        $contractId,
+                        $learningPeriodData->periodId
+                      );
+
+        $result = $this->db->query(SAGU::prepare($sql,$args));
+
+        return $result;
+    }
+
+    function getEnrolledContracts($courseId, $courseVersion, $turnId, $unitId, $learningPeriodId)
+    {
+        $sql = 'SELECT DISTINCT a.contractId 
+                           FROM acdenroll A 
+                     INNER JOIN acdcontract B 
+                             ON (A.contractid = B.contractid)
+                     INNER JOIN acdgroup C
+                             ON (C.groupId = A.groupId)
+                          WHERE B.courseid = ? 
+                            AND B.courseversion = ? 
+                            AND B.turnid = ? 
+                            AND B.unitid = ?
+                            AND C.learningPeriodId = ? 
+                            AND A.statusid NOT IN (' . ENROLL_STATUS_CANCELLED . ')';
+        
+        $args = array($courseId, $courseVersion, $turnId, $unitId, $learningPeriodId);
+        
+        $result = $this->db->query($x=SAGU::prepare($sql, $args));
+        
+        return $result;
+    }
+}
+
+?>

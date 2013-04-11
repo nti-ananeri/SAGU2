@@ -1,0 +1,186 @@
+<?php
+/**
+*
+* @author Giovani Murilo Dantas Correa [gmurilo@isolution.inf.br]
+*
+* $version: $Id$
+*
+* \b Maintainers \n
+* Daniel Afonso Heisler [daniel@isolution.inf.br]
+*
+* @since
+* Class created on 25/03/2009
+*
+* \b Organization: \n
+* iSolution - Soluções de Internet \n
+* The iSolution TEAM
+*
+* \b CopyLeft: \n
+* CopyLeft (L) 2007 iSolution - Soluções de Internet \n
+*
+* \b License \n
+* Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+*
+* \b History \n
+* See history in CVS repository: http://isolution.inf.br   
+*
+**/
+
+class BusinessAcademicBusCurriculumPDF extends Business
+{
+    function getDatabase($dbname=null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic', 'sagu');
+        $module = is_null($module) ? 'academic' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+    public function __construct()
+    {
+        $this->db = $this->getDatabase();
+    }
+
+    public function getContract($filters)
+    {
+        $MIOLO = MIOLO::getInstance();
+        if ( strlen((string)$filters->contractId) > 0 )
+        {
+            $db = $MIOLO->getBusiness('academic', 'BusContract');
+            $obj = $db->getContract($filters->contractId);
+            $status = array(ENROLL_STATUS_APPROVED, ENROLL_STATUS_EXCUSED, ENROLL_STATUS_APPROVED_INEXAM);
+            $disciplinasAprovadas = $this->db->query('SELECT curriculumId, statusId FROM acdEnroll WHERE statusId IN ('.implode(',', $status).') AND contractId =' . $filters->contractId );
+            if ( count($disciplinasAprovadas) > 0 )
+            {
+                foreach ( $disciplinasAprovadas as $item => $value )
+                {
+                    $obj->approvedCurriculums[$value[0]] = $value[1];
+                }
+            }
+
+            $status = array(ENROLL_STATUS_DISAPPROVED_FOR_LACKS, ENROLL_STATUS_DISAPPROVED, ENROLL_STATUS_DISAPPROVED_INEXAM);
+            $disciplinasReprovadas = $this->db->query('SELECT curriculumId, statusId FROM acdEnroll WHERE statusId IN ('.implode(',', $status).') AND contractId =' . $filters->contractId );
+            if ( count($disciplinasReprovadas) > 0 )
+            {
+                foreach ( $disciplinasReprovadas as $item => $value )
+                {
+                    $obj->disapprovedCurriculums[$value[0]] = $value[1];
+                }
+            }
+
+            $status = array(ENROLL_STATUS_ENROLLED);
+            $disciplinasMatriculadas = $this->db->query('SELECT curriculumId, statusId FROM acdEnroll WHERE statusId IN ('.implode(',', $status).') AND contractId =' . $filters->contractId );
+            if ( count($disciplinasMatriculadas) > 0 )
+            {
+                foreach ( $disciplinasMatriculadas as $item => $value )
+                {
+                    $obj->enrolledCurriculums[$value[0]] = $value[1];
+                }
+            }
+            return $obj;
+        }
+    }
+    
+    public function getCurriculum($filters = null)
+    {
+        if ( strlen((string)$filters->courseId) > 0 && strlen((string)$filters->courseVersion) > 0 && strlen((string)$filters->turnId) > 0 && strlen((string)$filters->unitId) > 0 )
+        {
+            unset($result2);
+            $args[] = $filters->courseId;
+            $args[] = $filters->courseVersion;
+            $args[] = $filters->turnId;
+            $args[] = $filters->unitId;
+            //Obtem informação do curso
+            $sql = '
+            SELECT
+                A.courseId,
+                A.name,
+                B.courseVersion,
+                D.description as turnDescription,
+                E.description as unitDescription,
+                C.authorizationdate,
+                C.authorizationdocument,
+                C.maximumdependent,
+                B.hourtotal
+            FROM
+                acdCourse A INNER JOIN
+                acdCourseVersion B ON ( B.courseId = A.courseId ) INNER JOIN
+                acdCourseOccurrence C ON ( C.courseId = B.courseId AND C.courseVersion = B.courseVersion ) INNER JOIN
+                basTurn D ON ( D.turnId = C.turnId ) INNER JOIN
+                basUnit E ON ( E.unitId = C.unitId ) 
+            WHERE
+                C.courseId = ?
+            AND C.courseVersion = ?::integer
+            AND C.turnId = ?::integer
+            AND C.unitId = ?::integer
+            ';
+
+            $result = $this->db->query(SAGU::prepare($sql,$args));
+            if ( count($result) > 0 )
+            {
+                list (  $result2->courseId, 
+                        $result2->courseName, 
+                        $result2->courseVersion, 
+                        $result2->turnDescription, 
+                        $result2->unitDescription, 
+                        $result2->authorizationDate, 
+                        $result2->authorizationDocument,
+                        $result2->maximumDependent,
+                        $result2->totalNumberHours ) = $result[0];
+            }
+            $result2->totalRegisteredNumberHours = 0;
+            $result2->totalPracticeNumberHours = 0;
+            $result2->totalAcademicNumberHours = 0;
+            //Obtem disciplinas
+            $sql = '
+            SELECT 
+                * 
+            FROM 
+                getCurriculumInfo (?::varchar, ?::integer, ?::integer, ?::integer ) as 
+                (curricularComponentId varchar, 
+                 curricularComponentVersion int, 
+                 name varchar, 
+                 shortname varchar, 
+                 academicNumberHours float, 
+                 lessonNumberHours float, 
+                 practiceNumberHours float, 
+                 semester int, 
+                 curriculumTypeId int, 
+                 curricularComponentTypeId int, 
+                 masterCurriculumId int,
+                 curriculumId int)';
+            unset($result);
+            $result = $this->db->query(SAGU::prepare($sql,$args));
+            if ( count($result) > 0 )
+            {
+                foreach ( $result as $values )
+                {
+                    unset($obj);
+                    $obj->curricularComponentId     = $values[0];
+                    $obj->curricularComponentVersion= $values[1];
+                    $obj->name                      = $values[2];
+                    $obj->shortname                 = $values[3];
+                    $obj->academicNumberHours       = $values[4];
+                    $obj->lessonNumberHours         = $values[5];
+                    $obj->practiceNumberHours       = $values[6];
+                    $obj->semester                  = $values[7];
+                    $obj->curriculumTypeId          = $values[8];
+                    $obj->curricularComponentTypeId = $values[9];
+                    $obj->masterCurriculumId        = $values[10];
+                    $obj->curriculumId              = $values[11];
+                    $result2->curricularComponents[] = $obj;
+
+                    if ( $obj->curriculumTypeId == ACD_CURRICULUM_TYPE_CURRICULAR_INTEGRATE )
+                    {
+                        $result2->totalRegisteredNumberHours += (int)$values[5];
+                        $result2->totalPracticeNumberHours += (int)$values[6];
+                        $result2->totalAcademicNumberHours += (int)$values[4];
+                    }
+                }
+            }
+            return $result2;
+        }
+    }
+}
+?>

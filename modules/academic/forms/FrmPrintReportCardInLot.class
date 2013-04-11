@@ -1,0 +1,161 @@
+<?php
+
+/**
+ * Boletim document form
+ *
+ * @author Giovani Murilo Dantas Corrêa [gmurilo@isolution.inf.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Daniel Afonso Heisler [daniel@isolution.inf.br]
+ *
+ * @since
+ * Class created on 17/03/2008
+ *
+ * \b Organization: \n
+ * iSolution - Solucoes em TI \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2008 iSolution \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ **/
+
+/**
+ * Form to manipulate a contract document
+ **/
+class FrmPrintReportCardInLot extends MForm
+{
+    private $home;
+
+    /**
+     * Class constructor
+     **/
+    function __construct($data)
+    {
+        $module = MIOLO::getCurrentModule();
+        $this->home   = $data->home;
+
+        parent::__construct(_M('Print report card in lot', $module));
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+        $event    = MIOLO::_request('event');
+        $toolBar = new MToolBar('toolBar', $MIOLO->getActionURL($module, $action));
+        $toolBar->hideButton('tbBtnNew');
+        $toolBar->hideButton('tbBtnSave');
+        $toolBar->hideButton('tbBtnSearch');
+        $toolBar->hideButton('tbBtnDelete');
+        $toolBar->enableButton('tbBtnPrint');
+
+        //favoritos
+        $enabledImage  = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-20x20.png');
+        $disabledImage = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-disabled-20x20.png');
+        $url           = $MIOLO->getActionURL($module, $this->home, null, array('function' => 'search', 'event' => 'bookmark'));
+        $toolBar->addButton('tbBtnBookmark', _M('Add to bookmarks', 'basic'), $url, null, true, $enabledImage, $disabledImage);
+
+        if ( MIOLO::_request('event') == 'bookmark' )
+        {
+            $MIOLO->getClass('basic', 'access');
+            access::insert(_M('Print report card in lot',$module), $this->home, 'printReportCardInLot-16x16.png', true);
+        }
+        //fim favoritos
+        $fields[]   = $toolBar;
+
+        $fields[]   = new MSeparator();
+        $fields[]   = new MHiddenField('limbo', '');
+
+
+
+        $busPeriod    = $MIOLO->getBusiness($module, 'BusPeriod');
+        $periodValue  = $this->getFormValue('periodId',$this->periodId->value) ? $this->getFormValue('periodId',$this->periodId->value) : CURRENT_PERIOD_ID;
+        $periodIdLabel  = new MText('periodIdLabel',  _M('Period', 'academic') . ':');
+        $periodIdLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $periodIdLabel->setClass('m-caption m-caption-required');
+
+        $periodId     = new MComboBox('periodId', $periodValue, null, $busPeriod->listPeriod());
+        $validators[] = new MRequiredValidator('periodId', _M('Period','academic'), 'required');
+        $fields[]     = new MHContainer('hctPeriodId', array($periodIdLabel, $periodId));
+
+        $classLabel   = new MText('classLabel', _M('Class',$module) . ':');
+        $classLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $classLabel->setClass('m-caption m-caption-required');
+
+        $classId      = new MLookupTextField('classId', $this->getFormValue('classId', $data->classId), '', FIELD_LOOKUPFIELD_SIZE, null, null, 'className_', $module, 'ClassCourse', null, array(), true);
+        $classId->setJsHint(_M('Enter the class id',$module));
+        $validators[] = new MRequiredValidator('classId', _M('Class','academic'), 'required');
+
+        $className_   = new MTextField('className_', $this->getFormValue('className_', $data->className_), '', FIELD_DESCRIPTION_SIZE);
+        $className_->setReadOnly(true);
+        $className_->setJsHint(_M('Class name',$module));
+
+        $hctClass     = new MHContainer('hctClass', array($classLabel, $classId, $className_));
+        $hctClass->setShowLabel(true);
+        $fields[]     = $hctClass;
+        //Observações
+        $observationsLabel = new MText('observationsLabel', _M('Observations', $module));
+        $observationsLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $observations = new MMultilineField('observations', $this->getFormValue('observations', $data->observations), null, FIELD_DESCRIPTION_SIZE, 5, FIELD_DESCRIPTION_SIZE);
+
+        $fields[] = new MHContainer('hctObservations', array($observationsLabel, $observations));
+
+        //$fields[] = new Separator(_M('Stamps', $module));
+
+        $businessStamp = $MIOLO->getBusiness('basic', 'BusStamp');
+        $stampData     = $businessStamp->listStamp();
+        
+        $stampLabel = new MText('stampLabel', _M('Stamp', $module));
+        $stampLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $stampLabel->setClass('m-caption m-caption-required');
+        $stampId = new MSelection('stampId', $this->getFormValue('stampId', $data->stampId), null, $stampData);
+        $fields[] = new MHContainer('hctStamp', array($stampLabel, $stampId));
+        $validators[] = new MRequiredValidator('stampId', _M('Stamp', $module), 'required');
+
+        $fields[] = new MSeparator();
+
+        $this->setFields($fields);
+        $this->setValidators($validators);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+        $this->setClose($MIOLO->getActionURL($module,substr($action,0,strrpos($action,':'))));
+    }
+
+    /**
+     * Event triggered when user chooses Search from the toolbar
+     **/
+    public function tbBtnPrint_click($sender = null)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $data->classId          = MIOLO::_request('classId');
+        $data->courseName       = MIOLO::_request('contractCourseName');
+        $data->periodId         = MIOLO::_request('periodId');
+        $data->stampId          = MIOLO::_request('stampId');
+        $data->observations     = MIOLO::_request('observations');
+        if ( strlen((string)$data->classId) == 0 )
+        {
+            $data->classId = $contract[0][15]; 
+        }
+        $MIOLO->getClass($module, 'RptSchoolYieldInLot');
+        $report = new RptSchoolYieldInLot($data); 
+    }
+}
+
+?>

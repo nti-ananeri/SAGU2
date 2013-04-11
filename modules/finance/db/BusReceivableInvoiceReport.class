@@ -1,0 +1,174 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for finInvoice table
+ *
+ * @author William Prigol Lopes [william@solis.coop.br] 
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * Rafael Luís Spengler [rafael@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ *
+ * @since
+ * Class created on 13/12/2005
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to manipulate the Invoice table
+ **/
+class BusinessFinanceBusReceivableInvoiceReport extends MBusiness
+{
+    protected $db;
+
+    function BusinessFinanceBusReceivableInvoiceReport()
+    {
+        $this->db = $this->getDatabase();
+    }
+
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module = is_null($module) ? 'finance' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+     /**
+     * List the default invoice listing on reports section
+     * 
+     * @param $data (object): Filters for search
+     *
+     * @return (array): Array containing the result of filter
+     **/
+    public function listReceivableInvoiceReport($data)
+    {
+        
+        $MIOLO = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+        
+        $sql = ' SELECT A.invoiceId,
+                        A.invoiceId,
+                        A.personId,
+                        B.name,
+                        ROUND(A.value, 2),
+                        ROUND(balance(A.invoiceId), 2),
+                        B.residentialPhone,
+                        B.workPhone,
+                        B.cellPhone,
+                        B.messagePhone
+              FROM ONLY finReceivableInvoice A
+        INNER JOIN ONLY basPhysicalPerson B
+                  USING (personId) ';
+        
+        $where = '';
+        if (strlen((string)$data->beginMaturityDate)>0)
+        {
+            $where.= ' AND   A.maturityDate >= TO_DATE(?, \''.MASK_DATE.'\') ';
+            $args[] = $data->beginMaturityDate;
+        }
+
+        if (strlen((string)$data->endMaturityDate)>0)
+        {
+            $where.= ' AND   A.maturityDate <= TO_DATE(?, \''.MASK_DATE.'\') ';
+            $args[] = $data->endMaturityDate;
+        }
+
+        if (strlen((string)$data->emissionDate)>0)
+        {
+            $where.= ' AND   A.emissionDate = TO_DATE(?, \''.MASK_DATE.'\') ';
+            $args[] = $data->emissionDate;
+        }
+        
+        if (strlen((string)$where)>0)
+        {
+            if ($data->onlyOpenInvoices == 't')
+            {
+                $where.= ' AND balance(A.invoiceId) <> '.SAGU::formatNumber(0);
+            }
+            $sql.=' WHERE '.substr($where, 5).' ORDER BY 3 ';
+            $db = $this->getDatabase();
+           
+           $return = $db->query(SAGU::prepare($sql, $args));
+        }
+        
+        if (is_array($return))
+        {
+            foreach ($return as $key => $ret)
+            {
+                $string = new MLink('invoice_'.$return[$key][0], $return[$key][0], $MIOLO->getActionURL($module, 'main:report:receivableInvoiceConsult', null, array('invoiceId'=>$return[$key][0])));
+                $return[$key][0] = $string->generate();
+
+                $string = new MLink('person_'.$return[$key][2], $return[$key][2], $MIOLO->getActionURL($module, 'main', null, array('personId'=>$return[$key][2], 'event'=>'personConsultation_click')));
+                $return[$key][2] = $string->generate();
+                unset($return[$key][6]);
+                unset($return[$key][7]);
+                unset($return[$key][8]);
+                unset($return[$key][9]);
+                
+                // Residential phone
+                if (strlen((string)$ret[6])>0)
+                {
+                    $str[] = '<b>'._M('Res', $module).':</b> '.$ret[6];
+                }
+                
+                // Work phone
+                if (strlen((string)$ret[7])>0)
+                {
+                    $str[] = '<b>'._M('Work', $module).':</b> '.$ret[7];
+                }
+                
+                // Cell phone
+                if (strlen((string)$ret[8])>0)
+                {
+                    $str[] = '<b>'._M('Cell', $module).':</b> '.$ret[8];
+                }
+                
+                // Message phone
+                if (strlen((string)$ret[9])>0)
+                {
+                    $str[] = '<b>'._M('Message', $module).':</b> '.$ret[9];
+                }
+                if (is_array($str))
+                {
+                    $return[$key][6] = implode('<br>', $str);
+                    unset($str);
+                }
+                else
+                {
+                    $return[$key][6] = _M('No phones registered', $module);
+                }
+            }
+        }
+        return $return;
+    } 
+}
+?>

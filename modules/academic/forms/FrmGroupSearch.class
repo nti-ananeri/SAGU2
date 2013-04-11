@@ -1,0 +1,411 @@
+<?php
+
+/**
+ *
+ * This file handles the connection and actions for acdGroup table
+ *
+ * @author Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 22/09/2005
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+class GroupGridData
+{
+    public $title; // grid title
+    public $data; // array containing the grid data to be used with setData()
+    public $confirmed; // number of confirmed groups
+    public $cancelled; // number of cancelled groups
+
+    public function __construct($grdTitle)
+    {
+        $this->title = $grdTitle;
+        unset($this->data);
+        $this->confirmed = 0;
+        $this->cancelled = 0;
+    }
+}
+
+/**
+ * Form to search the acdGroup table
+ */
+class FrmGroupSearch extends MForm
+{
+    private $home;
+    private $module;
+
+    /**
+     * Class constructor
+     */
+    function __construct($data)
+    {
+        $this->module = 'academic';
+        $module = $this->module;
+
+        $this->home   = $data->home;
+
+        parent::__construct(_M('Search',$module));
+
+        // hide the 'Submit' button
+        $this->setShowPostButton(false);
+
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+
+    }
+
+    /**
+     *  Default method to define fields
+     */
+    public function createFields()
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $toolBar = new MToolBar('toolBar',$MIOLO->getActionURL($module,$action));
+//        $toolBar->disableButton('tbBtnSearch');
+        $toolBar->disableButton('tbBtnSave');
+        $toolBar->disableButton('tbBtnDelete');
+//        $toolBar->disableButton('tbBtnPrint');
+
+        //favoritos
+        $enabledImage  = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-20x20.png');
+        $disabledImage = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-disabled-20x20.png');
+        $url           = $MIOLO->getActionURL($module, $this->home, null, array('function' => 'search', 'event' => 'bookmark'));
+        $toolBar->addButton('tbBtnBookmark', _M('Add to bookmarks', 'basic'), $url, null, true, $enabledImage, $disabledImage);
+
+        if ( MIOLO::_request('event') == 'bookmark' )
+        {
+            $MIOLO->getClass('basic', 'access');
+            access::insert(_M('Offered curricular component', $module), $this->home, 'group-16x16.png', true);
+        }
+        //fim favoritos
+
+        $fields[] = $toolBar;
+
+        $limbo = new MHiddenField('limbo', '');
+        $fields[] = $limbo;
+
+        $groupIdS = new MTextField('groupIdS', $this->groupIdS->value, _M('Offered curricular component id',$module), FIELD_ID_SIZE);
+        $groupIdS->setJsHint(_M('Enter the offered curricular component code',$module));
+        $fields[] = $groupIdS;
+        $validators[] = new MIntegerValidator('groupIdS', _M('Offered curricular component id',$module), 'optional');
+
+        $curricularComponentLabelS = new MText('curricularComponentLabelS', _M('Curricular component', $module));
+        $curricularComponentLabelS->setWidth(FIELD_CONTAINER_SIZE);
+        $flds[] = $curricularComponentLabelS;
+        
+        $curricularComponentIdS = new MLookupTextField('curricularComponentIdS', $this->getFormValue('curricularComponentIdS', $data->curricularComponentIdS), _M('Code',$module), FIELD_LOOKUPFIELD_SIZE, null, null, 'curricularComponentVersionS,curricularComponentNameS', $module, 'CurricularComponent', null, array('curricularComponentId' => 'curricularComponentIdS'), !$this->page->isPostBack());
+        $flds[]                = $curricularComponentIdS;
+  
+        $curricularComponentVersionS = new MTextField('curricularComponentVersionS', $this->getFormValue('curricularComponentVersionS', $data->curricularComponentVersionS), _M('Version',$module), FIELD_ID_SIZE);
+        $flds[]                = $curricularComponentVersionS;
+
+        $curricularComponentNameS = new MTextField('curricularComponentNameS', $this->getFormValue('curricularComponentNameS', $data->curricularComponentNameS), _M('Name',$module), FIELD_DESCRIPTION_SIZE);
+        $flds[]                  = $curricularComponentNameS;
+
+        $hctCurricularComponentS = new MHContainer('hctCurricularComponentS', $flds);
+        $hctCurricularComponentS->setShowLabel(false);
+        $fields[]  = $hctCurricularComponentS;
+        unset($flds);
+
+
+        //Course
+        $courseLabelS   = new MText('courseLabelS', _M('Course',$module) . ':');
+        $courseLabelS->setWidth(FIELD_CONTAINER_SIZE);
+
+        $courseIdS      = new MLookupTextField('courseIdS', $this->getFormValue('courseIdS', $data->courseIdS), '', FIELD_LOOKUPFIELD_SIZE, null, null, 'courseVersionS, courseNameS', $module, 'CourseOccurrence', null, array('courseId' => 'courseIdS'), !$this->page->isPostBack());
+        $courseIdS->setJsHint(_M('Enter the course code',$module));
+
+        $courseNameS    = new MTextField('courseNameS', $this->getFormValue('courseNameS', $data->courseNameS), '', FIELD_DESCRIPTION_SIZE);
+        $courseNameS->setJsHint(_M('Course name',$module));
+
+        $courseVersionS = new MTextField('courseVersionS', $this->getFormValue('courseVersionS', $data->courseVersionS), '', FIELD_ID_SIZE);
+        $courseVersionS->setReadOnly(true);
+        $courseVersionS->setJsHint(_M('Course version code',$module));
+
+        $hctCourseS     = new MHContainer('hctCourseS', array($courseLabelS, $courseIdS, $courseVersionS, $courseNameS));
+        $hctCourseS->setShowLabel(true);
+        $fields[]      = $hctCourseS;
+
+        $businessPeriod = $MIOLO->getBusiness($module,'BusPeriod');
+        $periodId = new MComboBox('periodId', $this->getFormValue('periodId', CURRENT_PERIOD_ID), _M('Period',$module), $businessPeriod->listPeriod(), true );
+        $fields[] = $periodId;
+
+        $learningPeriodLabelS = new MText('learningPeriodLabelS', _M('Learning period', $module));
+        $learningPeriodLabelS->setWidth(FIELD_CONTAINER_SIZE);
+        $flds[] = $learningPeriodLabelS;
+        
+        $learningPeriodIdS = new MLookupTextField('learningPeriodIdS', $this->learningPeriodIdS->value, _M('Learning period id',$module), FIELD_LOOKUPFIELD_SIZE, null, null, 'limbo,limbo,limbo,limbo,limbo,learningPeriodDescriptionS', $module, 'LearningPeriod', null, array('periodId' => 'periodId', 'courseId'=>'courseIdS'), true);
+        $flds[] = $learningPeriodIdS;
+
+        $learningPeriodDescriptionS = new MTextField('learningPeriodDescriptionS', $this->learningPeriodDescriptionS->value, _M('Learning period description',$module), FIELD_DESCRIPTION_SIZE);
+        $learningPeriodDescriptionS->setJsHint(_M('Enter the learning period description',$module));
+        $flds[] = $learningPeriodDescriptionS;
+        
+        $hctLearningPeriodS = new MHContainer('hctLearningPeriodS', $flds);
+        $hctLearningPeriodS->setShowLabel(false);
+        $fields[] = $hctLearningPeriodS;
+        
+        $business   = $MIOLO->getBusiness($module, 'BusRegimen');
+        $regimenIdS = new MComboBox('regimenIdS', $this->getFormValue('regimenIdS', $data->regimenIdS), _M('Regimen id', $module), $business->listRegimen());
+        $fields[]   = $regimenIdS;
+
+        $business = $MIOLO->getBusiness('basic','BusUnit');
+        $opts = $business->listUnit();
+        $unitIdS = new MComboBox('unitIdS', $this->getFormValue('unitIdS', $data->unitIdS), _M('Unit id',$module), $opts);
+        $fields[] = $unitIdS;
+        
+        $business = $MIOLO->getBusiness('basic', 'BusTurn');
+        $turnIdS = new MComboBox( 'turnIdS',
+                                $this->getFormValue('turnIdS',$data->turnIdS),
+                                _M('Turn id',$module),
+                                $business->listTurn());
+        $fields[] = $turnIdS;
+
+        $professorLabelS = new MText('professorLabelS', _M('Professor',$module) . ':');
+        $professorLabelS->setWidth(FIELD_CONTAINER_SIZE);
+
+        $professorIdS = new MLookupTextField('professorIdS', $this->getFormValue('professorIdS', $data->professorIdS), '', FIELD_LOOKUPFIELD_SIZE, null, null, 'professorNameS', 'basic', 'PhysicalPersonProfessor', null, null, true);
+        $professorIdS->setJsHint(_M('Professor id',$module));
+
+        $professorNameS = new MTextField('professorNameS', $this->getFormValue('professorNameS', $data->professorNameS), '', FIELD_DESCRIPTION_SIZE);
+        $professorNameS->setJsHint(_M('Professor name',$module));
+
+        $hctProfessorS = new MHContainer('hctProfessorS', array( $professorLabelS, $professorIdS, $professorNameS) );
+        $hctProfessorS->setShowLabel(false);
+        $fields[]  = $hctProfessorS;
+        
+        $classLabelS = new MText('classLabelS', _M('Class',$module) . ':');
+        $classLabelS->setWidth(FIELD_CONTAINER_SIZE);
+
+        $classIdS = new MLookupTextField('classIdS', $this->getFormValue('classIdS', $data->classIdS), _M('Class id',$module), FIELD_LOOKUPFIELD_SIZE, null, null, array('classNameS_'), $module, 'Class', null, null, true);
+        
+        $classNameS = new MTextField('classNameS_', $this->getFormValue('classNameS_', $data->classNameS), _M('Class name', $module), FIELD_DESCRIPTION_SIZE);
+        //$classNameS->setReadOnly(true);
+        
+        $hctClassS = new MHContainer('hctClassS', array($classLabelS, $classIdS, $classNameS));
+        $hctClassS->setShowLabel(false);
+        $fields[] = $hctClassS;
+
+        $fields[] = new MCheckBox('chkIsCancellation', 't', _M('Cancelled only', $module), $this->getFormValue('chkIsCancellation', 'f') == 't', _M('Check this box to show cancelled groups only', $module));
+        $fields[] = new MCheckBox('chkPrintWithTotals', 't', _M('Print with vacant totals', $module), $this->getFormValue('chkPrintWithTotals', 'f') == 't', _M('Check this box to print with vacant totals', $module));
+        
+        $fields[] = new MButton('btnSearch',_M('Search',$module));
+
+        $this->setFields($fields);
+        $this->setValidators($validators);
+
+        $this->page->onLoad('document.' . $this->name . '.groupIdS.focus();');
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+
+    }
+
+    public function tbBtnPrint_click()
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $filters->groupId                    = $this->groupIdS->value;
+        $filters->curricularComponentId      = $this->curricularComponentIdS->value;
+        $filters->curricularComponentVersion = $this->curricularComponentVersionS->value;
+        $filters->curricularComponentName    = $this->curricularComponentNameS->value;
+        $filters->periodId                   = $this->periodId->value;
+        $filters->learningPeriodId           = $this->learningPeriodIdS->value;
+        $filters->learningPeriodDescription  = $this->learningPeriodDescriptionS->value;
+        $filters->regimenId                  = $this->regimenIdS->value;
+        $filters->unitId                     = $this->unitIdS->value;
+        $filters->turnId                     = $this->turnIdS->value;
+        $filters->professorId                = $this->professorIdS->value;
+        $filters->professorName              = $this->professorNameS->value;
+        $filters->courseId                   = $this->courseIdS->value;
+        $filters->courseVersion              = $this->courseVersionS->value;
+        $filters->courseName                 = $this->courseNameS->value;
+        $filters->classId                    = $this->classIdS->value;
+        $filters->className                  = $this->classNameS_->value;
+        if ( $this->getFormValue('chkIsCancellation') == 't' )
+        {
+            $filters->isCancellation = DB_TRUE;
+        }
+
+        if ( $this->getFormValue('chkPrintWithTotals') == 't' )
+        {
+            $filters->printWithoutTotals = DB_TRUE;
+        }
+        $class = 'RptScheduleReport';
+        
+        $MIOLO->getClass($module, $class);
+        $report = new $class($filters); 
+    }
+
+    public function btnSearch_click()
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        // get filters values
+        $filters->groupId                    = $this->groupIdS->value;
+        $filters->curricularComponentId      = $this->curricularComponentIdS->value;
+        $filters->curricularComponentVersion = $this->curricularComponentVersionS->value;
+        $filters->curricularComponentName    = $this->curricularComponentNameS->value;
+        $filters->periodId                   = $this->periodId->value;
+        $filters->learningPeriodId           = $this->learningPeriodIdS->value;
+        $filters->learningPeriodDescription  = $this->learningPeriodDescriptionS->value;
+        $filters->regimenId                  = $this->regimenIdS->value;
+        $filters->unitId                     = $this->unitIdS->value;
+        $filters->turnId                     = $this->turnIdS->value;
+        $filters->professorId                = $this->professorIdS->value;
+        $filters->professorName              = $this->professorNameS->value;
+        $filters->courseId                   = $this->courseIdS->value;
+        $filters->courseVersion              = $this->courseVersionS->value;
+        $filters->courseName                 = $this->courseNameS->value;
+        $filters->classId                    = $this->classIdS->value;
+        $filters->className                  = $this->classNameS_->value;
+        
+        if ( $this->getFormValue('chkIsCancellation') == 't' )
+        {
+            $filters->isCancellation = DB_TRUE;
+        }
+ 
+        $business                  = $MIOLO->getBusiness($module,'BusGroup');
+        $businessSchedule          = $MIOLO->getBusiness($module,'BusSchedule');
+        $businessScheduleProfessor = $MIOLO->getBusiness($module,'BusScheduleProfessor');
+
+        $busLearningPeriod = $MIOLO->getBusiness($module, 'BusLearningPeriod');
+        $busCourse         = $MIOLO->getBusiness($module, 'BusCourse');
+        $busUnit           = $MIOLO->getBusiness('basic', 'BusUnit');
+
+        $groups = $business->searchGroup($filters);
+        // iterate all groups found, finding the schedules of each group and the
+        // professors of each schedule
+        $oldLearningPeriodId = '';
+        $gridNumber = -1;
+        unset($data);
+        for ( $i=0; $i<count($groups); $i++ )
+        {
+            if ( $oldLearningPeriodId != $groups[$i][7] )
+            {
+                $gridNumber++;
+
+                $learningPeriodData = $busLearningPeriod->getLearningPeriod($groups[$i][7]);
+                $courseData         = $busCourse->getCourse($learningPeriodData->courseId); 
+                $unitData           = $busUnit->getUnit($learningPeriodData->unitId); 
+
+                $grdTitle = _M('Learning period', $module) . ' ' . $groups[$i][7] . ' : '. $learningPeriodData->learningPeriodDescription . ' : ' .
+                            $learningPeriodData->periodId . ' | ' .
+                            _M('Course', $module) . ' ' . $learningPeriodData->courseId . '/' . $learningPeriodData->courseVersion . ' ' . $courseData->shortName . ' | ' . 
+                            _M('Unit', $module) . ' ' .  $learningPeriodData->unitId . ' ' . $unitData->description;
+                $grdTitle = str_replace(' ', '&nbsp;', $grdTitle);
+                $data[$gridNumber] = new GroupGridData($grdTitle);
+
+                $oldLearningPeriodId = $groups[$i][7];
+            }
+
+            // make curricular component data link to enrolled pupils listing
+            $mlink = new MLink('groupPupils' . $groups[$i][0], NULL, $MIOLO->getActionURL($module, 'main:process:group:groupEnrolledPeople', NULL, array('groupId'=>$groups[$i][0])), $groups[$i][1], 'new');
+            $mlink->setClass('m-grid-column');
+            $groups[$i][1] = $mlink->generate();
+
+            // totalizers
+            if ( $groups[$i][2] == DB_TRUE )
+            {
+                $text = new MText('group' . $groups[$i][0], _M('Cancelled', $module));
+                $text->color = 'red';
+                $data[$gridNumber]->cancelled++;
+            }
+            else
+            {
+                $text = new MText('group' . $groups[$i][0], _M('Confirmed', $module));
+                $text->color = 'blue';
+                $data[$gridNumber]->confirmed++;
+            }
+            $groups[$i][2] = $text->generate();
+
+            $data[$gridNumber]->data[] = array($groups[$i][0], //groupId
+                                               $groups[$i][1], //curricularComponent
+                                               $groups[$i][2], //isCancellation
+                                               $groups[$i][3], //totalEnrolled/vacant
+                                               $groups[$i][4]  //regimen
+                                              );
+
+            // get all schedules for this group
+            unset($filters);
+            $filters->groupId = $groups[$i][0];
+            $schedules = $businessSchedule->searchSchedule($filters);
+
+            for ( $j=0; $j<count($schedules); $j++ )
+            {
+                // get all professors of this schedule
+                unset($filters);
+                $filters->scheduleId = $schedules[$j][0];
+                $scheduleProfessors = $businessScheduleProfessor->searchScheduleProfessor($filters);
+                unset($profs);
+                for ( $k=0; $k<count($scheduleProfessors); $k++ )
+                {
+                    $profs .= $scheduleProfessors[$k][2] . '<br />';
+                }
+
+                $data[$gridNumber]->data[] = array('&nbsp;', // first column is blank
+                                                   '<i>' . $profs . '</i>',   // put all professors of a schedule together
+                                                   '<i>' . $schedules[$j][7] . ' - ' . $schedules[$j][9] . ' - ' . $schedules[$j][12] . ' - ' . $schedules[$j][13] . '</i>', // schedule information: day of week, turn, begin time and end time
+                                                   '<i>' . $schedules[$j][16] . '</i>', // room
+                                                   '<i>' . $schedules[$j][5] . '</i>', // unit
+                                                   '<i>' . $schedules[$j][25] . '</i>', // begin date
+                                                   '<i>' . $schedules[$j][26] . '</i>' // end date
+                                                  );
+            }
+        }
+
+        if ( count($data) == 0 )
+        {
+            $this->addInfo(_M('No records found.', $module));
+        }
+        else
+        {
+            for ( $i=0; $i<count($data); $i++ )
+            {
+                $grdResults = $MIOLO->getUI()->getGrid($module, 'GrdGroupSearch');
+                $grdResults->setTitle($data[$i]->title);
+                $grdResults->setData($data[$i]->data);
+
+                $this->addField($grdResults);
+
+                // totalizers for each grid
+                $this->addField(new MSeparator());
+                $this->addField(new MTextLabel('confirmed', '<font color=\'blue\'>' . $data[$i]->confirmed . '</font>', _M('Total confirmed', $module)));
+                $this->addField(new MTextLabel('cancelled', '<font color=\'red\'>' . $data[$i]->cancelled . '</font>', _M('Total cancelled', $module)));
+                $this->addField(new MTextLabel('total', '<font color=\'green\'>' . ($data[$i]->confirmed + $data[$i]->cancelled) . '</font>', _M('Total offered curricular components', $module)));
+                $this->addField(new MSeparator());
+            }
+        }
+    }
+
+}
+
+?>

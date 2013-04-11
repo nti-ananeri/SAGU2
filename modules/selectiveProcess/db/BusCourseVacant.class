@@ -1,0 +1,214 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for sprCourseVacant table
+ *
+ * @author Rafael Luís Spengler [rafael@solis.coop.br] 
+ *
+ * @version: $Id$
+ * 
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * Rafael Luís Spengler [rafael@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 05/12/2005
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to manipulate the sprCourseVacant table
+ **/
+class BusinessSelectiveProcessBusCourseVacant extends Business
+{
+
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module = is_null($module) ? 'selectiveProcess' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+    public function getCourseVacant($courseVacantId)
+    {
+        $sql = 'SELECT A.courseVacantId,
+                       B.selectiveProcessId,
+                       A.vacant,
+                       A.description,
+                       A.userName,
+                       TO_CHAR(A.dateTime,\'' . MASK_TIMESTAMP . '\'),
+                       A.ipAddress
+                  FROM sprCourseVacant A
+             LEFT JOIN sprSelectiveProcess B
+                    ON ( B.selectiveProcessId = A.selectiveProcessId )
+                 WHERE A.courseVacantId = ?';
+
+        $db     = $this->getDatabase();
+        $result = $db->query(SAGU::prepare($sql, $courseVacantId));
+
+        $courseVacant = new sprCourseVacant();
+        list ( $courseVacant->courseVacantId,
+               $courseVacant->selectiveProcessId,
+               $courseVacant->vacant,
+               $courseVacant->description,
+               $courseVacant->userName,
+               $courseVacant->dateTime,
+               $courseVacant->ipAddress) = $result[0];
+
+        return $courseVacant;
+    }
+    
+    /**
+     * Do a search on the database table handled by the class
+     *
+     * @param $filters (object): Search filters
+     *
+     * @return (array): An array containing the search results
+     **/
+    public function searchCourseVacant($filters)
+    {
+        $sql = 'SELECT A.courseVacantId,
+                       B.selectiveProcessId,
+                       A.vacant,
+                       A.description AS courseVacantDescription
+                  FROM sprCourseVacant A
+             LEFT JOIN sprSelectiveProcess B
+                    ON ( A.selectiveProcessId = B.selectiveProcessId )';
+
+        if ( strlen((string)$filters->courseVacantId) > 0 )
+        {
+            $where .= ' AND A.courseVacantId = ? ';
+            $args[] = $filters->courseVacantId;
+        }
+        if ( strlen((string)$filters->selectiveProcessId) > 0 )
+        {
+            $where .= ' AND A.selectiveProcessId ILIKE ? ';
+            $args[] = $filters->selectiveProcessId;
+        }
+        if ( strlen((string)$filters->vacant) > 0 )
+        {
+            $where .= ' AND A.vacant = ? ';
+            $args[] = $filters->vacant;
+        }
+        if ( strlen((string)$filters->description) > 0 )
+        {
+            $where .= ' AND TO_ASCII(A.description) ILIKE TO_ASCII(?) ';
+            $args[] = $filters->description . '%';
+        }
+
+        unset($result);
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE ' . substr($where, 4) . ' ORDER BY courseVacantId';
+            $db = $this->getDatabase();
+
+            $result = $db->query(SAGU::prepare($sql, $args));
+        }
+        return $result;
+    }
+
+    /**
+     * Insert a new record
+     *
+     * @param $data (object): An object of the type handled by the class
+     *
+     * @return True if succed, otherwise False
+     *
+     **/
+    public function insertCourseVacant($data)
+    {
+        $sql = 'INSERT INTO sprCourseVacant
+                            (selectiveProcessId,
+                             vacant,
+                             description )
+                     VALUES (?,?,?)';
+
+        $args   = array ( $data->selectiveProcessId,
+                          $data->vacant,
+                          $data->description );
+
+        $db     = $this->getDatabase();
+        $result = $db->execute(SAGU::prepare($sql, $args));
+
+        return $result;
+    }
+
+    /**
+     * Update data from a specific record
+     *
+     * @param $data (object): Data which will replace the old record data
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+    public function updateCourseVacant($data)
+    {
+        $sql = 'UPDATE sprCourseVacant
+                   SET selectiveProcessId   = ?,
+                       vacant               = ?,
+                       description          = ?
+                 WHERE courseVacantId       = ?';
+
+        $args = array( $data->selectiveProcessId,
+                       $data->vacant,
+                       $data->description,
+                       $data->courseVacantId);
+
+        $db   = $this->getDatabase();
+        $sqls = SAGU::prepare($sql, $args);
+        for ( $i=0; $i<count($sqls); $i++ )
+        {
+            $result = $db->execute($sqls[$i]);
+        }
+
+        return $result;
+    }
+
+    /**
+     * Delete a record
+     *
+     * @param $courseVacantId (string): Primary key for deletion
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+    public function deleteCourseVacant($courseVacantId)
+    {
+        $sql = 'DELETE FROM sprCourseVacant
+                      WHERE courseVacantId = ?';
+
+        $db     = $this->getDatabase();
+        $result = $db->execute(SAGU::prepare($sql, $courseVacantId));
+        //$db->close();
+
+        return $result;
+    }
+
+}
+
+?>

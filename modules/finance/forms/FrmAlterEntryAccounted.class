@@ -1,0 +1,172 @@
+<?php
+
+/**
+ * Payment place form
+ *
+ * @author Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ *
+ * @since
+ * Class created on 22/12/2005
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2005 SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+
+/**
+ * Form to manipulate a bank account
+ **/
+class FrmAlterEntryAccounted extends MForm
+{
+
+    /**
+     * Class constructor
+     **/
+    function __construct()
+    {
+
+        $module = MIOLO::getCurrentModule();
+
+        if ( MIOLO::_request('function') == 'insert' )
+        {
+            parent::__construct(_M('Insert', $module));
+        }
+        else
+        {
+            parent::__construct(_M('Update', $module));
+        }
+
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+
+        $function = MIOLO::_request('function');
+
+        $fields[] = new Separator('');
+
+        $fields[] = new MHiddenField('goto', strlen((string)MIOLO::_request('goto'))>0 ? MIOLO::_request('goto') : MIOLO::_request('goto', 'GET'));
+
+        $this->setFields($fields);
+        if ($validators)
+        {
+            $this->setValidators($validators);
+        }
+
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+        $this->setClose($MIOLO->getActionURL($module,substr($action,0,strrpos($action,':'))));
+        $this->page->onLoad('document.' . $this->name . '.bankId.focus();');
+
+    }
+    /**
+     * Event triggered when user chooses Save from the toolbar
+     **/
+    public function tbBtnUpdate_click($sender=NULL)
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $goto        = MIOLO::_request('goto') ? MIOLO::_request('goto') : MIOLO::_request('goto', 'GET');
+        $entryId     = MIOLO::_request('entryId') ? MIOLO::_request('entryId') : MIOLO::_request('entryId', 'GET');
+        $isAccounted = MIOLO::_request('isAccounted') ? MIOLO::_request('isAccounted') : MIOLO::_request('isAccounted', 'GET');
+
+        if($isAccounted == DB_TRUE)
+        {
+            $newAccounted = DB_FALSE;
+        }
+        elseif($isAccounted == DB_FALSE)
+        {
+            $newAccounted = DB_TRUE;
+        }
+        $opts   = array('event'=>'tbBtnSave_click',
+                        'function'=>'update',
+                        'entryId'=> $entryId,
+                        'isAccounted'=> $isAccounted,
+                        'newAccounted'=> $newAccounted,
+                        'goto'=>urlencode($goto));
+
+        $action2 = 'main';
+
+
+        $gotoYes = $MIOLO->getActionURL( $module, $action, null, $opts );
+        $goto    = strlen((string)$goto)>0 ? $goto : SAGU::getStackBackUrl();
+        $gotoNo  = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action2);
+
+        $msg     = _M('You realy want modify the accounting of entry @1 ?', $module, $entryId );
+        $caption = _M('Question', $module);
+        $MIOLO->question($msg, $gotoYes, $gotoNo);
+    }
+
+
+    /**
+     * Event triggered when user chooses Save from the toolbar
+     **/
+    public function tbBtnSave_click($sender=NULL)
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+        $goto        = MIOLO::_request('goto') ? MIOLO::_request('goto') : MIOLO::_request('goto', 'GET');
+        $entryId      = MIOLO::_request('entryId') ? MIOLO::_request('entryId') : MIOLO::_request('entryId', 'GET');
+        $isAccounted  = MIOLO::_request('isAccounted') ? MIOLO::_request('isAccounted') : MIOLO::_request('isAccounted', 'GET');
+        $newAccounted = MIOLO::_request('newAccounted') ? MIOLO::_request('newAccounted') : MIOLO::_request('newAccounted', 'GET');
+
+        $business = $MIOLO->getBusiness($module, 'BusEntry');
+        $data     = $business->getEntry($entryId);
+
+        $data->isAccounted = $newAccounted;
+        $data->entryId     = $entryId;
+
+        $ok = $business->updateEntry($data);
+
+        if($ok)
+        {
+            $action = 'main:register:entry';
+            $msg  = MSG_RECORD_UPDATED;
+            $opts = array('entryIdS'=>$data->entryId, 'event'=>'btnSearch_click');
+            $goto = strlen((string)$goto) > 0 ? $goto : $MIOLO->getActionURL( $module, $action, null, $opts);
+            $MIOLO->information($msg, $goto);
+        }
+        else
+        {
+            $msg  = _M('Error executing requested operation.',$module);
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Error', $module);
+            $MIOLO->error( $msg, $goto, $caption );
+        }
+    }
+
+
+}
+
+?>

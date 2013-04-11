@@ -1,0 +1,155 @@
+<?php
+
+/**
+ * Boletim document form
+ *
+ * @author Giovani Murilo Dantas Corrêa [gmurilo@isolution.inf.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Daniel Afonso Heisler [daniel@isolution.inf.br]
+ *
+ * @since
+ * Class created on 17/03/2008
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2008 iSolution \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+
+/**
+ * Form to manipulate a contract document
+ **/
+class FrmResultFinalAct extends MForm
+{
+    private $home;
+
+    /**
+     * Class constructor
+     **/
+    function __construct($data)
+    {
+        $module = MIOLO::getCurrentModule();
+        $this->home   = $data->home;
+
+        parent::__construct(_M('Result final act', $module));
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+        $event    = MIOLO::_request('event');
+        $toolBar = new MToolBar('toolBar', $MIOLO->getActionURL($module, $action));
+        $toolBar->hideButton('tbBtnNew');
+        $toolBar->hideButton('tbBtnSave');
+        $toolBar->hideButton('tbBtnSearch');
+        $toolBar->hideButton('tbBtnDelete');
+        $toolBar->enableButton('tbBtnPrint');
+
+        //favoritos
+        $enabledImage  = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-20x20.png');
+        $disabledImage = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-disabled-20x20.png');
+        $url           = $MIOLO->getActionURL($module, $this->home, null, array('function' => 'search', 'event' => 'bookmark'));
+        $toolBar->addButton('tbBtnBookmark', _M('Add to bookmarks', 'basic'), $url, null, true, $enabledImage, $disabledImage);
+
+        if ( MIOLO::_request('event') == 'bookmark' )
+        {
+            $MIOLO->getClass('basic', 'access');
+            access::insert('Result final act', $this->home, 'resultFinalCat-16x16.png', true);
+        }
+        //fim favoritos
+        $fields[]   = $toolBar;
+
+        $fields[]   = new MSeparator();
+        $fields[]   = new MHiddenField('limbo', '');
+
+
+
+        $busPeriod    = $MIOLO->getBusiness($module, 'BusPeriod');
+        $periodValue  = $this->getFormValue('periodId',$this->periodId->value) ? $this->getFormValue('periodId',$this->periodId->value) : CURRENT_PERIOD_ID;
+        $periodId     = new MComboBox('periodId', $periodValue, _M('Period', 'academic'), $busPeriod->listPeriod());
+        //$periodId->setAutoPostBack(true);
+        $validators[] = new MRequiredValidator('periodId', _M('Period','academic'), 'required');
+        $fields[]     = $periodId;
+
+        $classLabel   = new MText('classLabel', _M('Class',$module) . ':');
+        $classLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $classLabel->setClass('m-caption m-caption-required');
+
+        $classId      = new MLookupTextField('classId', $this->getFormValue('classId', $data->classId), '', FIELD_LOOKUPFIELD_SIZE, null, null, 'className_', $module, 'ClassCourse', null, null, true);
+        $classId->setJsHint(_M('Enter the class id',$module));
+
+        $className_   = new MTextField('className_', $this->getFormValue('className_', $data->className_), '', FIELD_DESCRIPTION_SIZE);
+        $className_->setReadOnly(true);
+        $className_->setJsHint(_M('Class name',$module));
+
+        $hctClass     = new MHContainer('hctClass', array($classLabel, $classId, $className_));
+        $hctClass->setShowLabel(true);
+        $fields[]     = $hctClass;
+        $validators[] = new MRequiredValidator('classId', _M('Class', $module));
+
+        $isPresentLabel = new MText('isPresentLabel', _M('Imprimir cancelados/trancados',$module) . '?');
+        $isPresentLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $flds[] = $isPresentLabel;
+
+        $isPresentOptions = array(
+                                      array(_M('Yes', $module), 't'),
+                                      array(_M('No', $module), 'f')
+                                     );
+
+        $isPresent = new MRadioButtonGroup('isPresent', null, SAGU::listTrueFalse(1), strlen((string)$this->getFormValue('isPresent', $data->isPresent)) > 0 ? $this->getFormValue('isPresent', $data->isPresent) : DB_TRUE, null, 'horizontal');
+        $isPresent->setShowLabel(false);
+        $flds[] = $isPresent;
+
+        $hctIsPresent = new MHContainer('hctIsPresent', $flds);
+        $fields[] = $hctIsPresent;
+        unset($flds);
+        
+        $fields[] = new MSeparator();
+
+        $this->setFields($fields);
+        $this->setValidators($validators);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+        $this->setClose($MIOLO->getActionURL($module,substr($action,0,strrpos($action,':'))));
+    }
+
+    /**
+     * Event triggered when user chooses Search from the toolbar
+     **/
+    public function tbBtnPrint_click($sender = null)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $data->classId          = MIOLO::_request('classId');
+        $data->periodId         = MIOLO::_request('periodId');
+        $data->printCancelled   = $this->getFormValue('isPresent');
+        $class = 'RptResultFinalAct';
+        $MIOLO->getClass($module, $class);
+        $report = new $class($data); 
+    }
+}
+
+?>

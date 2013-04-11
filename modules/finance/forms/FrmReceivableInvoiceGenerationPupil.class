@@ -1,0 +1,324 @@
+<?php
+/**
+ * Receivable invoice generation form
+ *
+ * @author Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * @last modification: William Prigol Lopes [william@solis.coop.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ *
+ * @since
+ * Class created on 13/12/2005
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2005 SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+
+/**
+ * Form to control receivable invoice generation
+ **/
+class FrmReceivableInvoiceGenerationPupil extends MForm
+{
+    /**
+     * Class constructor
+     **/
+    function __construct()
+    {
+        $module = MIOLO::getCurrentModule();
+        parent::__construct(_M('Receivable invoice generation pupil', $module));
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+        $this->eventHandler();
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+        $learningPeriodId = strlen((string)MIOLO::_request('learningPeriodId')) ? MIOLO::_request('learningPeriodId') : MIOLO::_request('learningPeriodId', 'GET');
+        $maturityDate = strlen((string)MIOLO::_request('maturityDate')) ? MIOLO::_request('maturityDate') : MIOLO::_request('maturityDate', 'GET');
+        if (strlen((string)$maturityDate)>0)
+        {
+            $year  = SAGU::formatDate($maturityDate, 'yyyy');
+            $month = SAGU::formatDate($maturityDate, 'mm');
+        }
+        else
+        {
+            $year  = $this->getFormValue('selYear', MIOLO::_request('year')) ? $this->getFormValue('year', MIOLO::_request('year')) : date('Y');
+            $month = $this->getFormValue('selMonth', MIOLO::_request('month')) ? $this->getFormValue('month', MIOLO::_request('month')) : date('m');
+        }
+
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $selYearLabel = new MText('selYearLabel', _M('Year', $module).':');
+        $selYearLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $selYear      = new MSelection('selYear', $year, '', SAGU::listYears(date('Y')-5, date('Y')+6));
+        
+        $selYear->setJsHint(_M('Choose the year for the invoices you want to generate.', $module));
+        $hctSelYear   = new MHContainer('hctSelYear', array($selYearLabel, $selYear));
+        $fieldsMain[] = $hctSelYear;
+        $validators[] = new MRequiredValidator('selYear', _M('Year', $module));
+
+        $selMonthLabel = new MText('selMonthLabel', _M('Month', $module).':');
+        $selMonthLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $selMonth      = new MSelection('selMonth', $month, '', SAGU::listMonths());
+        $selMonth->setJsHint(_M('Choose the month for the invoices you want to generate.', $module));
+        $fieldsMain[]  = new MHContainer('hctSelYear', array($selMonthLabel, $selMonth));
+        $validators[]  = new MRequiredValidator('selMonth', _M('Month', $module));
+
+/*        $businessBankAccount = $MIOLO->getBusiness($module, 'BusBankAccount');
+        $dataBankAccount     = $businessBankAccount->listBankAccount();
+        $bankAccountIdLabel  = new MText('bankAccountIdLabel', _M('Bank account id', $module).':');
+        $bankAccountIdLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $bankAccountId       = new MComboBox('bankAccountId', $this->getFormValue('bankAccountId', $data->bankAccountId) ? $this->getFormValue('bankAccountId', $data->bankAccountId) : DEFAULT_BANK_ACCOUNT_ID, '', $dataBankAccount);
+        $fieldsMain[] = new MHContainer('hctBankAccountId', array($bankAccountIdLabel, $bankAccountId));
+        $validators[] = new MRequiredValidator('bankAccountId', _M('Bank account id', $module));*/
+
+        if ( strlen((string)$learningPeriodId)>0 )
+        {
+            $businessLearningPeriod = $MIOLO->getBusiness('academic', 'BusLearningPeriod');
+            $learningPeriod         = $businessLearningPeriod->getLearningPeriod($learningPeriodId);
+
+            $fieldsMain[] = new MHiddenField('bankAccountId', $learningPeriod->bankAccountId);
+            $fieldsMain[] = new MHiddenField('bankContractId', $learningPeriod->bankContractId);
+        }
+        else
+        {
+
+            //conta bancária
+            $businessBankAccount = $MIOLO->getBusiness('finance', 'BusBankAccount');
+            $dataBankAccount     = $businessBankAccount->listBankAccount();
+
+            $bankAccountIdLabel  = new MText('bankAccountIdLabel', _M('Bank account', 'finance').':');
+            $bankAccountIdLabel->setWidth(FIELD_CONTAINER_SIZE);
+            $bankAccountId       = new Mselection('bankAccountId', $this->getFormValue('bankAccountId',$learningPeriod->bankAccountId), '', $dataBankAccount, false);
+            $bankAccountId->setAutoSubmit(true);
+            $validators[]        = new MRequiredValidator('bankAccountId', _M('Bank account', $module));
+
+            $hctBankAccount      = new MHContainer('hctBankAccountId', array($bankAccountIdLabel, $bankAccountId));
+            $hctBankAccount->setShowLabel(true);
+            $fieldsMain[]        = $hctBankAccount;
+
+            if ( strlen((string)$this->getFormValue('bankAccountId', $learningPeriod->bankAccountId))>0 )
+            {
+                //contrato
+                $businessBankAccountContract = $MIOLO->getBusiness('finance', 'BusBankAccountContract');
+                $dataBankAccountContract     = $businessBankAccountContract->listBankAccountContract($this->getFormValue('bankAccountId', $data->bankAccountId));
+
+                $bankContractIdLabel  = new MText('bankContractIdLabel', _M('Bank contract', 'finance').':');
+                $bankContractIdLabel->setWidth(FIELD_CONTAINER_SIZE);
+
+                $bankContractId       = new Mselection('bankContractId', $this->getFormValue('bankContractId', $data->bankContractId), '', $dataBankAccountContract, false);
+                $validators[]         = new MRequiredValidator('bankContractId', _M('Bank contract', $module));
+
+                $hctBankAccountContract      = new MHContainer('hctBankAccountContract', array($bankContractIdLabel, $bankContractId));
+                $hctBankAccountContract->setShowLabel(true);
+                $fieldsMain[]                = $hctBankAccountContract;
+            }
+        }
+
+        $fieldsMain[] = new MLabel(_M('If you want a detailed listing with generated invoices mark "Yes" on "Show details" item, may that requires a reasonable time to generate that information on your screen, depending for number of income forecast processed', $module));
+
+        $showDetailsText = new MText('txtShowDetails', _M('Show details', $module).':');
+        $showDetailsText->setWidth(FIELD_CONTAINER_SIZE);
+        $showDetails     = new MRadioButtonGroup('showDetails', '', SAGU::listYesNo(1), $this->getFormValue('showDetails', 't'), null, 'horizontal');
+        $showDetails->setShowLabel(false);
+        $fieldsMain[]    = new MHContainer('hctShowDetails', array($showDetailsText, $showDetails));
+       
+        $fieldsM[] = new MVContainer('vctMain', $fieldsMain);
+        $fields[]  = new MBaseGroup('MbgMainInfo', _M('Main information', $module), $fieldsM, '', 2 );
+
+        $txtPersonIdLabel = new MText ('txtPersonIdLabel', _M('Person id', $module).':');
+        $txtPersonIdLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $txtPersonId      = new MLookUpTextField('personId', $this->getFormValue('personId'), _M('', $module), FIELD_ID_SIZE, null, null, array('personContractId', 'personId', 'personName', 'limbo', 'limbo', 'limbo'), 'academic', 'personContract', null, array('personId' => 'personId'), (strlen((string)$this->getFormValue('personContractId', $data->contractId)>0 ? false : true)));
+        $txtPersonId->setJsHint(_M('Enter the person code', $module));
+
+        $txtPersonName     = new MTextField('personName', $this->getFormValue('personName'), _M('', $module), FIELD_DESCRIPTION_SIZE);
+        $txtPersonName->setReadOnly(true);
+        $hctPerson         = new MHContainer('hctPerson', array($txtPersonIdLabel, $txtPersonId, $txtPersonName));
+
+        // Contract id
+        $txtPersonContractIdLabel = new MText('personContractIdLabel', _M('Contract id', $module).':');
+        $txtPersonContractIdLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $txtPersonContractId      = new MLookupTextField('personContractId', $this->getFormValue('personContractId',$data->contractId), '', FIELD_ID_SIZE, null, null, 
+            array( 'personId', 'personName', 'limbo', 'contractCourseDescription', 'limbo', 'limbo', $limbo, 'limbo'), 'academic', 'Contract', null, array('personId' => 'personId'), true);
+        $txtPersonContractId->setJsHint(_M('Enter the contract code', $module));
+        $txtPersonContractCourse  = new MTextField('contractCourseDescription', $this->getFormValue('contractCourseDescritpion'), '', FIELD_DESCRIPTION_SIZE);
+        $txtPersonContractCourse->setReadOnly(true);
+        $spacing                  = new MSeparator('');
+        $hctContract              = new MHContainer('hctContract', array($txtPersonContractIdLabel, $txtPersonContractId, $txtPersonContractCourse, $spacing));
+
+        $MbgPerson   = new MBaseGroup('MbgPerson', '', array( $hctPerson ), '', 0 );
+        $MbgContract = new MBaseGroup('MbgContract', '', array( $hctContract ), '', 0);
+        $fields[]    = new MBaseGroup('MbgPersonContract', _M('Entry this fields for individual generation',$module), array( $MbgPerson, $MbgContract ), '', 2 );
+
+        $this->setFields($fields);
+        if ( count($validators) > 0 )
+        {
+            $this->setValidators($validators);
+        }
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setClose($MIOLO->getActionURL($module,substr($action,0,strrpos($action,':'))));
+
+        $this->page->onLoad('document.' . $this->name . '.txtCostCenterId.focus();');
+    }
+
+    /**
+     * Event triggered when user chooses New from the toolbar
+     **/
+    public function submit_button_click($sender=NULL)
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        // Tira o tempo limite
+        $data = $this->getFormData();
+
+        if ( MODULE_ACADEMIC_INSTALLED == 'YES' )
+        {
+            // Verifica se há alguma previsão não gerada da tabela de resumo de matrícula
+            // Check if have do not generated income forecasts on enroll summary table
+            $businessEnrollSummary = $MIOLO->getBusiness('academic', 'BusEnrollSummary');
+            $dataEnroll            = $businessEnrollSummary->getNotProcessedEnrollSummaries($data->month, $data->year);
+        }
+        
+        if ( is_array($dataEnroll[0]) == false )
+        {
+            $business = $MIOLO->getBusiness($module, 'BusReceivableInvoicePupil');
+            $url      = $MIOLO->getActionURL($module, substr( $action, 0, strrpos($action, ':') ) );
+            //nesse data faltam aqueles banck account e contract
+            $ok       = $business->generateReceivableInvoices($data);
+            if ( ! $ok )
+            {
+                $MIOLO->error(_M('Couldn\'t generate invoices.', $module), $url);
+            }
+            else
+            {
+                /**
+                * generationData
+                * |
+                * +- totalIncomeForecasts: shows the number of income forecasts that need to be
+                * |                         processed.
+                * +- receivableInvoice: an array where the key is the invoice number. Each item
+                *    |                  of it contains two attributes named invoice and entries,
+                *    |                  explained below.
+                *    +- invoiceData: contains a FinReceivableInvoice object with all the information
+                *    |               about the generated invoice.
+                *    +- entries: contains all entries which composes the invoice.
+                **/
+                if ( count($business->generationData->receivableInvoice) > 0 )
+                {
+                    if ( $data->showDetails == DB_TRUE )
+                    {
+                        foreach ( $business->generationData->receivableInvoice as $invoiceId => $invoiceData )
+                        {
+                            $opts = array('invoiceId'=>$invoiceId);
+                            $invoiceMLink = new MOpenWindow('invoice_'.$invoiceId, $invoiceId, $MIOLO->getActionURL($module, 'main:report:receivableInvoiceConsult', null, $opts), $invoiceId);
+                            
+                            $opts = array('event'=>'btnSearch_click', 'personId'=>$personId);
+                            $personMLink = new MOpenWindow('person_'.$invoiceData->invoiceData->personId, $invoiceData->invoiceData->personId, $MIOLO->getActionURL($module, 'main', null, $opts));
+                            $invoiceInfo[] = array($invoiceMLink->generate(), $invoiceData->invoiceData->personId.' - '.$invoiceData->invoiceData->personName, count($invoiceData->entries), SAGU::formatNumber($invoiceData->balance));
+                            unset($entryValues);
+                        }
+                        $cols = array(_M('Invoice id', $module), _M('Person id', $module), _M('Number of entries', $module), _M('Balance', $module));
+                        $titleTableRaw = _M('Total income forecasts processed: ', $module) . $business->generationData->totalIncomeForecasts.'<br>';
+                        $fields[] = new MSeparator('');
+                        $tableRaw = new MTableRaw($titleTableRaw, $invoiceInfo, $cols);
+                        $tableRaw->setAlternate(true);
+                        $tableRaw->setAttributes('width="100%"');
+                        $fields[] = $tableRaw;
+                        $sep = new MSeparator('<hr>');
+                        $sep->setWidth('99%');
+                        $fields[] = $sep;
+                        $this->setShowPostButton(false);
+                        $url = $MIOLO->getActionURL($module, $action);
+                        $okButton = new MButton('okButton', _M('Ok', $module), $url);
+                        $fields[] = new MDiv('okDiv', $okButton, null, 'align="center"');
+                        $fields[] = new MSeparator('');
+                        $this->setFields($fields);
+                    }
+                    else
+                    {
+                        $MIOLO->information(_M('Invoices generated with success', $module).'<br>'._M('Total invoices generated', $module).':'.count($business->generationData->receivableInvoice));
+                    }
+                }
+                else
+                {
+                    $MIOLO->error(_M('No income forecasts found to generate', $module), $url);
+                }
+            }
+        }
+        else
+        {
+            $field = new MSeparator('<hr>');
+            $field->setWidth('99%');
+            $fields[] = $field;
+            
+            $fieldL   = new MLabel(_M('Some enroll summaries for that period has do not processed, to continue this process correctly, you need process all income forecasts for that period. Clicking button above, you go to income forecast generation to all periods listed on that process', $module));            
+            $fieldL->addStyle('color', 'red');
+            $fields[] = $fieldL;
+            $fields[] = $field;
+            foreach($dataEnroll as $de)
+            {
+                $learningPeriodId[] = $de[0];
+            }
+            $session  = $MIOLO->session;
+            $session->setValue('learningPeriodId', $learningPeriodId);
+                       
+            $title    = _M('Periods with enroll summaries not processed', $module);
+            $cols[]   = new MDiv('learningPeriodCol', _M('Learning period id', $module), null, 'align="center"');
+            $cols[]   = new MDiv('incomeForcastsNumberCol', _M('Income forecasts number', $module), null, 'align="center"');
+            $tableRaw = new MTableRaw($title, $dataEnroll, $cols);
+            $tableRaw->setAlternate(true);
+            $tableRaw->addAttribute('width', '100%');
+            $fields[] = $tableRaw;
+
+            $newAction = 'main:process:incomeForecastGeneration';       
+            $link      = $MIOLO->getActionURL($module, $newAction, null, array('close'=>'true'));
+            $fields[]  = new MSeparator('');
+            $button    = new MButtonWindow('okButton', _M('Generate income forecasts', $module), $link);
+            $fields[]  = new MDiv('divButton', array($button), null, 'align="center"');
+            $fields[]  = new MSeparator('');
+            $this->addFields($fields);
+        }
+
+        $this->setShowPostButton(false);
+    }
+
+    /**
+     * Method to gather all information from the form fields
+     * and put them on a database compatible object
+     **/
+    public function getFormData()
+    {
+        $contractId = MIOLO::_request('contractId');
+        $ret->year                     = $this->selYear->value;
+        $ret->month                    = $this->selMonth->value;
+        $ret->contractId               = strlen((string)$this->personContractId->value)>0 ? $this->personContractId->value : $contractId;
+        $ret->bankAccountId            = $this->bankAccountId->value;
+        $ret->bankContractId           = $this->bankContractId->value;
+        $ret->personId                 = $this->personId->value;
+        $ret->showDetails              = $this->showDetails->value;
+        return $ret;
+    }
+}
+?>

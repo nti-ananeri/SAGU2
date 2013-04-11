@@ -1,0 +1,137 @@
+<?
+/**
+*
+* @author Giovani Murilo Dantas Correa [gmurilo@isolution.inf.br]
+*
+* $version: $Id$
+*
+* \b Maintainers \n
+* Daniel Afonso Heisler [daniel@isolution.inf.br]
+*
+* @since
+* Class created on 24/09/2008
+*
+* \b Organization: \n
+* iSolution - Soluções de Internet \n
+* The iSolution TEAM
+*
+* \b CopyLeft: \n
+* CopyLeft (L) 2007 iSolution - Soluções de Internet \n
+*
+* \b License \n
+* Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+*
+* \b History \n
+* See history in CVS repository: http://isolution.inf.br   
+*
+**/
+$MIOLO = MIOLO::getInstance();
+
+class BusinessFinanceBusMonthlyDefaulter extends MBusiness 
+{
+    public $db;
+
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module = is_null($module) ? 'finance' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+    public function __construct()
+    {
+        $this->db = $this->getDatabase();
+    }
+
+    public function searchMonthlyDefaulter($filters = NULL)
+    {
+        $sql = 'SELECT
+                    A.personId,
+                    B.name,
+                    B.location,
+                    B.number,
+                    B.neighborhood,
+                    CT.name,
+                    D1.content,
+                    B.residentialPhone,
+                    B.workPhone,
+                    B.cellPhone,
+                    B.messagePhone,
+                    C.name,
+                    D2.content, 
+                    TO_CHAR(A.maturityDate, \'' . MASK_DATE .'\'),
+                    ROUND(balance(A.invoiceId),2),
+                    A.invoiceId,
+                    F.description
+                FROM 
+                    ONLY finReceivableInvoice A
+                    INNER JOIN basPhysicalPerson B ON ( A.personId = B.personId )
+                     LEFT JOIN basPhysicalPerson C ON ( B.responsableLegalId = C.personId )
+                     LEFT JOIN basDocument D1 ON ( D1.personId = B.personId AND D1.documentTypeID = (SELECT value FROM basConfig WHERE parameter = \'CPF_CODE\') )::integer
+                     LEFT JOIN basDocument D2 ON ( D2.personId = C.personId AND D2.documentTypeID = (SELECT value FROM basConfig WHERE parameter = \'CPF_CODE\')::integer )
+                    INNER JOIN finIncomeSource F ON ( F.incomeSourceId = A.incomeSourceId )
+                     LEFT JOIN basCity CT ON ( B.cityId = CT.cityId ) 
+                GROUP BY
+                    A.personId,
+                    B.name,
+                    A.maturityDate,
+                    B.location,
+                    B.number,
+                    B.neighborhood,
+                    CT.name,
+                    D1.content,
+                    B.residentialPhone,
+                    B.workPhone,
+                    B.cellPhone,
+                    B.messagePhone,
+                    C.name,
+                    D2.content, 
+                    A.invoiceId,
+                    F.description,
+                    A.incomeSourceId,
+                    A.accountSchemeId,
+                    A.costCenterId
+                HAVING balance(A.invoiceId) > 0 ';
+        if( strlen((string) $filters->personId ) > 0 )
+        {
+            $sql   .= '    AND A.personId = ?';
+            $args[] = $filters->personId;
+        }
+
+        if( count( $filters->incomeSourceId ) > 0 && strlen((string) $filters->incomeSourceId[0] ) > 0 )
+        {
+            $sql   .= '    AND A.incomeSourceId IN ('.implode(",",$filters->incomeSourceId).')';
+        }
+
+        if( strlen((string) $filters->costCenterId ) > 0 )
+        {
+            $sql   .= '    AND A.costCenterId = ?';
+            $args[] = $filters->costCenterId;
+        }
+        
+        if( strlen((string) $filters->accountSchemeId ) > 0 )
+        {
+            $sql   .= '    AND A.accountSchemeId = ?';
+            $args[] = $filters->accountSchemeId;
+        }
+
+        if( strlen((string) $filters->year ) > 0 )
+        {
+            $sql   .= '    AND extract( YEAR FROM A.maturityDate ) = ?';
+            $args[] = $filters->year;
+        }
+
+        if( strlen((string) $filters->month ) > 0 )
+        {
+            $sql   .= '    AND extract( MONTH FROM A.maturityDate ) = ?';
+            $args[] = $filters->month;
+        }
+        $sql .= ' ORDER BY B.name ';
+        $sql = SAGU::prepare($sql, $args);
+        $data = $this->db->query($sql);
+        return $data;
+    }
+}
+?>

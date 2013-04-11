@@ -1,0 +1,265 @@
+<?php
+/**
+ *
+ *
+ * @author Armando Taffarel Neto [taffarel@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * Armando Taffarel Neto [taffarel@solis.coop.br]
+ * 
+ * @since
+ * Class created on 18/07/2006
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ **/
+class BusinessAccountancyBusGenerateEntryAccountingFile extends Business
+{
+    function BusinessAccountancyBusGenerateEntryAccountingFile()
+    {
+        $this->db = $this->getDatabase();
+    }
+
+
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module = is_null($module) ? 'accountancy' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+    
+    /**
+     * Get the account scheme id from courses
+     *
+     * @param $filters (object): null
+     *
+     * @return (array): an array with data
+     **/
+    public function getAccountSchemeIds()
+    {
+        $sql = 'SELECT DISTINCT courseId::int,
+                       substr(accountSchemeId,6,8),
+                       substr(accountSchemeId,1,3)
+                FROM accCourseAccount
+                ORDER BY courseId::int'; 
+
+        unset($result);
+        if ( strlen((string)$sql) > 0 )
+        {
+            $db     = $this->getDatabase();
+            $result = $db->query(SAGU::prepare($sql, null));
+        }
+
+        return $result;
+    }
+
+    /**
+     * Get the unit accounting code
+     *
+     * @param $filters (object): null
+     *
+     * @return (array): an array with data
+     **/
+    public function getUnitAccountingCode()
+    {
+        $sql = 'SELECT unitId, accountingCode from basUnit'; 
+        
+        unset($result);
+        if ( strlen((string)$sql) > 0 )
+        {
+            $db     = $this->getDatabase();
+            $result = $db->query(SAGU::prepare($sql, null));
+        }
+
+        return $result;
+    }
+
+    /**
+     * Get the incentive data
+     *
+     * @param $filters (object): null
+     *
+     * @return (array): an array with data
+     **/
+    public function getIncentiveData()
+    {
+        $sql = 'SELECT (SELECT personId FROM acdContract WHERE contractId = A.contractId) as personId,
+                       (SELECT courseId FROM acdContract WHERE contractId = A.contractId) as courseId,
+                       B.operationId,
+                       A.costCenterId
+                FROM finIncentive A
+                INNER JOIN ONLY finIncentiveType B
+                USING(incentiveTypeId)
+                WHERE A.costCenterId IS NOT NULL AND
+                      A.costCenterId <> \'\''; 
+
+        unset($result);
+        if ( strlen((string)$sql) > 0 )
+        {
+            $db     = $this->getDatabase();
+            $result = $db->query(SAGU::prepare($sql, null));
+        }
+
+        return $result;
+    }
+
+    /**
+     * Get the entry data
+     *
+     * @param $filters (object): null
+     *
+     * @return (array): an array with data
+     **/
+    public function getEntryData($filters)
+    {
+        $sql = 'SELECT A.invoiceId,
+                       A.personId,
+                       (SELECT name FROM ONLY basPerson WHERE personId = A.personId) as personName,
+                       A.courseId,
+                       (SELECT shortName FROM acdCourse WHERE courseId = A.courseId) as courseName,
+                       A.unitId,
+                       B.entryId,
+                       B.operationId,
+                       B.entryDate,
+                       B.value,
+                       B.costCenterId
+                FROM ONLY finReceivableInvoice A
+                INNER JOIN (SELECT entryId,
+                                   invoiceId,
+                                   operationId,
+                                   entryDate,
+                                   value,
+                                   isAccounted,
+                                   costCenterId
+                            FROM finEntry
+                            WHERE entryDate    = TO_DATE(?, \'' . MASK_DATE . '\') AND
+                                  value       <> 0 AND
+                                  operationId <> 0 ';
+
+        if ( strlen((string)$filters->partial) > 0 )
+        {
+            $sql .= '       AND isAccounted = \''.DB_FALSE.'\'';
+        }
+        
+
+        $sql .= '           ) AS B
+                    USING(invoiceId)
+                ORDER BY invoiceId'; 
+
+        if ( strlen((string)$filters->date) > 0 )
+        {
+            $args[] = $filters->date;
+        }
+
+        unset($result);
+        if ( strlen((string)$sql) > 0 )
+        {
+            $db     = $this->getDatabase();
+            $result = $db->query(SAGU::prepare($sql, $args));
+        }
+
+        return $result;
+    }
+
+    /**
+     * Get the integration data
+     *
+     * @param $filters (object): null
+     *
+     * @return (array): an array with data
+     **/
+    public function getIntegrationData($operationId)
+    {
+        $sql = 'SELECT externalEntryId,
+                       operationTypeId,
+                       debitAccount,
+                       creditAccount,
+                       operationDescription,
+                       debitCostCenter,
+                       creditCostCenter,
+                       userCode,
+                       debitItem,
+                       creditItem,
+                       reversalOperation
+                FROM ONLY accEntryIntegration
+                WHERE operationId = ?
+                ORDER BY externalEntryId'; 
+
+        if ( strlen((string)$operationId) > 0 )
+        {
+            $args[] = $operationId;
+        }
+
+        unset($result);
+        if ( strlen((string)$sql) > 0 )
+        {
+            $db     = $this->getDatabase();
+            $result = $db->query(SAGU::prepare($sql, $args));
+        }
+
+        return $result;
+    }
+
+    /**
+     * Update entries information
+     *
+     * @param $filters (object): filters from form
+     *
+     * @return (array): true or false
+     **/
+    public function updateEntries($filters)
+    {
+        $sql = 'UPDATE finEntry
+                   SET isAccounted = TRUE
+                 WHERE entryDate = TO_DATE(?, \'' . MASK_DATE . '\')'; 
+
+        $args[] = $filters->date;
+        
+        if ( strlen((string)$filters->partial) > 0 )
+        {
+			$sql .= ' AND isAccounted = \''.DB_FALSE.'\'';
+        }
+
+        unset($result);
+        if ( strlen((string)$sql) > 0 )
+        {
+            $db     = $this->getDatabase();
+            $result = $db->execute(SAGU::prepare($sql, $args));
+        }
+        return $result;
+    }
+
+
+
+}
+
+?>

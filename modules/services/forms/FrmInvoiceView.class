@@ -1,0 +1,293 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for finInvoice table
+ *
+ * @author William Prigol Lopes [taffarel@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Armando Taffarel Neto [taffarel@solis.coop.br]
+ * Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 13/12/2005
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/** Botão voltar deve retornar à consulta atual
+ * Form to search the finInvoice table
+ */
+class FrmInvoiceView extends MForm
+{
+    public  $module;
+    public  $filters;
+    public  $data;
+
+    /**
+     *  Default method to define fields
+     */
+    public function createInvoiceFields($data)
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+        $MIOLO->getClass('finance', 'finance');        
+        $this->setTitle(null);
+        
+        $businessInvoice = $MIOLO->getBusiness('finance', 'BusInvoice');
+        $invoiceId = MIOLO::_request('invoiceId') ? MIOLO::_request('invoiceId') : MIOLO::_request('invoiceId', 'GET');
+        if (!$invoiceId)
+        {
+            $invoiceId = $businessInvoice->getInvoiceIdByBankInvoiceId(MIOLO::_request('returnBankCode') ? MIOLO::_request('returnBankCode') : MIOLO::_request('returnBankCode', 'GET'));
+        }
+        $data->invoiceId = $invoiceId;
+       
+        $goto    = MIOLO::_request('goto') ? MIOLO::_request('goto') : MIOLO::_request('goto', 'GET');
+
+        //
+        // Show the entries for this titles
+        //
+        // BEGIN GRID
+        $grdReceivableInvoice = $MIOLO->getUI()->getGrid('services', 'GrdEntry', $data);
+        $grdReceivableInvoice->setTitle(_M('Entries for invoice @1', 'services', $invoiceId));
+        $businessEntry        = $MIOLO->getBusiness('finance', 'BusEntry');
+        $entryData            = $businessEntry->listEntryData($data->invoiceId, 4);
+        $grdReceivableInvoice->setData($entryData);
+        $footer1              = new MText('footer', str_repeat('&nbsp;', '5') . _M('Open balance', 'services') .':', 'blue');
+        $footer1->setWidth('600');
+        $openBalance          = $businessInvoice->getInvoiceBalance($data->invoiceId);
+        $footer2              = new MText('footer2', $openBalance, $openBalance>0 ? 'red' : 'blue');
+        $footerA1             = array($footer1, $footer2);
+        $hctFooter1           = new MHContainer('hctFooter', $footerA1);
+
+        $footer3        = new MText('footer3', str_repeat('&nbsp;', '5') . _M('Updated balance', 'services').':', 'blue');
+        $footer3->setWidth('600');
+        $updatedBalance = $businessInvoice->getInvoiceBalanceWithPolicies($data->invoiceId);
+        $footer4        = new MText('footer4', $updatedBalance, $updatedBalance>0 ? 'red' : 'blue');
+        $footerA2       = array($footer3, $footer4);
+        $hctFooter2     = new MHContainer('hctFooter2', $footerA2);
+        $vctFooter      = new MVContainer('vctFooter', array($hctFooter1, $hctFooter2)); 
+        $grdReceivableInvoice->setFooter($vctFooter);
+        $fields[] = $grdReceivableInvoice;
+
+        // END GRID
+        $businessPerson = $MIOLO->getBusiness('basic', 'BusPerson');
+        $personType = $businessPerson->getPersonType($login->idperson);     
+        if ( $personType == DB_LEGAL )
+        {
+            $personId = $login->idperson;
+            $grdIncentive = $MIOLO->getUI()->getGrid('services', 'GrdIncentive');
+            $grdIncentive->setTitle(_M('Incentives for person @1', 'services', $personId.' - '.$businessPerson->getPersonName($personId)));
+            $businessFinance = $MIOLO->getBusiness('services', 'BusFinance');
+            $dataI = $businessFinance->listSupporterIncentives($login->idperson, $this->getFormValue('maturityDate', $data->maturityDate));
+            $grdIncentive->setData($dataI);
+            $fields[] = $grdIncentive;
+        }
+        
+        $isAccounted = $businessInvoice->verifyAccountedEntriesForInvoice($invoiceId);
+        
+        // BEGIN BASE LABEL -------
+        $field2[] = new MHiddenField('invoiceId', $this->getFormValue('invoiceId', $data->invoiceId));
+        
+        // Invoice
+        $invoiceIdLabel = new MText('invoiceIdLabel', _M('Invoice id', 'services').':');
+        $invoiceIdLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $invoiceId      = new MTextLabel('invoiceId', $data->invoiceId ? $data->invoiceId : $this->getFormValue('invoiceId', $data->invoiceId));
+        $field2[]       = new MHContainer('hctInvoiceId', array($invoiceIdLabel, $invoiceId));
+        
+        // Bank invoice id
+        $bankInvoiceIdLabel = new MText('bankInvoiceIdLabel', _M('Bank invoice id', 'services').':');
+        $bankInvoiceIdLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $bankInvoiceId      = new MText('bankInvoiceId_', $this->getFormValue('bankInvoiceId', $data->bankInvoiceId));
+        $hctBankInvoice     = new MHContainer('hctBankInvoice', array($bankInvoiceIdLabel, $bankInvoiceId));
+//        $field2[]           = $hctBankInvoice;
+        
+        $personData = $businessInvoice->getPersonDataForInvoice($data->invoiceId ? $data->invoiceId : $this->getFormValue('invoiceId', $data->invoiceId));
+        // Person
+        $personLabel = new MText('personLabel', _M('Person', 'services').':');
+        $personLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $personId    = new MText('personId_', $personData->personId ? $personData->personId : $this->getFormValue('personId', $personData->personId));
+        $personTrace = new MText('personTrace', '-');
+        $personName  = new MText('personName_', $personData->personName ? $personData->personName : $this->getFormValue('personName', $personData->personName));
+        $hctPerson   = new MHContainer('hctPerson', array($personLabel, $personId, $personTrace, $personName));
+        $field2[]    = $hctPerson;
+        
+        // AccountScheme
+        $accountSchemeLabel       = new MText('accountSchemeLabel', _M('Account scheme', 'services').':');
+        $accountSchemeLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $accountSchemeId          = new MText('accountSchemeId_', FINANCE::formatAccountSchemeId($this->getFormValue('accountSchemeId', $data->accountSchemeId)));
+        $businessAccountScheme    = $MIOLO->getBusiness('accountancy', 'BusAccountScheme');
+        $accountSchemeData        = $businessAccountScheme->getAccountScheme($this->getFormValue('accountSchemeId', $data->accountSchemeId));
+        $accountSchemeTrace       = new MText('accountSchemeTrace', '-');
+        $accountSchemeDescription = new MText('accountSchemeDescription_', $accountSchemeData->description);
+        $hctAccountScheme         = new MHContainer('hctAccountScheme', array($accountSchemeLabel, $accountSchemeId, $accountSchemeTrace, $accountSchemeDescription));
+       
+        // CostCenter
+        $costCenterLabel       = new MText('costCenterLabel', _M('Cost center', 'services').':');
+        $costCenterLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $costCenterId          = new MText('costCenterId_', $this->getFormValue('costCenterId', $data->costCenterId));
+        $costCenterTrace       = new MText('costCenterTrace', '-');
+        $businessCostCenter    = $MIOLO->getBusiness('accountancy', 'BusCostCenter');
+        $costCenterData        = $businessCostCenter->getCostCenter($this->getFormValue('costCenterId', $data->costCenterId));
+        $costCenterDescription = new MText('costCenterDescription_', $costCenterData->description);
+        $hctCostCenter         = new MHContainer('hctCostCenter', array($costCenterLabel, $costCenterId, $costCenterTrace, $costCenterDescription));
+
+        // Course
+        if (strlen((string)$data->courseId) > 0 )
+        {
+            $courseLabel             = new MText('courseLabel', _M('Course', 'services').':');
+            $courseLabel->setWidth(FIELD_CONTAINER_SIZE);
+            $courseId                = new MText('courseId_', $this->getFormValue('courseId', $data->courseId));
+            $courseVersion           = new MText('courseVersion_', $this->getFormValue('courseVersion',$data->courseVersion));
+            $courseTrace             = new MText('courseTrace', '-');
+            $couseVersionDescription = new MText('couseVersionDescription_', _M('Version', 'services').':');
+            $businessCourse          = $MIOLO->getBusiness('academic', 'BusCourse');
+            $courseData              = $businessCourse->getCourse($this->getFormValue('courseId', $data->courseId), $this->getFormValue('courseVersion', $data->courseVersion));
+            $courseName              = new MText('courseName_', $courseData->shortName);
+            $hctCourse               = new MHContainer('hctCourse', array($courseLabel, $courseId, $courseTrace, $courseName, $couseVersionDescription, $courseVersion));
+            $field2[]                = $hctCourse;
+        }
+       
+        // Unit
+        if (strlen((string)$data->unitId) > 0 )
+        {
+            $unitLabel       = new MText('unitLabel', _M('Unit', 'services').':');
+            $unitLabel->setWidth(FIELD_CONTAINER_SIZE);
+            $unitId          = new MText('unitId_', $this->getFormValue('unitId', $data->unitId));
+            $unitTrace       = new MText('unitTrace', '-');
+            $businessUnit    = $MIOLO->getBusiness('basic', 'BusUnit');
+            $dataUnit        = $businessUnit->getUnit($this->getFormValue('unitId', $data->unitId));
+            $unitDescription = new MText('unitDescription_', $dataUnit->description);
+            $hctUnit         = new MHContainer('hctUnit', array($unitLabel, $unitId, $unitTrace, $unitDescription));
+            $hctUnit->setShowLabel(true);
+            $field2[]        = $hctUnit;
+        }
+       
+        // ParcelNumber
+        $parcelNumberLabel = new MText('parcelNumberLabel', _M('Parcel number', 'services').':');
+        $parcelNumberLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $parcelNumber      = new MText('parcelNumber_', $this->getFormValue('parcelNumber', $data->parcelNumber));
+        $hctParcelNumber   = new MHContainer('hctParcelNumber_', array($parcelNumberLabel, $parcelNumber));
+        $field2[]          = $hctParcelNumber;
+        
+        // EmissionDate
+        $emissionDateLabel = new MText('emissionDateLabel', _M('Emission date', 'services').':');
+        $emissionDateLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $emissionDate      = new MText('emissionDate_', $this->getFormValue('emissionDate', $data->emissionDate));
+        $hctEmissionDate   = new MHContainer('hctEmissionDate', array($emissionDateLabel, $emissionDate));
+        $field2[]          = $hctEmissionDate;
+
+        // MaturityDate
+        $maturityDateLabel = new MText('maturityDateLabel', _M('Maturity date', 'services').':');
+        $maturityDateLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $maturityDate      = new MText('maturityDate_', $this->getFormValue('maturityDate', $data->maturityDate));
+        $hctMaturityDate   = new MHContainer('hctMaturityDate', array($maturityDateLabel, $maturityDate));
+        $field2[]          = $hctMaturityDate;
+        
+        // Value
+        $valueLabel = new MText('valueLabel', _M('Value', 'services').':');
+        $valueLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $value      = new MText('value_', SAGU::formatNumber($this->getFormValue('value', $data->value)));
+        $hctValue   = new MHContainer('hctValue', array($valueLabel, $value));
+        $field2[]   = $hctValue;
+
+        // Automatic debit
+        $automaticDebitLabel = new MText('automaticDebitLabel', _M('Automatic debit', 'services').':');
+        $automaticDebitLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $automaticDebit      = new MText('automaticDebit_', SAGU::getYesNo($this->getFormValue('automaticDebit', $data->automaticDebit)));
+        $hctAutomaticDebit   = new MHContainer('hctAutomaticDebit', array($automaticDebitLabel, $automaticDebit));
+        $field2[]            = $hctAutomaticDebit;
+        
+        // Comments
+        $commentsLabel = new MText('commentsLabel', _M('Comments', 'services').':');
+        $commentsLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $comments      = new MText('comments_', $this->getFormValue('comments', strlen((string)$data->comments)>0 ? $data->comments : _M('This invoice do not have comments', 'services')));
+        $hctComments   = new MHContainer('hctComments', array($commentsLabel, $comments));
+        $field2[]      = $hctComments;
+        
+        // Income source
+        $businessIncomeSource = $MIOLO->getBusiness('finance', 'BusIncomeSource');
+        $incomeSourceData     = $businessIncomeSource->getIncomeSource($data->incomeSourceId);
+        $incomeSourceLabel       = new MText('incomeSourceLabel', _M('Income source', 'services').':');
+        $incomeSourceLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $incomeSourceId          = new MText('incomeSourceId_', $this->getFormValue('incomeSourceId', $data->incomeSourceId.' - '.$incomeSourceData->description));
+        $incomeSourceDescription = new MText('incomeSourceDescription_', $this->getFormValue('incomeSourceDescription',$data->incomeSourceDescription));
+        $incomeSourceDescription->setReadOnly(true);
+        $hctIncomeSource         = new MHContainer('hctIncomeSource', array($incomeSourceLabel, $incomeSourceId, $incomeSourceDescription));
+        $hctIncomeSource->setShowLabel(true);
+
+        // Bank account
+        $businessBankAccount    = $MIOLO->getBusiness('finance', 'BusBankAccount');
+        $bankAccountData        = $businessBankAccount->getBankAccount($data->bankAccountId);
+        $bankAccountLabel       = new MText('bankAccountLabel', _M('Bank account', 'services').':');
+        $bankAccountLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $bankAccountId          = new MText('bankAccountId_', $this->getFormValue('bankAccountId', $data->bankAccountId.' - '.$bankAccountData->description));
+        $bankAccountTrace       = new MText('-');
+        $bankAccountDescription = new MText('bankAccountDescription_', $this->getFormValue('bankAccountDescription', $data->bankAccountDescription));
+        $bankAccountDescription->setReadOnly(true);
+        $hctBankAccount         = new MHContainer('hctBankAccount', array($bankAccountLabel, $bankAccountId, $bankAccountDescription));
+        $hctBankAccount->setShowLabel(true);
+      
+        // Policy
+        $businessPolicy    = $MIOLO->getBusiness('finance', 'BusPolicy');
+        $policyData        = $businessPolicy->getPolicy($data->policyId);
+        $policyLabel       = new MText('policyLabel', _M('Policy', 'services').':');
+        $policyLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $policyDescription = new MText('policyDescription_', $this->getFormValue('policyDescription', $data->policyId.' - '.$policyData->description));
+        $hctPolicy         = new MHContainer('hctPolicy', array($policyLabel, $policyDescription));
+        $hctPolicy->setShowLabel(true);
+      
+        // Collection type
+        $businessCollectionType = $MIOLO->getBusiness('finance', 'BusCollectionType');
+        $collectionTypeData     = $businessCollectionType->getCollectionType($policyData->collectionTypeId);
+        $collectionTypeLabel    = new MText('collectionTypeLabel', _M('Collection type', 'services').':');
+        $collectionTypeLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $collectionType         = new MText('collectionType_', $this->getFormValue('collectionType', $policyData->collectionTypeId.' - '.$collectionTypeData->description));
+        $hctCollectionType      = new MHContainer('hctCollectionType', array($collectionTypeLabel, $collectionType));
+        $field2[]               = $hctCollectionType;
+      
+        $bgInvoice = new MBaseGroup('bgInvoice', _M('Invoice information', 'services'), $field2);
+        $bgInvoice->setDisposition('vertical');
+        
+        $fields[] = $bgInvoice;
+        // END BASEGRID
+        
+        $this->setFields($fields);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+    }
+
+    /**
+     * Update the nominal value
+     */
+    public function updateNominalValue_click($sender = null)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $action = MIOLO::getCurrentAction();
+        
+        $invoiceId = MIOLO::_request('invoiceId') ? MIOLO::_request('invoiceId') : MIOLO::_request('invoiceId', 'GET');
+        $businessReceivableInvoice = $MIOLO->getBusiness('finance', 'BusReceivableInvoice');
+        $businessReceivableInvoice->updateInvoiceBalance($invoiceId);
+        $value = $businessReceivableInvoice->getNominalValue($invoiceId);
+        $this->value_->value = $value;
+    }
+}
+?>

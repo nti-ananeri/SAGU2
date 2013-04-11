@@ -1,0 +1,367 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for acdGroup table
+ *
+ * @author Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 22/09/2005
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to manipulate the acdGroup table
+ **/
+class BusinessAcademicBusCancelledPupilsReport extends Business
+{
+    public $db;
+    
+    //Class constructor
+    public function __construct()
+    {
+        $this->db = $this->getDatabase();
+    }
+    
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module = is_null($module) ? 'academic' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+
+    public function searchCancelledPupils($filters)
+    {
+        $cond = '';
+        $d = $filters->unitId;
+        $a = 'B.unitId';
+        if ( strlen((string)$d) > 0 )
+        {
+            $cond .= " AND {$a} = ?::integer ";
+            $args[] = $d;
+        }
+        
+        $d = $filters->courseId;
+        $a = 'B.courseId';
+        if ( strlen((string)$d) > 0 )
+        {
+            $cond .= " AND {$a} = ? ";
+            $args[] = $d;
+        }
+
+        $d = $filters->courseVersion;
+        $a = 'B.courseVersion';
+        if ( strlen((string)$d) > 0 )
+        {
+            $cond .= " AND {$a} = ?::integer ";
+            $args[] = $d;
+        }
+
+        $d = $filters->courseName;
+        $a = 'C.name';
+        if ( strlen((string)$d) > 0 )
+        {
+            $cond .= " AND {$a} ILIKE ? ";
+            $args[] = $d.'%';
+        }
+        
+        $d = $filters->turnId;
+        $a = 'B.turnId';
+        if ( strlen((string)$d) > 0 )
+        {
+            $cond .= " AND {$a} = ?::integer ";
+            $args[] = $d;
+        }
+
+        $d = $filters->periodId;
+        $a = 'F.periodId';
+        if ( strlen((string)$d) > 0 )
+        {
+            $cond .= " AND {$a} = ? ";
+            $args[] = $d;
+        }
+
+        $d = $filters->formationLevelId;
+        $a = 'C.formationLevelId';
+        if ( count($d) > 0 )
+        {
+            $cond .= " AND {$a} IN ( " . implode(',', $d) ." ) ";
+        }
+
+        $d = $filters->beginDate;
+        $a = 'J.stateTime';
+        if ( strlen((string)$d) > 0 )
+        {
+            $cond .= " AND {$a} >= TO_DATE(?,'".MASK_DATE."') ";
+            $args[] = $d;
+        }
+
+        $d = $filters->endDate;
+        $a = 'J.stateTime';
+        if ( strlen((string)$d) > 0 )
+        {
+            $cond .= " AND {$a} <= TO_DATE(?,'".MASK_DATE."') ";
+            $args[] = $d;
+        }
+
+        $d = $filters->minimumAge;
+        $a = 'extract(year from age(A.dateBirth))';
+        if ( strlen((string)$d) > 0 )
+        {
+            $cond .= " AND {$a} >= ?::integer ";
+            $args[] = $d;
+        }
+        
+        $d = $filters->maximumAge;
+        if ( strlen((string)$d) > 0 )
+        {
+            $cond .= " AND {$a} <= ?::integer ";
+            $args[] = $d;
+        }
+        
+        $d = $filters->semester;
+        $a = 'G.semester';
+        if ( strlen((string)$d) > 0 )
+        {
+            $cond .= " AND {$a} = ? ";
+            $args[] = $d;
+        }
+        /*
+            1 Cancelados
+            2 Desistentes
+            3 Trancados
+            4 Transferidos
+
+        */
+        if ( count($filters->enrollSituation) > 0 )
+        {
+            unset($array);
+            $a = 'J.stateContractId';
+            if ( strlen((string)$filters->enrollSituation[1]) > 0 )
+            {
+                $array[] = STATE_CONTRACT_ID_CANCELLATION;
+
+            }
+
+            if ( strlen((string)$filters->enrollSituation[2]) > 0 )
+            {
+                $array[] = STATE_CONTRACT_ID_ABANDONMENT;
+
+            }
+
+            if ( strlen((string)$filters->enrollSituation[3]) > 0 )
+            {
+                $array[] = STATE_CONTRACT_ID_LOCKED;
+
+            }
+
+            if ( strlen((string)$filters->enrollSituation[4]) > 0 )
+            {
+                $array[] = STATE_CONTRACT_ID_EXTERNAL_TRANSFER_TO;
+            }
+
+            $cond .= " AND {$a} IN ( " . implode(',', $array ) . " ) ";
+        }        
+        else
+        {
+            $cond .= ' AND 1 = 2 ';
+        }
+        if ( $filters->printMode == 1 )
+        {
+        $sql = 
+            'SELECT
+                DISTINCT
+                B.unitId,
+                B.courseId,
+                \'-\' as semester,
+                B.turnId,
+                A.personId,
+                A.name,
+                A.sex,
+                TO_CHAR(A.dateBirth, \''. MASK_DATE . '\') as dateBirth,
+                TO_CHAR(J.statetime, \''. MASK_DATE . '\') as Date,
+                F.periodId,
+                C.name,
+                I.description
+            FROM
+                basPhysicalPersonStudent A INNER JOIN
+                acdContract B ON ( A.personId = B.personId ) INNER JOIN
+                acdCourse C ON ( C.courseId = B.courseId ) INNER JOIN
+                acdEnroll D ON ( D.contractId = B.contractId ) INNER JOIN
+                acdGroup E ON ( E.groupId = D.groupId ) INNER JOIN
+                acdLearningPeriod F ON ( F.learningPeriodId = E.learningPeriodId ) INNER JOIN
+                acdCurriculum G ON ( G.curriculumId = E.curriculumId ) LEFT JOIN
+                acdClassPupil H ON ( H.contractId = B.contractId AND H.endDate IS NULL ) INNER JOIN
+                basUnit I ON ( I.unitId = B.unitId ) INNER JOIN
+                acdMovementContract J ON ( J.contractId = B.contractId )
+            WHERE
+                1 = 1 
+            ';
+            $sql .= $cond;
+            $result = $this->db->query(SAGU::prepare($sql, $args));
+            if ( count($result) > 0 )
+            {
+                foreach ( $result as $pupils => $pupil )
+                {
+                    $resultx[$pupil[0]][$pupil[1]][$pupil[2]][$pupil[3]][$pupil[4]][0] = $pupil[5];
+                    $resultx[$pupil[0]][$pupil[1]][$pupil[2]][$pupil[3]][$pupil[4]][1] = $pupil[4];
+                    $resultx[$pupil[0]][$pupil[1]][$pupil[2]][$pupil[3]][$pupil[4]][2] = $pupil[5];
+                    $resultx[$pupil[0]][$pupil[1]][$pupil[2]][$pupil[3]][$pupil[4]][3] = $pupil[6];
+                    $resultx[$pupil[0]][$pupil[1]][$pupil[2]][$pupil[3]][$pupil[4]][4] = $pupil[7];
+                    $resultx[$pupil[0]][$pupil[1]][$pupil[2]][$pupil[3]][$pupil[4]][5] = $pupil[8];
+                    $courses[$pupil[1]] = $pupil[10];
+                    $units[$pupil[0]] = $pupil[11];
+                }
+            }
+            return $resultx;
+        }
+        else if ( $filters->printMode == 2 )
+        {
+            $sql = 
+            'SELECT
+               DISTINCT
+               A.sex,
+               B.contractId,
+               C.name as courseName,
+               getTurnDescription(B.turnId) as turnDescription,
+               \'-\' as serie,
+               B.unitId,
+               C.courseId,
+               B.turnId
+            FROM
+                basPhysicalPersonStudent A INNER JOIN
+                acdContract B ON ( A.personId = B.personId ) INNER JOIN
+                acdCourse C ON ( C.courseId = B.courseId ) INNER JOIN
+                acdEnroll D ON ( D.contractId = B.contractId ) INNER JOIN
+                acdGroup E ON ( E.groupId = D.groupId ) INNER JOIN
+                acdLearningPeriod F ON ( F.learningPeriodId = E.learningPeriodId ) INNER JOIN
+                acdCurriculum G ON ( G.curriculumId = E.curriculumId ) LEFT JOIN
+                acdClassPupil H ON ( H.contractId = B.contractId AND H.endDate IS NULL ) INNER JOIN 
+                acdMovementContract J ON ( J.contractId = B.contractId )
+            WHERE
+                1 = 1 
+        ';
+            $sql .= $cond;
+            $sql = ' SELECT SUM(CASE WHEN A.sex = \'F\' THEN 1 ELSE 0 END) as "Women", SUM(CASE WHEN A.sex = \'M\' THEN 1 ELSE 0 END) as "Men", COUNT(*) as "Total", serie, turnDescription, courseName, unitId, courseId, turnId FROM (' . $sql . ') A GROUP BY courseName, turnDescription, serie, unitId, courseId, turnId ORDER BY unitId, courseName, serie, turnDescription';
+            $result = $this->db->query(SAGU::prepare($sql, $args));
+            if ( count($result) > 0 )
+            {
+                foreach ( $result as $linha => $array )
+                {
+                    unset ( $obj, $obj2 );
+
+                    list ( $obj->women, $obj->men, $obj->total, $obj->serie, $obj->turnDescription, $obj->courseName, $obj->unitId, $obj->courseId, $obj->turnId ) = $array;
+                    $objs[$obj->unitId][$obj->courseId][$obj->serie][$obj->turnId] = $obj;
+
+                }
+                return $objs;
+            }
+        }
+        else if ( $filters->printMode == 3 )
+        {
+            $sql = 
+            'SELECT
+                DISTINCT
+                B.unitId,
+                B.courseId,
+                A.sex,
+                C.name,
+                A.personId,
+                I.description
+            FROM
+                basPhysicalPersonStudent A INNER JOIN
+                acdContract B ON ( A.personId = B.personId ) INNER JOIN
+                acdCourse C ON ( C.courseId = B.courseId ) INNER JOIN
+                acdEnroll D ON ( D.contractId = B.contractId ) INNER JOIN
+                acdGroup E ON ( E.groupId = D.groupId ) INNER JOIN
+                acdLearningPeriod F ON ( F.learningPeriodId = E.learningPeriodId ) INNER JOIN
+                acdCurriculum G ON ( G.curriculumId = E.curriculumId ) LEFT JOIN
+                acdClassPupil H ON ( H.contractId = B.contractId AND H.endDate IS NULL )  INNER JOIN
+                basUnit I ON ( I.unitId = B.unitId ) INNER JOIN
+                acdMovementContract J ON ( J.contractId = B.contractId )
+            WHERE
+                1 = 1 
+        ';
+            $sql .= $cond;
+            $result = $this->db->query(SAGU::prepare($sql, $args));
+            if ( count($result) > 0 )
+            {
+                foreach ( $result as $pupils => $pupil )
+                {   
+                    $resultx[$pupil[0]][$pupil[1]][$pupil[2]][$pupil[4]]++;
+                    $courses[$pupil[1]] = $pupil[3];
+                    $units[$pupil[0]] = $pupil[5];
+                }
+                unset($result);
+                foreach($resultx as $unit => $cunit )
+                {
+                    $x = 0;
+                    foreach ( $cunit as $course => $ccourse )
+                    {
+                        $result[$unit][$x][0] = $unit;
+                        $result[$unit][$x][1] = $courses[$course] . ' - (' . $course . ')';
+                        if( is_array($ccourse['F']) )
+                        {
+                            $result[$unit][$x][2] = array_sum($ccourse['F']);
+                            $f = array_sum($ccourse['F']);
+                        }
+                        else
+                        {
+                            $result[$unit][$x][2] = 0;
+                            $f = 0;
+                        }
+                        if( is_array($ccourse['M']) )
+                        {
+                            $result[$unit][$x][3] = array_sum($ccourse['M']);
+                            $m = array_sum($ccourse['M']);
+                        }
+                        else
+                        {
+                            $result[$unit][$x][3] = 0;
+                            $m = 0;
+                        }
+                        $result[$unit][$x][4] = $f+$m;
+                        $x++;
+                    }
+                }
+            }
+        }
+
+//        MIOLO::vd($result);
+        return $result;
+    }
+
+}
+
+?>

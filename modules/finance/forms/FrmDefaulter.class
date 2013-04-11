@@ -1,0 +1,422 @@
+<?php
+set_time_limit(0);
+/**
+ * Defaulter form
+ *
+ * @author Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ *
+ * @since
+ * Class created on 22/12/2005
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2005 SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+
+/**
+ * Form to generate document defaulter
+ **/
+class FrmDefaulter extends MForm
+{
+    private $home;
+    public $showForm;
+
+    /**
+     * Class constructor
+     **/
+    function __construct($data)
+    {
+        $this->showForm = true;
+        $module = MIOLO::getCurrentModule();
+
+        $this->home   = $data->home;
+
+        parent::__construct(_M('Defaulter', $module));
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+
+        $toolBar = new MToolBar('toolBar', $MIOLO->getActionURL($module, $action));
+
+        $toolBar->disableButton('tbBtnDelete');
+        $toolBar->disableButton('tbBtnPrint');
+        $toolBar->disableButton('tbBtnSave');
+        $toolBar->disableButton('tbBtnNew');
+        $toolBar->disableButton('tbBtnSearch');
+
+        //favoritos
+        $enabledImage  = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-20x20.png');
+        $disabledImage = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-disabled-20x20.png');
+        $url           = $MIOLO->getActionURL($module, $this->home, null, array('function' => 'search', 'event' => 'bookmark'));
+        $toolBar->addButton('tbBtnBookmark', _M('Add to bookmarks', 'basic'), $url, null, true, $enabledImage, $disabledImage);
+
+        if ( MIOLO::_request('event') == 'bookmark' )
+        {
+            $MIOLO->getClass('basic', 'access');
+            access::insert('Defaulter', $this->home, 'defaulter-16x16.png', true);
+        }
+        //fim favoritos
+
+        $fields[] = $toolBar;
+        
+        // início 1° grupo
+        // periodo
+        $businessPeriod = $MIOLO->getBusiness('academic', 'BusPeriod');
+        $dataPeriod = $businessPeriod->listPeriod();
+
+        $periodLabel = new MText('periodLabel', _M('Period',$module).':');
+        $periodLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $periodLabel->setClass('m-caption m-caption-required');
+
+        $MMultiPeriod = new MMultiSelection('periodId', is_array($this->getFormValue('periodId', $data->periodId)) ? $this->getFormValue('periodId', $data->periodId) : array($this->getFormValue('periondId', CURRENT_PERIOD_ID)), '', $dataPeriod, true, null, 5);
+        $validators[] = new MRequiredValidator('periodId', _M('Period',$module));
+
+        $hctPeriod = new MHContainer('hctPeriod', array($periodLabel, $MMultiPeriod));
+        $hctPeriod->setShowLabel(true);
+        $field1[]   = $hctPeriod;
+
+        // course
+        $courseLabel = new MText('courseLabel', _M('Course',$module).':');
+        $courseLabel->setWidth(FIELD_CONTAINER_SIZE);
+//        $courseLabel->setClass('m-caption m-caption-required');
+        $courseId = new MLookupTextField('courseId', $this->getFormValue('courseId',$data->courseId), null,FIELD_ID_SIZE, null, null, array('courseVersion', 'courseName', 'txtAccountSchemeId', 'txtAccountSchemeDescription', 'txtCostCenterId', 'txtCostCenterDescription', 'unitId'), $module, 'CourseAccountSchemeCostCenter', null, array('courseId' => 'courseId'), true);
+        $courseId->setJsHint(_M('Select the course id', $module));
+        $courseVersion = new MTextField('courseVersion', $this->getFormValue('courseVersion',$data->courseVersion), null,FIELD_ID_SIZE);
+//        $validators[] = new MRequiredValidator('courseVersion');
+        $couseVersionDescription = new MText('couseVersionDescription',_M('Version',$module));
+        $courseName = new MTextField('courseName', $this->getFormValue('courseName',$data->courseName), null, FIELD_DESCRIPTION_SIZE);
+        $courseName->setReadOnly(true);
+        $hctCourse = new MHContainer('hctCourse', array($courseLabel, $courseId, $couseVersionDescription, $courseVersion, $courseName));
+        $hctCourse->setShowLabel(true);
+        $field1[]   = $hctCourse;
+
+        $lookupFilters = array( 'courseId'      => 'courseId',
+                                'periodId'      => 'periodId',
+                                'courseVersion' => 'courseVersion');
+
+        //Class
+        $classLabel = new MText('classLabel', _M('Class', 'academic') . ':');
+        $classLabel->setWidth(FIELD_CONTAINER_SIZE);
+
+        $classId = new MLookupTextField('classId', $this->getFormValue('classId', $data->classId), '', FIELD_LOOKUPFIELD_SIZE, null, null, 'className_, courseId, courseVersion, courseName', 'academic', 'ClassCourse', null, $lookupFilters, true);
+        $classId->setJsHint(_M('Enter the class code', 'academic'));
+
+        $className_ = new MTextField('className_', $this->getFormValue('className_', $data->className_), '', FIELD_DESCRIPTION_SIZE);
+        $className_->setReadOnly(true);
+        $className_->setJsHint(_M('Class name', 'academic'));
+
+        $hctClass = new MHContainer('hctClass', array($classLabel, $classId, $className_));
+        $hctClass->setShowLabel(true);
+        $field1[] = $hctClass;
+
+        // person 
+        $personIdLabel = new MText('personIdLabel', _M('Person id', $module).':');
+        $personIdLabel->setWidth(FIELD_CONTAINER_SIZE);
+
+        $personId      = new MLookupTextField('personId', $this->getFormValue('personId', $data->personId), '', 10, null, null, array('personName', 'limbo', 'limbo', 'limbo', 'limbo'), 'basic', 'Person', null, null, true);
+
+        $personName   = new MTextField('personName', $this->getFormValue('personName', $data->personName), '', FIELD_DESCRIPTION_SIZE);
+        $personName->setReadOnly(true);
+       
+        $hctPerson = new MHContainer('hctPerson', array($personIdLabel, $personId, $personName));
+        $hctPerson->setShowLabel(true);
+        $field1[]   = $hctPerson;
+
+        // get Yes and No for Radio Button
+//        $messagesType = SAGU::listTrueFalse(1);
+        $messagesType[0][0] = _M('Report',$module);
+        $messagesType[0][1] = '0';
+        $messagesType[1][0] = _M('Letter',$module) . ' 1';
+        $messagesType[1][1] = '1';
+        $messagesType[2][0] = _M('Letter',$module) . ' 2';
+        $messagesType[2][1] = '2';
+
+        $generateOptionLabel = new MText('generateOptionLabel', _M('Generate option',$module).':');
+        $generateOptionLabel->setWidth(FIELD_CONTAINER_SIZE);
+//        $isActiveLabel->setClass('m-caption m-caption-required');
+        $generateOption = $this->GetFormValue('generateOption', $data->generateOption) ? $this->GetFormValue('generateOption', $data->generateOption) : '0';
+
+        $generateOption = new MRadioButtonGroup('generateOption', '', $messagesType, $generateOption, null, 'horizontal');
+        $generateOption->SetShowLabel(false);
+        $hctGenerateOption = new MHContainer('hctGenerateOption', array($generateOptionLabel, $generateOption));
+        $field1[]  = $hctGenerateOption;
+
+
+        $mType[0][0] = _M('sxw',$module);
+        $mType[0][1] = DB_TRUE;
+        $mType[1][0] = _M('pdf',$module);
+        $mType[1][1] = DB_FALSE;
+
+        $fileOptionLabel = new MText('fileOptionLabel', _M('File generate option',$module).':');
+        $fileOptionLabel->setWidth(FIELD_CONTAINER_SIZE);
+//        $isActiveLabel->setClass('m-caption m-caption-required');
+        $fileOption = $this->GetFormValue('fileOption', $data->fileOption) ? $this->GetFormValue('fileOption', $data->fileOption) : DB_TRUE;
+
+        $fileOption = new MRadioButtonGroup('fileOption', '', $mType, $fileOption, null, 'horizontal');
+        $fileOption->SetShowLabel(false);
+        $hctFileOption = new MHContainer('hctFileOption', array($fileOptionLabel, $fileOption));
+        $field1[]  = $hctFileOption;
+
+        // First group 
+//        $field1[]  = $personName;
+        $field1[]  = new MHiddenField('limbo', $this->getFormValue('limbo', $data->limbo));
+        $field1[]  = new MSeparator('');
+        $fields1[] = new MVContainer('container1', $field1);
+        
+        $fields[]  = new MBaseGroup('mbgDefaulter', _M('Defaulter', $module), $fields1);
+        // Botao do primeiro Grupo.
+        $btnGenerate = new MButton('btnGenerate', _M('Generate', $module));
+        $fieldss1[] = new MHContainer('hctBtn', array($btnGenerate));
+        $fields[]  = $fieldss1;
+
+        $divError = new MDiv('divError', $errorMsgs, null, 'align="center"');
+        $fields[] = $divError;
+
+        $fields[] = new MSeparator('');
+        $this->setShowPostButton(false);
+
+        $this->setFields($fields);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setValidators($validators);
+
+        
+        $this->setClose($MIOLO->getActionURL($module, substr($action, 0, strrpos($action, ':'))));
+        $this->page->onLoad('document.' . $this->name . '.description.focus();');
+    }
+
+    /**
+     * Event triggered when button search is clicked 
+     */
+     public function btnGenerate_click($sender = null)
+     {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        
+        $data->periodId       = $this->getFormValue('periodId');
+        $data->personId       = $this->getFormValue('personId');
+        $data->courseId       = $this->getFormValue('courseId');
+        $data->classId        = $this->getFormValue('classId');
+        $data->courseVersion  = $this->getFormValue('courseVersion');
+        $data->generateOption = $this->getFormValue('generateOption');
+        $data->fileOption     = $this->getFormValue('fileOption');
+
+        $business = $MIOLO->getBusiness($module, 'BusDefaulter');
+
+        if( $data->generateOption == '0')
+        {
+
+          $returnData = $business->getRelateDefaulterGenerate($data);
+          $returnNumber = count($returnData) ;
+          if ( is_array($returnData) != true )
+          {
+                $goto = strlen((string) $goto ) > 0 ? $goto : $MIOLO->getActionURL($module, $action);
+                $caption = _M('Error', $module );
+                $msg     = _M('No results for this query, try another period !', $module);
+                $MIOLO->error( $msg, $goto, $caption );
+          }
+
+          $actualDate   =  SAGU::getDateNow();
+          $index = 0;
+          for( $option = 0 ; $option < $returnNumber; $option++) 
+          {
+//               $option--;
+               $y = $x ? $x : 0;
+               $x = $returnData[$option][0];
+               if ( $x == $y )
+               {
+                   // incrementa outras linhas da tabela
+            
+                   $arrayTotal[$index][0] = $arrayTotal[$index][0] + $returnData[$option][24];
+
+                   $arrayS[0][$index][] = array($returnData[$option][22],$returnData[$option][29], $returnData[$option][21], $returnData[$option][23], $returnData[$option][28], $returnData[$option][24]);
+                    
+               }
+               else
+               {
+                    $index++;    
+                    // incrementa cabeçario e primeira linha da tabela
+                    $array[$index] = array($actualDate,
+                                           $returnData[$option][25],
+                                           $returnData[$option][0],
+                                           $returnData[$option][1],
+                                           $returnData[$option][3],
+                                           $returnData[$option][5],
+                                           $returnData[$option][4],
+                                           $returnData[$option][7],
+                                           $returnData[$option][10],
+                                           $returnData[$option][11],
+                                           $returnData[$option][8],
+                                           $returnData[$option][14],
+                                           $returnData[$option][15],
+                                           $returnData[$option][9],
+                                           $returnData[$option][26],
+                                           $returnData[$option][27]);
+                    $arrayTotal[$index][0] = $returnData[$option][24];
+                    $arrayS[0][$index][] = array($returnData[$option][22],$returnData[$option][29], $returnData[$option][21], $returnData[$option][23], $returnData[$option][28], $returnData[$option][24]);
+    
+               }
+
+            }
+
+            $MIOLO->uses('/core/AgataAPI.class');
+
+            $api = new AgataAPI;
+
+            $api->setLanguage($MIOLO->getConf('i18n.language'));
+            $api->setOutputPath(TEMP_DIR . '/defaulter.sxw');
+            $api->setDataArray($array);
+            $api->setSubDataArray($arrayS);
+            $ok = $api->parseOpenOffice($MIOLO->getModulePath('basic', '/documents/defaulter.sxw'));
+
+            if( $ok && $data->fileOption == DB_FALSE)
+            {
+
+                $api->setOutputPath(TEMP_DIR . '/defaulter.pdf');
+                $ok = $api->openOffice2pdf(TEMP_DIR . '/defaulter.sxw');
+
+            }
+
+            //se não conseguiu gerar o arquivo
+            if ( !$ok )
+            {
+                $lblAgataError        = new MText('lblMsg1', $api->getError());
+                $lblAgataError->color = 'red';
+                $sep1                 = new Separator('');
+                $cntErrors            = new MVContainer('cntErrors', array($lblAgataError,$sep));
+                $this->divError->addControl($cntErrors);
+            }
+            else
+            {
+
+                $api->fileDialog();
+            }
+
+
+        }
+        else
+        {   
+          $returnData   = $business->getRelateDefaulterGenerate($data);
+          $returnNumber = count($returnData) ;
+          $actualDate   =  SAGU::getDateNow();
+          $index = 0;
+          for( $option = 0 ; $option < $returnNumber; $option++) 
+          {
+//               $option--;
+               $y = $x ? $x : 0;
+               $x = $returnData[$option][0];
+               if ( $x == $y )
+               {
+                   // incrementa outras linhas da tabela
+                   $arrayTotal[$index][0] = $arrayTotal[$index][0] + $returnData[$option][24];
+                   $arrayS[0][$index][] = array($returnData[$option][22],$returnData[$option][29], $returnData[$option][21], $returnData[$option][23], $returnData[$option][28], $returnData[$option][24]);
+               }
+               else
+               {
+                    $index++;    
+                    // incrementa cabeçario e primeira linha da tabela
+                    $array[$index] = array($actualDate,
+                                           $returnData[$option][25],
+                                           $returnData[$option][0],
+                                           $returnData[$option][1],
+                                           $returnData[$option][3],
+                                           $returnData[$option][5],
+                                           $returnData[$option][4],
+                                           $returnData[$option][7],
+                                           $returnData[$option][10],
+                                           $returnData[$option][11],
+                                           $returnData[$option][8],
+                                           $returnData[$option][14],
+                                           $returnData[$option][15],
+                                           $returnData[$option][9],
+                                           $returnData[$option][26],
+                                           $returnData[$option][27]);
+                    $arrayTotal[$index][0] = $returnData[$option][24];
+                    $arrayS[0][$index][] = array($returnData[$option][22],$returnData[$option][29], $returnData[$option][21], $returnData[$option][23], $returnData[$option][28], $returnData[$option][24]);
+               }
+            }
+            $MIOLO->uses('/core/AgataAPI.class');
+
+            $api = new AgataAPI;
+
+            $api->setLanguage($MIOLO->getConf('i18n.language'));
+            if ( $data->generateOption == '1')
+            {
+                $api->setOutputPath(TEMP_DIR . '/defaulterLetter.sxw');
+            }
+            else
+            {
+                $api->setOutputPath(TEMP_DIR . '/defaulterLetter2.sxw');
+            }
+            $api->setDataArray($array);
+            $api->setSubDataArray($arrayS);
+            if ( $data->generateOption == '1')
+            {
+                $ok = $api->parseOpenOffice($MIOLO->getModulePath('basic', '/documents/defaulterLetters.sxw'));
+            }
+            else
+            {
+                $ok = $api->parseOpenOffice($MIOLO->getModulePath('basic', '/documents/defaulterLetters2.sxw'));
+            }
+
+            if( $ok && $data->fileOption == DB_FALSE)
+            {
+                if ( $data->generateOption == '1')
+                {
+                    $api->setOutputPath(TEMP_DIR . '/defaulterLetter.pdf');
+                    $ok = $api->openOffice2pdf(TEMP_DIR . '/defaulterLetter.sxw');
+                }
+                else
+                {
+                    $api->setOutputPath(TEMP_DIR . '/defaulterLetter2.pdf');
+                    $ok = $api->openOffice2pdf(TEMP_DIR . '/defaulterLetter2.sxw');
+                }
+            }
+
+            //se não conseguiu gerar o arquivo
+            if ( !$ok )
+            {
+                $lblAgataError        = new MText('lblMsg1', $api->getError());
+                $lblAgataError->color = 'red';
+                $sep1                 = new Separator('');
+                $cntErrors            = new MVContainer('cntErrors', array($lblAgataError,$sep));
+                $this->divError->addControl($cntErrors);
+            }
+            else
+            {
+                $api->fileDialog();
+            }
+        }
+     }
+}
+?>

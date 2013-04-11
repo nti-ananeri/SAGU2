@@ -1,0 +1,148 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for acdGroup table
+ *
+ * @author Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 22/09/2005
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to manipulate the acdGroup table
+ **/
+class BusinessAcademicBusLessonsContent extends Business
+{
+    public $db;
+    
+    //Class constructor
+    public function __construct()
+    {
+        $this->db = $this->getDatabase();
+    }
+    
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module = is_null($module) ? 'academic' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+    public function getLessonsContent ( $data )
+    {
+        $sql = 'SELECT 
+                    to_char(F.occurrenceDate, (SELECT value from basconfig where parameter = \'MASK_DATE\')) as data_aula ,
+                    E.charId as turno,
+                    D.shortDescription as diaSemana,
+                    A.content as conteudo,
+                    to_char(max(A.datetime), (SELECT value from basconfig where parameter = \'MASK_DATE_TIME\')) as horario_lancamento,
+                    F.groupId,
+                    G.unitId
+                FROM 
+                    acdfrequencecontent A INNER JOIN
+                    acdschedule B using ( scheduleid ) INNER JOIN
+                    acdscheduleprofessor C using ( scheduleid ) RIGHT JOIN
+                    (SELECT
+                        *
+                     FROM 
+                        getOccurrenceDatesGroupByGroup ( ?::integer ) AS
+                        ( occurrencedate date,
+                          groupId integer,
+                          learningPeriodId integer,
+                          numberhourslessons float,
+                          lessonNumberHours float,
+                          academicNumberHours float,
+                          practiceHours float,
+                          curriculumId integer,
+                          weekDayId integer )
+                    ) F ON ( F.groupId = B.groupId AND 
+                             F.weekDayId = B.weekDayId AND
+                             F.occurrenceDate = A.occurrenceDate ) INNER JOIN
+                    basWeekDay D ON ( F.weekDayId = D.weekDayId ) INNER JOIN
+                    acdLearningPeriod G ON ( G.learningPeriodId = F.learningPeriodId ) INNER JOIN
+                    basTurn E ON ( E.turnId = G.turnId )
+                WHERE
+                    1 = 1 ';
+        
+        $args[] = $data->groupId;
+        if ( strlen((string) $data->groupId ) > 0 )
+        {
+            $sql .= ' AND F.groupId = ?::integer '; 
+            $args[] = $data->groupId;
+        }
+
+        if ( strlen((string) $data->professorId ) > 0 )
+        {
+            $sql .= ' AND ( C.professorId = ?::integer OR C.professorId IS NULL )'; 
+            $args[] = $data->professorId;
+        }
+
+        $sql .='GROUP BY
+                    F.occurrenceDate, 
+                    E.charId, 
+                    D.shortDescription, 
+                    A.content, 
+                    F.groupId,
+                    G.unitId
+                ORDER BY
+                    G.unitId,
+                    F.occurrenceDate, 
+                    E.charId, 
+                    F.groupId ';
+        if ( count($args) > 0 )
+        {
+            $sql = SAGU::prepare( $sql, $args );
+            $result = $this->db->query ( $sql );
+            if ( count( $result ) > 0 )
+            {
+                $result2 = $result;
+                unset ( $result );
+                foreach ( $result2 as $linha => $valores )
+                {
+                    $result[str_replace('/', '', $valores[0])][0] = $valores[0];
+                    $result[str_replace('/', '', $valores[0])][1] = $valores[1];
+                    $result[str_replace('/', '', $valores[0])][2] = $valores[2];
+                    $result[str_replace('/', '', $valores[0])][3][] = $valores[3];
+                    $result[str_replace('/', '', $valores[0])][4] = $valores[4];
+                    $result[str_replace('/', '', $valores[0])][5] = $valores[5];
+                    $result[str_replace('/', '', $valores[0])][6] = $valores[6];
+                }
+            }
+        }
+        return $result;
+    }
+}
+
+?>

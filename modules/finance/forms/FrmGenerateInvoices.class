@@ -1,0 +1,272 @@
+<?php
+
+/**
+ * Enroll tax report form
+ *
+ * @author Giovani Murilo D. Correa [gmurilo@isolution.inf.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Daniel Afonso Heisler [daniel@isolution.inf.br]
+ *
+ * @since
+ * Class created on 18/12/2008
+ *
+ * \b Organization: \n
+ * iSolution - Soluções em TI \n
+ * The iSolution Development Team
+ *
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ **/
+
+/**
+ * Form to generate invoices in lot
+ **/
+class FrmGenerateInvoices extends MForm
+{
+
+    /**
+     * Class constructor
+     **/
+    function __construct($data)
+    {
+        $module = MIOLO::getCurrentModule();
+        parent::__construct(_M('Generate invoices for contract', $module));
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+        $this->eventHandler();
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+
+        $toolBar = new MToolBar('toolBar', $MIOLO->getActionURL($module, $action));
+        $toolBar->disableButton('tbBtnDelete');
+        $toolBar->disableButton('tbBtnSave');
+        $toolBar->disableButton('tbBtnNew');
+        $toolBar->disableButton('tbBtnSearch');
+        $toolBar->disableButton('tbBtnPrint');
+
+        $data2 =  $MIOLO->session->getValue('enrollData');
+        if ( count($data2) > 0 )
+        {
+            foreach ( $data2 as $item => $value )
+            {
+                if ( $item != '__PHP_Incomplete_Class_Name' )
+                {
+                   $data->$item = $value;;
+                }
+            }
+        }
+
+        //favoritos
+        $enabledImage  = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-20x20.png');
+        $disabledImage = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-disabled-20x20.png');
+        $url           = $MIOLO->getActionURL($module, $this->home, null, array('function' => 'search', 'event' => 'bookmark'));
+        $toolBar->addButton('tbBtnBookmark', _M('Add to bookmarks', 'basic'), $url, null, true, $enabledImage, $disabledImage);
+
+        if ( MIOLO::_request('event') == 'bookmark' )
+        {
+            $MIOLO->getClass('basic', 'access');
+            access::insert('Generate invoices for contract', $this->home, 'generateInvoices-16x16.png', true);
+        }
+        
+        //fim favoritos
+        $fields[] = $toolBar;
+        $fields[] = new MHiddenField('limbo');
+        //period
+        $periodIdLabel = new MText('incomeSourceLabel', _M('Period','academic').':');
+        $periodIdLabel->setClass('m-caption m-caption-required');
+        $periodIdLabel->setWidth(FIELD_CONTAINER_SIZE);        
+
+        $business  = $MIOLO->getBusiness('academic', 'BusPeriod');
+        $periodId  = new MSelection('periodId', strlen((string)$this->getFormValue('periodId', $data->periodId))>0 ? $this->getFormValue('periodId', $data->periodId) : CURRENT_PERIOD_ID, '', $business->listPeriod(), true );
+        $hctPeriod = new MHContainer('hctPeriod', array($periodIdLabel, $periodId));
+        $hctPeriod->setShowLabel(true);
+        $fields[]    = $hctPeriod;
+        $validators[] = new MRequiredValidator('periodId', _M('Period','academic'), 'required');
+        
+        //Contract
+        $contractLabel = new MText('contractLabel', _M('Contract', $module) . ':');
+        $contractLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $contractLabel->setClass('m-caption m-caption-required');
+        $fld[]         = $contractLabel;
+
+        $contractId  = new MLookupTextField('contractId', $this->getFormValue('contractId', $data->contractId), null, FIELD_LOOKUPFIELD_SIZE, null, null, array('personId', 'personName', 'courseId', 'courseName', 'limbo', 'turnId', 'limbo', 'unitId'), 'academic', 'ActiveContract', null, array('personId' => 'personId', 'courseId' => 'courseId', 'contractId' => 'contractId', 'turnId'=>'turnId', 'unitId'=>'unitId'), true);
+        $contractId->setJsHint(_M('Enter the contract code',$module));
+        $validators[] = new MIntegerValidator('contractId', _M('Contract id', $module), 'required');
+        $fld[] = $contractId;
+
+        $hctContract = new MHContainer('hctContract', $fld);
+        $hctContract->setShowLabel(false);
+        
+        $fields[]   = $hctContract;       
+
+        // person
+        $personLabel = new MText('personLabel', _M('Person',$module).':');
+        $personLabel->setWidth(FIELD_CONTAINER_SIZE);
+//        $personLabel->setClass('m-caption m-caption-required');
+
+        $personId = new MLookupTextField('personId', $this->getFormValue('personId',$data->personId), null,FIELD_ID_SIZE, null, null,
+            'personName',
+            'basic', 'Person', null, null, true);
+        $personId->setJsHint(_M('Select the person id', $module));
+//        $validators[] = new MIntegerValidator('personId',_M('Person',$module), 'required');
+        
+        $personName = new MTextField('personName', $this->getFormValue('personName',$data->personName), null, FIELD_DESCRIPTION_SIZE);
+        $personName->setReadOnly(true);
+        
+        $hctPerson = new MHContainer('hctPerson', array($personLabel, $personId, $personName));
+        $hctPerson->setShowLabel(true);
+        $fields[]   = $hctPerson;
+
+        //Course
+        $courseLabel   = new MText('courseLabel', _M('Course', $module) . ':');
+        $courseLabel->setWidth(FIELD_CONTAINER_SIZE);
+
+        $courseId      = new MLookupTextField('courseId', $this->getFormValue('courseId'), '', FIELD_LOOKUPFIELD_SIZE, null, null, 'courseName', 'academic', 'Course', null, array('courseId' => 'courseId'), true);
+        $courseId->setJsHint(_M('Enter the course code', $module));
+
+        $courseName    = new MTextField('courseName', $this->getFormValue('courseName', $data->courseName), '', FIELD_DESCRIPTION_SIZE);
+        $courseName->setJsHint(_M('Course name',$module));
+
+        $hctCourse     = new MHContainer('hctCourse', array($courseLabel, $courseId, $courseName));
+        $hctCourse->setShowLabel(true);
+        $fields[]      = $hctCourse;
+
+        //Turn
+        $turnLabel       = new MText('turnLabel', _M('Turn', $module) . ':');
+        $turnLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $businessTurn = $MIOLO->getBusiness('basic', 'BusTurn');
+        $turnId   = new MSelection('turnId',
+                                    $this->getFormValue('turnId',$data->turnId),
+                                    NULL,
+                                    $businessTurn->listTurn());
+ 
+        $hctTurn         = new MHContainer('hctTurn', array($turnLabel, $turnId));
+        $hctTurn->setShowLabel(true);
+        $fields[]        = $hctTurn;
+
+        //Unit
+        $unitLabel = new MText('unitLabel', _M('Unit',$module).':');
+        $unitLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $business = $MIOLO->getBusiness('basic','BusUnit');
+        $unitId = new MSelection('unitId', $this->getFormValue('unitId',$data->unitId), '', $business->listUnit());
+        $unitId->setJsHint( _M('Choose the unit',$module) );
+
+        $hctUnit = new MHContainer('hctUnit', array($unitLabel, $unitId, $unitDescription));
+        $hctUnit->setShowLabel(true);
+        $fields[]   = $hctUnit;
+
+
+        //periodo letivo
+        $learningPeriodLabel = new MText('learningPeriodLabel', _M('Learning period','academic').':');
+        $learningPeriodLabel->setWidth(FIELD_CONTAINER_SIZE);
+        //$learningPeriodLabel->setClass('m-caption m-caption-required');
+
+        $learningPeriodId = new MLookupTextField('learningPeriodId', $this->getFormValue('learningPeriodId', $data->learningPeriodId), '', FIELD_LOOKUPFIELD_SIZE, null, null, 'periodId, courseId, limbo, turnId, unitId, learningPeriodDescription, limbo, limbo, limbo, limbo, limbo, limbo, limbo, limbo, limbo, limbo, courseName, limbo, limbo', 'academic', 'LearningPeriod', null, array('courseId' => 'courseId', 'turnId' => 'turnId', 'unitId' => 'unitId', 'periodId' => 'periodId'), true);
+        $learningPeriodId->setJsHint(_M('Enter the learning period code','academic'));
+        //$validators[] = new MRequiredValidator('learningPeriodId', _M('Learning period',$module));
+
+        $learningPeriodDescription = new MTextField('learningPeriodDescription', $this->getFormValue('learningPeriodDescription', $data->learningPeriodDescription), '', FIELD_DESCRIPTION_SIZE);
+        $learningPeriodDescription->setJsHint(_M('Learning period description','academic'));
+        $learningPeriodDescription->setReadOnly(true);
+
+        $hctlearningPeriod = new MHContainer('hctlearningPeriod', array($learningPeriodLabel, $learningPeriodId, $learningPeriodDescription));
+        $hctlearningPeriod->setShowLabel(true);
+        $fields[]  = $hctlearningPeriod;
+        
+        //MES e ANO
+        $monthLabel   = new MText('monthlabel', _M('Month', $module) . '/' . _M('Year', $module));
+        $monthLabel->setClass('m-caption m-caption-required');
+        $monthLabel->setWidth(FIELD_CONTAINER_SIZE);
+
+        $month        = new MSelection('month', strlen((string)$this->getFormValue('month', ( defined('MONTH_FOR_FIRST_PARCEL') ? MONTH_FOR_FIRST_PARCEL : date('m'))))>0 ? $this->getFormValue('month', ( defined('MONTH_FOR_FIRST_PARCEL') ? MONTH_FOR_FIRST_PARCEL : date('m'))) : date('n'), '', SAGU::listMonths());
+        $validators[] = new MRequiredValidator('month', _M('Month', $module), 'required');
+
+        $year         = new MTextField('year', strlen((string)$this->getFormValue('year'))>0 ? $this->getFormValue('year') : date('Y'), null, 6);
+        $validators[] = new MRequiredValidator('year', _M('Year', $module), 'required');
+
+        $fields[]     = new MHContainer('hctMonth', array($monthLabel, $month, $year));
+
+        $fields[] = new MCheckBox('checkInvoice', 'true', '', true, ' ' . _M('Leave this option checked if you want the system not enter new invoices for students who already have it.', 'finance'));
+        $fields[] = new MSeparator('<hr>');
+
+
+        $fields[]         = new MButton('btnSearch',_M('Search',$module));
+
+        
+        
+        $data->periodId          = $this->getFormValue('periodId', $data->periodId);
+        $data->contractId        = $this->getFormValue('contractId', $data->contractId);
+        $data->personId          = $this->getFormValue('personId', $data->personId);
+        $data->learningPeriodId  = $this->getFormValue('learningPeriodId');
+        $data->courseId          = $this->getFormValue('courseId', $data->courseId);
+        $data->courseVersion     = $this->getFormValue('courseVersion', $data->courseVersion);
+        $data->unitId            = $this->getFormValue('unitId', $data->unitId);
+        $data->turnId            = $this->getFormValue('turnId', $data->turnId);
+        $data->month             = $this->getFormValue('month', ( defined('MONTH_FOR_FIRST_PARCEL') ? MONTH_FOR_FIRST_PARCEL : date('m')) );
+        $data->year              = $this->getFormValue('year');
+        $data->checkInvoice      = $this->getFormValue('checkInvoice');
+        $busInvoicesGeneration = $MIOLO->getBusiness('finance', 'BusInvoicesGeneration');
+        if ( strlen((string)$data->contractId) > 0 )
+        {
+            $result = $busInvoicesGeneration->searchInfo($data);
+        }
+        else
+        {
+            $result = array();
+        }
+        $grid            = $MIOLO->getUI()->getGrid($module, 'GrdGenerateInvoicesInLotSearch' );
+        $grid->setData($result);
+        $fields[] = $grid; 
+        $module = 'finance';
+        $this->setShowPostButton(false);
+        $this->setFields($fields);
+        $this->setValidators($validators);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+    
+        $this->setClose($MIOLO->getActionURL($module, substr($action, 0, strrpos($action, ':'))));
+        $this->page->onLoad('document.' . $this->name . '.periodId.focus();');
+    }
+
+    /**
+     * Event triggered when button search is clicked 
+     */
+     public function tbBtnPrint_click($sender = null)
+     {
+        $MIOLO  = MIOLO::getInstance();
+        $module = 'finance';
+        $action = MIOLO::getCurrentAction();
+
+        $data->personId          = MIOLO::_request('personId');
+        $data->contractId        = MIOLO::_request('contractId');
+        $data->periodId          = MIOLO::_request('periodId');
+        $business = $this->manager->getBusiness($module,'BusInvoice');
+        $GrdData = $business->searchInvoiceBtDates($data);
+        foreach($GrdData as $item)
+        {
+            if((float)$item[4] > (float)MINIMAL_VALUE_TO_PRINT_INVOICE)
+            {
+                $filters->invoices[$item[2]]->invoiceId[] = $item[0];
+            }
+        }
+        $RptPrintInvoice = 'RptPrintInvoicesInLot';
+        $filters->printLeftHanded = DB_FALSE;
+
+        $MIOLO->getClass($module, $RptPrintInvoice);
+        $report = new $RptPrintInvoice($filters);
+     }
+}
+?>

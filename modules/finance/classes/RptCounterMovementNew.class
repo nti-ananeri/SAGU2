@@ -1,0 +1,224 @@
+<?
+/**
+*
+* @author Giovani Murilo Dantas Correa [gmurilo@isolution.inf.br]
+*
+* $version: $Id$
+*
+* \b Maintainers \n
+* Daniel Afonso Heisler [daniel@isolution.inf.br]
+*
+* @since
+* Class created on 25/06/2009
+*
+* \b Organization: \n
+* iSolution - Soluções de Internet \n
+* The iSolution TEAM
+*
+* \b CopyLeft: \n
+* CopyLeft (L) 2007 iSolution - Soluções de Internet \n
+*
+* \b License \n
+* Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+*
+* \b History \n
+* See history in CVS repository: http://isolution.inf.br   
+*
+**/
+set_time_limit(0);        
+$MIOLO = MIOLO::getInstance();
+$module = 'finance';
+
+define('FPDF_FONTPATH', $MIOLO->getModulePath('basic', '/classes/fpdf/font/'));
+$MIOLO->Uses('classes/fpdf/pdf.php', 'basic');
+
+class RptCounterMovementNew extends PDF
+{
+    var $module = 'finance';
+    public function __construct($filters = NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        foreach($filters as $item => $value )
+        {
+            if(!$this->headerData->{$item} )
+            {
+                $this->headerData->{$item} = $value;
+            }
+        }
+        $db = $MIOLO->getBusiness('finance','BusCounterMovementNew'); 
+        $this->data = $db->searchCounterMovement ( $this->headerData );
+        $this->title = strtoupper(_M('Relatório de Movimentação de Caixa', 'finance'));
+        parent::__construct();
+        $this->useUserInfo = true;
+        $this->addPage($filters->reportType == 2 ? 'L' : 'P', 'mm', 'A4');
+        $this->aliasNbPages();   
+        $this->generatePDF();
+    }
+
+    public function synthetic()
+    {
+        //echo 'Sintético';
+        $data = $this->data;
+    }
+    public function headerAnalytical()
+    {
+        $this->column['size'][1] = 16;
+        $this->column['size'][2] = 12;
+        $this->column['size'][4] = 6;
+        $this->column['size'][5] = 15;
+        $this->column['size'][6] = 15;
+        $this->column['size'][7] = 15;
+        $this->column['size'][8] = 15;
+        $this->column['size'][9] = 20;
+        $this->column['size'][10] = 25;
+        $this->column['size'][3] = $this->psize-array_sum($this->column['size']);
+
+        $this->column['align'][1] = 'C';
+        $this->column['align'][2] = 'C';
+        $this->column['align'][4] = 'C';
+        $this->column['align'][5] = 'R';
+        $this->column['align'][6] = 'R';
+        $this->column['align'][7] = 'R';
+        $this->column['align'][8] = 'R';
+        $this->column['align'][9] = 'C';
+        $this->column['align'][3] = 'L';
+        $this->column['align'][10] = 'L';
+
+
+        $this->column['name'][1] = _M('Date', 'basic');
+        $this->column['name'][2] = _M('Time', 'basic');
+        $this->column['name'][4] = 'OP';
+        $this->column['name'][10] = 'Origem';
+        $this->column['name'][5] = _M('Value', 'finance');
+        $this->column['name'][6] = _M('Incentive', 'finance');
+        $this->column['name'][7] = _M('Discount', 'finance');
+        $this->column['name'][8] = _M('Interest', 'finance');
+        $this->column['name'][9] = _M('Species', 'finance');
+        $this->column['name'][3] = _M('Description', 'finance');
+        $columns = array( 1 => 'data', 2 => 'hora', 3 => 'descricao', 4 => 'operacao', 5 => 'valor', 6 => 'incentivo', 7=> 'desconto', 8 => 'juros', 9 => 'especie', 10 => 'origem');
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->fontSizeBody);
+
+        for($x = 1; $x <= count($this->column['name']); $x++ )
+        {
+            $this->cell($this->column['size'][$x], $this->lsize, $this->column['name'][$x], 1, null, 'C');
+        }
+        $this->ln();
+        return $columns;
+    }
+    public function analytical()
+    {
+        //echo 'Analítico';
+        $data = $this->data;
+        $colunas = $this->headerAnalytical();
+        foreach ( $data as $item => $obj )
+        {
+            //Quando for operacao de crédito
+            $total[$obj->data] += $obj->operacao == 'C' ? $obj->valor : ($obj->valor * -1);
+            $op[$obj->operacao][$obj->data] += $obj->valor;
+            if ( $obj->operacao == 'C' )
+            {
+                $this->setFont(DEFAULT_REPORT_FONT, '', $this->fontSizeBody);
+                $this->SetFillColor(0,180,255);
+                foreach($colunas as $item => $valor)
+                {
+                    $this->cell($this->column['size'][$item], $this->lsize, $obj->$valor, 1, null, $this->column['align'][$item], 1);
+                }
+                $this->ln();
+            }
+            else if ( $obj->operacao == 'D' )
+            {
+                $this->setFont(DEFAULT_REPORT_FONT, '', $this->fontSizeBody);
+                $this->SetFillColor(255,0,0);
+                foreach($colunas as $item => $valor)
+                {
+                    $this->cell($this->column['size'][$item], $this->lsize, $obj->$valor, 1, null, $this->column['align'][$item], 1);
+                }
+                $this->ln();
+            }
+        }
+        $this->ln();
+        $this->setFont(DEFAULT_REPORT_FONT, 'BI', $this->fontSizeBody);
+        if ( count( $op['C'] ) > 0 )
+        {
+            $this->SetTextColor(0,180,255);
+            $this->cell($this->psize-15, $this->lsize, _M('Credit', 'finance') .'s', null, null, 'R');
+            $this->cell(15, $this->lsize,  SAGU::formatNumber(array_sum($op['C'])), null, null, 'R');
+            $this->ln();
+        }
+        if ( count( $op['D'] ) > 0 ) 
+        {
+            $this->SetTextColor(255,0,0);
+            $this->cell($this->psize-15, $this->lsize, _M('Debit', 'finance') . 's', null, null, 'R');
+            $this->cell(15, $this->lsize,  '-'. SAGU::formatNumber(array_sum($op['D'])), null, null, 'R');
+            $this->ln();
+        }
+        $this->line(($this->psize-15), $this->y+2, $this->psize+$this->lMargin, $this->y+2);
+        $this->ln();
+        $this->SetTextColor(0,0,0);
+        $this->cell($this->psize-15, $this->lsize, _M('Balance', 'finance') , null, null, 'R');
+        $this->cell(15, $this->lsize,  SAGU::formatNumber(array_sum($total)), null, null, 'R');
+    }
+    
+    public function generatePDF()
+    {
+        if(count($this->data) == 0)
+        {
+            $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->fontSizeBody);
+            $this->SetFillColor(255,0,0);
+            $this->cell($this->psize, $this->lsize, _M('No data found to process', 'finance'), null, null, 'C', 1);
+            PDF::generatePDF();
+            return;
+        } 
+
+        $this->setFont(DEFAULT_REPORT_FONT, 'BI', $this->fontSizeBody);
+        $this->cell($this->psize-80, $this->lsize, _M('Print mode', 'finance').': ', null, null, 'R');
+        $this->setFont(DEFAULT_REPORT_FONT, '', $this->fontSizeBody);
+        $this->cell(80, $this->lsize, $this->headerData->reportType == 2 ? _M('Synthetic', 'finance')  : _M('Analytical', 'finance')  , null, null, 'L');
+        $this->ln();
+        if ( strlen((string)$this->headerData->beginDate) > 0 )
+        {
+            $this->setFont(DEFAULT_REPORT_FONT, 'BI', $this->fontSizeBody);
+            $this->cell($this->psize-80, $this->lsize, _M('Start date', 'finance').':  ', null, null, 'R');
+            $this->setFont(DEFAULT_REPORT_FONT, '', $this->fontSizeBody);
+            $this->cell(80, $this->lsize, $this->headerData->startDate , null, null, 'L');
+            $this->ln();
+        }
+        if ( strlen((string)$this->headerData->endDate) > 0 )
+        {
+            $this->setFont(DEFAULT_REPORT_FONT, 'BI', $this->fontSizeBody);
+            $this->cell($this->psize-80, $this->lsize, _M('End date', 'finance').':  ', null, null, 'R');
+            $this->setFont(DEFAULT_REPORT_FONT, '', $this->fontSizeBody);
+            $this->cell(80, $this->lsize, $this->headerData->endDate , null, null, 'L');
+            $this->ln();
+        }
+        if ( strlen((string)$this->headerData->movementDate) > 0 )
+        {
+            $this->setFont(DEFAULT_REPORT_FONT, 'BI', $this->fontSizeBody);
+            $this->cell($this->psize-80, $this->lsize, _M('Date', 'finance').':  ', null, null, 'R');
+            $this->setFont(DEFAULT_REPORT_FONT, '', $this->fontSizeBody);
+            $this->cell(80, $this->lsize, $this->headerData->movementDate , null, null, 'L');
+            $this->ln();
+        }
+        
+        if($this->headerData->reportType == 2 )
+        {
+            $this->synthetic();
+        }
+        else
+        {
+            $this->analytical();
+        }
+        PDF::generatePDF();
+    }
+
+    public function Header()
+    {
+        parent::Header();
+    }
+
+    public function Footer()
+    {
+        parent::Footer();
+    }
+}
+?>

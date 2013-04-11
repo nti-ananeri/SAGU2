@@ -1,0 +1,338 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for finCloseCounter table
+ *
+ * @author Armando Taffarel Neto [taffarel@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * Armando Taffarel Neto [taffarel@solis.coop.br]
+ * 
+ * @since
+ * Class created on 02/01/2006
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to manipulate the finCloseCounter table
+ **/
+class BusinessFinanceBusCloseCounter extends MBusiness
+{
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module = is_null($module) ? 'finance' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+    /**
+     * List all records from the table handled by the class
+     *
+     * @param: None
+     *
+     * @returns (array): Return an array with the entire table
+     *
+     **/
+    public function listCloseCounter()
+    {
+    }
+
+    /**
+     * Return a specific record from the database
+     *
+     * @param $voucherMessagesId (integer): Primary key of the record to be retrieved
+     *
+     * @return (object): Return an object of the type handled by the class
+     *
+     **/
+    public function getCloseCounter($closeCounterId)
+    {
+        $sql = 'SELECT A.closeCounterId,
+                        A.operatorId,
+                        A.counterId,
+                        A.value,
+                        TO_CHAR(A.registerDate,\'' . MASK_DATE . '\'),
+                        A.operation,
+                        A.userName,
+                        TO_CHAR(A.dateTime,\'' . MASK_TIMESTAMP . '\')
+                  FROM finCloseCounter   A
+                 WHERE A.closeCounterId = ?';
+
+        $db = $this->getDatabase();
+        $result = $db->query(SAGU::prepare($sql,$closeCounterId));
+        //$db->close();
+        $closeCounter = new FinCloseCounter();
+
+        list ( $closeCounter->closeCounterId,
+               $closeCounter->operatorId,
+               $closeCounter->counterId,
+               $closeCounter->value,
+               $closeCounter->registerDate,
+               $closeCounter->operation,
+               $closeCounter->userName,
+               $closeCounter->dateTime ) = $result[0];
+
+        return $closeCounter;
+    }
+
+    /**
+     * Do a search on the database table handled by the class
+     *
+     * @param $filters (object): Search filters
+     *
+     * @return (array): An array containing the search results
+     **/
+    public function searchCloseCounter($data)
+    {
+        $sql = 'SELECT B.closeCounterId,
+                        A.personId,
+                        A.name,
+                        C.counterId,
+                        B.value,
+                        TO_CHAR(B.registerDate,\'' . MASK_TIMESTAMP . '\'),
+                        B.operation,
+                        B.isClosed
+                  FROM ONLY basPerson A
+                  INNER JOIN finCloseCounter B
+                          ON (A.personId = B.operatorId)
+                  LEFT JOIN finCounter C
+                          ON (B.counterId = C.counterId) ';
+
+        $where = '';
+        unset($args);
+        if ( strlen((string)$data->operatorId) > 0 )
+        {
+            $where .= '    AND   B.operatorId = ?';
+            $args[] = $data->operatorId;
+        }
+        if ( strlen((string)$data->counterId) > 0 )
+        {
+            $where .= '    AND   B.counterId = ?';
+            $args[] = $data->counterId;
+        }        
+        if ( strlen((string)$data->value) > 0 )
+        {
+            $where .= '    AND   B.value = ?';
+            $args[] = $data->value;
+        }
+        if ( strlen((string)$data->registerDate) > 0 )
+        {
+            $where .= '    AND   B.registerDate::date = TO_DATE(?,\'' . MASK_DATE . '\')';
+            $args[] = $data->registerDate;
+        }
+        else
+        {
+            $where .= '    AND   B.registerDate::date = TO_DATE( TO_CHAR( now(), \'' . MASK_DATE . '\') ,\'' . MASK_DATE . '\')';
+            
+        }
+        if ( strlen((string)$data->operation) > 0 )
+        {
+            $where .= '    AND   B.operation = ?';
+            $args[] = $data->operation;
+        }
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE ' . substr($where,8) .
+                    ' ORDER BY B.registerDate DESC ';
+
+            $db = $this->getDatabase();
+            $result = $db->query(SAGU::prepare($sql,$args));
+          //  $db->close();
+        }
+
+        return $result;
+    }
+
+    /**
+     * Insert a new record
+     *
+     * @param $data (object): An object of the type handled by the class
+     *
+     * @return True if succed, otherwise False
+     *
+     **/
+    public function insertCloseCounter($data)
+    {
+        $db = $this->getDatabase();
+
+        $sql = 'INSERT INTO finCloseCounter
+                            (operatorId,
+                            counterId,
+                            value,
+                            operation)
+                     VALUES (?,?,?,?)';
+
+        $args = array( $data->operatorId,
+                       $data->counterId,
+                       $data->value,
+                       $data->operation);
+        
+        $db     = $this->getDatabase();
+        $result = $db->execute(SAGU::prepare($sql, $args));
+
+        return $result;
+    }
+
+    /**
+     * Update data from a specific record
+     *
+     * @param $data (object): Data which will replace the old record data
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+    public function updateCloseCounter($data)
+    {
+        $sql = 'UPDATE finCloseCounter
+                   SET operatorId = ?,
+                       counterId = ?,
+                       value = ?,
+                       registerDate = now()::date,
+                       operation = ?,
+                       isClosed = TRUE
+                 WHERE closeCounterId  = ?';
+
+        $args = array($data->operatorId,
+                        $data->counterId,
+                        $data->value,
+                        $data->operation,
+                        $data->closeCounterId);
+
+        $db = $this->getDatabase();
+        $sqls = SAGU::prepare($sql,$args);
+        for ( $i=0; $i<count($sqls); $i++ )
+        {
+            $result = $db->execute($sqls[$i]);
+        }
+        //$this->checkError($db);
+        //$db->close();
+
+        return $result;
+    }
+
+    /**
+     * Delete a record
+     *
+     * @param $closeCounterId (string): Primary key for deletion
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+    public function deleteCloseCounter($closeCounterId)
+    {
+        $sql = 'DELETE FROM finCloseCounter
+                 WHERE closeCounterId = ?';
+
+        $db = $this->getDatabase();
+        $result = $db->execute(SAGU::prepare($sql,$closeCounterId));
+
+        return $result;
+
+    }
+    /**
+     * Calculate a value from operator
+     *
+     * @param $operationId (integer): 
+     * @param $date (date): 
+     * @operation (char): C or D
+     * @counterId (integer): caixa em que efetua a operação
+     *
+     * @return (result): Value
+     *
+     **/
+     public function getValue($operatorId, $date, $operation, $counterId)
+     {
+        $sql = ' SELECT ROUND( sum( value ), ' . REAL_ROUND_VALUE . ' ) 
+                   FROM finCloseCounter
+                  WHERE operatorId = ? 
+                    AND registerDate::date = TO_DATE( ? , \'' . MASK_DATE . '\') 
+                    AND operation = ? 
+                    AND counterId = ? ';
+        $args =  array($operatorId,
+                       $date,
+                       $operation,
+                       $counterId);
+        $db = $this->getDatabase();
+        $result = $db->query(SAGU::prepare($sql,$args));
+        if($result[0][0] == null)
+        {
+            $return[0][0] = 0;
+        }
+        else
+        {
+            $return[0][0] =  $result[0][0];
+        }
+        return $return[0][0];
+      } 
+
+     /**
+     * Calculate a value from operator
+     *
+     * @param $valueC (numeric): Value of credit
+     * @param $valueD (numeric): Value of debit
+     *
+     * @return (result) Value
+     *
+     **/
+     public function totalValue($valueC, $valueD)
+     {
+        $sql = ' SELECT SUM('. $valueC .' - '. $valueD .') ' ;
+        
+        $db = $this->getDatabase();
+        $result = $db->query($sql);
+
+        return $result[0][0];        
+     }
+    
+     /**
+     * Calculate a value from operator
+     *
+     * @param $valueC (numeric): Value of credit
+     * @param $valueD (numeric): Value of debit
+     *
+     * @return (result) Value
+     *
+     **/
+     public function totalValueD($valueC, $valueD)
+     {
+        $sql = ' SELECT SUM('. $valueC .' - (-1 * '. $valueD .') ) ' ;
+
+        $db = $this->getDatabase();
+        $result = $db->query($sql);
+
+        return $result[0][0];
+     }
+
+
+}
+
+?>

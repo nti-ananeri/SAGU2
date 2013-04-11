@@ -1,0 +1,345 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for sprCourseExamBalance table
+ *
+ * @author Rafael Luís Spengler [rafael@solis.coop.br] 
+ *
+ * @version: $Id$
+ * 
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * Rafael Luís Spengler [rafael@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 24/11/2005
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to manipulate the sprCourseExamBalance table
+ **/
+class BusinessSelectiveProcessBusCourseExamBalance extends Business
+{
+
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module = is_null($module) ? 'selectiveProcess' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+    public function listCourseExamBalance()
+        {
+        }
+
+    /**
+     * Return a specific record from the database
+     *
+     * @param $examOccurrenceId (integer): Primary key of the record to be retrieved
+     *
+     * @return (object): Return an object of the type handled by the class
+     *
+     **/
+    public function getCourseExamBalance($examOccurrenceId, $courseVacantId)
+    {
+        $sql = 'SELECT A.examOccurrenceId,
+                       B.courseVacantId,
+                       C.weight,
+                       C.minimumNote,
+                       A.userName,
+                       TO_CHAR(A.dateTime,\'' . MASK_TIMESTAMP . '\'),
+                       A.ipAddress
+                  FROM sprCourseExamBalance C
+             LEFT JOIN sprCourseVacant B
+                 USING ( courseVacantId )
+             LEFT JOIN sprExamOccurrence A
+                 USING ( examOccurrenceId )';
+
+        if ( strlen((string)$examOccurrenceId)>0 )
+        {
+            $where .= ' AND C.examOccurrenceId = ?';
+            $args[] = $examOccurrenceId;
+        }
+
+        if ( strlen((string)$courseVacantId)>0 )
+        {
+            $where .= ' AND C.courseVacantId = ?';
+            $args[] = $courseVacantId;
+        }
+
+/*
+        if ( strlen((string)$selectiveProcessId)>0 )
+        {
+            $where .= ' AND A.selectiveProcessId = ?';
+            $args[] = $selectiveProcessId;
+        }*/
+
+        unset($result);
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE ' . substr($where, 4);
+            $db = $this->getDatabase();
+            $result = $db->query(SAGU::prepare($sql, $args));
+            //$db->close();
+        }
+
+        $courseExamBalance = new sprCourseExamBalance();
+        list ( $courseExamBalance->examOccurrenceId,
+               $courseExamBalance->courseVacantId,
+               $courseExamBalance->weight,
+               $courseExamBalance->minimumNote,
+               $courseExamBalance->userName,
+               $courseExamBalance->dateTime,
+               $courseExamBalance->ipAddress) = $result[0];
+
+        return $courseExamBalance;
+    }
+
+
+    /**
+     * Do a search on the database table handled by the class
+     *
+     * @param $filters (object): Search filters
+     *
+     * @return (array): An array containing the search results
+     **/
+    public function searchCourseExamBalance($filters)
+    {
+        $sql = 'SELECT A.examOccurrenceId,
+                       E.courseId,
+                       H.shortName,
+                       J.description,
+                       F.description,
+                       C.weight,
+                       C.minimumNote,
+                       G.maximumPoints,
+                       C.courseVacantId
+                  FROM sprCourseExamBalance C
+            INNER JOIN sprCourseVacant B
+                    ON ( C.courseVacantId = B.courseVacantId )
+            INNER JOIN sprExamOccurrence A
+                    ON ( A.examOccurrenceId = C.examOccurrenceId )
+            INNER JOIN sprCourseOccurrence D
+                    ON (D.courseVacantId = B.courseVacantId)
+            INNER JOIN acdCourseOccurrence E
+                    ON (E.courseId      = D.courseId AND
+                        E.courseVersion = D.courseVersion AND
+                        E.turnId        = D.turnId AND
+                        E.unitId        = D.unitId)
+            INNER JOIN sprExam F
+                    ON (A.examId = F.examId)
+            INNER JOIN sprSelectiveProcess G
+                    ON (A.selectiveProcessId = G.selectiveProcessId)
+            INNER JOIN acdCourse H
+                    ON (H.courseId = E.courseId)
+            INNER JOIN basUnit J
+                    ON (D.unitId = J.unitId)';
+
+        if ( strlen((string)$filters->selectiveProcessId) > 0 )
+        {
+            $where .= ' AND A.selectiveProcessId = ? ';
+            $args[] = $filters->selectiveProcessId;
+        }
+        if ( strlen((string)$filters->examOccurrenceId) > 0 )
+        {
+            $where .= ' AND A.examOccurrenceId = ? ';
+            $args[] = $filters->examOccurrenceId;
+        }
+        if ( strlen((string)$filters->courseVacantId) > 0 )
+        {
+            $where .= ' AND C.courseVacantId = ? ';
+            $args[] = $filters->courseVacantId;
+        }
+        if ( strlen((string)$filters->weight) > 0 )
+        {
+            $where .= ' AND C.weight = ? ';
+            $args[] = $filters->weight;
+        }
+        if ( strlen((string)$filters->minimunNote) > 0 )
+        {
+            $where .= ' AND C.minimumNote = ? ';
+            $args[] = $filters->minimunNote;
+        }
+        if ( strlen((string)$filters->courseId) > 0 )
+        {
+            $where .= ' AND D.courseId = ?';
+            $args[] = $filters->courseId;
+        }
+        if ( strlen((string)$filters->courseVersion) > 0 )
+        {
+            $where .= ' AND D.courseVersion = ?';
+            $args[] = $filters->courseVersion;
+        }
+        if ( strlen((string)$filters->unitId) > 0 )
+        {
+            $where .= ' AND D.unitId = ?';
+            $args[] = $filters->unitId;
+        }
+        if ( strlen((string)$filters->selectiveProcessId) > 0 )
+        {
+            $where .= ' AND B.selectiveProcessId ILIKE ?';
+            $args[] = $filters->selectiveProcessId;
+        }
+//         if ( strlen((string)$filters->selectiveProcessTypeId) > 0 )
+//         {
+//             $where .= ' AND A.selectiveProcessTypeId = ?';
+//             $args[] = $filters->selectiveProcessTypeId;
+//         }
+
+        unset($result);
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE C.examOccurrenceId = A.examOccurrenceId
+                        AND C.courseVacantId   = B.courseVacantId ' . substr($where, 0) . ' ORDER BY examOccurrenceId';
+            $db = $this->getDatabase();
+
+            $result = $db->query(SAGU::prepare($sql, $args));
+            //$db->close();
+        }
+        return $result;
+    }
+
+    /**
+     * Insert a new record
+     *
+     * @param $data (object): An object of the type handled by the class
+     *
+     * @return True if succed, otherwise False
+     *
+     **/
+    public function insertCourseExamBalance($data)
+    {
+        $sql = 'INSERT INTO sprCourseExamBalance
+                            (examOccurrenceId,
+                             courseVacantId,
+                             weight,
+                             minimumNote)
+                     VALUES (?,?,?,?)';
+
+        $args   = array ( $data->examOccurrenceId,
+                          $data->courseVacantId,
+                          $data->weight,
+                          $data->minimunNote);
+
+        $db     = $this->getDatabase();
+        $result = $db->execute(SAGU::prepare($sql, $args));
+        //$db->close();
+
+        return $result;
+    }
+
+    /**
+     * Update data from a specific record
+     *
+     * @param $data (object): Data which will replace the old record data
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+    public function updateCourseExamBalance($data)
+    {
+        $sql = 'UPDATE sprCourseExamBalance
+                   SET weight               = ?,
+                       minimumNote          = ?
+                 WHERE examOccurrenceId     = ?
+                   AND courseVacantId       = ? ';
+
+        $args = array( $data->weight,
+                       $data->minimunNote,
+                       $data->examOccurrenceId,
+                       $data->courseVacantId);
+
+        $db   = $this->getDatabase();
+        $sqls = SAGU::prepare($sql, $args);
+        for ( $i=0; $i<count($sqls); $i++ )
+        {
+            $result = $db->execute($sqls[$i]);
+        }
+
+        //$db->close();
+        return $result;
+    }
+
+    /**
+     * Delete a record
+     *
+     * @param $examOccurrenceId (string): Primary key for deletion
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+    public function deleteCourseExamBalance($examOccurrenceId, $courseVacantId)
+    {
+        $sql = 'DELETE FROM sprCourseExamBalance
+                      WHERE examOccurrenceId = ?';
+
+        $args[] = $examOccurrenceId;
+
+        if ( strlen((string)$courseVacantId) > 0 )
+        {
+            $sql .= ' AND courseVacantId = ?';
+            $args[] = $courseVacantId;
+        }
+
+        $db     = $this->getDatabase();
+        $result = $db->execute(SAGU::prepare($sql, $args));
+        //$db->close();
+
+        return $result;
+    }
+
+    /**
+     * Do a search on the database table handled by the class
+     *
+     * @param $filters (object): Search filters
+     *
+     * @return (array): An array containing the search results
+     **/
+    public function searchCourseExamBalanceSelectiveProcessId($filters)
+    {
+        $sql = 'SELECT courseVacantId
+                  FROM sprCourseVacant
+                 WHERE selectiveProcessId = ?
+                   AND courseVacantId NOT IN (SELECT DISTINCT courseVacantId
+                                                FROM sprCourseExamBalance
+                                               WHERE examOccurrenceId = ? ) ';
+
+        $args = array( $filters->selectiveProcessId,
+                       $filters->examOccurrenceId );
+
+        $db = $this->getDatabase();
+        $result = $db->query(SAGU::prepare($sql, $args));
+        //$db->close();
+
+        return $result;
+    }
+
+}
+
+?>

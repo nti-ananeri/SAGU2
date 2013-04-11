@@ -1,0 +1,1863 @@
+<?php
+/**
+ * Class
+ *
+ * @author Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ *
+ * @since
+ * Class created on 14/03/2004
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2005 SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ */
+function vd()
+{
+    $numArgs = func_num_args();
+    if ( $numArgs > 1 && is_bool(func_get_arg($numArgs-1)) )
+    {
+        $numArgs--;
+        $exit = func_get_arg($numArgs);
+    }
+    else
+    {
+        $exit = false;
+    }
+
+    echo('<div align="left"><pre>');
+    for ( $i=0; $i<$numArgs; $i++)
+    {
+        var_dump(func_get_arg($i));
+    }
+    echo('</pre></div>');
+
+    if ( $exit )
+    {
+        exit;
+    }
+}
+
+
+/** 
+ *
+ * Class used to call mainly functions used in Sagu2
+ *
+ */
+class SAGU 
+{
+    public function prepare($sql,$params,$upper=true)
+    {
+        global $MIOLO;
+
+        $originalSql = $sql;
+        $originalParams = $params;
+
+        if ( isset($params) )
+        {
+            if ( is_object($params) )
+            {
+                foreach ( $params as $k => $v )
+                {
+                    $params_[] = $v;
+                }
+                $params = $params_;
+            }
+            elseif ( ! is_array($params) )
+            {
+                $params = array($params);
+            }
+        }
+
+        // convert all field values to uppercase
+        if ( $upper )
+        {
+            for ( $i=0; $i<count($params); $i++ )
+            {
+                $params[$i] = strtoupper($params[$i]);
+            }
+        }
+        
+        $i = 0;
+        
+        while ( true ) 
+        {
+            $pos = strpos($sql,'?');
+            
+            if ( $pos === false )
+            {
+                $prepared .= $sql;
+                break;
+            }
+            else
+            {
+                if ( $pos > 0 )
+                {
+                    $prepared .= substr($sql,0,$pos);
+                }
+                 
+                if (strlen((string)$par=$params[$i++]))
+                {
+                    $prepared .= "'" . addslashes($par) . "'";
+                }
+                else
+                {
+                    $prepared .= ' NULL';
+                }
+                
+                $sql = substr($sql,$pos+1);
+            }
+        }
+        if ( $i != count($params) )
+        {
+            /*
+             * Debug code
+             */
+            for ( $i=0; $i<count($originalParams); $i++ )
+            {
+                $p .= "\n[" . $i . "] = " . $originalParams[$i];
+            }
+            echo(
+<<< HERE
+<!--
+module: {$MIOLO->getCurrentModule()}
+action: {$MIOLO->getCurrentAction()}
+sql: $originalSql
+params: $p
+-->
+HERE
+                );
+            /*
+             * End of debug code
+             */
+
+            $MIOLO->error(_M("Invalid number of parameters!", 'basic'));
+        }
+      
+        // The following code is used to automatically update the basLog table
+        $user = $MIOLO->getLogin();
+        $user = $user->id;
+            
+        if ( substr(trim($prepared),0,6) == 'UPDATE' )
+        {
+            // find the last WHERE clause and use it as the basLog update's WHERE clause
+            $where = strstr($prepared,'WHERE');
+            while ( strstr(substr($where,5),'WHERE') !== false )
+            {
+                $where = strstr(substr($where,5),'WHERE');
+            }
+            $where = substr($where,5);
+            $aux = substr($prepared,strpos($prepared, 'UPDATE')+6,strlen((string)$prepared));
+            $aux = explode(' ',$aux);
+            foreach ( $aux as $row )
+            {
+                if ( $row != '' )
+                {
+                    $table = $row;
+                    break;
+                }
+            }
+            
+            $log = "UPDATE $table
+                       SET userName = '$user',
+                           dateTime = now(),
+                           ipAddress = '" . $_SERVER['REMOTE_ADDR'] . "'
+                     WHERE $where";
+            //return array(strtolower($prepared),$log); //tirar o strtolower
+            return array($prepared,$log);
+        }
+        elseif ( substr(trim($prepared),0,6) == 'INSERT' )
+        {
+//            if ( !strpos($prepared, 'SELECT') )
+//            {
+                $pos      = strpos($prepared,')');
+                $pos1     = strpos($prepared, 'VALUE');
+                $pos2     = strrpos($prepared,')');
+                $prepared = substr($prepared,0,$pos) . ", userName, ipAddress" . 
+                            substr($prepared,$pos,$pos2-$pos) . ",'$user','" . $_SERVER['REMOTE_ADDR'] . "');";
+//            }
+        }
+
+        //return strtolower($prepared);//tirar o strtolower
+        return $prepared;
+    }
+
+    /**
+     * Parse $record and build a HTML output for it.
+     *
+     * @param $record Record which will be parsed in order to build the HTML output.
+     * The $record parameter follow the syntax below:
+     *
+     *  $record[0][0] = label;
+     *  $record[0][1] = value;
+     *  $record[0][2] = alignment; (this is optional and defaults to 'left')
+     *  $record[1][0] = label;
+     *  $record[1][1] = value;
+     *  $record[1][2] = alignment; (this is optional and defaults to 'left')
+     *  .
+     *  .
+     *  .
+     *
+     * @return The input record in HTML format.
+     *
+     **/
+    public function formatRecordAsHTML($record,$showHeader=true)
+    {
+        global $module;
+
+        $html = '';
+        if ( $showHeader )
+        {
+            $html .= _M('Record data','basic') . ':<br>';
+        }
+
+        $html .= '<table>';
+        foreach ( $record as $r )
+        {
+            $html .= ' <tr>' .
+                     '  <th align="' . ((strlen((string)$r[2]) > 0) ? $r[2] : 'left') . '">' . $r[0] . ':</th><td>' . $r[1] . '</td>' .
+                     ' </tr>';
+        }
+        $html .= '</table>';
+
+        return $html;
+    }
+
+    /**
+     * Parse $record and build a HTML output for it.
+     *
+     * @param $uid User login
+     * @param $passwd User password
+     *
+     * @return The input record in HTML format.
+     *
+     **/
+    public function authenticate($uid, $passwd)
+    {
+        $MIOLO = MIOLO::getInstance();
+
+        /**
+         * Load global defines for the basic module
+         */
+        $business  = $MIOLO->getBusiness('basic','BusConfig');
+        $constants = $business->getModuleValues('basic');
+        foreach ( $constants as $cnt )
+        {
+            define($cnt[0],$cnt[1]);
+        }
+
+        $retVal = false;
+
+        if ( AUTH_METHOD == 'SAGU' )
+        {
+            $business = $MIOLO->getBusiness('basic', 'BusPerson');
+        }
+        elseif ( AUTH_METHOD == 'LDAP' )
+        {
+            $MIOLO->import('classes::security::mauthldap');
+            $business = new mAuthLdap();
+        }
+
+        if ( isset($business) )
+        {
+            $retVal = $business->authenticate($uid, $passwd, false);
+        }
+
+        return $retVal;
+    }
+
+   /**
+    * Get a boolean value and return in text format as "Yes" or "Not"
+    *
+    * @param $array (array): Array containing the list
+    * @param $pos (int): Specific position to modify
+    *
+    * @return (array): Return the array with specific fields parsed 
+    *
+   **/
+    public function booleanToText($array, $pos)
+    {
+        global $module;
+        if (is_array($array) )
+        {
+            if ((strlen((string)$pos) >= 0) && ($pos >= 0))
+            {
+                for ($x = 0; $x <= count($array); $x++)
+                {
+                    if (strlen((string)$array[$x][$pos]) > 0 )
+                    {
+                        $value = $array[$x][$pos];
+                        if ($value == 't')
+                        {
+                            $value = _M('Yes', $module);
+                        }
+                        elseif ($value == 'f')
+                        {
+                            $value = _M('No', $module);
+                        }
+                        $array[$x][$pos] = $value;
+                    }
+                }
+            }
+        }
+        return $array;
+    }
+
+   /**
+    * Format to CPF format - XXX.XXX.XXX-XX
+    * X = number
+    * @param $text: CPF number without delimiters
+    *
+    * @return $text: Return CPF in CPF format
+    *
+   **/
+    public function convertInCPFFormat($cpf)
+    {
+        $cpfFormat = substr($cpf, 0, 3) . '.' . substr($cpf, 3, 3) . '.' . substr($cpf, 6, 3) . '-' . substr($cpf, 9, 2);
+
+        return $cpfFormat;
+    }
+
+   /**
+    * Format CPF without delimiters
+    * X = number
+    * @param $text: CPF number if not delimiters
+    *
+    * @return $text: Return CPF in CPF format
+    *
+   **/
+    public function convertInCPFWithoutDelimiters($cpf)
+    {
+        $cpf = ereg_replace('[^0-9]','', $cpf);
+        return substr( $cpf, 0, 11 );
+    }
+
+    /**
+     * Validate CPF
+     * @param $text
+     *
+     * return $boolean
+    **/
+    public function validateCPF($cpf)
+    {
+        $cpf = ereg_replace('[^0-9]','', $cpf);
+        
+        if( (!is_numeric($cpf)) || (strlen((string)$cpf) != 11) ||
+            ($cpf == '11111111111') || ($cpf == '22222222222') ||
+            ($cpf == '33333333333') || ($cpf == '44444444444') ||
+            ($cpf == '55555555555') || ($cpf == '66666666666') ||
+            ($cpf == '77777777777') || ($cpf == '88888888888') ||
+            ($cpf == '99999999999') || ($cpf == '00000000000') )
+        {
+              $status = false;
+        }
+        else 
+        {
+            //Pega o digito informado
+            $dv_informado = substr($cpf, 9,2);
+            
+            //Carrega os numeros do cpf da posicao 1 à 8
+            $posicao1 = 10;
+            $posicao2 = 11;
+            for($i=0; $i<=9; $i++) 
+            {
+                if ( $i == 9 )
+                {
+                    $digito[$i] = $soma % 11;
+                    $digito[$i] = ( $digito[$i] < 2 ? 0 : (11 - $digito[$i]) ) ;
+                    $soma2 = $soma2 + $digito[$i] * $posicao2;
+                    $digito[$i+1] = $soma2 % 11;
+                    $digito[$i+1] =  ( $digito[$i+1] < 2 ? 0 : (11 - $digito[$i+1]) ) ;
+                    $dv = ($digito[9] * 10) + $digito[10];
+                }
+                else
+                {
+                    $digito[$i] = substr($cpf, $i, 1);
+                    $soma = $soma + $digito[$i] * $posicao1;
+                    $soma2 = $soma2 + $digito[$i] * $posicao2;
+                }
+                $posicao1--;
+                $posicao2--;
+            }
+            if ( $dv == $dv_informado ) 
+            {
+                return true;
+            }
+            return false;
+        }
+    }
+
+   /**
+    * Get a arrays, number of buttons and return a buttons generated
+    * @author Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+    * 
+    * @param $msg (string): string containing the  msg | $msg
+    * @param $goto (array): Array containing the array informations goto | $goto[$i][0]
+    * @param $event (array): Array containing the array informations event | $event[$i][0]
+    * @param $label (array): Array containing the array labels of buttons | $label[$i][0]
+    * @param $buttons (int): Number of buttons on this question
+    *
+    * @return (array): Return the array with specific fields parsed
+    *
+    **/
+    public function manyButtonsQuestion($msg, $goto, $event, $label, $buttons)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = $MIOLO->getCurrentModule();
+        $prompt = new Prompt(_M('Confirmation'), $msg, $MIOLO->url_home . '/images/question.gif');
+        $prompt->SetType('question');
+        for ( $i=0; $i<$buttons; $i++ )
+        {
+            $prompt->AddButton(_M($label[$i][0], $module), $goto[$i][0] , $event[$i][0]);
+        }
+        $MIOLO->Prompt($prompt);
+    }
+
+    /**
+    * check if parameter is exist in basConfig or don't have value. 
+    * @author Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+    * 
+    * @param $parameter (string): string containing a name of parameter of basConfig parameter
+    *
+    * @return (array): Return true if is existent value of parameter
+    *
+    **/
+    public function checkParameter($parameter)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $db     = $MIOLO->getDatabase('basic');
+        $sql = 'SELECT value 
+                    FROM basConfig
+                    WHERE parameter = ? ';
+        $args[] = $parameter;
+        $result = $db->query(SAGU::prepare($sql, $args));
+        if(strlen((string)$result[0][0]) > 0)
+        {
+            return true;
+        }
+        else
+        {
+            return false;
+        }
+    }
+
+
+    public function listSex()
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = $MIOLO->getCurrentModule();
+
+        $data = array(
+                       'M' => _M('Male', 'basic'),
+                       'F' => _M('Female', 'basic')
+                      );
+        return $data;
+    }
+
+    public function getSex($key)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = $MIOLO->getCurrentModule();
+
+        $data = array(
+                       'm' => _M('Male', 'basic'),
+                       'f' => _M('Female', 'basic')
+                      );
+
+        return $data[$key];
+    }
+
+    public function listTrueFalse($type = 0)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = $MIOLO->getCurrentModule();
+
+        // for MSelection 
+        if ($type == 0)
+        {
+           $data = array(
+                          't' => _M('Yes', 'basic'),
+                          'f' => _M('No', 'basic')
+                         );
+        }
+        // for MRadioButtonGroup
+        elseif ($type == 1)
+        {
+            $data = array( array(_M('Yes', $module), 't'),
+                           array(_M('No', $module), 'f')
+                          );
+        }
+        return $data;
+
+    }
+
+    public function getTrueFalse($key)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = $MIOLO->getCurrentModule();
+
+        $data = array(
+                       't' => _M('True', 'basic'),
+                       'f' => _M('False', 'basic')
+                      );
+        return $data[$key];
+    }
+
+
+
+
+    public function listTrueFalseIndifferent($type = 0)
+    {
+        // for MSelection 
+        if ($type == 0)
+        {
+           $data = array(
+                          't' => _M('Yes', 'basic'),
+                          'f' => _M('No', 'basic'),
+                          '' => _M('Indifferent', 'basic')
+                         );
+        }
+        // for MRadioButtonGroup
+        elseif ($type == 1)
+        {
+            $data = array( array(_M('Yes', 'basic'), 't'),
+                           array(_M('No', 'basic'), 'f'),
+                           array(_M('Indifferent', 'basic'), '')
+                          );
+        }
+        return $data;
+
+    }
+
+    public function getTrueFalseIndifferent($key)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = $MIOLO->getCurrentModule();
+
+        $data = array(
+                       't' => _M('True', 'basic'),
+                       'f' => _M('False', 'basic'),
+                       '' => _M('Indifferent', 'basic'),
+                      );
+        return $data[$key];
+    }
+
+    public function listAccountTypes()
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = $MIOLO->getCurrentModule();
+
+        $data = array(
+                      '01' => _M('Bank account', 'basic'),
+                      '05' => _M('Savings account', 'basic')
+                     );
+        return $data;
+
+    }
+
+    public function listYesNo($type = 0)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = $MIOLO->getCurrentModule();
+        
+        if ($type == 0)
+        {
+            $data = array(
+                           't' => _M('Yes', 'basic'),
+                           'f'  => _M('No', 'basic')
+                          );
+        }
+        elseif ($type == 1)
+        {
+            $data = array(
+                           array(_M('Yes', 'basic'), 't'),
+                           array(_M('No', 'basic'), 'f')
+                          );
+
+        }
+        return $data;
+    }
+
+    public function getYesNo($key)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = $MIOLO->getCurrentModule();
+
+        $data = array(
+                       't' => _M('Yes', 'basic'),
+                       'f'  => _M('No', 'basic')
+                      );
+        return $data[$key];
+    }
+
+    public function listInOutTransistion()
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = $MIOLO->getCurrentModule();
+
+        $data = array(
+                       'i' => _M('In', $module),
+                       'o' => _M('Out', $module),
+                       't' => _M('Transistion', $module)
+                      );
+        return $data;
+    }
+
+    public function getInOutTransistion($key)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = $MIOLO->getCurrentModule();
+
+        $data = array(
+                       'i' => _M('In', $module),
+                       'o' => _M('Out', $module),
+                       't' => _M('Transistion', $module)
+                      );
+        return $data[$key];
+    }
+
+    public function listInOut()
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = $MIOLO->getCurrentModule();
+
+        $data = array(
+                       't' => _M('In', $module),
+                       'f' => _M('Out', $module)
+                      );
+        return $data;
+    }
+
+    public function listPersonTypes()
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = $MIOLO->getCurrentModule();
+
+        $data = array(
+                       'P' => _M('Physical', $module),
+                       'L' => _M('Legal', $module)
+                      );
+        return $data;
+    }
+
+    public function getInOut($key)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = $MIOLO->getCurrentModule();
+
+        $data = array(
+                       't' => _M('In', $module),
+                       'f' => _M('Out', $module)
+                      );
+        return $data[$key];
+    }
+
+    /**
+     * List all months of the year
+     *
+     * @return (varchar): An array containing all months of the year
+     *
+     **/
+    public function listMonths($month=null)
+    {
+        $module = 'basic';
+
+        $data = array ( 
+                         '1' => _M('January',   $module),
+                         '2' => _M('February',  $module),
+                         '3' => _M('March',     $module),
+                         '4' => _M('April',     $module),
+                         '5' => _M('May',       $module),
+                         '6' => _M('June',      $module),
+                         '7' => _M('July',      $module),
+                         '8' => _M('August',    $module),
+                         '9' => _M('September', $module),
+                        '10' => _M('October',   $module),
+                        '11' => _M('November',  $module),
+                        '12' => _M('December',  $module)
+                      );
+
+        if ( is_numeric($month) )
+        {
+            return $data[(int)$month];
+        }
+
+        return $data;
+    }
+
+    /**
+     * List all years from interval
+     *
+     * @return (varchar): An array containing all the year
+     *
+     **/
+    public function listYears($begin, $end)
+    {
+
+        for ( $x=$begin; $x<=$end; $x++ )
+        {
+            $data[$x] = $x;
+        }
+
+        return $data;
+    }
+
+    /**
+     * Get the specified month data
+     *
+     * @return (varchar): An array containing the requested month data
+     *
+     **/
+    public function getMonth($key)
+    {
+        $module = 'basic';
+
+        $data = self::listMonths();
+
+        return $data[$key];
+    }
+
+    /**
+     * Parse the "saguStack session" to get the "Search Form" URL
+     *
+     * @return If true, return the correct "Search Form" URL,
+     *         otherwise return nul
+     *
+     **/
+    public function getStackBackUrl()
+    {
+        $MIOLO     = MIOLO::getInstance();
+        $module    = $MIOLO->getCurrentModule();
+        $session   = $MIOLO->session;
+        $saguStack = $session->IsRegistered('saguStack') ? 
+                     unserialize($session->GetValue('saguStack')) : 
+                     null;
+
+        $x_ = (count($saguStack)-1);
+        for ( $x_; $x_>=0; $x_-- )
+        {
+            if ( strstr($saguStack[$x_], '&function=search') || strstr($saguStack[$x_], ':search&') )
+            {
+                $goto  = $saguStack[$x_];
+                $y_    = count($saguStack)-1;
+                $saguStack = unserialize($session->GetValue('saguStack'));
+                for ( $y_; $y_>=$x_; $y_-- )
+                {
+                    unset($saguStack[$y_]);
+                }
+                break;
+            }
+        }
+
+        $session->SetValue('saguStack',serialize($saguStack));
+        $session->SetValue('saguPromptEvent','true');
+
+        return $goto;
+    }
+
+    /**
+     * Reset the "saguStack session"
+     *
+     * @return true
+     *
+     **/
+    public function resetStack()
+    {
+        $MIOLO     = MIOLO::getInstance();
+        $module    = $MIOLO->getCurrentModule();
+        $session   = $MIOLO->session;
+
+        $session->SetValue('saguStack',NULL);
+
+        return true;
+    }
+
+    /**
+     * Return a text "Quite" or "Not quite"
+     *
+     * @author: William Prigol Lopes [william@solis.coop.br]
+     *
+     * @param: $isQuite (boolean): Parameter to return the text
+     *
+     * @returns: "Quite if true, otherwise false
+     *
+     */
+    public function getQuiteOrNotQuite($isQuite)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        return $isQuite == true ? _M('Quite', 'basic') : _M('Not quite', 'basic');
+    }
+
+    /**
+     * Return number in CNPJ format
+     *
+     * @author Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+     *
+     * @param: 
+     *
+     * @returns: Return number in CNPJ format
+     *
+     */
+    public function formatCNPJ($number)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+
+        if(strlen((string)$number) !== 14)
+        {
+            return false;
+        }
+
+        $newNumber  = substr($number, 0 , 2 ) . '.';
+        $newNumber .= substr($number, 2 , 3 ) . '.';
+        $newNumber .= substr($number, 5 , 3 ) . '/';
+        $newNumber .= substr($number, 8 , 4 ) . '-';
+        $newNumber .= substr($number, 12 , 2 );
+
+        return $newNumber;
+    }
+
+   /**
+    * add interval in a date
+    *
+    * @author Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+    * @maintainer: William Prigol Lopes [william@solis.coop.br]
+    *
+    * @param: date : date for add interval
+    *         $type : 'c' = century, 'y' = year, 'm' = month, 'd' = day, default 'd'
+    *         $value : number to add interval
+    *         $operator : '-' or '+', default '+'
+    *
+    * @returns: date added interval
+    *
+    * @credits:
+    *
+    */
+    public function addIntervalInDate($date, $type = 'd', $value , $operator = ' + ' )
+    {
+        $MIOLO = MIOLO::getInstance();
+        $db    = $MIOLO->getDatabase('basic');
+        $type = strtolower($type);
+
+        switch($type)
+        {
+            case 'c':
+                $typeName = ' centuries ';
+                break;
+            case 'y':
+                $typeName = ' years ';
+                break;
+            case 'm':
+                $typeName = ' months ';
+                break;
+            case 'd':
+                $typeName = ' days ';
+                break;
+            default : 
+                $typeName = ' days ';
+                break;
+        }
+
+        if( strlen((string)$operator) == 0 )
+        {
+            $operator = ' + ';
+        }
+        
+
+        $sql    = 'SELECT TO_CHAR(date(TO_DATE( ? , \''. MASK_DATE .'\')) '. $operator .' \' '.  $value . $typeName . '\''.'::interval, \''. MASK_DATE .'\')';
+
+        $return = $db->query( SAGU::prepare( $sql, $date ) );
+
+        if (is_array($return[0]))
+        {
+            return $return[0][0];
+        }
+        return false;
+    }
+
+
+    /**
+     * Return actual date
+     *
+     * @author Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+     *
+     * @param: 
+     *
+     * @returns: Date now in format parameter
+     *
+     */
+    public function getDateNow()
+    {
+        $MIOLO = MIOLO::getInstance();
+        $db    = $MIOLO->getDatabase('basic');
+
+        $date = date(MASK_DATE_PHP);
+
+        if (strlen((string)$date) > 0 )
+        {
+            return $date;
+        }
+        return false;
+    }
+
+    /**
+     * Return date in extense mode
+     *
+     * @author: William Prigol Lopes [william@solis.coop.br]
+     *
+     * @param: $date (varchar): date to convert to extense mode
+     *
+     * @returns: Date in extense mode
+     *
+     */
+    public function getDateByExtense($date)
+    {
+        // This function needs to be modified if locale modifies the entries
+
+
+        $info = explode('/', $date);
+        if (count($info) != 3)
+        {
+            echo "SAGU CLASS: Invalid date";
+            return false;
+        }
+        $dd   = $info[0];
+        $mm   = $info[1];
+        $yyyy = $info[2];
+        
+        // Check if date is a valid date
+        if (checkdate($mm, $dd, $yyyy))
+        {
+            $mm = strftime("%B", mktime(0, 0, 0, $mm, $dd, $yyyy));
+            return $dd.' '._M('of', 'basic').' '.$mm.' '._M('of', 'basic').' '.$yyyy; 
+        }
+        else
+        {
+            echo "SAGU CLASS: Invalid date";
+            return false;
+        }
+    }
+
+    /**
+     * Return the string in capitulate format
+     *
+     * @author: Daniel Afonso Heisler [daniel@solis.coop.br]
+     *
+     * @param: $string (string): String in upper or lower case
+     *
+     * @returns: Formated string
+     *
+     */
+    public function getCapitulatetString($string)
+    {
+
+        $str = strtolower($string);
+        $str = ucwords($str);
+        $str = str_replace(' Ao ',' ao ', $str);
+        $str = str_replace(' De ',' de ', $str);
+        $str = str_replace(' Da ',' da ', $str);
+
+        return $str;
+    }
+
+    /** 
+     * Return a calc by postgres connection
+     *
+     * @param: $calc: Data to calculate
+     *
+     * @returns (varchar): Return the calculated data if successfully or false...
+     * 
+     * @author: William Prigol Lopes [william@solis.coop.br]
+     *
+     * @contributor: Armando Taffarel Neto [taffarel@solis.coop.br]
+     *  Contributed with regular expression to filter mathematical functions and numbers
+     *
+     */
+    public function calcNumber($calc, $round = false, $roundValue = null)
+    {
+
+        $calc = ereg_replace('[^([0-9/*^+\(\) -]+)]', '', $calc);
+        $MIOLO = MIOLO::getInstance();
+        $db    = $MIOLO->getDatabase('basic');
+
+        if ($round == false)
+        {
+            $sql = ' SELECT '.$calc;
+        }
+        else
+        {
+            $sql = ' SELECT ROUND ('.$calc.', '.($roundValue == null ? REAL_ROUND_VALUE : $roundValue).')';
+        }
+
+        $return = $db->query($sql);
+
+        if (is_array($return[0]))
+        {
+            return $return[0][0];
+        }
+        return false;
+    }
+
+    /** 
+     * Return the number in default postgresql real format defined by sagu parameters
+     *
+     * @param: $number (float): the number to format
+     *
+     * @returns (varchar): Returns the value formatted by postgres
+     *
+     */
+     public function formatNumber($number, $useDot = NULL)
+     {
+        $MIOLO = MIOLO::getInstance();
+        $db    = $MIOLO->getDatabase('basic');
+        $number = str_replace(',','.',$number); 
+        $sql    = 'SELECT ROUND(?, ' . REAL_ROUND_VALUE . ' ) ';
+        $args   = array( $number );
+        
+        $return = $db->query(SAGU::prepare($sql, $args));
+        
+        if (is_array($return[0]))
+        {
+            if( $useDot )
+            {
+                $number = number_format($return[0][0], REAL_ROUND_VALUE);
+                if ( substr($number, strlen((string)$number)-3, 1) == '.' )
+                {
+                    $number = str_replace(',', '.', $number);
+                    $number = substr($number, 0, strlen((string)$number)-3) . ','. substr($number, strlen((string)$number)-2);
+                }
+                return $number;                
+            }
+            return $return[0][0];
+        }
+        return false;
+    }
+
+    /** 
+     * Return the number in extense mode
+     *
+     * @author: William Prigol Lopes [william@solis.coop.br] obtained in phpbrasil.com
+     *
+     * @param: $number (int) number in ordinal format
+     *
+     * @returns (varchar): Number in extense mode
+     *
+     */
+    public function returnExtenseNumber($number)
+    {
+        $number = (int)$number;
+        if (($number >= 1) && ($number <= 100))
+        {
+            if ($number == 0)
+            {
+                return _M('Zero', 'basic');
+            }
+
+            // One char
+            $num[1] = _M('One', 'basic');
+            $num[2] = _M('Two', 'basic');
+            $num[3] = _M('Three', 'basic');
+            $num[4] = _M('Four', 'basic');
+            $num[5] = _M('Five', 'basic');
+            $num[6] = _M('Six', 'basic');
+            $num[7] = _M('Seven', 'basic');
+            $num[8] = _M('Eight', 'basic');
+            $num[9] = _M('Nine', 'basic');
+            $num[10] = _M('Ten', 'basic');
+            $num[11] = _M('Eleven', 'basic');
+            $num[12] = _M('Twelve', 'basic');
+            $num[13] = _M('Thirteen', 'basic');
+            $num[14] = _M('Fourteen', 'basic');
+            $num[15] = _M('Fifteen', 'basic');
+            $num[16] = _M('Sixteen', 'basic');
+            $num[17] = _M('Seventeen', 'basic');
+            $num[18] = _M('Eighteen', 'basic');
+            $num[19] = _M('Nineteen', 'basic');
+            
+            // Two chars except 10-19
+            $num[20] = _M('Twenty', 'basic');
+            $num[30] = _M('Thirty', 'basic');
+            $num[40] = _M('Forty', 'basic');
+            $num[50] = _M('Fifty', 'basic');
+            $num[60] = _M('Sixty', 'basic');
+            $num[70] = _M('Seventy', 'basic');
+            $num[80] = _M('Eighty', 'basic');
+            $num[90] = _M('Ninety', 'basic');
+            $length = strlen((string)(string)$number);
+            if ($number <= 19 )
+            {
+                return $num[$number];
+            }
+            else if ($length == 2)
+            {
+                if ( !substr((string)$number, 1, 1) == '0' )
+                {
+                    return $num[substr((string)$number,0,1).'0'] .' '. _M('And', 'basic') . ' '. $num[substr((string)$number,1,1)];
+                }
+                else
+                {
+                    return $num[$number];
+                }
+            }
+            else if ($length == 3 )
+            {
+
+            }
+        }
+    }
+
+    /**
+     * This function sorts a multi-dimensional array
+     *
+     * @param: $array (array) to sort multi-dimensional array
+     * @param: $key (int) sort array key
+     *
+     * @returns (array) sorted multi-dimensional array
+     **/
+    public function arraySort($array, $key)
+    {
+        for ($i = 0; $i < count($array); $i++) 
+        {
+            $sortValues[$i] = $array[$i][$key];
+        }
+        asort ($sortValues, SORT_LOCALE_STRING);
+        reset ($sortValues);
+        while (list ($arrKey, $arrVal) = each ($sortValues)) 
+        {
+            $sortedArr[] = $array[$arrKey];
+        }
+        return $sortedArr;
+    }
+
+    /**
+     * This function replaces the not ascii chars
+     *
+     * @param: $string (string): The string to replacea
+     *
+     * @return: (string): String with replaced ascii chars
+     *
+     */
+    public function stringToASCII($string)
+    {
+        $strings = "áàãâäéèêëêíìïîóòôõöúùüûçÁÀÃÂÄÉÈÊËÍÌïîÓÒÔÖÕÚÙÛÜÇªºäÄñÑ";
+        $asciis  = "aaaaaeeeeeiiiiooooouuuucAAAAAEEEEIIIIOOOOOUUUUCAOAAnN";
+
+        $string = strtr($string, $strings, $asciis);
+        return $string;
+    }
+
+    /**
+     * This function get a date in SQL default format mask and convert to other format (converted by sql parameters)
+     *
+     * @param: $date (string): Default formatted date by MASK_DATE sagu2 constant
+     * @param: $format (string): New format (you can use all things in conformance with sql99 defaults) 
+     * 
+     * @return (string): Formatted date if works otherwise false
+     *
+     */
+    public function formatDate($date, $format)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $db    = $MIOLO->getDatabase('basic');
+        
+        $sql    = 'SELECT TO_CHAR(TO_DATE(?, \'' . MASK_DATE . '\'), ?)';
+        $args   = array( $date, $format );
+        $return = $db->query(SAGU::prepare($sql, $args, false));
+        if (is_array($return[0]))
+        {
+            return $return[0][0];
+        }
+        return false;
+    }
+
+    /**
+     * This function get a date in a SQL parameter format and mage to default date
+     *
+     * @param: $date (string): Default formatted date
+     *
+     * @return (string): Formatted date by default mask date
+     *
+     */
+    public function toDefaultDate($date, $format)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $db = $MIOLO->getDatabase('basic');
+        
+        $sql =  ' SELECT TO_CHAR(TO_DATE(?, ?), \''. MASK_DATE .'\') ';
+        $args = array($date, $format);
+        
+        $return = $db->query(SAGU::prepare($sql, $args));
+        return $return[0][0];
+    }
+    
+    /**
+     * This function return only numbers of strings
+     *
+     * @param: $data (string): The unformatted string
+     * 
+     * @return (string): Formatted number
+     *
+     */
+    public function returnOnlyNumbers($data)
+    {
+        return ereg_replace('[^0-9]', '', $data);
+    }
+    
+    /**
+     * Output a buffer as a file if headers not modified
+     *
+     * @param: $fileName (string): File name to return
+     * @param: $buffer (string): The buffer data to return as a file
+     * @param: $contentType (string) default 'text/plain': Type of content to return
+     *
+     * @return: Return nothing, send to browser the file and quit the process 
+     *          (in reality returns a string with size 0) but don't tell this for others. ;)
+     *
+     */
+    function returnAsFile($fileName, $buffer, $contentType = 'text/plain', $disposition='inline')
+    {
+        if(ob_get_contents())
+        {
+            $this->Error('Some data has already been output, can\'t send file');
+        }
+        if(php_sapi_name()!='cli')
+        {
+            header('Content-Type: '.$contentType . '; name="' . $fileName . '"');
+            if(headers_sent())
+            {
+                $this->Error('Some data has already been output to browser, can\'t send file');
+            }
+            header('Content-Length: '.strlen((string)$buffer));
+            header('Content-Disposition: ' . $disposition . '; filename="' . $fileName . '"');
+            //header("Content-Transfer-Encoding: binary");
+        }
+        echo $buffer;
+        return '';
+    }
+
+    public function veriricaSeExisteProbabilidade($cVALOR, $FORM = 'M', $x2)
+    {
+        if ( $FORM == 'M' )
+        {
+            $aUNID   = array("","UM","DOIS","TRES","QUATRO","CINCO","SEIS","SETE","OITO","NOVE");
+            $aCENT   = array("","CENTO","DUZENTOS","TREZENTOS","QUATROCENTOS","QUINHENTOS","SEISCENTOS","SETECENTOS","OITOCENTOS","NOVECENTOS");
+        }
+        else
+        {
+            $aUNID   = array("","UMA","DUAS","TRES","QUATRO","CINCO","SEIS","SETE","OITO","NOVE");
+            $aCENT   = array("","CENTO","DUZENTAS","TREZENTAS","QUATROCENTAS","QUINHENTAS","SEISCENTAS","SETECENTAS","OITOCENTAS","NOVECENTAS");
+        }
+        $aDEZE   = array("","","VINTE","TRINTA","QUARENTA","CINQUENTA","SESSENTA","SETENTA","OITENTA","NOVENTA");
+        $aEXC    = array("DEZ","ONZE","DOZE","TREZE","QUATORZE","QUINZE","DEZESSEIS","DEZESSETE","DEZOITO","DEZENOVE");
+        $result = '';
+        for ( $x = $x2 ; $x < strlen((string)$cVALOR); $x++ )
+        {
+            switch ( (strlen((string)$cVALOR)-$x) )
+            {
+                case '1':
+                    $res = $aUNID[substr($cVALOR, $x, 1 )];
+                    break;
+
+                case '2':
+                    if ( substr($cVALOR, $x, 1) == 1 )
+                    {
+                        $x++;
+                        $res = $aEXC[substr($cVALOR, $x, 1 )];
+                    }
+                    else
+                    {
+                        $res = $aDEZE[substr($cVALOR, $x, 1 )];
+                    }
+                    break;
+                case '3':
+                    return false;
+                    $res = $aCENT[substr($cVALOR, $x, 1 )];
+                    break;
+                case '4':
+                    $res = $aUNID[substr($cVALOR, $x, 1 )] . ' MIL';
+                    break;
+
+                case '5':
+                    if ( substr($cVALOR, $x, 1) == 1 )
+                    {
+                        $x++;
+                        $res = $aEXC[substr($cVALOR, $x, 1 )] . ' MIL';
+                    }
+                    else
+                    {
+                        $res = $aDEZE[substr($cVALOR, $x, 1 )] . ' MIL';
+                    }
+                    
+                    break;
+            }
+            $result .= $res;
+        }
+        
+        return (strlen((string)$result) > 0);
+    }
+    /**
+     * Return the number in extensive format
+     *
+     * @param: $number: Number value
+     *
+     * @return: the number in extension format
+     *
+     */
+    public function extensive($cVALOR, $FORM = 'M', $MOEDA = false)
+    {
+        $cVALOR = (float)$cVALOR;
+
+        if ( $cVALOR == '0' )
+        {
+            return 'ZERO';
+        }
+
+        if ( $FORM == 'M' )
+        {
+            $aUNID   = array("","UM","DOIS","TRES","QUATRO","CINCO","SEIS","SETE","OITO","NOVE");
+            $aCENT   = array("","CENTO","DUZENTOS","TREZENTOS","QUATROCENTOS","QUINHENTOS","SEISCENTOS","SETECENTOS","OITOCENTOS","NOVECENTOS");
+        }
+        else
+        {
+            $aUNID   = array("","UMA","DUAS","TRES","QUATRO","CINCO","SEIS","SETE","OITO","NOVE");
+            $aCENT   = array("","CENTO","DUZENTAS","TREZENTAS","QUATROCENTAS","QUINHENTAS","SEISCENTAS","SETECENTAS","OITOCENTAS","NOVECENTAS");
+        }
+        
+        $aDEZE   = array("","","VINTE","TRINTA","QUARENTA","CINQUENTA","SESSENTA","SETENTA","OITENTA","NOVENTA");
+        $aEXC    = array("DEZ","ONZE","DOZE","TREZE","QUATORZE","QUINZE","DEZESSEIS","DEZESSETE","DEZOITO","DEZENOVE");
+        $cRESULT = '';
+        $a = explode(',',$cVALOR);
+        if ( count($a) == 2 && strlen((string)$a[1]) == 1 )
+        {
+            $a[1] = $a[1].'0';
+        }
+        for ( $y = 0; $y < count($a); $y++ )
+        {
+        if ( $y > 0 )
+        {
+            if ( $MOEDA == false )
+            {
+                if ( strlen((string)str_replace(" ", "",$cRESULT)) > 0 )
+                {
+                    if ( (float)$a[$y] > 0 )
+                    {
+                        $cRESULT .= ' E ';
+                    }
+                }
+            }
+            else
+            {
+                if ( strlen((string)str_replace(" ", "",$cRESULT)) > 0 )
+                {
+                    if ( (float)$a[$y] > 0 )
+                    {
+                        $cRESULT .= ' REAIS E ';
+                    }
+                    else
+                    {
+                        $cRESULT .= ' REAIS ';
+                        return $cRESULT;
+                    }
+                }
+            }
+        }
+        $cVALOR = $a[$y];
+        
+        for ( $x = 0 ; $x < strlen((string)$cVALOR); $x++ )
+        {
+            switch ( (strlen((string)$cVALOR)-$x) )
+            {
+                case '1':
+                    $res = $aUNID[substr($cVALOR, $x, 1 )];
+                    break;
+                case '2':
+                    if ( substr($cVALOR, $x, 1) == 1 )
+                    {
+                        $x++;
+                        $res = $aEXC[substr($cVALOR, $x, 1 )];
+                    }
+                    else
+                    {
+                        $res = $aDEZE[substr($cVALOR, $x, 1 )];
+                    }
+                    break;
+
+                case '3':
+                    if ( $cVALOR == 100 )
+                    {
+                        $res = 'CEM';
+                    }
+                    else
+                    {
+                        $res = $aCENT[substr($cVALOR, $x, 1 )];
+                    }
+                    break;
+                case '4':
+                    $res = $aUNID[substr($cVALOR, $x, 1 )] . ' MIL';
+                    break;
+
+                case '5':
+                    if ( substr($cVALOR, $x, 1) == 1 )
+                    {
+                        $x++;
+                        $res = $aEXC[substr($cVALOR, $x, 1 )] . ' MIL';
+                    }
+                    else
+                    {
+                        $res = $aDEZE[substr($cVALOR, $x, 1 )] ;
+                        $x++;
+                        $res .= ' E ' .$aUNID[substr($cVALOR, $x, 1 )] . ' MIL';
+
+                    }
+                    
+                    break;
+            }
+
+            if ( SAGU::veriricaSeExisteProbabilidade($cVALOR, $FORM, $x+1) )
+            {
+                $res .= ' E ';
+            }
+            $cRESULT .=  ' ' . $res . ' ';
+        }
+        }
+        if ( $MOEDA == true )
+        {
+            if ( (float)$a[1] > 0 )
+            {
+                $cRESULT .= ' CENTAVOS';
+            }
+            else if ( (float)$a[0] > 1 && count($a) == 1 )
+            {
+                $cRESULT .= ' REAIS';
+            }
+            else if ( (float)$a[0] == 1 && count($a) == 1 )
+            {
+                $cRESULT .= ' REAL';
+            }
+        }
+        $s = array ( "    ", "   ", "  " );
+        $m = array (" E E ");
+        $cRESULT = trim(str_replace($s, " ",$cRESULT));
+        $cRESULT = str_replace($m, " E ", $cRESULT);
+        return $cRESULT;
+    }
+
+    /**
+     * Return the number in extensive format
+     *
+     * @param: $number: Number value
+     *
+     * @return: the number in extension format
+     *
+     */
+    public function getExtensiveNumber($number, $currency=NULL, $pluralCurrency=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+
+        $zeros = "000.000.000,00";
+        $cVALOR = number_format($number, 2, ',', '.');
+        $cVALOR = substr($zeros,0,strlen((string)$zeros)-strlen((string)$cVALOR)) . $cVALOR;
+
+        if ( $currency && $pluralCurrency )
+        {
+            $cMOEDA_SINGULAR = ' ' . $currency;
+            $cMOEDA_PLURAL   = ' ' . $pluralCurrency;
+        }
+        else
+        {
+            $cMOEDA_SINGULAR = '';
+            $cMOEDA_PLURAL   = '';
+        }
+
+        //cVALOR  = transform( nVALOR, "@ZE 999,999,999.99");
+        //$cRETURN = substr($cVALOR,0,3) . substr($cVALOR,4,3) . substr($cVALOR,8,3);
+
+        $cMILHAO = SAGU::extensive(substr($cVALOR,0,3)) . ( (substr($cVALOR,0,3)>1) ? ' MILHOES' : '' );
+        $cMILHAR = SAGU::extensive(substr($cVALOR,4,3)) . ( (substr($cVALOR,4,3)>0) ? ' MIL' : '' );
+        $cUNIDAD = SAGU::extensive(substr($cVALOR,8,3)) . ( ($nVALOR==1) ? $cMOEDA_SINGULAR : $cMOEDA_PLURAL);
+        $cCENTAV = SAGU::extensive("0" . substr($cVALOR,12,2)) . ((substr($cVALOR,12,2)>0) ? " CENTAVOS" : "");
+
+        $cRETURN = $cMILHAO . ((strlen((string)trim($cMILHAO))<>0 && strlen((string)trim($cMILHAR))<>0) ? ", " : "") . $cMILHAR . ((strlen((string)trim($cMILHAR))<>0 && strlen((string)trim($cUNIDAD))<>0) ? ", " : "") .
+$cUNIDAD . ((strlen((string)trim($cUNIDAD))<>0 && strlen((string)trim($cCENTAV))<>0) ? ", " : "") . $cCENTAV;
+
+        return $cRETURN;
+    }
+
+    /**
+     * Get a shorten name of a person
+     *
+     * @param: $personName: String with the name
+     *         $length: Length of the shorted name
+     *
+     * @return: the name shorted
+     *
+     */    
+    public function getShortenName($personName, $length)
+    {
+        $count = 1;
+        $control  = substr_count($personName, ' ');
+        
+        while ( strlen((string)$personName) > $length && 
+                $count < $control)
+        {
+            $spaceNumber = 0;
+            for ( $x = 0; $x < strlen((string)$personName) ; $x++ )
+            {
+                if ( $spaceNumber == $count )
+                {
+                    $char = substr($personName, $x, 1);
+                    $output .= $char . '. ';
+                        
+                    while ( $char != ' ' && $x < strlen((string)$personName) )
+                    {
+                        $x++;
+                        $char = substr($personName, $x, 1);
+                    } 
+                }
+                else
+                {
+                    $output .= substr($personName, $x, 1);
+                }
+                if( substr($personName, $x, 1) == ' ' )
+                {
+                    $spaceNumber++;
+                }
+            }
+            
+            $personName = $output;
+            unset($output);
+            
+            $count++;
+        }
+        
+        return substr($personName, 0, $length);
+    }
+
+    /**
+     * Loads the JS file for php serialization support
+     * in JavaScript
+     *
+     * @param: $form: Current form
+     *
+     * @return: the URL for $this->page->scripts->add() method
+     *
+     */    
+    public function importJsSerialize($form)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        
+        $form->page->scripts->add( $MIOLO->getActionURL( 'basic', 'html:scripts:phpSerialize.js' ) );
+    }
+
+    /**
+     * @param: varchar
+     * @return: timestamp
+     */
+    public function getTimestampFromPostgres ($date)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $db    = $MIOLO->getDatabase('basic');
+        $sql    = 'SELECT 
+                    extract(month from dateMask) as month, 
+                    extract(day from dateMask) as day,
+                    extract(year from dateMask) as year
+                    FROM ( SELECT TO_DATE( ? , \''. MASK_DATE .'\') as dateMask ) A ';
+
+        $return = $db->query( SAGU::prepare( $sql, $date ) );
+        list($dt['month'], $dt['day'], $dt['year']) = $return[0];
+
+        return mktime(0,0,0, $dt['month'], $dt['day'], $dt['year']);
+    }
+
+}
+
+class SAGUFile
+{
+    /**
+     * Save uploaded file to local file
+     *
+     * @param $tmpName (string): Temporary file name and path
+     * @param $table (string): Table name to save on specific folder
+     *
+     * @return (varchar): path to file
+     *
+     */
+    public function saveFileToLocal($tmpName, $seq)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+
+        // Upload path data
+        $path = $MIOLO->GetModulePath('basic', UPLOAD_PATH);
+        if ( file_exists($path) )
+        {
+            // Get the path to hold file
+            if ( is_writable($path) )
+            {
+                $path.=$seq;
+                if ( !copy($tmpName, $path) )
+                {
+                    $this->error = _M('Failed to copy file', 'basic');
+                    return false;
+                }
+                return true;
+            }
+            else
+            {
+                $this->error = _M('The directory is not writable', 'basic');
+                return false;
+            }
+        }
+        else
+        {
+            $this->error = _M('The upload directory specified on Configuration table does not exist', 'basic');
+        }   
+    }
+
+    /**
+     * Save uploaded file to local file
+     *
+     * @param $data (object): Informations of data to file
+     *
+     * @return (varchar): path to file
+     *
+     */
+    public function saveDataToLocal($data)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+
+        // Upload path data
+        $path = $MIOLO->GetModulePath('basic', UPLOAD_PATH);
+
+        if(strlen((string)$data->fileId) > 0 )
+        {
+            // junta nome do arquivo com o caminho
+            $pathName = $path.$data->fileId;
+            // abre o arquivo
+            $fp = fopen($pathName, "w");
+            // grava o arquivo
+            if( fwrite( $fp, $data->file ) )
+            {
+                return true;
+            }
+        }
+        else
+        {
+            return false;
+        }
+    }
+
+    /**
+     * Return file
+     *
+     * @param $file (string): File name
+     *
+     * @return (varchar): file
+     *
+     */
+    public function getFileBody($file, $absolute = false, $returnArray = false)
+    {
+        $MIOLO = MIOLO::getInstance();
+        // pega caminho onde o endereço está gravado.
+
+        if ( $absolute )
+        {
+            $filePath = $file;
+        }
+        else
+        {
+            $filePath = SAGUFile::getFilePath($file);
+        }
+
+        if ( strlen((string)$filePath) > 0 )
+        {
+            if ($returnArray == true)
+            {
+                return file($filePath);
+            }
+            else
+            {
+                // abre arquivo.
+                if( $fp = fopen("$filePath", "r") );
+                {
+                    // tranforma o corpo do arquivo em string
+                    $fileBody = fread($fp, filesize($filePath));
+                    fclose($fp);
+                    // retorna corpo da mensagem
+                    return $fileBody;
+                }
+            }
+        }
+        else
+        {
+            return false;
+        }
+    }
+
+    /**
+     * Return file path
+     *
+     * @param $file (string): File name
+     *
+     * @return (varchar): path to file
+     *
+     */
+    public function getFilePath($file)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $path = $MIOLO->GetModulePath('basic', UPLOAD_PATH);
+
+        if ( strlen((string)$path) > 0 )
+        {
+            // junta o nome do arquivo com o caminho do arquivo
+            $filePath = $path . $file;
+            if ( strlen((string)$filePath) > 0  )
+            {
+                return $filePath;
+            }
+            else
+            {
+                $this->error = _M('File not found', 'basic');
+            }
+        }
+        else
+        {
+            $this->error = _M('The directory specified on Configuration table does not exist', 'basic');
+        }
+    }
+    /**
+     * Return file path
+     *
+     * @param $file (string): File name
+     *
+     * @return (varchar): path to file
+     *
+     */
+    public function getPhotoPath($personId)
+    {
+        $MIOLO      = MIOLO::getInstance();
+        $uploadPath = $MIOLO->getModulePath('basic', PHOTO_PATH);
+
+        if ( file_exists($uploadPath) )
+        { 
+            $filePath = $uploadPath . $personId . '.' . PHOTO_FORMAT;
+            if ( file_exists($filePath) )
+            {
+                $fileAddressPath = TEMP_DIR . $personId . '.' . PHOTO_FORMAT;
+                $ext = file($filePath); 
+                $fileType = (substr(trim($ext[0]),1));
+                switch ( strtoupper($fileType) )
+                {
+                    case 'PNG':
+                        $oldFilePath = $filePath;
+                        unset($filePath);
+                        $Image = imagecreatefrompng($oldFilePath);
+                        $newImage = imagecreatetruecolor(PHOTO_WIDTH, PHOTO_HEIGHT);
+                        imagecopy($newImage, $Image, 0, 0, 0, 0, PHOTO_WIDTH, PHOTO_HEIGHT);
+                        imagedestroy($Image);
+                        break;
+                    default:
+                        break;
+                }
+                switch ( strtoupper(PHOTO_FORMAT) )
+                {
+                    case 'PNG':
+                        if($newImage && function_exists('imagepng'))
+                        {
+                            @imagepng($newImage, $fileAddressPath);
+                            imagedestroy($newImage);
+                            $ok = $fileAddressPath;
+                        }
+                        else
+                        {
+                            $ok = @copy($filePath, $fileAddressPath);
+                        }
+                        break;
+                    default:
+                            $ok = @copy($filePath, $fileAddressPath);                        
+                        break;
+                }
+                if($ok)
+                {
+                    return $fileAddressPath;
+                }
+                else
+                {
+                    if(function_exists('imagecreate') && function_exists('imagepng'))
+                    {
+                        $Image = imagecreate(PHOTO_WIDTH, PHOTO_HEIGHT);
+                        $ok = imagepng($Image, $fileAddressPath);
+                        imagedestroy($Image);
+                    }
+                    return $fileAddressPath;
+                }
+            }
+            else
+            {
+                $this->error = _M('File not found', 'basic');
+            }
+        }
+        else
+        {
+            $this->error = _M('The directory specified on Configuration table does not exist', 'basic');
+        }
+    }
+
+    /**
+     * Return the error information (if some error exists)
+     *
+     * @param: No parameters needed
+     *
+     * @return: If exists some error, return this.
+     */
+    public function returnErrors()
+    {
+         return $this->error;
+    }
+
+    /**
+     * Verify if the class exists
+     *
+     * @param: $module: Module to verify if exists the class
+     *         $className: Name of the class
+     *
+     * @return: If exists returns true else false
+     *
+     */
+    public function classExists($module, $className)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $path   = $MIOLO->getModulePath($module, 'classes/'.$className.'.class');
+
+        if (file_exists($path))
+        {
+            return true;
+        }
+        else
+        {
+            return false;
+        }
+    }
+
+
+}
+?>

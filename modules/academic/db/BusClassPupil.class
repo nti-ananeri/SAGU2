@@ -1,0 +1,531 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for acdClassPupil table
+ *
+ * @author Bruno Madeiro da Silva [bmsilva@uncisal.edu.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ *
+ * @since
+ * Class created on 19/12/2006
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br
+ *
+ **/
+
+/**
+ * Class to manipulate the acdClassPupil table
+ **/
+class BusinessAcademicBusClassPupil extends Business
+{
+
+  /**
+   * Make a connection to the database
+   *
+   * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+   *
+   * @return (object): A MIOLO Database connection
+   **/
+  public function getDatabase($module = null)
+  {
+    $MIOLO = MIOLO::getInstance();
+    $MIOLO->getClass('basic', 'sagu');
+    $module = is_null($module) ? 'academic' : $module;
+
+    return $MIOLO->getDatabase($module);
+  }
+
+  /**
+   * Return a specific record from the database
+   *
+   * @param $professorCurricularComponentId (integer): Primary key of the record to be retrieved
+   *
+   * @return (object): Return an object of the type handled by the class
+   *
+   **/
+  public function getClassPupil($classId, $contractId, $beginDate)
+  {
+    $sql = 'SELECT A.classId,
+                       A.contractId,
+                       TO_CHAR(A.beginDate,\'' . MASK_DATE . '\'),
+                       TO_CHAR(A.endDate,\'' . MASK_DATE . '\'),
+                       A.userName,
+                       TO_CHAR(A.dateTime,\'' . MASK_TIMESTAMP . '\'),
+                       A.ipAddress
+                  FROM acdClassPupil A
+                 WHERE A.classId = ?
+                   AND A.contractId = ?
+                   AND A.beginDate = TO_DATE(?, \'' . MASK_DATE . '\')';
+
+    $db     = $this->getDatabase();
+
+    $args = array( $classId,
+    $contractId,
+    $beginDate);
+
+    $result = $db->query(SAGU::prepare($sql, $args));
+    //$db->close();
+
+    $classPupil = new acdClassPupil();
+    list ( $classPupil->classId,
+    $classPupil->contractId,
+    $classPupil->beginDate,
+    $classPupil->endDate,
+    $classPupil->userName,
+    $classPupil->dateTime,
+    $classPupil->ipAddress ) = $result[0];
+
+    return $classPupil;
+  }
+
+
+  /**
+   * Check if the initial learning period course id is the same that the pupil contract course id
+   *
+   * @param $data (object): Values to be filtered
+   *
+   * @return (object): Return true or false
+   *
+   **/
+  public function checkCourse($data)
+  {
+    $sql = 'SELECT CASE WHEN (     B.courseId      = (SELECT courseId      FROM acdContract WHERE contractId = ?)
+                                   AND B.courseVersion = (SELECT courseVersion FROM acdContract WHERE contractId = ?)
+                                   AND B.turnId        = (SELECT turnId        FROM acdContract WHERE contractId = ?)
+                                   AND B.unitId        = (SELECT unitId        FROM acdContract WHERE contractId = ?) )
+                            THEN true 
+                            ELSE false 
+                             END
+                  FROM acdClass A
+            INNER JOIN acdLearningPeriod B
+                    ON ( A.initialLearningPeriodId = B.learningPeriodId )
+                 WHERE A.classId = ?';
+
+    $db     = $this->getDatabase();
+
+    $args = array( $data->contractId,
+    $data->contractId,
+    $data->contractId,
+    $data->contractId,
+    $data->classId);
+
+    $result = $db->query(SAGU::prepare($sql, $args));
+    //$db->close();
+
+    return $result[0][0];
+  }
+
+  /**
+   * Do a search on the database table handled by the class
+   *
+   * @param $filters (object): Search filters
+   *
+   * @return (array): An array containing the search results
+   **/
+  public function searchClassPupil($filters)
+  {
+    $sql = 'SELECT DISTINCT A.classId,
+                       A.name,
+                       C.contractId,
+                       C.courseId,
+                       C.courseVersion,
+                       getCourseShortName(C.courseId),
+                       C.personId,
+                       getPersonName(C.personid),
+                       TO_CHAR(D.beginDate,\'' . MASK_DATE . '\'),
+                       TO_CHAR(B.beginDate,\'' . MASK_DATE . '\'),
+                       TO_CHAR(B.endDate,\'' . MASK_DATE . '\')
+                  FROM acdClass A
+            INNER JOIN acdClassPupil B
+                    ON (A.classId = B.classId)
+            INNER JOIN acdContract C
+                    ON (C.contractId = B.contractId)
+            INNER JOIN acdLearningPeriod D
+                    ON (A.initialLearningPeriodId = D.learningPeriodId)';
+
+    if ( strlen((string)$filters->classId) > 0 )
+    {
+      $where .= ' AND A.classId ILIKE ? ';
+      $args[] = $filters->classId;
+    }
+    if ( strlen((string)$filters->personId) > 0 )
+    {
+      $where .= ' AND C.personId = ? ';
+      $args[] = $filters->personId;
+    }
+    if ( strlen((string)$filters->contractId) > 0 )
+    {
+      $where .= ' AND C.contractId = ? ';
+      $args[] = $filters->contractId;
+    }
+    if ( strlen((string)$filters->beginDate) > 0 )
+    {
+      $where .= ' AND B.beginDate = TO_DATE(?,\'' . MASK_DATE . '\') ';
+      $args[] = $filters->beginDate;
+    }
+    if ( $filters->notHaveEndDate == DB_TRUE )
+    {
+      $where .= ' AND B.endDate IS NULL ';
+    }
+
+    unset($result);
+    if ( strlen((string)$where) > 0 )
+    {
+      $sql.= ' WHERE ' . substr($where, 4) . '
+                     ORDER BY getPersonName(C.personid) ';
+      $db = $this->getDatabase();
+
+      $result = $db->query(SAGU::prepare($sql, $args));
+      //$db->close();
+    }
+
+    return $result;
+  }
+
+  public function searchClassPupilFormGrid($filters)
+  {
+    $sql = 'SELECT A.classId,
+                       A.name,
+                       C.contractId,
+                       C.courseId || \' / \' || C.courseVersion,
+                       getCourseShortName(C.courseId),
+                       C.personId,
+                       getPersonName(C.personid),
+                       TO_CHAR(D.beginDate,\'' . MASK_DATE . '\'),
+                       TO_CHAR(B.beginDate,\'' . MASK_DATE . '\'),
+                       TO_CHAR(B.endDate,\'' . MASK_DATE . '\')
+                  FROM acdClass A
+            INNER JOIN acdClassPupil B
+                    ON (A.classId = B.classId)
+            INNER JOIN acdContract C
+                    ON (C.contractId = B.contractId)
+            INNER JOIN acdLearningPeriod D
+                    ON (A.initialLearningPeriodId = D.learningPeriodId)
+       INNER JOIN ONLY basPhysicalPerson E
+                    ON (E.personId = C.personId)';
+
+    if ( strlen((string)$filters->classId) > 0 )
+    {
+      $where .= ' AND A.classId ILIKE ? ';
+      $args[] = $filters->classId."%";
+    }
+    if ( strlen((string)$filters->personId) > 0 )
+    {
+      $where .= ' AND C.personId = ? ';
+      $args[] = $filters->personId;
+    }
+    if ( strlen((string)$filters->contractId) > 0 )
+    {
+      $where .= ' AND C.contractId = ? ';
+      $args[] = $filters->contractId;
+    }
+    if ( strlen((string)$filters->contractsId) > 0 )
+    {
+      $where .= ' AND C.contractId in (';
+      $contractsId = implode(',',$filters->contractsId);
+
+      $where .= $contractsId .')';
+    }
+    if ( strlen((string)$filters->beginDate) > 0 )
+    {
+      $where .= ' AND B.beginDate = TO_DATE(?,\'' . MASK_DATE . '\') ';
+      $args[] = $filters->beginDate;
+    }
+    if ( $filters->notHaveEndDate == DB_TRUE )
+    {
+      $where .= ' AND B.endDate IS NULL ';
+    }
+    if ( strlen((string)$filters->className) > 0 )
+    {
+      $where .= ' AND TO_ASCII(A.name) ILIKE TO_ASCII(?) ';
+      $args[] = $filters->className;
+    }
+    if ( strlen((string)$filters->personName) > 0 )
+    {
+      $where .= ' AND TO_ASCII(E.name) ILIKE TO_ASCII(?) ';
+      $args[] = $filters->personName;
+    }
+
+    unset($result);
+    if ( strlen((string)$where) > 0 )
+    {
+      $sql.= ' WHERE ' . substr($where, 4) . '
+                     ORDER BY getPersonName(C.personid) ';
+      $db = $this->getDatabase();
+
+      $result = $db->query(SAGU::prepare($sql, $args));
+      //$db->close();
+    }
+
+    return $result;
+  }
+
+
+  public function searchClassPupilFormGridSelect($filters)
+  {
+    $sql = 'SELECT
+        			   C.contractId,
+        			   C.personId,
+        			   getPersonName(C.personid)
+                  FROM acdClass A
+            INNER JOIN acdClassPupil B
+                    ON (A.classId = B.classId)
+            INNER JOIN acdContract C
+                    ON (C.contractId = B.contractId)
+            INNER JOIN acdLearningPeriod D
+                    ON (A.initialLearningPeriodId = D.learningPeriodId)
+       INNER JOIN ONLY basPhysicalPerson E
+                    ON (E.personId = C.personId)';
+
+    if ( strlen((string)$filters->classId) > 0 )
+    {
+      $where .= ' AND A.classId ILIKE ? ';
+      $args[] = $filters->classId."%";
+    }
+    if ( strlen((string)$filters->personId) > 0 )
+    {
+      $where .= ' AND C.personId = ? ';
+      $args[] = $filters->personId;
+    }
+    if ( strlen((string)$filters->contractId) > 0 )
+    {
+      $where .= ' AND C.contractId = ? ';
+      $args[] = $filters->contractId;
+    }
+    if ( strlen((string)$filters->beginDate) > 0 )
+    {
+      $where .= ' AND B.beginDate = TO_DATE(?,\'' . MASK_DATE . '\') ';
+      $args[] = $filters->beginDate;
+    }
+    if ( $filters->notHaveEndDate == DB_TRUE )
+    {
+      $where .= ' AND B.endDate IS NULL ';
+    }
+    if ( strlen((string)$filters->className) > 0 )
+    {
+      $where .= ' AND TO_ASCII(A.name) ILIKE TO_ASCII(?) ';
+      $args[] = $filters->className;
+    }
+    if ( strlen((string)$filters->personName) > 0 )
+    {
+      $where .= ' AND TO_ASCII(E.name) ILIKE TO_ASCII(?) ';
+      $args[] = $filters->personName;
+    }
+
+    unset($result);
+    if ( strlen((string)$where) > 0 )
+    {
+      $sql.= ' WHERE ' . substr($where, 4) . '
+                     ORDER BY getPersonName(C.personid) ';
+      $db = $this->getDatabase();
+
+      $result = $db->query(SAGU::prepare($sql, $args));
+      //$db->close();
+    }
+
+    return $result;
+  }
+
+  /**
+   * Insert a new record
+   *
+   * @param $data (object): An object of the type handled by the class
+   *
+   * @return True if succed, otherwise False
+   *
+   **/
+  public function insertClassPupil($data)
+  {
+    $sql = 'INSERT INTO acdClassPupil
+                            (classId,
+                             contractId,
+                             beginDate,
+                             endDate)
+                     VALUES (?, ?, TO_DATE(?, \''.MASK_DATE.'\'), TO_DATE(?, \''.MASK_DATE.'\'))';
+
+    $args = array( $data->classId,
+    $data->contractId,
+    $data->beginDate,
+    $data->endDate );
+
+    $db     = $this->getDatabase();
+    $result = $db->execute(SAGU::prepare($sql, $args));
+    //$db->close();
+    return $result;
+  }
+
+  /**
+   * Update data from a specific record
+   *
+   * @param $data (object): Data which will replace the old record data
+   *
+   * @return (boolean): True if succeed, otherwise False
+   *
+   **/
+  public function updateClassPupil($data)
+  {
+    $sql = 'UPDATE acdClassPupil
+                   SET endDate = TO_DATE(?, \''.MASK_DATE.'\')
+                 WHERE classId = ? 
+                   AND contractId = ?
+                   AND beginDate  = TO_DATE(?, \''.MASK_DATE.'\')';
+
+    $args = array( $data->endDate,
+    $data->classId,
+    $data->contractId,
+    $data->beginDate);
+
+    $db   = $this->getDatabase();
+    $sqls = SAGU::prepare($sql, $args);
+
+    for ( $i=0; $i<count($sqls); $i++ )
+    {
+      $result = $db->execute($sqls[$i]);
+    }
+
+    //$db->close();
+
+    return $result;
+  }
+
+  /**
+   * Delete a record
+   *
+   * @param $professorCurricularComponentId (string): Primary key for deletion
+   *
+   * @return (boolean): True if succeed, otherwise False
+   *
+   **/
+  public function deleteClassPupil($classId, $contractId, $beginDate)
+  {
+    $sql = 'DELETE FROM acdClassPupil
+                      WHERE classId   = ? 
+                        AND contractId = ?
+                        AND beginDate  = TO_DATE(?, \''.MASK_DATE.'\')';
+
+    $args = array( $classId,
+    $contractId,
+    $beginDate);
+
+    $db     = $this->getDatabase();
+    $result = $db->execute(SAGU::prepare($sql, $args));
+    //$db->close();
+    return $result;
+  }
+
+  /**
+   * Gets the current class for a contract
+   *
+   * @param $contractId (integer): the id of the contract from wich the class must be searched
+   *
+   * @return (string): the class id found
+   *
+   **/
+  public function getContractCurrentClass($data)
+  {
+    $sql = 'SELECT DISTINCT classId
+                  FROM acdClassPupil
+                 WHERE endDate IS NULL';
+    if ( strlen((string)$data->contractId) > 0 )
+    {
+      $sql .= ' AND contractId = ?';
+      $args[] = $data->contractId;
+    }
+    if ( strlen((string)$data->classId) > 0 )
+    {
+      $sql .= ' AND classId = ?';
+      $args[] = $data->classId;
+    }
+
+    $db     = $this->getDatabase();
+    $result = $db->query(SAGU::prepare($sql, $args));
+
+    if (count($result) == 1)
+    {
+      return ($result[0][0]);
+    }
+    else
+    {
+      return null;
+    }
+  }
+
+
+
+  public function beginTransaction()
+  {
+
+    $db = $this->getDatabase();
+    $db->execute('BEGIN TRANSACTION');
+
+  }
+
+  public function commit()
+  {
+
+    $db = $this->getDatabase();
+    $db->execute('COMMIT');
+
+  }
+
+  public function listClassPupil($groupId)
+  {
+    $sql = 'SELECT getcontractpersonid(A.contractId),
+                       getcontractpersonid(A.contractId) || \' - \' || getPersonName(getcontractpersonid(A.contractId))
+                  FROM acdClassPupil A
+            INNER JOIN acdGroup B
+                    ON ( A.classId = B.classId )
+                 WHERE B.groupId = ?
+                   AND enddate IS NULL
+              ORDER BY getcontractpersonid(A.contractId)';
+
+    $db     = $this->getDatabase();
+
+    $args   = array( $groupId );
+
+    $result = $db->query(SAGU::prepare($sql, $args));
+
+    return $result;
+  }
+
+  public function getClassFromPupil($personId)
+  {
+    $sql = 'select
+  			max(classid) as classid
+			from
+  			acdclasspupil acp
+  			join
+  			acdcontract ac
+  			on ac.contractid = acp.contractid and not iscontractout(ac.contractid)
+			where ac.personid = ?';
+
+    $db     = $this->getDatabase();
+
+    $args   = array( $personId );
+
+    $result = $db->query(SAGU::prepare($sql, $args));
+
+    return $result;
+  }
+
+
+}
+?>

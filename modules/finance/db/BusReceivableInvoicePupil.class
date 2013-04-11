@@ -1,0 +1,460 @@
+<?php
+
+/**
+ *
+ * This file handles the connection and actions for finReceivableInvoicePupil table
+ *
+ * @author Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * Rafael Luís Spengler [rafael@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 13/12/2005
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ */
+
+$MIOLO  = MIOLO::getInstance();
+$MIOLO->uses('db/BusReceivableInvoice.class', 'finance');
+
+/**
+ * Class to manipulate the finReceivableInvoice table
+ */
+class BusinessFinanceBusReceivableInvoicePupil extends BusinessFinanceBusReceivableInvoice
+{
+   /**
+    * This attribute is an object used by the receivableInvoiceGeneration method,
+    * which breaks out as follows:
+    *
+    * generationData
+    * |
+    * +- totalIncomeForecasts: shows the number of income forecasts that need to be
+    * |                         processed.
+    * +- receivableInvoice: an array where the key is the invoice number. Each item
+    *    |                  of it contains two attributes named invoice and entries,
+    *    |                  explained below.
+    *    +- invoice: contains a FinReceivableInvoice object with all the information
+    *    |           about the generated invoice.
+    *    +- entries: contains all entries which composes the invoice.
+    */
+    public $generationData;
+
+   /**
+    * Class constructor to instantiate a new database connection. This makes possible to use transactions
+    */
+    function BusinessFinanceBusReceivableInvoicePupil()
+    {
+        parent::__construct();
+    }
+
+   /**
+    * Get the respectively value for the month for a specific group of income forecasts
+    *
+    * @author: William Prigol Lopes [william@solis.coop.br]
+    *
+    * @param $data (object): An object containing the necessary parameters to return the value
+    *
+    * @return (float): balance for the month specified in parameters for income forecasts
+    */
+    private function getIncomeForecastBalance($data)
+    {
+        $sql = '     SELECT sum( ( A.value * (CASE WHEN B.operationTypeId = \'D\' THEN 1 
+                                                   WHEN B.operationTypeId = \'C\' THEN -1 
+                                               END)
+                                 )
+                               )
+                       FROM finIncomeForecast A
+                 INNER JOIN finOperation B
+                      USING (operationId)
+                 INNER JOIN acdContract C
+                      USING (contractId)
+                      WHERE C.personId = ?
+                        AND extract(MONTH FROM A.maturityDate) = ? 
+                        AND extract(YEAR FROM A.maturityDate) = ? ';
+
+        $args = array( $data->personId,
+                       $data->month,
+                       $data->year 
+                     );
+
+        $return = $this->db->query(SAGU::prepare($sql, $args));
+        return (string)$return[0][0];
+    }
+
+   /**
+    * Generate the receivable invoices for every nonprocessed entry
+    * at finIncomeForecast table. If something goes wrong, a ROLLBACK
+    * is executed. Otherwise, the changes are COMMIT.
+    *
+    * @author Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+    * @maintainer William Prigol Lopes [william@solis.coop.br]
+    * @lastModification: 26/01/2005 - Include income forecast close operation for each invoice created
+    *
+    * @param $data An object containing the necessary parameters to generate the receivable invoices.
+    *
+    * @return Return true if everything gone right. Otherwise, return false.
+    *
+    */
+    function generateReceivableInvoices($inData)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = 'finance';
+        $action = MIOLO::getCurrentAction();
+        // This process is very strong, needs this function to could be executable.
+        $this->db->execute('BEGIN TRANSACTION');
+        $keepGoing = true;
+        // 
+        // Verify if the data information is not specified for only a person or contract
+        //
+        if ((strlen((string)$inData->personId) == 0) || (strlen((string)$inData->contractId) == 0))
+        {
+            // Verify on system if the invoice log do not contain a register
+            $invoiceLog = new finInvoiceLog();
+            $invoiceLog->month          = $inData->month;
+            $invoiceLog->year           = $inData->year;
+            $invoiceLog->generationDate = date(MASK_DATE_PHP);
+            $invoiceLog->generationType = 'P';
+    
+            $sql = ' SELECT TO_CHAR(generationDate, \''.MASK_DATE.'\')
+                       FROM finInvoiceLog
+                      WHERE month          = ?
+                        AND year           = ?
+                        AND generationType = ? ';
+    
+            $args = array( $invoiceLog->month,
+                           $invoiceLog->year,
+                           $invoiceLog->generationType );
+
+            $res = $this->db->query(SAGU::prepare($sql, $args));
+        }
+
+        if ( !is_array($res[0]) )
+        {
+            //
+            // Verify if the data information is not specified for only a person or contract (same as above)
+            //
+            if ( (strlen((string)$inData->personId) == 0) || (strlen((string)$inData->contractId) == 0) )
+            {
+                $sql = ' INSERT INTO finInvoiceLog
+                                   ( month,
+                                     year,
+                                     generationDate,
+                                     generationType )
+                            VALUES (?, ?, TO_DATE(?, \''.MASK_DATE.'\') ,?) ';
+
+                $args = array( $invoiceLog->month,
+                               $invoiceLog->year,
+                               $invoiceLog->generationDate,
+                               $invoiceLog->generationType );
+
+                $keepGoing = $this->db->execute(SAGU::prepare($sql, $args));
+                unset($args);
+            }
+$rr++;
+
+            if ($keepGoing)
+            {
+                // Select all income forecasts to be processed
+                $sql = 'SELECT A.incomeForecastId,
+                               A.contractId,
+                               B.personId,
+                               B.courseId,
+                               B.courseVersion,
+                               B.unitId,
+                               B.maturityDay,
+                               A.operationId,
+                               A.accountSchemeId,
+                               CASE WHEN A.costCenterId IS NULL
+                                    THEN (SELECT costCenterId
+                                            FROM accCourseAccount E
+                                           WHERE E.courseId = B.courseId
+                                             AND E.courseVersion = B.courseVersion
+                                             AND E.unitId = B.unitId)
+                                    ELSE A.costCenterId
+                               END,
+                               A.value,
+                               A.comments,
+                               TO_CHAR(A.recordDate,\'' . MASK_DATE . '\') AS recordDate,
+                               TO_CHAR(A.maturityDate,\'' . MASK_DATE . '\') AS maturityDate,
+                               C.policyId,
+                               D.incomeSourceId,
+                               getPersonName(personId),
+                               (EXTRACT(month FROM maturityDate)+1)-EXTRACT(month FROM C.beginDate)
+                          FROM finIncomeForecast A
+               INNER JOIN ONLY acdContract B
+                            ON ( B.contractId = A.contractId )
+                    INNER JOIN acdLearningPeriod C
+                            ON ( C.courseId = B.courseId
+                             AND C.courseVersion = B.courseVersion
+                             AND C.unitId = B.unitId
+                             AND C.turnId = B.turnId
+                             --AND A.recordDate 
+                             AND A.maturityDate 
+                                BETWEEN C.beginDate 
+                                    AND C.endDate
+                             AND isFinanceGenerate = \''.DB_TRUE.'\')
+                    INNER JOIN acdCourse D
+                            ON ( D.courseId = B.courseId )
+                           AND A.isProcessed = \'' . DB_FALSE . '\'
+                           AND A.isSupressed = \'' . DB_FALSE . '\'
+                           AND EXTRACT(MONTH FROM A.maturityDate) = ?
+                           AND EXTRACT(YEAR FROM A.maturityDate) = ?';
+
+                $args = array ( $inData->month,
+                                $inData->year );
+
+                if ( strlen((string)$inData->personId) > 0)
+                {
+                    $sql .= ' AND B.personId = ?';
+                    $args[] = $inData->personId;
+                }
+
+                if ( strlen((string)$inData->contractId) > 0 )
+                {
+                    $sql .= ' AND A.contractId = ?';
+                    $args[] = $inData->contractId;
+                }
+                $sql .= ' ORDER BY A.maturityDate,
+                                   A.contractId';
+
+                $res = $this->db->query( SAGU::prepare( $sql, $args ) );
+
+                // For each record, insert a new receivable invoice and
+                // create the invoice entries.
+                $totalRegs = count($res);
+                $oldContractId = '';
+                unset($generatedInvoices);
+
+                // Get default operations
+                $businessDefaultOperations = $MIOLO->getBusiness($module, 'BusDefaultOperations');
+                $dataDefaultOperations     = $businessDefaultOperations->getDefaultOperations();
+
+                // Generate statistics
+                $this->generationData->totalIncomeForecasts = $totalRegs;
+
+                if ($totalRegs>0)
+                {
+                    for ( $i=0; $i<$totalRegs && $keepGoing; $i++ )
+                    {
+
+                        list ( $data->incomeForecastId,
+                               $data->contractId,
+                               $data->personId,
+                               $data->courseId,
+                               $data->courseVersion,
+                               $data->unitId,
+                               $data->maturityDay,
+                               $data->operationId,
+                               $data->accountSchemeId,
+                               $data->costCenterId,
+                               $data->value,
+                               $data->comments,
+                               $data->recordDate,
+                               $data->maturityDate,
+                               $data->policyId,
+                               $data->incomeSourceId,
+                               $data->personName,
+                               $data->parcelNumber ) = $res[$i];
+
+                        //
+                        // Create a new invoice each time the contract id changes
+                        //
+                        if ( $data->contractId != $oldContractId )
+                        {
+                            $busBankTarget = $MIOLO->getBusiness($module, 'BusBankTarget');
+                            $hasBankTarget = $busBankTarget->hasBankTarget($data->contractId);
+
+                            $receivableInvoice = new FinReceivableInvoice();
+                            $receivableInvoice->personId        = $data->personId;
+                            $receivableInvoice->accountSchemeId = $data->accountSchemeId;
+                            $receivableInvoice->costCenterId    = $data->costCenterId;
+                            $receivableInvoice->courseId        = $data->courseId;
+                            $receivableInvoice->courseVersion   = $data->courseVersion;
+                            $receivableInvoice->unitId          = $data->unitId;
+                            $receivableInvoice->parcelNumber    = $data->parcelNumber;
+                            $receivableInvoice->maturityDate    = $this->getSystemFormattedDate($inData->year, $inData->month, $data->maturityDay);
+                            $receivableInvoice->value           = 0;
+                            $receivableInvoice->policyId        = $data->policyId;
+                            $receivableInvoice->automaticDebit  = $hasBankTarget;
+                            $receivableInvoice->incomeSourceId  = $data->incomeSourceId;
+                            $receivableInvoice->bankAccountId   = $inData->bankAccountId;
+                            $receivableInvoice->bankContractId  = $inData->bankContractId;
+                            $receivableInvoice->periodId        = $inData->periodId;
+                            $receivableInvoice->contractId      = $inData->contractId;
+                            $receivableInvoice->invoiceId       = $this->insertReceivableInvoice($receivableInvoice);
+
+                            if ( $receivableInvoice->invoiceId === false )
+                            {
+                                $keepGoing = false;
+                            }
+                            else
+                            {
+                                // This is used on the final update to set the correct
+                                // invoice balance for every generated invoice.
+                                $generatedInvoices[] = $receivableInvoice->invoiceId;
+
+                                // ---
+                                $icData->personId = $data->personId;
+                                $icData->month    = $inData->month;
+                                $icData->year     = $inData->year;
+                                // ---
+
+                                $incomeForecast[$data->contractId]->contractId      = $data->contractId;
+                                $incomeForecast[$data->contractId]->operationId     = $dataDefaultOperations->closeIncomeForecastOperation;
+                                $incomeForecast[$data->contractId]->accountSchemeId = $data->accountSchemeId;
+                                $incomeForecast[$data->contractId]->costCenterId    = $data->costCenterId;
+                                $incomeForecast[$data->contractId]->value           = $this->getIncomeForecastBalance($icData);
+                                $incomeForecast[$data->contractId]->comments        = '';
+                                $incomeForecast[$data->contractId]->maturityDate    = $this->getSystemFormattedDate($inData->year, $inData->month, $data->maturityDay);
+                                $incomeForecast[$data->contractId]->isGenerated     = true;
+                                $incomeForecast[$data->contractId]->isProcessed     = true;
+
+                                // Generate statistics
+                                $receivableInvoice->personName = $data->personName;
+                                $this->generationData->receivableInvoice[$receivableInvoice->invoiceId]->invoiceData = clone($receivableInvoice);
+                            }
+
+                            $oldContractId = $data->contractId;
+                        }
+
+                        // Insert invoice entries
+                        $sql = 'INSERT INTO finEntry
+                                           (invoiceId,
+                                            operationId,
+                                            entryDate,
+                                            value,
+                                            costCenterId,
+                                            isAccounted,
+                                            creationType)
+                                    VALUES (?, ?, TO_DATE(date(now()), \''.MASK_DATE.'\'), ?, ?, \''.DB_FALSE.'\', \'A\')';
+
+                        $args = array( $receivableInvoice->invoiceId,
+                                       $data->operationId,
+                                       $data->value,
+                                       $data->costCenterId);
+
+                        $keepGoing = $this->db->execute(SAGU::prepare($sql, $args));
+
+                        // Mark each income forecast as processed, so that it won't be processed anymore
+                        $sql = 'UPDATE finIncomeForecast
+                                   SET isProcessed = \''.DB_TRUE.'\'
+                                 WHERE incomeForecastId = ' . $data->incomeForecastId;
+                        $keepGoing = $this->db->execute($sql);
+
+                        // Statistical information 
+                        unset($entry);
+                        $entry->operationId  = $data->operationId;
+                        $entry->value        = $data->value;
+                        $entry->costCenterId = $data->costCenterId;
+                        $this->generationData->receivableInvoice[$receivableInvoice->invoiceId]->entries[] = $entry;
+                    }
+
+                    if ( $keepGoing && count($generatedInvoices) > 0 )
+                    {
+                        // So, get that value to show
+                        foreach ($generatedInvoices as $gi)
+                        {
+                            // Set all invoices balance to the correct value
+                            $sql = 'UPDATE finInvoice
+                                       SET value     = balance(invoiceId, false)
+                                     WHERE invoiceId = ?';
+
+                            $keepGoing = $this->db->execute(SAGU::prepare($sql, $gi));
+
+                            $sql = 'SELECT balance(?)';
+                            $balance = $this->db->query(SAGU::prepare($sql, $gi));
+                            $this->generationData->receivableInvoice[$gi]->balance = $balance[0][0];
+                        }
+                    }
+
+                    // Insert the income forecasts to close the specific period for income forecasts
+                    if ($keepGoing && is_array($incomeForecast))
+                    {
+                        foreach ($incomeForecast as $if)
+                        {
+                            $sql = 'SELECT NEXTVAL(\'seq_incomeforecastid\')';
+
+                            $retVal = $this->db->query($sql);
+
+                            unset($incomeForecastId);
+                            if ( isset($retVal) )
+                            {
+                                $incomeForecastId = $retVal[0][0];
+                                $sql = 'INSERT INTO finIncomeForecast
+                                                   (incomeForecastId,
+                                                    contractId,
+                                                    operationId,
+                                                    accountSchemeId,
+                                                    costCenterId,
+                                                    value,
+                                                    comments,
+                                                    recordDate,
+                                                    maturityDate,
+                                                    isAccounted,
+                                                    isProcessed,
+                                                    isGenerated)
+                                            VALUES (?,?,?,?,?,?, 
+                                                              ?, now(),
+                                                      TO_DATE(?,\'' . MASK_DATE . '\'),
+                                                      FALSE, TRUE, ?) ';
+
+                                $args = array($incomeForecastId,
+                                              $if->contractId,
+                                              $if->operationId,
+                                              $if->accountSchemeId,
+                                              $if->costCenterId,
+                                              $if->value,
+                                              $if->comments,
+                                              $if->maturityDate,
+                                              $if->isGenerated );
+                                $keepGoing = $this->db->execute(SAGU::prepare($sql, $args));
+                            }
+                            if ($keepGoing === false)
+                            {
+                                break 2;
+                            }
+                        }
+                    }
+                }
+                else
+                {
+                    if ((strlen((string)$inData->personId) > 0) || (strlen((string)$inData->contractId) > 0))
+                    {
+                        $MIOLO->information(_M('No income forecasts found to process for that period and person/contract', $module) . ' ' . $inData->personId . '/' . $inData->contractId, $MIOLO->getActionURL($module, $action));
+                    }
+                    else
+                    {
+                        $MIOLO->information(_M('No income forecasts found to process for that period', $module), $MIOLO->getActionURL($module, $action));
+                    }
+                }
+            } 
+        }
+        else
+        {
+             $MIOLO->information(_M('This process was already executed for period', $module).' '.SAGU::getMonth($inData->month).' - '.$inData->year.' '._M('on', $module).' '.$res[0][0]);
+        }
+
+        $this->db->execute(($keepGoing ? 'COMMIT' : 'ROLLBACK'));
+
+        return $keepGoing;
+    }
+}

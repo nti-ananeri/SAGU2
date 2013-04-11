@@ -1,0 +1,376 @@
+<?php
+
+/**
+ * Exam occurrence form
+ *
+ * @author Rafael Luís Spengler [rafael@solis.coop.br] 
+ *
+ * @version: $Id$
+ * 
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * Rafael Luís Spengler [rafael@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ *
+ * @since
+ * Class created on 24/11/2005
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2005 SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+
+/**
+ * Form to manipulate a selectiveProcessOccurrence
+ **/
+class FrmCourseExamBalance extends MForm
+{
+
+    /**
+     * Class constructor
+     **/
+    function __construct()
+    {
+
+        $module = MIOLO::getCurrentModule();
+
+        if ( MIOLO::_request('function') == 'insert' )
+        {
+            parent::__construct(_M('Insert', $module));
+        }
+        else
+        {
+            parent::__construct(_M('Update', $module));
+        }
+
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+
+        $toolBar = new MToolBar('toolBar',$MIOLO->getActionURL($module,$action));
+
+        if ( $function == 'insert' )
+        {
+            $toolBar->disableButton('tbBtnDelete');
+            $toolBar->disableButton('tbBtnPrint');
+        }
+        elseif ( $function == 'delete' )
+        {
+            $toolBar->disableButton('tbBtnSave');
+        }
+        $fields[] = $toolBar;
+
+
+        if ( in_array($function, array('update','delete')) )
+        {
+            $examOccurrenceId       = MIOLO::_request('examOccurrenceId');
+            $businessExamOccurrence = $MIOLO->getBusiness($module,'BusExamOccurrence');
+            $resultExamOccurrence   = $businessExamOccurrence->getExamOccurrence($examOccurrenceId);
+
+            $fields[]         = new MHiddenField('examOccurrenceId', $examOccurrenceId);
+            $fields[]         = new MTextLabel('examOccurrenceIdText', $examOccurrenceId . ' - ' . $resultExamOccurrence->examDescription, _M('Exam occurrence id',$module));
+
+            $courseVacantId       = MIOLO::_request('courseVacantId');
+            $businessCourseVacant = $MIOLO->getBusiness($module,'BusCourseVacant');
+            $resultCourseVacant   = $businessCourseVacant->getCourseVacant($courseVacantId);
+
+
+            $fields[]         = new MHiddenField('courseVacantId', $courseVacantId);
+            $fields[]         = new MTextLabel('courseVacantIdText', $courseVacantId . ' - ' . $resultCourseVacant->description , _M('Vacancy id',$module));
+
+            $business = $MIOLO->getBusiness($module,'BusCourseExamBalance');
+
+            $data     = $business->getCourseExamBalance($examOccurrenceId, $courseVacantId);
+        }
+        else
+        {
+            $business           = $MIOLO->getBusiness($module,'BusSelectiveProcess');
+            $selectiveProcessId = new MComboBox('selectiveProcessId', $this->getFormValue('selectiveProcessId', $data->selectiveProcessId), _M('Selective process id',$module), $business->listSelectiveProcess());
+            $selectiveProcessId->setJsHint(_M('Enter the selective process code',$module));
+            $selectiveProcessId->addAttribute('onChange','document.' . $this->getName() . '.submit()' );
+            $selectiveProcessId->setAutoPostBack(true);
+            $fields[]           = $selectiveProcessId;
+            $validators[]       = new MRequiredValidator('selectiveProcessId', _M('Selective process id',$module));
+
+            $businessExamOccurrence = $MIOLO->getBusiness($module,'BusExamOccurrence');
+            $examOccurrenceId = new MComboBox('examOccurrenceId', $this->getFormValue('examOccurrenceId', $data->examOccurrenceId), _M('Exam occurrence id',$module), $businessExamOccurrence->listExamOccurrence($selectiveProcessId->value));
+            //$examOccurrenceId->setAutoPostBack(true);
+
+            $examOccurrenceId->setJsHint(_M('Enter the exam occurrence code',$module));
+            $fields[]           = $examOccurrenceId;
+            $validators[]       = new MRequiredValidator('examOccurrenceId');
+
+
+            $insertFor = new MSelection('insertFor', $this->getFormValue('insertFor', 0), _M('Insert for', $module), array('0'=>_M('Vacancy', $module), '1'=>_M('Selective process', $module)));
+            $insertFor->setAutoSubmit(true);
+            $fields[] = $insertFor;
+
+            if ( $this->getFormValue('insertFor') == 0 )
+            {
+                $courseVacantLabel = new MText('courseVacantLabel', _M('Vacancy',$module) . ':');
+                $courseVacantLabel->setWidth(FIELD_CONTAINER_SIZE);
+                $courseVacantLabel->setClass('m-caption m-caption-required');
+
+                $courseVacantId  = new MLookupTextField('courseVacantId', $this->getFormValue('courseVacantId', $data->courseVacantId), '', FIELD_LOOKUPFIELD_SIZE, null, null,
+        //                    null , $module, 'CourseVacant', null, null, true);
+                        'limbo,limbo,vacant,CourseVacantDescription' , $module,'CourseVacant', null, array('selectiveProcessId' => 'selectiveProcessId'), true);
+                $courseVacantId->setJsHint(_M('Enter the vacancy code',$module));
+                $validators[] = new MIntegerValidator('courseVacantId', _M('Vacancy',$module), 'required');
+
+                $CourseVacantDescription  = new MTextField('CourseVacantDescription', $this->getFormValue('CourseVacantDescription', $data->CourseVacantDescription), '', FIELD_DESCRIPTION_SIZE);
+                $CourseVacantDescription->setReadOnly(true);
+                $CourseVacantDescription->setJsHint(_M('Vacancy description',$module));
+
+                $vacant  = new MTextField('vacant', $this->getFormValue('vacant', $data->vacant), '', 10);
+                $vacant->setReadOnly(true);
+                $vacant->setJsHint(_M('Vacancy number',$module));
+
+                $hctVacant = new MHContainer('hctVacant', array( $courseVacantLabel, $courseVacantId, $CourseVacantDescription, $vacant) );
+                $hctVacant->setShowLabel(true);
+                $fields[]  = $hctVacant;
+            }
+        }
+
+
+        $weight  = new MTextField('weight', $this->getFormValue('weight', $data->weight), _M('Weight', $module), 8);
+        $fields[]             = $weight;
+        $validators[] = new MFloatValidator('weight', '', FLOAT_SEPARATOR, REAL_ROUND_VALUE, 'required');
+
+        $minimunNote  = new MTextField('minimunNote', $this->getFormValue('minimunNote', $data->minimumNote), _M('Minimun note', $module), 8, _M('Minimum note necessary on this exam to classify. Note minor that this, desclassify the candidate',$module).'.');
+        $fields[]             = $minimunNote;
+        $validators[] = new MFloatValidator('minimunNote', '', FLOAT_SEPARATOR, REAL_ROUND_VALUE, 'required');
+
+        if ( $function == 'update' )
+        {
+            $fields[] = new MTextLabel('lastModification', '[' . $data->userName . ' - ' . $data->dateTime . ']', _M('Last modification',$module));
+        }
+
+        $fields[] = new Separator('');
+
+        $this->setFields($fields);
+        if ( isset($validators) )
+        {
+            $this->setValidators($validators);
+        }
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+        $this->setClose($MIOLO->getActionURL($module,substr($action,0,strrpos($action,':'))));
+        if ( strlen((string)$this->getFormValue('courseExamBalance', $data->examOccurrenceId))>0 || $function != 'insert')
+        {
+            $this->page->onLoad('document.' . $this->name . '.examOccurrenceId.focus();');
+        }
+        elseif ( $function == 'insert' )
+        {
+            $this->page->onLoad('document.' . $this->name . '.examOccurrenceId.focus();' );
+        }
+
+    }
+
+    /**
+     * Event triggered when user chooses New from the toolbar
+     **/
+    public function tbBtnNew_click($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+    }
+
+    /**
+     * Event triggered when user chooses Delete from the toolbar
+     **/
+    public function tbBtnDelete_click($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $data   = $this->getTypesData();
+        $opts   = array('event'            => 'tbBtnDelete_confirm',
+                        'function'         => 'delete',
+                        'examOccurrenceId' => MIOLO::_request('examOccurrenceId'),
+                        'courseVacantId' => MIOLO::_request('courseVacantId') );
+
+        $gotoYes = $MIOLO->getActionURL( $module, $action, null, $opts );
+        $goto    = SAGU::getStackBackUrl();
+        $gotoNo  = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+        $msg     = _M(MSG_CONFIRM_RECORD_DELETE,$module);
+        $caption = _M('Question',$module);
+        $MIOLO->question($msg, $gotoYes, $gotoNo);
+    }
+
+    /**
+     * Event triggered when user chooses Yes from the Delete prompt dialog
+     **/
+    public function tbBtnDelete_confirm($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $business = $MIOLO->getBusiness($module, 'BusCourseExamBalance');
+        $ok       = $business->deleteCourseExamBalance($this->examOccurrenceId->value, $this->courseVacantId->value);
+
+        if ( $ok )
+        {
+            $msg  = MSG_RECORD_DELETED;
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $goto = $MIOLO->getActionURL($module, $action);
+            $captio = _M('Information',$module);
+            $MIOLO->information($msg, $goto);
+        }
+        else
+        {
+            $msg  = _M('Error executing requested operation.',$module);
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Error',$module);
+            $MIOLO->error( $msg, $goto, $caption );
+        }
+    }
+
+    /**
+     * Event triggered when user chooses Save from the toolbar
+     **/
+    public function tbBtnSave_click($sender=NULL)
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+
+        $data     = $this->getTypesData();
+        $business = $MIOLO->getBusiness($module, 'BusCourseExamBalance');
+
+        $selectiveProcessId = MIOLO::_request('selectiveProcessId');
+
+        if ( $function == 'update' )
+        {
+            if ( $this->insertFor->value == 0 )
+            {
+                $ok  = $business->updateCourseExamBalance($data);
+            }
+            else
+            {
+                $filters->selectiveProcessId = $this->selectiveProcessId->value;
+                $filters->examOccurrenceId   = $data->examOccurrenceId;
+                $result = $business->searchCourseExamBalance($filters);
+                if ( $result )
+                {
+                    foreach( $result as $key=>$r )
+                    {
+                        $data->examOccurrenceId = $r[0];
+                        $data->courseVacantId   = $r[1];
+                        $ok  = $business->updateCourseExamBalance($data);
+                    }
+                }
+            }
+            $msg = MSG_RECORD_UPDATED;
+        }
+        else
+        {
+            if ( $this->insertFor->value == 0 )
+            {
+                $ok  = $business->insertCourseExamBalance($data);
+            }
+            else
+            {
+                $filters->selectiveProcessId = $selectiveProcessId;
+                $filters->examOccurrenceId   = $data->examOccurrenceId;
+                $result = $business->searchCourseExamBalanceSelectiveProcessId($filters);
+
+                if ( $result )
+                {
+                    foreach( $result as $key=>$r )
+                    {
+                        $data->courseVacantId = $r[0];
+                        $ok  = $business->insertCourseExamBalance($data);
+                    }
+                }
+                else
+                {
+                    $ok = false;
+                }
+            }
+            $msg = MSG_RECORD_INSERTED;
+        }
+
+        if ( $ok )
+        {
+            $opts = array('examOccurrenceIdS' => $data->examOccurrenceId, 
+                          'courseVacantIdS' => $data->courseVacantId);
+
+            if ( $function == 'update' )
+            {
+                $caption = _M('Information', $module);
+                $MIOLO->information($msg, $MIOLO->getActionURL( $module, $action, null, $opts));
+            }
+            else
+            {
+                unset($opts);
+                $goto = SAGU::getStackBackUrl();
+                $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL( $module, $action, null, $opts);
+                $opts = array('function'=>'insert');
+
+                $gotoYes = $MIOLO->getActionURL($module, $action, null, $opts);
+                $caption = _M('Question',$module);
+                $MIOLO->question($msg, $gotoYes, $goto);
+            }
+        }
+        else
+        {
+            $msg  = _M('Error executing requested operation.',$module);
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action, null, $opts);
+            $caption = _M('Error',$module);
+            $MIOLO->error( $msg, $goto, $caption );
+        }
+    }
+
+    /**
+     * Method to gather all information from the form fields
+     * and put them on a database compatible object
+     **/
+    public function getTypesData()
+    {
+        $data = new SprCourseExamBalance();
+        $vars = get_object_vars($data);
+        foreach ( $vars as $var => $value )
+        {
+            if ( $this->$var && $var != 'name' )
+            {
+                eval('$data->' . $var . ' = $this->' . $var . '->value;');
+            }
+        }
+
+        $data->examDateTime = $this->date->value . ' ' . $this->time->value;
+
+        return $data;
+    }
+}
+
+?>

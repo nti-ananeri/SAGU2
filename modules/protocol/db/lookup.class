@@ -1,0 +1,154 @@
+<?php
+/**
+ *
+ * This file manipulate the lookups for the protocol module
+ *
+ * @author Daniel Afonso Heisler [daniel@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 05/10/2006
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2006 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+$MIOLO = MIOLO::getInstance();
+$MIOLO->getClass('basic', 'lookupFields');
+
+/**
+ * Load global defines for the basic module
+ */
+$business  = $MIOLO->getBusiness('basic','BusConfig');
+$constants = $business->getModuleValues('basic');
+foreach ( $constants as $cnt )
+{
+    define($cnt[0],$cnt[1]);
+}
+
+$constants = $business->getModuleValues('protocol');
+if ( count($constants) > 0)
+{
+    foreach ( $constants as $cnt )
+    {
+        define($cnt[0],$cnt[1]);
+    }
+}
+
+/**
+ * Class to manipulate the Lookups
+ **/
+class BusinessProtocolLookup
+{
+    /**
+     * Auto complete for protocols
+     *
+     * @param $context (object): MIOLO Context object
+     *
+     * @return (object): MIOLO Gives the action evaluating the code by setContext call
+     *
+     **/
+    public function autoCompleteProtocol(&$context)
+    {
+        $sql = 'SELECT protocolId
+                  FROM ptcProtocol
+                 WHERE protocolId = ?';
+
+        $context->setContext('protocol', $sql);
+    }
+
+    /**
+     * Lookup for protocols
+     *
+     * @param $lookup: Lookup Object used by MIOLO
+     *
+     * @return MIOLO Lookup function as actions evaluated by MIOLO
+     *
+     **/
+    public function lookupProtocol(&$lookup)
+    {
+        global $MIOLO;
+        $module = MIOLO::_request('lmodule');
+
+        $MIOLO->uses('classes/sagu.class','basic');
+        $MIOLO->conf->loadConf($module);
+
+        $protocolId = $lookup->getFilterValue('protocolId');
+        $personId   = $lookup->getFilterValue('personId');
+        $personName = $lookup->getFilterValue('personName');
+
+        $lookup->addFilterField( new MTextField('protocolId', $protocolId, _M('Protocol',$module), FIELD_ID_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('personId', $personId, _M('Person id',$module), FIELD_ID_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('personName', $personName, _M('Person',$module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+
+        $columns = array(
+           new DataGridColumn('protocolId', _M('Protocol', $module), 'left', true, null, true),
+           new DataGridColumn('personId', _M('Person id', $module), 'right',  true, null, true),
+           new DataGridColumn('personName', _M('Person', $module), 'left',  true, null, true)
+        );
+
+        $sql = 'SELECT A.protocolId,
+                       B.personId,
+                       B.name as personName
+                  FROM ptcProtocol A
+       INNER JOIN ONLY basPerson B
+                    ON ( A.personId = B.personId )';
+
+        if ( strlen((string)$protocolId) > 0 )
+        {
+            $where .= ' AND A.protocolId ILIKE ? ';
+            $args[] = $protocolId . '%';
+        }
+
+        if ( strlen((string)$personId) > 0 )
+        {
+            $where .= ' AND B.personId = ? ';
+            $args[] = $personId;
+        }
+
+        if ( strlen((string)$personName) > 0 )
+        {
+            $where .= ' AND B.name ILIKE ?';
+            $args[] = $personName . '%';
+        }
+
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE ' . substr($where, 5);
+        }
+
+        $sql .= ' ORDER BY A.protocolId';
+
+        $sqlObject = new sql();
+        if ( strlen((string)$where) == 0 )
+        {
+            $sql .= ' LIMIT 0';
+        }
+        $sqlObject->createFrom(SAGU::prepare($sql,$args));
+        $lookup->setFilterColumns(LOOKUP_FILTER_COLUMNS);
+        $lookup->setLookupGrid($module, $sqlObject, $columns, _M('Protocol search',$module), 15, 0);
+        $lookup->grid->setIsScrollable();
+
+    }
+}
+
+?>

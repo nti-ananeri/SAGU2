@@ -1,0 +1,86 @@
+<?php
+
+/**
+ *
+ * This file handles the connection and actions for finInvoice table
+ *
+ * @author Giovani Murilo Dantas Corrêa [gmurilo@isolution.inf.br] 
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Daniel Afonso Heisler [daniel@isolution.inf.br]
+ *
+ * @since
+ * Class created on 28/01/2008
+ *
+ * \b @organization \n
+ * iSolution - Soluções em TI \n
+ * The iSolution Development Team
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to manipulate the Invoice table
+ **/
+$MIOLO = MIOLO::getInstance();
+$MIOLO->uses('db/BusInvoice.class','finance');
+class BusinessFinanceBusIncomeTax extends MBusiness
+{
+    public $db;
+    public function __construct()
+    {
+        $this->db = $this->getDatabase();
+            
+    }
+
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module = is_null($module) ? 'finance' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+    
+    public function getIncomeTax($personId, $year)
+    {
+        $sql = '
+        SELECT
+            B.description,
+            (SELECT extract( month from max(entryDate) ) FROM finEntry WHERE operationId IN ('.PUPIL_PAYMENT_OPERATIONS.') AND invoiceId = A.invoiceId ) as mesPagamento,
+            (SELECT TO_CHAR(max(entryDate),\''.MASK_DATE.'\') FROM finEntry WHERE operationId IN ('.PUPIL_PAYMENT_OPERATIONS.') AND invoiceId = A.invoiceId ) as dataPagamento,
+            TO_CHAR(A.maturityDate, \''.MASK_DATE.'\')  as dataVencimento,
+            (SELECT round(sum(value), '.REAL_ROUND_VALUE.') FROM finEntry WHERE operationId IN ('.PUPIL_PAYMENT_OPERATIONS.') AND invoiceId = A.invoiceId ) as valorPago
+        FROM
+            ONLY finReceivableInvoice A INNER JOIN
+            ONLY finIncomeSource B ON ( A.incomeSourceId = B.incomeSourceId )
+        WHERE
+            extract(year FROM A.maturityDate) = ?::integer
+        AND A.personId = ?::Integer
+        AND A.status IS NULL
+        AND A.invoiceId IN ( SELECT DISTINCT invoiceId FROM finEntry INNER JOIN ONLY finInvoice USING ( invoiceId ) WHERE personId = A.personId AND extract( year from finEntry.entryDate ) =  extract( year from A.maturityDate )  AND operationId IN ('.PUPIL_PAYMENT_OPERATIONS.')  ) 
+        ORDER BY
+            2, 3';
+        $args[] = $year;
+        $args[] = $personId;
+        $sql = SAGU::prepare($sql, $args);
+        $result = $this->db->query($sql);
+        return $result;
+    }
+}
+?>

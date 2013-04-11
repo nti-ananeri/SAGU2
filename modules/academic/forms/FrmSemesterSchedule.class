@@ -1,0 +1,151 @@
+<?php
+
+/**
+ * Label for examination form
+ *
+ * @author Hélio Henrique Rodrigues Guimarães [helio@solis.coop.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * Leovan Tavares da Silva [leovan@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ *
+ * @since
+ * Class created on 05/09/2006
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2005 SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+
+/**
+ * Form to manipulate a contract document
+ **/
+class FrmSemesterSchedule extends MForm
+{
+    private $home;
+
+    /**
+     * Class constructor
+     **/
+    function __construct($data)
+    {
+        $module = MIOLO::getCurrentModule();
+        $this->home   = $data->home;
+
+        parent::__construct(_M('Semester schedule', $module));
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+        $event    = MIOLO::_request('event');
+
+        $toolBar = new MToolBar('toolBar', $MIOLO->getActionURL($module, $action));
+        $toolBar->hideButton('tbBtnNew');
+        $toolBar->hideButton('tbBtnSave');
+        $toolBar->hideButton('tbBtnSearch');
+        $toolBar->hideButton('tbBtnDelete');
+        $toolBar->enableButton('tbBtnPrint');
+
+        //favoritos
+        $enabledImage  = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-20x20.png');
+        $disabledImage = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-disabled-20x20.png');
+        $url           = $MIOLO->getActionURL($module, $this->home, null, array('function' => 'search', 'event' => 'bookmark'));
+        $toolBar->addButton('tbBtnBookmark', _M('Add to bookmarks', 'basic'), $url, null, true, $enabledImage, $disabledImage);
+
+        if ( MIOLO::_request('event') == 'bookmark' )
+        {
+            $MIOLO->getClass('basic', 'access');
+            access::insert('Label for examination', $this->home, 'examinationLabel-16x16.png', true);
+        }
+        //fim favoritos
+
+        $fields[] = $toolBar;
+
+        $fields[] = new MSeparator();
+        $fields[] = new MHiddenField('limbo', '');
+
+        $fields[] = new MSeparator();
+
+        $business = $MIOLO->getBusiness($module, 'BusPeriod');
+        $periodId = new MComboBox('periodId', $this->getFormValue('periodId', $data->periodId), _M('Period', $module), $business->listPeriod());
+        $validators[] = new MRequiredValidator('periodId');
+        $fields[] = $periodId;
+        $fields[] = new MSeparator();
+
+
+        $fields[] = new MSeparator();
+
+        $this->setFields($fields);
+        $this->setValidators($validators);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+        $this->setClose($MIOLO->getActionURL($module,substr($action,0,strrpos($action,':'))));
+    }
+
+    /**
+     * Event triggered when user chooses Search from the toolbar
+     **/
+    public function tbBtnPrint_click($sender = null)
+    {
+        $MIOLO            = MIOLO::getInstance();
+        $module           = MIOLO::getCurrentModule();
+        $action           = MIOLO::getCurrentAction();
+
+        $periodId         = MIOLO::_request('periodId');
+
+        $data->periodId   = $periodId;
+
+        $busCompany       = $MIOLO->getBusiness('basic', 'BusCompany');
+        $company          = $busCompany->getCompany(DEFAULT_COMPANY_CONF);
+
+        $business         = $MIOLO->getBusiness($module, 'BusSemesterSchedule');
+        $semesterSchedule = $business->getSemesterSchedule($data);
+
+        if ( $company->companyId == NULL )
+        {
+            $this->addError(_M('Is necessary to define one default system company valid for generate this document', $module));
+        }
+        else if ( ! (is_array($semesterSchedule) && (count($semesterSchedule) > 0)) )
+        {
+            $this->addError(_M('Not exist schedule to this semester', $module));
+        }
+        else
+        {
+            $data->semesterSchedule = $semesterSchedule;
+            $data->company          = $company;
+
+            $MIOLO->uses('classes/RptSemesterSchedule.class', $module);
+            $report = new RptSemesterSchedule($data);
+            exit;
+        }
+
+        $this->page->setAction($MIOLO->getActionURL($module, $action));
+    }
+}
+
+?>

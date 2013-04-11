@@ -1,0 +1,251 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for acdGroup table
+ *
+ * @author Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 22/09/2005
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to manipulate the acdGroup table
+ **/
+class BusinessAcademicBusMissingDocumentsReport extends Business
+{
+    public $db;
+    
+    //Class constructor
+    public function __construct()
+    {
+        $this->db = $this->getDatabase();
+    }
+    
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module = is_null($module) ? 'academic' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+
+    public function searchMissingDocuments($filters)
+    {
+        $cond = '';
+        $d = $filters->unitId;
+        $a = 'B.unitId';
+        if ( strlen((string)$d) > 0 )
+        {
+            $cond .= " AND {$a} = ?::integer ";
+            $args[] = $d;
+        }
+        
+        $d = $filters->courseId;
+        $a = 'B.courseId';
+        if ( strlen((string)$d) > 0 )
+        {
+            $cond .= " AND {$a} = ? ";
+            $args[] = $d;
+        }
+
+        $d = $filters->courseVersion;
+        $a = 'B.courseVersion';
+        if ( strlen((string)$d) > 0 )
+        {
+            $cond .= " AND {$a} = ?::integer ";
+            $args[] = $d;
+        }
+
+        $d = $filters->courseName;
+        $a = 'C.name';
+        if ( strlen((string)$d) > 0 )
+        {
+            $cond .= " AND {$a} ILIKE ? ";
+            $args[] = $d.'%';
+        }
+        
+        $d = $filters->turnId;
+        $a = 'B.turnId';
+        if ( strlen((string)$d) > 0 )
+        {
+            $cond .= " AND {$a} = ?::integer ";
+            $args[] = $d;
+        }
+
+        $d = $filters->periodId;
+        $a = 'F.periodId';
+        if ( strlen((string)$d) > 0 )
+        {
+            $cond .= " AND {$a} = ? ";
+            $args[] = $d;
+        }
+
+        $d = $filters->classId;
+        $a = 'H.classId';
+        if ( strlen((string)$d) > 0  )
+        {
+            $cond .= " AND {$a} = ? ";
+            $args[] = $d;
+        }
+
+        $d = $filters->formationLevelId;
+        $a = 'C.formationLevelId';
+        if ( count($d) > 0 )
+        {
+            $cond .= " AND {$a} IN ( " . implode(',', $d) ." ) ";
+        }
+
+        $d = $filters->beginDate;
+        $a = 'getFirstContractStateDate(B.contractId)';
+        if ( strlen((string)$d) > 0 )
+        {
+            $cond .= " AND {$a} >= TO_DATE(?,'".MASK_DATE."') ";
+            $args[] = $d;
+        }
+
+        $d = $filters->endDate;
+        $a = 'getFirstContractStateDate(B.contractId)';
+        if ( strlen((string)$d) > 0 )
+        {
+            $cond .= " AND {$a} <= TO_DATE(?,'".MASK_DATE."') ";
+            $args[] = $d;
+        }
+
+        $d = $filters->minimumAge;
+        $a = 'extract(year from age(A.dateBirth))';
+        if ( strlen((string)$d) > 0 )
+        {
+            $cond .= " AND {$a} >= ?::integer ";
+            $args[] = $d;
+        }
+        
+        $d = $filters->maximumAge;
+        if ( strlen((string)$d) > 0 )
+        {
+            $cond .= " AND {$a} <= ?::integer ";
+            $args[] = $d;
+        }
+
+        $d = $filters->semester;
+        $a = 'G.semester';
+        if ( strlen((string)$d) > 0 )
+        {
+            $cond .= " AND {$a} = ? ";
+            $args[] = $d;
+        }
+        if ( strlen((string)$filters->documentsType) == 0 )
+        {
+            $filters->documentsType = array () ;
+        }
+        
+        if ( count($filters->documentsType) > 0 )
+        {
+            $cond .= ' K.documentTypeId IN (' . implode(',', $filters->documentsType) .') ';
+        }
+
+        $sql = 
+            'SELECT
+                DISTINCT
+                B.unitId,
+                B.courseId,
+                G.semester,
+                B.turnId,
+                A.personId,
+                A.name,
+                A.sex,
+                TO_CHAR(A.dateBirth, \''. MASK_DATE . '\') as dateBirth,
+                TO_CHAR(getFirstContractStateDate(B.contractId), \''. MASK_DATE . '\') as enrollDate,
+                F.periodId,
+                C.name,
+                I.description,
+                K.name,
+                K.documentTypeId,
+                J.isDelivered,
+                J.content,
+                getTurnDescription(B.turnId)
+            FROM
+                basPhysicalPersonStudent A INNER JOIN
+                basDocumentType K ON ( ( K.sex = A.sex OR K.sex IS NULL ) AND K.needdeliver IS TRUE AND K.personType IN (\'P\', \'A\') AND ( extract(year from age(A.dateBirth)) BETWEEN K.minage AND K.maxage OR ( K.minage IS NULL AND K.maxAge IS NULL ) ) ) INNER JOIN                
+                acdContract B ON ( A.personId = B.personId ) INNER JOIN
+                acdCourse C ON ( C.courseId = B.courseId ) INNER JOIN
+                acdEnroll D ON ( D.contractId = B.contractId ) INNER JOIN
+                acdGroup E ON ( E.groupId = D.groupId ) INNER JOIN
+                acdLearningPeriod F ON ( F.learningPeriodId = E.learningPeriodId ) INNER JOIN
+                acdCurriculum G ON ( G.curriculumId = E.curriculumId ) LEFT JOIN
+                acdClassPupil H ON ( H.contractId = B.contractId AND ( H.endDate IS NULL OR H.endDate >= F.endDate ) ) INNER JOIN
+                basUnit I ON ( I.unitId = B.unitId ) LEFT JOIN 
+                basDocument J ON ( J.personId = A.personId AND K.documentTypeId = J.documentTypeId )
+            WHERE
+                1 = 1
+            AND ( J.documentTypeId IS NULL OR J.isDelivered IS FALSE )
+            ';
+        $sql .= $cond;
+        $result = $this->db->query(SAGU::prepare($sql, $args));
+        if ( count($result) > 0 )
+        {
+            unset ($objSet);
+            foreach ( $result as $pupils => $pupil )
+            {
+                unset($obj);
+                list( $obj->unitId, 
+                      $obj->courseId, 
+                      $obj->semester, 
+                      $obj->turnId, 
+                      $obj->personId, 
+                      $obj->personName, 
+                      $obj->sex, 
+                      $obj->dateBirth, 
+                      $obj->enrollDate,
+                      $obj->periodId,
+                      $obj->courseName,
+                      $obj->unitDescription,
+                      $obj->documentName,
+                      $obj->documentTypeId,
+                      $obj->isDelivered,
+                      $obj->content,
+                      $obj->turnDescription ) = $pupil;
+                $objSet->content[$obj->unitId][$obj->courseId][$obj->turnId][$obj->semester][$obj->personId]->person = $obj;
+                $objSet->content[$obj->unitId][$obj->courseId][$obj->turnId][$obj->semester][$obj->personId]->documents[$obj->documentTypeId] = $obj->content;
+
+                $objSet->documents[$obj->documentTypeId] = $obj->documentName;
+                $objSet->courses[$obj->courseId] = $obj->courseName;
+                $objSet->turns[$obj->turnId] = $obj->turnDescription;
+                $objSet->units[$obj->unitId] = $obj->unitDescription;
+            }
+            return $objSet;
+        }
+    }
+}
+?>

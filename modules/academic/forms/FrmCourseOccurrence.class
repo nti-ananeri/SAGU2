@@ -1,0 +1,398 @@
+<?php
+
+/**
+ * Course Occurrence form
+ *
+ * @author Jamiel Spezia [jamiel@solis.coop.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ *
+ * @since
+ * Class created on 25/08/2005
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2005 SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+
+/**
+ * Form to manipulate a course occurrence
+ **/
+class FrmCourseOccurrence extends MForm
+{
+
+    /**
+     * Class constructor
+     **/
+    function __construct()
+    {
+        $module = MIOLO::getCurrentModule();
+        if ( MIOLO::_request('function') == 'insert' )
+        {
+            parent::__construct(_M('Insert', $module));
+        }
+        else
+        {
+            parent::__construct(_M('Update', $module));
+        }
+
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+
+        $toolBar = new MToolBar('toolBar', $MIOLO->getActionURL($module, $action));
+
+        if ( $function == 'insert' )
+        {
+            $toolBar->disableButton('tbBtnDelete');
+            $toolBar->disableButton('tbBtnPrint');
+        }
+        elseif ( $function == 'delete' )
+        {
+            $toolBar->disableButton('tbBtnSave');
+        }
+        $fields[] = $toolBar;
+
+        if ( in_array($function, array('update', 'delete')) )
+        {
+            $courseId = MIOLO::_request('courseId');
+            $courseVersion = MIOLO::_request('courseVersion');
+            $turnId = MIOLO::_request('turnId');
+            $unitId = MIOLO::_request('unitId');
+
+            $business = $MIOLO->getBusiness($module, 'BusCourseOccurrence');
+            $data     = $business->getCourseOccurrence($courseId, $courseVersion, $turnId, $unitId);
+
+            $fields[]  = new MHiddenField('courseId', $courseId);
+            $fields[]  = new MTextLabel('course', $data->course, _M('Course', $module));
+            $fields[]  = new MHiddenField('courseVersion', $courseVersion);
+            $fields[]  = new MTextLabel('courseVersion1', $courseVersion, _M('Version', $module));
+            $fields[]  = new MHiddenField('turnId', $turnId);
+            $fields[]  = new MTextLabel('turn', $data->turn, _M('Turn', $module));
+            $fields[]  = new MHiddenField('unitId', $unitId);
+            $fields[]  = new MTextLabel('unit', $data->unit, _M('Unit', $module));
+        }
+        else
+        {
+
+            $courseLabel = new MText('courseLabel', _M('Course',$module) . ':');
+            $courseLabel->setWidth(FIELD_CONTAINER_SIZE);
+            $courseLabel->setClass('m-caption m-caption-required');
+
+            $courseId = new MLookupTextField('courseId', $this->getFormValue('courseId', $data->courseId), '', FIELD_LOOKUPFIELD_SIZE, null, null, 'courseVersion, courseName', $module, 'CourseVersion', null, null, true);
+            $validators[] = new MRequiredValidator('courseId', _M('Course',$module));
+            $courseId->setJsHint(_M('Enter the course code',$module));
+
+            $courseName = new MTextField('courseName', null, '', FIELD_DESCRIPTION_SIZE);
+            $courseName->setReadOnly(true);
+            $courseName->setJsHint(_M('Course name',$module));
+
+            $courseVersion = new MTextField('courseVersion', $this->getFormValue('courseVersion', $data->courseVersion), '', FIELD_ID_SIZE);
+            $courseVersion->setJsHint(_M('Course version',$module));
+            //$validators[] = new MRequiredValidator('courseVersion');
+            //$fields[] = $courseVersion;
+
+            $hctCourse  = new MHContainer('hctCourse', array($courseLabel, $courseId, $courseVersion, $courseName));
+            $hctCourse->setShowLabel(true);
+            $fields[] = $hctCourse;
+
+
+    
+            $business = $MIOLO->getBusiness('basic', 'BusTurn');
+            $turnId = new MComboBox( 'turnId',
+                                    $this->GetFormValue('turnId',$data->turnId),
+                                    _M('Turn',$module),
+                                    $business->listTurn());
+            $validators[] = new MRequiredValidator('turnId');
+            $fields[] = $turnId;
+    
+            $business = $MIOLO->getBusiness('basic', 'BusUnit');
+            $unitId = new MComboBox('unitId',
+                                    $this->GetFormValue('unitId',$data->unitId),
+                                    _M('Unit',$module),
+                                    $business->listUnit());
+            $validators[] = new MRequiredValidator('unitId');
+            $fields[] = $unitId;
+        }
+
+        $authorizationDate = new MCalendarField('authorizationDate', $this->getFormValue('authorizationDate', $data->authorizationDate), _M('Authorization date', $module), FIELD_DATE_SIZE);
+        $validators[] = new MDATEDMYValidator('authorizationDate', '', 'required');
+        $fields[] = $authorizationDate;
+
+        $authorizationDocument = new MMultiLineField('authorizationDocument', $this->getFormValue('authorizationDocument', $data->authorizationDocument), _M('Authorization document', $module), 10, 7, 30);
+        $fields[] = $authorizationDocument;
+
+        if ( $function == 'update' )
+        {
+            $statusLabel = new MText('statusLabel', _M('Is it active',$module) . '?');
+            $statusLabel->setWidth(FIELD_CONTAINER_SIZE);
+            $statusLabel->setClass('m-caption m-caption-required');
+
+            $status = $this->GetFormValue('status',$data->status);
+            if ( ! isset($status) )
+            {
+                //default true
+                $status = DB_TRUE;
+
+            }
+            $status = new MRadioButtonGroup('status', '', SAGU::listTrueFalse(1), $status, null, 'horizontal');
+            $status->SetShowLabel(false);
+
+            $hctStatus = new MHContainer('hctStatus', array($statusLabel, $status));
+            $fields[]  = $hctStatus;
+        }
+        else
+        {
+            $fields[] = new MHiddenField('status', DB_TRUE);
+        }
+
+        $fields[] = new MTextField('minimumConclusionCourse', $this->getFormValue('minimumConclusionCourse', $data->minimumConclusionCourse), _M('Minimum conclusion course', $module), 8, _M('In years', $module));
+
+        $fields[] = new MTextField('maximumConclusionCourse', $this->getFormValue('maximumConclusionCourse', $data->maximumConclusionCourse), _M('Maximum conclusion course', $module), 8, _M('In years', $module));
+
+        $fields[] = new MTextField('maximumDependent', $this->getFormValue('maximumDependent', $data->maximumDependent), _M('Maximum dependent', $module), 8, _M('Maximum curricular components dependent to go to the next period', $module));
+        if ( MODULE_FINANCE_INSTALLED == 'YES' && ( $MIOLO->checkAccess('finance',FIN_UPDATE, false, true ) || $MIOLO->checkAccess('finance',FIN_INSERT, false, true ) ) )
+        {
+            $fields[] = new MSeparator('<hr>');
+
+            //política
+            $policyLabel = new MText('policyLabel', _M('Policy', 'finance') . ':');
+            $policyLabel->setWidth(FIELD_CONTAINER_SIZE);        
+            $policyId = new MLookupTextField('policyId', $this->getFormValue('policyId',$data->policyId), null, FIELD_LOOKUPFIELD_SIZE, null, null, 'policyDescription', 'finance', 'Policy', null, null, true);
+            $policyId->setJsHint(_M('Select the policy id', 'finance'));
+         
+            $policyDescription = new MTextField('policyDescription', $this->getFormValue('policyDescription',$data->policyDescription), null, FIELD_DESCRIPTION_SIZE);
+            $policyDescription->setReadOnly(true);
+            
+            $hctPolicy = new MHContainer('hctPolicy', array($policyLabel, $policyId, $policyDescription));
+            $hctPolicy->setShowLabel(true);
+            $fields[]  = $hctPolicy;
+
+            $policyLabelForEnroll = new MText('policyLabelForEnroll', _M('Policy for enroll', 'finance') . ':');
+            $policyLabelForEnroll->setWidth(FIELD_CONTAINER_SIZE);        
+            $policyIdForEnroll = new MLookupTextField('policyIdForEnroll', $this->getFormValue('policyIdForEnroll',$data->policyIdForEnroll), null, FIELD_LOOKUPFIELD_SIZE, null, null, 'policyDescriptionForEnroll', 'finance', 'Policy', null, null, true);
+            $policyIdForEnroll->setJsHint(_M('Select the policy id', 'finance'));
+         
+            $policyDescriptionForEnroll = new MTextField('policyDescriptionForEnroll', $this->getFormValue('policyDescriptionForEnroll',$data->policyDescriptionForEnroll), null, FIELD_DESCRIPTION_SIZE);
+            $policyDescriptionForEnroll->setReadOnly(true);
+            
+            $hctPolicyForEnroll = new MHContainer('hctPolicy', array($policyLabelForEnroll, $policyIdForEnroll, $policyDescriptionForEnroll));
+            $hctPolicyForEnroll->setShowLabel(true);
+            $fields[]  = $hctPolicyForEnroll;
+
+            $policyLabelForReEnroll = new MText('policyLabelForReEnroll', _M('Policy for re-enroll', 'finance') . ':');
+            $policyLabelForReEnroll->setWidth(FIELD_CONTAINER_SIZE);        
+            $policyIdForReEnroll = new MLookupTextField('policyIdForReEnroll', $this->getFormValue('policyIdForReEnroll',$data->policyIdForReEnroll), null, FIELD_LOOKUPFIELD_SIZE, null, null, 'policyDescriptionForReEnroll', 'finance', 'Policy', null, null, true);
+            $policyIdForReEnroll->setJsHint(_M('Select the policy id for re-enroll', 'finance'));
+         
+            $policyDescriptionForReEnroll = new MTextField('policyDescriptionForReEnroll', $this->getFormValue('policyDescriptionForReEnroll',$data->policyDescriptionForReEnroll), null, FIELD_DESCRIPTION_SIZE);
+            $policyDescriptionForReEnroll->setReadOnly(true);
+            
+            $hctPolicyForReEnroll = new MHContainer('hctPolicy', array($policyLabelForReEnroll, $policyIdForReEnroll, $policyDescriptionForReEnroll));
+            $hctPolicyForReEnroll->setShowLabel(true);
+            $fields[]  = $hctPolicyForReEnroll;
+        }
+        
+        if ( $function == 'update' )
+        {
+            $fields[] = new MTextLabel('lastModification', '['.$data->userName.' - '.$data->dateTime.']', _M('Last modification', $module));
+        }
+        $fields[] = new Separator('');
+
+        $this->setFields($fields);
+        $this->setValidators($validators);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+        $this->setClose($MIOLO->getActionURL($module, substr($action, 0, strrpos($action, ':'))));
+        if ( $function == 'insert' )
+        {
+            $this->page->onLoad('document.'.$this->name.'.courseId.focus()');
+        }
+        else
+        {
+            $this->page->onLoad('document.'.$this->name.'.authorizationDate.focus()');
+        }
+    }
+    
+
+    /**
+     * Event triggered when user chooses New from the toolbar
+     **/
+    public function tbBtnNew_click($sender = null)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $data = $this->getTypesData();
+        $vars = get_object_vars($data);
+        foreach ( $vars as $var => $value )
+        {
+            if ( $this->$var && $var != 'name' )
+            {
+                $this->$var->value = $this->getFormValue($var.'S') ? $this->getFormValue($var.'S') : '';
+            }
+        }
+        $this->courseId->value = $this->getFormValue('courseIdS') ? $this->getFormValue('courseIdS') : '';
+    }
+
+    /**
+     * Event triggered when user chooses Delete from the toolbar
+     **/
+    public function tbBtnDelete_click($sender = null)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $data   = $this->getTypesData();
+        $opts   = array('event'=>'tbBtnDelete_confirm',
+                        'function'=>'delete',
+                        'courseId'=>MIOLO::_request('courseId'),
+                        'courseVersion'=>MIOLO::_request('courseVersion'),
+                        'turnId'=>MIOLO::_request('turnId'),
+                        'unitId'=>MIOLO::_request('unitId')
+                       );
+
+        $gotoYes = $MIOLO->getActionURL( $module, $action, null, $opts );
+        $goto    = SAGU::getStackBackUrl();
+        $gotoNo  = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+        $msg     = MSG_CONFIRM_RECORD_DELETE;
+        $caption = _M('Question',$module);
+        $MIOLO->question($msg, $gotoYes, $gotoNo);
+    }
+
+    /**
+     * Event triggered when user chooses Yes from the Delete prompt dialog
+     **/
+    public function tbBtnDelete_confirm($sender = null)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $business = $MIOLO->getBusiness($module, 'BusCourseOccurrence');
+        $ok = $business->deleteCourseOccurrence($this->courseId->value, $this->courseVersion->value, $this->turnId->value, $this->unitId->value);
+
+        if ( $ok )
+        {
+            $msg  = MSG_RECORD_DELETED;
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Information',$module);
+            $MIOLO->information($msg, $goto);
+        }
+        else
+        {
+            $msg  = _M('Error executing requested operation.',$module);
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Error', $module);
+            $MIOLO->error( $msg, $goto, $caption );
+        }
+    }
+
+    /**
+     * Event triggered when user chooses Save from the toolbar
+     **/
+    public function tbBtnSave_click($sender = null)
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+
+        $data     = $this->getTypesData();
+        $business = $MIOLO->getBusiness($module, 'BusCourseOccurrence');
+
+        if ( $function == 'update' )
+        {
+            $ok  = $business->updateCourseOccurrence($data);
+            $msg = MSG_RECORD_UPDATED;
+        }
+        else
+        {
+            $ok  = $business->insertCourseOccurrence($data);
+            $msg = MSG_RECORD_INSERTED;
+        }
+
+        if ( $ok )
+        {
+            $opts = array('courseIdS'=>$data->courseId,
+                          'turnIdS'  =>$data->turnId,
+                          'unitIdS'  =>$data->unitId);
+            if ( $function == 'update' )
+            {
+                $caption = _M('Information', $module);
+                $MIOLO->information($msg, $MIOLO->getActionURL( $module, $action, null, $opts));
+            }
+            else
+            {
+                unset($opts);
+                $goto = SAGU::getStackBackUrl();
+                $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL( $module, $action, null, $opts);
+                $opts = array('function'=>'insert');
+
+                $gotoYes = $MIOLO->getActionURL($module, $action, null, $opts);
+                $caption = _M('Question',$module);
+                $MIOLO->question($msg, $gotoYes, $goto);
+            }
+        }
+        else
+        {
+            $msg  = _M('Error executing requested operation.', $module);
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Error', $module);
+            $MIOLO->error( $msg, $goto, $caption );
+        }
+    }
+
+    /**
+     * Method to gather all information from the form fields
+     * and put them on a database compatible object
+     **/
+    public function getTypesData()
+    {
+        $data = new acdCourseOccurrence();
+        $vars = get_object_vars($data);
+        foreach ( $vars as $var => $value )
+        {
+            if ( $this->$var && $var != 'name' )
+            {
+                $data->$var = $this->$var->value;
+            }
+        }
+
+        return $data;
+    }
+}
+
+?>

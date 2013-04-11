@@ -1,0 +1,4003 @@
+<?php
+/**
+ *
+ * This file manipulate the lookups for the basic module of sagu 
+ *
+ * @author William Prigol Lopes [william@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 02/05/2005
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+$MIOLO = MIOLO::getInstance();
+$business = $MIOLO->getBusiness('basic', 'BusConfig');
+$business->setModuleValues();
+$MIOLO->getClass('basic', 'lookupFields');
+
+/**
+ * Class to manipulate the Lookups
+ **/
+class BusinessBasicLookup
+{
+    /**
+     * Auto complete for neighborhood
+     *
+     * @param $context (object): MIOLO Context object
+     *
+     * @return (object): MIOLO Gives the action evaluating the code by setContext call
+     *
+     **/
+    public function autoCompleteNeighborhood(&$context)
+    {
+        $sql = 'SELECT A.name AS neighborhoodName
+                  FROM basNeighborhood A
+                 WHERE A.neighborhoodId = ?';
+ 
+        $context->setContext('basic', $sql);
+    }
+
+    /**
+     * Lookup for neighborhood
+     *
+     * @param $lookup: Lookup Object used by MIOLO
+     *
+     * @return MIOLO Lookup function as actions evaluated by MIOLO
+     *
+     **/
+    public function lookupNeighborhood(&$lookup)
+    {
+        global $MIOLO;
+        $module = MIOLO::_request('lmodule');
+
+        $MIOLO->uses('classes/sagu.class',$module);
+        $MIOLO->conf->loadConf($module);
+
+        $neighborhoodId   = $lookup->getFilterValue('neighborhoodId');
+        $neighborhoodName = $lookup->getFilterValue('neighborhoodName');
+        $cityId           = $lookup->getFilterValue('cityId');
+        $cityName         = $lookup->getFilterValue('cityName');
+
+        $lookup->addFilterField( new MTextField('neighborhoodName', $neighborhoodName, _M('Neighborhood',$module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MHiddenField('neighborhoodId', $neighborhoodId) );
+        $lookup->addFilterField( new MTextField('cityId', $cityId , _M('City id', 'basic') ) );
+        $lookup->addFilterField( new MTextField('cityName', $cityName, _M('City',$module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+
+        $columns = array(
+           new DataGridColumn('neighborhoodId',   _M('Neighborhood id', $module),   'left', true, null, true),
+           new DataGridColumn('neighborhoodName', _M('Neighborhood name', $module), 'left', true, null, true),
+        );
+
+        $sql = 'SELECT A.neighborhoodId,
+                       A.name AS neighborhoodName
+                  FROM 
+                    basNeighborhood A LEFT JOIN
+                    basLocation B ON ( A.neighborhoodId = B.neighborhoodId ) LEFT JOIN 
+                    basCity C ON ( C.cityId = B.cityId ) 
+                WHERE  1 = 1 ';
+
+        if ( strlen((string)$neighborhoodId) > 0 )
+        {
+            $where .= ' AND A.neighborhoodId = ?';
+            $args[] = $neighborhoodId;
+        }
+
+        if ( strlen((string)$cityName) > 0 )
+        {
+            $where .= ' AND TO_ASCII(C.name) ILIKE TO_ASCII(?)';
+            $args[] = $cityName . '%';
+        }
+
+        if ( strlen((string)$neighborhoodName) > 0 )
+        {
+            $where .= ' AND TO_ASCII(A.name) ILIKE TO_ASCII(?)';
+            $args[] = $neighborhoodName . '%';
+        }
+        
+        if ( strlen((string)$cityId) > 0 ) 
+        {
+            $where .= ' AND B.cityId = ?::integer ';
+            $args[] = $cityId;
+        }
+
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= $where;
+        }
+        $sql .= ' GROUP BY A.neighborhoodId, A.name ';
+        $sql .= ' ORDER BY A.name';
+
+        $sqlObject = new sql();
+        if ( strlen((string)$where) == 0 )
+        {
+            $sql .= ' LIMIT 0';
+        }
+        $sqlObject->createFrom(SAGU::prepare($sql,$args));
+        $lookup->setFilterColumns(LOOKUP_FILTER_COLUMNS);
+        $lookup->setLookupGrid($module, $sqlObject, $columns, _M('Neighborhood search',$module), 15, 0);
+        $lookup->grid->setIsScrollable();
+
+    }
+
+    /**
+     * Auto complete for city
+     *
+     * @param $context (object): MIOLO Context object
+     *
+     * @return (object): MIOLO Gives the action evaluating the code by setContext call
+     *
+     **/
+    public function autoCompleteCity(&$context)
+    {
+        $sql = 'SELECT A.name AS cityName,
+                       A.stateId,
+                       B.name AS stateName,
+                       A.countryId,
+                       C.name AS countryName,
+                       A.zipCode
+                  FROM basCity A
+             LEFT JOIN basState B
+                    ON ( B.stateId = A.stateId )
+             LEFT JOIN basCountry C
+                    ON ( C.countryId = A.countryId )
+                 WHERE A.cityId = ?';
+ 
+        $context->setContext('basic', $sql);
+    }
+
+    /**
+     * Lookup for city
+     *
+     * @param $lookup: Lookup Object used by MIOLO
+     *
+     * @return MIOLO Lookup function as actions evaluated by MIOLO
+     *
+     **/
+    public function lookupCity(&$lookup)
+    {
+        global $MIOLO;
+        $module = MIOLO::_request('lmodule');
+
+        $MIOLO->uses('classes/sagu.class',$module);
+        $MIOLO->conf->loadConf($module);
+
+        $isPossibleNew      = $lookup->getFilterValue('isPossibleNew');
+        $isSelectiveProcess = $lookup->getFilterValue('isSelectiveProcess');
+
+        $cityId      = $lookup->getFilterValue('cityId');
+        $cityName    = $lookup->getFilterValue('cityName');
+        $stateId     = $lookup->getFilterValue('stateId');
+        $stateName   = $lookup->getFilterValue('stateName');
+        $countryId   = $lookup->getFilterValue('countryId');
+        $countryName = $lookup->getFilterValue('countryName');
+        $zipCode     = $lookup->getFilterValue('zipCode');
+
+        $lookup->addFilterField( new MTextField('cityId',    $cityId,    _M('Code',$module), FIELD_ID_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('cityName',  $cityName,  _M('City',$module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('stateId',   $stateId,   _M('UF',$module), FIELD_ID_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('stateName', $stateName, _M('State',$module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+        $lookup->addFilterField( fields::country($countryId) );
+        $lookup->addFilterField( new MTextField('zipCode',   $zipCode,   _M('Zip code',$module), FIELD_ZIPCODE_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MHiddenField('isPossibleNew', $isPossibleNew) );
+        $lookup->addFilterField( new MHiddenField('isSelectiveProcess', $isSelectiveProcess) );
+
+        global $page;
+        $page->onLoad('document.' . $page->name . '.cityName.focus()');
+
+        $columns = array(
+           new DataGridColumn('cityId',      _M('Code', $module),         'left', true, null, true),
+           new DataGridColumn('cityName',    _M('City', $module),         'left', true, null, true),
+           new DataGridColumn('stateId',     _M('UF', $module),           'left', true, null, true),
+           new DataGridColumn('stateName',   _M('State', $module),        'left', true, null, true),
+           new DataGridColumn('countryId',   _M('Country id', $module),   'left', true, null, true),
+           new DataGridColumn('countryName', _M('Country', $module),      'left', true, null, true),
+           new DataGridColumn('zipCode',     _M('Zip code', $module),     'left', true, null, true)
+        );
+
+        $sql = 'SELECT A.cityId,
+                       A.name AS cityName,
+                       A.stateId,
+                       B.name AS stateName,
+                       A.countryId,
+                       C.name AS countryName,
+                       A.zipCode
+                  FROM basCity A
+             LEFT JOIN basState B
+                    ON ( B.stateId = A.stateId )
+             LEFT JOIN basCountry C
+                    ON ( C.countryId = A.countryId )';
+
+        if ( strlen((string)$cityId) > 0 )
+        {
+            $where .= ' AND A.cityId = ?';
+            $args[] = $cityId;
+        }
+
+        if ( strlen((string)$cityName) > 0 )
+        {
+            $where .= ' AND TO_ASCII(A.name) ILIKE TO_ASCII(?)';
+            $args[] = $cityName . '%';
+        }
+
+        if ( strlen((string)$stateId) > 0 )
+        {
+            $where .= ' AND A.stateId ILIKE ?';
+            $args[] = $stateId . '%';
+        }
+
+        if ( strlen((string)$stateName) > 0 )
+        {
+            $where .= ' AND TO_ASCII(B.name) ILIKE TO_ASCII(?)';
+            $args[] = $stateName . '%';
+        }
+
+        if ( strlen((string)$countryId) > 0 )
+        {
+            $where .= ' AND A.countryId = ?';
+            $args[] = $countryId;
+        }
+
+        if ( strlen((string)$countryName) > 0 )
+        {
+            $where .= ' AND TO_ASCII(C.name) ILIKE TO_ASCII(?)';
+            $args[] = $countryName . '%';
+        }
+
+        if ( strlen((string)$zipCode) > 0 )
+        {
+            $where .= ' AND A.zipCode ILIKE ?';
+            $args[] = $zipCode . '%';
+        }
+        
+        if ( $isSelectiveProcess == DB_TRUE )
+        {
+            $where .= ' AND A.showInSelectiveProcess = ?';
+            $args[] = DB_TRUE;
+        }
+
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE ' . substr($where, 5);
+        }
+
+        $sql .= ' ORDER BY A.name';
+
+        $sqlObject = new sql();
+        if ( strlen((string)$where) == 0 )
+        {
+            $sql .= ' LIMIT 0';
+        }
+
+        $sqlObject->createFrom($sql,$args);
+        $lookup->setFilterColumns(LOOKUP_FILTER_COLUMNS);
+        $lookup->setLookupGrid($module, $sqlObject, $columns, _M('City search',$module), 15, 0);
+        $lookup->grid->setIsScrollable();
+
+        if ( !($isPossibleNew == DB_FALSE) )
+        {
+            $lookup->grid->header[] = '<b><center><a href="' . $MIOLO->getActionURL('basic', 'cityLookup', '', $_GET) . '">' . _M('Insert new', 'basic') . '</a></center></b><br>';
+        }
+    }
+
+    /**
+     * Auto complete for state
+     *
+     * @param $context (object): MIOLO Context object
+     *
+     * @return (object): MIOLO Gives the action evaluating the code by setContext call
+     *
+     **/
+    public function autoCompleteState(&$context)
+    {
+        $sql = 'SELECT A.name AS stateName,
+                       A.countryId,
+                       B.name AS countryName
+                  FROM basState A
+             LEFT JOIN basCountry B
+                    ON ( B.countryId = A.countryId )
+                 WHERE A.stateId = \'?\'';
+ 
+        $context->setContext('basic', $sql);
+    }
+
+    /**
+     * Lookup for state
+     *
+     * @param $lookup: Lookup Object used by MIOLO
+     *
+     * @return MIOLO Lookup function as actions evaluated by MIOLO
+     *
+     **/
+    public function lookupState(&$lookup)
+    {
+        global $MIOLO;
+        $module = MIOLO::_request('lmodule');
+
+        $MIOLO->uses('classes/sagu.class',$module);
+        $MIOLO->conf->loadConf($module);
+
+        $stateId     = $lookup->getFilterValue('stateId');
+        $stateName   = $lookup->getFilterValue('stateName');
+        $countryId   = $lookup->getFilterValue('countryId');
+        $countryName = $lookup->getFilterValue('countryName');
+
+        $lookup->addFilterField( new MTextField('stateId',   $stateId,   _M('UF',$module), FIELD_ID_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('stateName', $stateName, _M('State',$module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+        $lookup->addFilterField( fields::country($countryId) );
+
+        $columns = array(
+           new DataGridColumn('stateId',     _M('UF', $module),         'left', true, null, true),
+           new DataGridColumn('stateName',   _M('State', $module),      'left', true, null, true),
+           new DataGridColumn('countryId',   _M('Country id', $module), 'left', true, null, true),
+           new DataGridColumn('countryName', _M('Country', $module),    'left', true, null, true)
+        );
+
+        $sql = 'SELECT A.stateId,
+                       A.name AS stateName,
+                       A.countryId,
+                       B.name AS countryName
+                  FROM basState A
+             LEFT JOIN basCountry B
+                    ON ( B.countryId = A.countryId )';
+
+        if ( strlen((string)$stateId) > 0 )
+        {
+            $where .= ' AND A.stateId = ?';
+            $args[] = $stateId;
+        }
+
+        if ( strlen((string)$stateName) > 0 )
+        {
+            $where .= ' AND TO_ASCII(A.nam)e ILIKE TO_ASCII(?)';
+            $args[] = $stateName . '%';
+        }
+
+        if ( strlen((string)$countryId) > 0 )
+        {
+            $where .= ' AND A.countryId = ?';
+            $args[] = $countryId;
+        }
+
+        if ( strlen((string)$countryName) > 0 )
+        {
+            $where .= ' AND TO_ASCII(B.name) ILIKE TO_ASCII(?)';
+            $args[] = $countryName . '%';
+        }
+
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE ' . substr($where, 5);
+        }
+
+        $sql .= ' ORDER BY A.name';
+
+        $sqlObject = new sql();
+        if ( strlen((string)$where) == 0 )
+        {
+            $sql .= ' LIMIT 0';
+        }
+
+        $sqlObject->createFrom(SAGU::prepare($sql,$args));
+        $lookup->setFilterColumns(LOOKUP_FILTER_COLUMNS);
+        $lookup->setLookupGrid($module, $sqlObject, $columns, _M('State search',$module), 15, 0);
+        $lookup->grid->setIsScrollable();
+
+    }
+
+    /**
+     * Auto complete for country
+     *
+     * @param $context (object): MIOLO Context object
+     *
+     * @return (object): MIOLO Gives the action evaluating the code by setContext call
+     *
+     **/
+    public function autoCompleteCountry(&$context)
+    {
+        $sql = 'SELECT A.name,
+                       A.nationality,
+                       A.currency,
+                       A.currencySymbol
+                  FROM basCountry A
+                 WHERE A.countryId = ?';
+ 
+        $context->setContext('basic', $sql);
+    }
+
+    /**
+     * Lookup for country
+     *
+     * @param $lookup: Lookup Object used by MIOLO
+     *
+     * @return MIOLO Lookup function as actions evaluated by MIOLO
+     *
+     **/
+    public function lookupCountry(&$lookup)
+    {
+        global $MIOLO;
+        $module = MIOLO::_request('lmodule');
+
+        $MIOLO->uses('classes/sagu.class',$module);
+        $MIOLO->conf->loadConf($module);
+
+        $countryId      = $lookup->getFilterValue('countryId');
+        $countryName    = $lookup->getFilterValue('countryName');
+        $nationality    = $lookup->getFilterValue('nationality');
+        $currency       = $lookup->getFilterValue('currency');
+        $currencySymbol = $lookup->getFilterValue('currencySymbol');
+
+        $lookup->addFilterField( fields::country($countryId) );
+        $lookup->addFilterField( new MTextField('nationality',    $nationality,    _M('Nationality',$module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('currency',       $currency,       _M('Currency',$module), FIELD_TIME_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('currencySymbol', $currencySymbol, _M('Currency symbol',$module), FIELD_ID_LOOKUP_SIZE) );
+
+        $columns = array(
+           new DataGridColumn('countryId',      _M('Code', $module),            'left',  true, null, true),
+           new DataGridColumn('countryName',    _M('Country', $module),         'left',  true, null, true),
+           new DataGridColumn('nationality',    _M('Nationality', $module),     'left',  true, null, true),
+           new DataGridColumn('currency',       _M('Currency', $module),        'left',  true, null, true),
+           new DataGridColumn('currencySymbol', _M('Currency symbol', $module), 'left',  true, null, true)
+        );
+
+        $sql = 'SELECT A.countryId,
+                       A.name AS countryName,
+                       A.nationality,
+                       A.currency,
+                       A.currencySymbol
+                  FROM basCountry A';
+
+        if ( strlen((string)$countryId) > 0 )
+        {
+            $where .= ' AND A.countryId = ?';
+            $args[] = $countryId;
+        }
+
+        if ( strlen((string)$countryName) > 0 )
+        {
+            $where .= ' AND TO_ASCII(A.name) ILIKE TO_ASCII(?)';
+            $args[] = $countryName . '%';
+        }
+
+        if ( strlen((string)$nationality) > 0 )
+        {
+            $where .= ' AND TO_ASCII(A.nationality) ILIKE TO_ASCII(?)';
+            $args[] = $nationality . '%';
+        }
+
+        if ( strlen((string)$currency) > 0 )
+        {
+            $where .= ' AND A.currency ILIKE ?';
+            $args[] = $currency . '%';
+        }
+
+        if ( strlen((string)$currencySymbol) > 0 )
+        {
+            $where .= ' AND A.currencySymbol ILIKE ?';
+            $args[] = $currencySymbol . '%';
+        }
+
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE ' . substr($where, 5);
+        }
+
+        $sql .= ' ORDER BY A.name';
+
+        $sqlObject = new sql();
+        if ( strlen((string)$where) == 0 )
+        {
+            $sql .= ' LIMIT 0';
+        }
+
+        $sqlObject->createFrom(SAGU::prepare($sql,$args));
+        $lookup->setFilterColumns(LOOKUP_FILTER_COLUMNS);
+        $lookup->setLookupGrid($module, $sqlObject, $columns, _M('Country search',$module), 15, 0);
+        $lookup->grid->setIsScrollable();
+
+    }
+
+    /**
+     * Auto complete for location
+     *
+     * @param $context (object): MIOLO Context object
+     *
+     * @return (object): MIOLO Gives the action evaluating the code by setContext call
+     *
+     **/
+    public function autoCompleteLocation(&$context)
+    {
+
+        $sql = 'SELECT locationName,
+                       countryId,
+                       countryName,
+                       stateId,
+                       stateName,
+                       cityId,
+                       cityName,
+                       neighborhoodId,
+                       neighborhoodName,
+                       orderBy
+                  FROM ( SELECT B.zipCode,
+                                \'\' AS locationName,
+                                B.countryId,
+                                E.name AS countryName,
+                                B.stateId,
+                                D.name AS stateName,
+                                B.cityId,
+                                B.name AS cityName,
+                                null AS neighborhoodId,
+                                \'\' AS neighborhoodName,
+                                2 AS orderBy
+                           FROM basCity B
+                      LEFT JOIN basLocation A
+                             ON ( B.cityId = A.cityId )
+                      LEFT JOIN basState D
+                             ON ( D.stateId = B.stateId
+                                AND D.countryId = B.countryId )
+                      LEFT JOIN basCountry E
+                             ON ( E.countryId = B.countryId )
+                          UNION
+                         SELECT A.zipCode,
+                                A.name AS locationName,
+                                B.countryId,
+                                E.name AS countryName,
+                                B.stateId,
+                                D.name AS stateName,
+                                B.cityId,
+                                B.name AS cityName,
+                                C.neighborhoodId AS neighborhoodId,
+                                C.name AS neighborhoodName,
+                                1 AS orderBy
+                           FROM basCity B
+                      LEFT JOIN basLocation A
+                             ON ( B.cityId = A.cityId )
+                      LEFT JOIN basNeighborhood C
+                             ON ( C.neighborhoodId = A.neighborhoodId )
+                      LEFT JOIN basState D
+                             ON ( D.stateId = B.stateId
+                                AND D.countryId = B.countryId )
+                      LEFT JOIN basCountry E
+                             ON ( E.countryId = B.countryId ) 
+                       ) as E
+                 WHERE zipCode = ?
+              ORDER BY 10';
+
+        $context->setContext('basic', $sql);
+    }
+
+    /**
+     * Lookup for location
+     *
+     * @param $lookup: Lookup Object used by MIOLO
+     *
+     * @return MIOLO Lookup function as actions evaluated by MIOLO
+     *
+     **/
+    public function lookupLocation(&$lookup)
+    {
+        global $MIOLO;
+        $module = MIOLO::_request('lmodule');
+
+        $MIOLO->uses('classes/sagu.class',$module);
+        $MIOLO->conf->loadConf($module);
+
+        $locationId       = $lookup->getFilterValue('locationId');
+        $zipCode          = $lookup->getFilterValue('zipCode');
+        $locationName     = $lookup->getFilterValue('locationName');
+        $countryId        = $lookup->getFilterValue('countryId');
+        $countryName      = $lookup->getFilterValue('countryName');
+        $stateId          = $lookup->getFilterValue('stateId');
+        $stateName        = $lookup->getFilterValue('stateName');
+        $cityId           = $lookup->getFilterValue('cityId');
+        $cityName         = $lookup->getFilterValue('cityName');
+        $neighborhoodId   = $lookup->getFilterValue('neighborhoodId');
+        $neighborhoodName = $lookup->getFilterValue('neighborhoodName');
+
+        $lookup->addFilterField( new MTextField('zipCode',      $zipCode,      _M('Zip code',$module), FIELD_ZIPCODE_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('locationName', $locationName, _M('Location',$module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+        $lookup->addFilterField( fields::country($countryId) );
+        $lookup->addFilterField( new MTextField('stateId',      $stateId,      _M('UF',$module), FIELD_ID_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('stateName',    $stateName,    _M('State',$module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('cityId',       $cityId,       _M('City id',$module), FIELD_ID_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('cityName',     $cityName,     _M('City',$module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('neighborhoodName', $neighborhoodName, _M('Neighborhood',$module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+
+        $columns = array(
+           new DataGridColumn('zipCode',          _M('Zip code', $module),          'left',  true, null, true),
+           new DataGridColumn('locationName',     _M('Location', $module),          'left',  true, null, true),
+           new DataGridColumn('countryId',        _M('Country id', $module),        'left',  true, null, true),
+           new DataGridColumn('countryName',      _M('Country', $module),           'left',  true, null, true),
+           new DataGridColumn('stateId',          _M('UF', $module),                'left',  true, null, true),
+           new DataGridColumn('stateName',        _M('State', $module),             'left',  true, null, true),
+           new DataGridColumn('cityId',           _M('City id', $module),           'left',  true, null, true),
+           new DataGridColumn('cityName',         _M('City', $module),              'left',  true, null, true),
+           new DataGridColumn('neighborhoodId',   _M('Neighborhood id', $module),   'left',  true, null, false),
+           new DataGridColumn('neighborhoodName', _M('Neighborhood', $module),      'left',  true, null, true)
+        );
+
+        $sql = 'SELECT zipCode,
+                       locationName,
+                       countryId,
+                       countryName,
+                       stateId,
+                       stateName,
+                       cityId,
+                       cityName,
+                       neighborhoodId,
+                       neighborhoodName,
+                       orderBy
+                  FROM ( SELECT B.zipCode,
+                                \'\' AS locationName,
+                                B.countryId,
+                                E.name AS countryName,
+                                B.stateId,
+                                D.name AS stateName,
+                                B.cityId,
+                                B.name AS cityName,
+                                null AS neighborhoodId,
+                                \'\' AS neighborhoodName,
+                                2 AS orderBy
+                           FROM basCity B
+                      LEFT JOIN basLocation A
+                             ON ( B.cityId = A.cityId )
+                      LEFT JOIN basState D
+                             ON ( D.stateId = B.stateId
+                                AND D.countryId = B.countryId )
+                      LEFT JOIN basCountry E
+                             ON ( E.countryId = B.countryId )
+                          UNION
+                         SELECT A.zipCode,
+                                A.name AS locationName,
+                                B.countryId,
+                                E.name AS countryName,
+                                B.stateId,
+                                D.name AS stateName,
+                                B.cityId,
+                                B.name AS cityName,
+                                C.neighborhoodId AS neighborhoodId,
+                                C.name AS neighborhoodName,
+                                1 AS orderBy
+                           FROM basCity B
+                      LEFT JOIN basLocation A
+                             ON ( B.cityId = A.cityId )
+                      LEFT JOIN basNeighborhood C
+                             ON ( C.neighborhoodId = A.neighborhoodId )
+                      LEFT JOIN basState D
+                             ON ( D.stateId = B.stateId
+                                AND D.countryId = B.countryId )
+                      LEFT JOIN basCountry E
+                             ON ( E.countryId = B.countryId ) 
+                       ) as E ' ;
+
+        if ( strlen((string)$zipCode) > 0 )
+        {
+            $where .= ' AND zipCode ILIKE ?';
+            $args[] = $zipCode . '%';
+        }
+
+        if ( strlen((string)$locationName) > 0 )
+        {
+            $where .= ' AND TO_ASCII(locationName) ILIKE TO_ASCII(?)';
+            $args[] = $locationName . '%';
+        }
+
+        if ( strlen((string)$countryId) > 0 )
+        {
+            $where .= ' AND countryId = ?';
+            $args[] = $countryId;
+        }
+
+        if ( strlen((string)$countryName) > 0 )
+        {
+            $where .= ' AND TO_ASCII(countryName) ILIKE TO_ASCII(?)';
+            $args[] = $countryName . '%';
+        }
+
+        if ( strlen((string)$stateId) > 0 )
+        {
+            $where .= ' AND stateId = ?';
+            $args[] = $stateId;
+        }
+
+        if ( strlen((string)$stateName) > 0 )
+        {
+            $where .= ' AND TO_ASCII(stateName) ILIKE TO_ASCII(?)';
+            $args[] = $stateName . '%';
+        }
+
+        if ( strlen((string)$cityId) > 0 )
+        {
+            $where .= ' AND cityId = ?';
+            $args[] = $cityId;
+        }
+
+        if ( strlen((string)$cityName) > 0 )
+        {
+            $where .= ' AND TO_ASCII(cityName) ILIKE TO_ASCII(?)';
+            $args[] = $cityName . '%';
+        }
+
+        if ( strlen((string)$neighborhoodId) > 0 )
+        {
+            $where .= ' AND neighborhoodId = ?';
+            $args[] = $neighborhoodId;
+        }
+
+        if ( strlen((string)$neighborhoodName) > 0 )
+        {
+            $where .= ' AND TO_ASCII(neighborhoodName) ILIKE TO_ASCII(?)';
+            $args[] = $neighborhoodName . '%';
+        }
+
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE ' . substr($where, 5);
+        }
+
+        $sql .= ' ORDER BY 11';
+
+        $sqlObject = new sql();
+        if ( strlen((string)$where) == 0 )
+        {
+            $sql .= ' LIMIT 0';
+        }
+
+        $sqlObject->createFrom(SAGU::prepare($sql,$args));
+        $lookup->setFilterColumns(LOOKUP_FILTER_COLUMNS);
+        $lookup->setLookupGrid($module, $sqlObject, $columns, _M('Location search',$module), 15, 0);
+        $lookup->grid->setIsScrollable();
+
+    }
+
+    /**
+     * Auto complete for sector
+     *
+     * @param $context (object): MIOLO Context object
+     *
+     * @return (object): MIOLO Gives the action evaluating the code by setContext call
+     *
+     **/
+    public function autoCompleteSector(&$context)
+    {
+        $sql = 'SELECT description,
+                       email
+                  FROM basSector
+                 WHERE sectorId = ?';
+ 
+        $context->setContext('basic', $sql);
+    }
+
+    /**
+     * Lookup for sector
+     *
+     * @param $lookup: Lookup Object used by MIOLO
+     *
+     * @return MIOLO Lookup function as actions evaluated by MIOLO
+     *
+     **/
+    public function lookupSector(&$lookup)
+    {
+        global $MIOLO;
+        $module = MIOLO::_request('lmodule');
+
+        $MIOLO->uses('classes/sagu.class',$module);
+        $MIOLO->conf->loadConf($module);
+
+        $sectorId    = $lookup->getFilterValue('sectorId');
+        $description = $lookup->getFilterValue('description');
+        $email       = $lookup->getFilterValue('email');
+
+        $lookup->addFilterField( new MTextField('sectorId',    $cityId,   _M('Code',$module), FIELD_ID_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('description', $cityName, _M('Sector',$module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('email',       $stateId,  _M('E-mail',$module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+
+        global $page;
+        $page->onLoad('document.' . $page->name . '.description.focus()');
+        
+        $columns = array(
+           new DataGridColumn('sectorId',    _M('Code', $module),   'left', true, null, true),
+           new DataGridColumn('description', _M('Sector', $module), 'left', true, null, true),
+           new DataGridColumn('email',       _M('E-mail', $module), 'left', true, null, true),
+        );
+
+        $sql = 'SELECT sectorId,
+                       description,
+                       email
+                  FROM basSector ';
+
+        if ( strlen((string)$sectorId) > 0 )
+        {
+            $where .= ' AND sectorId = ?';
+            $args[] = $sectorId;
+        }
+
+        if ( strlen((string)$description) > 0 )
+        {
+            $where .= ' AND TO_ASCII(description) ILIKE TO_ASCII(?)';
+            $args[] = $description . '%';
+        }
+
+        if ( strlen((string)$email) > 0 )
+        {
+            $where .= ' AND email ILIKE ?';
+            $args[] = $email . '%';
+        }
+
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE ' . substr($where, 5);
+        }
+
+        $sql .= ' ORDER BY description';
+
+        $sqlObject = new sql();
+        if ( strlen((string)$where) == 0 )
+        {
+            $sql .= ' LIMIT 0';
+        }
+
+        $sqlObject->createFrom(SAGU::prepare($sql,$args));
+        $lookup->setFilterColumns(LOOKUP_FILTER_COLUMNS);
+        $lookup->setLookupGrid($module, $sqlObject, $columns, _M('Sector search',$module), 15, 0);
+        $lookup->grid->setIsScrollable();
+
+    }
+
+    /**
+     * Auto complete for person
+     *
+     * @param $context (object): MIOLO Context object
+     *
+     * @return (object): MIOLO Gives the action evaluating the code by setContext call
+     *
+     **/
+    public function autoCompletePerson(&$context)
+    {
+        $sql = 'SELECT A.name AS personName,
+                       A.location,
+                       A.complement,
+                       A.neighborhood,
+                       A.cityId,
+                       B.name AS cityName,
+                       B.stateId,
+                       B.countryId,
+                       C.name AS countryName
+             FROM ONLY basPerson A
+             LEFT JOIN basCity B
+                    ON ( B.cityId = A.cityId )
+             LEFT JOIN basCountry C
+                    ON ( C.countryId = B.countryId )
+                 WHERE A.personId = ?';
+        $context->setContext('basic', $sql);
+    }
+
+    /**
+     * Lookup for person
+     *
+     * @param $lookup: Lookup Object used by MIOLO
+     *
+     * @return MIOLO Lookup function as actions evaluated by MIOLO
+     *
+     **/
+    public function lookupPerson(&$lookup)
+    {
+        global $MIOLO;
+        $module = MIOLO::_request('lmodule');
+
+        $MIOLO->uses('classes/sagu.class',$module);
+        $MIOLO->conf->loadConf($module);
+
+        $personId       = $lookup->getFilterValue('personId');
+        $personName     = $lookup->getFilterValue('personName');
+        $personLastName = $lookup->getFilterValue('personLastName');
+        $location       = $lookup->getFilterValue('location');
+        $complement     = $lookup->getFilterValue('complement');
+        $neighborhood   = $lookup->getFilterValue('neighborhood');
+        $cityId         = $lookup->getFilterValue('cityId');
+        $cityName       = $lookup->getFilterValue('cityName');
+        $stateId        = $lookup->getFilterValue('stateId');
+        $countryId      = $lookup->getFilterValue('countryId');
+        $countryName    = $lookup->getFilterValue('countryName');
+
+        $lookup->addFilterField( new MTextField('personId',       $personId,       _M('Code', $module), FIELD_ID_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('personName',     $personName,     _M('Name', $module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('personLastName', $personLastName, _M('Last name', $module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('location',       $location,       _M('Location', $module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('cityName',       $cityName,       _M('City', $module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+        $lookup->addFilterField( fields::country($countryId) );
+
+        global $page;
+        $page->onLoad('document.' . $page->name . '.personName.focus()');
+
+        $columns = array(
+           new DataGridColumn('personId',     _M('Code', $module),         'right', true, null, true),
+           new DataGridColumn('personName',   _M('Name', $module),         'left',  true, null, true),
+           new DataGridColumn('location',     _M('Location', $module),     'left',  true, null, true),
+           new DataGridColumn('complement',   _M('Complement', $module),   'left',  true, null, false),
+           new DataGridColumn('neighborhood', _M('Neighborhood', $module), 'left',  true, null, false),
+           new DataGridColumn('cityId',       _M('City id', $module),      'left',  true, null, true),
+           new DataGridColumn('cityName',     _M('City name', $module),    'left',  true, null, true),
+           new DataGridColumn('stateId',      _M('UF', $module),           'left',  true, null, true),
+           new DataGridColumn('countryId',    _M('Country id', $module),   'left',  true, null, false),
+           new DataGridColumn('countryName',  _M('Country', $module),      'left',  true, null, true)
+        );
+
+        $sql = 'SELECT A.personId,
+                       A.name AS personName,
+                       A.location,
+                       A.complement,
+                       A.neighborhood,
+                       A.cityId,
+                       B.name AS cityName,
+                       B.stateId,
+                       B.countryId,
+                       C.name AS countryName
+             FROM ONLY basPerson A
+             LEFT JOIN basCity B
+                    ON ( B.cityId = A.cityId )
+             LEFT JOIN basCountry C
+                    ON ( C.countryId = B.countryId )';
+
+        if ( strlen((string)$personId) > 0 )
+        {
+            $where .= ' AND A.personId = ?';
+            $args[] = $personId;
+        }
+
+        if ( strlen((string)$personName) > 0 )
+        {
+            $where .= ' AND TO_ASCII(A.name) ILIKE TO_ASCII(?)';
+            $args[] = $personName . '%';
+        }
+
+        if ( strlen((string)$personLastName) > 0 )
+        {
+            $where .= ' AND TO_ASCII(A.name) ILIKE TO_ASCII(?)';
+            $args[] = '%' . $personLastName . '%';
+        }
+
+        if ( strlen((string)$location) > 0 )
+        {
+            $where .= ' AND TO_ASCII(A.location) ILIKE TO_ASCII(?)';
+            $args[] = $location . '%';
+        }
+
+        if ( strlen((string)$complement) > 0 )
+        {
+            $where .= ' AND A.complement ILIKE ?';
+            $args[] = $complement . '%';
+        }
+
+        if ( strlen((string)$neighborhood) > 0 )
+        {
+            $where .= ' AND TO_ASCII(A.neighborhood) ILIKE TO_ASCII(?)';
+            $args[] = $neighborhood . '%';
+        }
+
+        if ( strlen((string)$cityId) > 0 )
+        {
+            $where .= ' AND A.cityId = ?';
+            $args[] = $cityId;
+        }
+
+        if ( strlen((string)$cityName) > 0 )
+        {
+            $where .= ' AND TO_ASCII(B.name) ILIKE TO_ASCII(?)';
+            $args[] = $cityName . '%';
+        }
+
+        if ( strlen((string)$stateId) > 0 )
+        {
+            $where .= ' AND B.stateId ILIKE ?';
+            $args[] = $stateId;
+        }
+
+        if ( strlen((string)$countryId) > 0 )
+        {
+            $where .= ' AND C.countryId = ?';
+            $args[] = $countryId;
+        }
+
+        if ( strlen((string)$countryName) > 0 )
+        {
+            $where .= ' AND TO_ASCII(C.name) ILIKE TO_ASCII(?)';
+            $args[] = $countryName . '%';
+        }
+
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE ' . substr($where, 5) . '
+                   ORDER BY A.name';
+        }
+        else
+        {
+            $sql .= ' LIMIT 0';
+        }
+
+        $sqlObject = new sql();
+        $sqlObject->createFrom(SAGU::prepare($sql,$args));
+        $lookup->setFilterColumns(LOOKUP_FILTER_COLUMNS);
+        $lookup->setLookupGrid($module, $sqlObject, $columns, _M('Person search',$module), 15, 0);
+        $lookup->grid->setIsScrollable();
+
+    }
+
+    public function autoCompletePersonPupils(&$context)
+    {
+        $sql = 'SELECT A.name AS personName,
+                       A.location,
+                       A.complement,
+                       A.neighborhood,
+                       A.cityId,
+                       B.name AS cityName,
+                       B.stateId,
+                       B.countryId,
+                       C.name AS countryName
+             FROM ONLY basPhysicalPersonStudent A
+             LEFT JOIN basCity B
+                    ON ( B.cityId = A.cityId )
+             LEFT JOIN basCountry C
+                    ON ( C.countryId = B.countryId )
+                 WHERE A.personId = ?';
+        $context->setContext('basic', $sql);
+    }
+
+    /**
+     * Lookup for person
+     *
+     * @param $lookup: Lookup Object used by MIOLO
+     *
+     * @return MIOLO Lookup function as actions evaluated by MIOLO
+     *
+     **/
+    public function lookupPersonPupils(&$lookup)
+    {
+        global $MIOLO;
+        $module = MIOLO::_request('lmodule');
+
+        $MIOLO->uses('classes/sagu.class',$module);
+        $MIOLO->conf->loadConf($module);
+
+        $personId       = $lookup->getFilterValue('personId');
+        $personName     = $lookup->getFilterValue('personName');
+        $personLastName = $lookup->getFilterValue('personLastName');
+        $location       = $lookup->getFilterValue('location');
+        $complement     = $lookup->getFilterValue('complement');
+        $neighborhood   = $lookup->getFilterValue('neighborhood');
+        $cityId         = $lookup->getFilterValue('cityId');
+        $cityName       = $lookup->getFilterValue('cityName');
+        $stateId        = $lookup->getFilterValue('stateId');
+        $countryId      = $lookup->getFilterValue('countryId');
+        $countryName    = $lookup->getFilterValue('countryName');
+
+        $lookup->addFilterField( new MTextField('personId',       $personId,       _M('Code', $module), FIELD_ID_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('personName',     $personName,     _M('Name', $module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('personLastName', $personLastName, _M('Last name', $module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('location',       $location,       _M('Location', $module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('cityName',       $cityName,       _M('City', $module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+        $lookup->addFilterField( fields::country($countryId) );
+
+        global $page;
+        $page->onLoad('document.' . $page->name . '.personName.focus()');
+
+        $columns = array(
+           new DataGridColumn('personId',     _M('Code', $module),         'right', true, null, true),
+           new DataGridColumn('personName',   _M('Name', $module),         'left',  true, null, true),
+           new DataGridColumn('location',     _M('Location', $module),     'left',  true, null, true),
+           new DataGridColumn('complement',   _M('Complement', $module),   'left',  true, null, false),
+           new DataGridColumn('neighborhood', _M('Neighborhood', $module), 'left',  true, null, false),
+           new DataGridColumn('cityId',       _M('City id', $module),      'left',  true, null, true),
+           new DataGridColumn('cityName',     _M('City name', $module),    'left',  true, null, true),
+           new DataGridColumn('stateId',      _M('UF', $module),           'left',  true, null, true),
+           new DataGridColumn('countryId',    _M('Country id', $module),   'left',  true, null, false),
+           new DataGridColumn('countryName',  _M('Country', $module),      'left',  true, null, true)
+        );
+
+        $sql = 'SELECT A.personId,
+                       A.name AS personName,
+                       A.location,
+                       A.complement,
+                       A.neighborhood,
+                       A.cityId,
+                       B.name AS cityName,
+                       B.stateId,
+                       B.countryId,
+                       C.name AS countryName
+             FROM ONLY basPhysicalPersonStudent A
+             LEFT JOIN basCity B
+                    ON ( B.cityId = A.cityId )
+             LEFT JOIN basCountry C
+                    ON ( C.countryId = B.countryId )';
+
+        if ( strlen((string)$personId) > 0 )
+        {
+            $where .= ' AND A.personId = ?';
+            $args[] = $personId;
+        }
+
+        if ( strlen((string)$personName) > 0 )
+        {
+            $where .= ' AND TO_ASCII(A.name) ILIKE TO_ASCII(?)';
+            $args[] = $personName . '%';
+        }
+
+        if ( strlen((string)$personLastName) > 0 )
+        {
+            $where .= ' AND TO_ASCII(A.name) ILIKE TO_ASCII(?)';
+            $args[] = '%' . $personLastName . '%';
+        }
+
+        if ( strlen((string)$location) > 0 )
+        {
+            $where .= ' AND TO_ASCII(A.location) ILIKE TO_ASCII(?)';
+            $args[] = $location . '%';
+        }
+
+        if ( strlen((string)$complement) > 0 )
+        {
+            $where .= ' AND A.complement ILIKE ?';
+            $args[] = $complement . '%';
+        }
+
+        if ( strlen((string)$neighborhood) > 0 )
+        {
+            $where .= ' AND TO_ASCII(A.neighborhood) ILIKE TO_ASCII(?)';
+            $args[] = $neighborhood . '%';
+        }
+
+        if ( strlen((string)$cityId) > 0 )
+        {
+            $where .= ' AND A.cityId = ?';
+            $args[] = $cityId;
+        }
+
+        if ( strlen((string)$cityName) > 0 )
+        {
+            $where .= ' AND TO_ASCII(B.name) ILIKE TO_ASCII(?)';
+            $args[] = $cityName . '%';
+        }
+
+        if ( strlen((string)$stateId) > 0 )
+        {
+            $where .= ' AND B.stateId ILIKE ?';
+            $args[] = $stateId;
+        }
+
+        if ( strlen((string)$countryId) > 0 )
+        {
+            $where .= ' AND C.countryId = ?';
+            $args[] = $countryId;
+        }
+
+        if ( strlen((string)$countryName) > 0 )
+        {
+            $where .= ' AND TO_ASCII(C.name) ILIKE TO_ASCII(?)';
+            $args[] = $countryName . '%';
+        }
+
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE ' . substr($where, 5) . '
+                   ORDER BY A.name';
+        }
+        else
+        {
+            $sql .= ' LIMIT 0';
+        }
+
+        $sqlObject = new sql();
+        $sqlObject->createFrom(SAGU::prepare($sql,$args));
+        $lookup->setFilterColumns(LOOKUP_FILTER_COLUMNS);
+        $lookup->setLookupGrid($module, $sqlObject, $columns, _M('Pupils search',$module), 15, 0);
+        $lookup->grid->setIsScrollable();
+
+    }
+
+    /**
+     * Auto complete for legal person
+     *
+     * @param $context (object): MIOLO Context object
+     *
+     * @return (object): MIOLO Gives the action evaluating the code by setContext call
+     *
+     **/
+    public function autoCompleteLegalPerson(&$context)
+    {
+        $sql = 'SELECT A.name AS personName,
+                       A.location,
+                       A.complement,
+                       A.neighborhood,
+                       A.cityId,
+                       B.name AS cityName,
+                       B.stateId,
+                       B.countryId,
+                       C.name AS countryName
+             FROM ONLY basLegalPerson A
+             LEFT JOIN basCity B
+                    ON ( B.cityId = A.cityId )
+             LEFT JOIN basCountry C
+                    ON ( C.countryId = B.countryId ) 
+                 WHERE A.personId = ?';
+
+        $context->setContext('basic', $sql);
+    }
+
+    /**
+     * Lookup for legal person
+     *
+     * @param $lookup: Lookup Object used by MIOLO
+     *
+     * @return MIOLO Lookup function as actions evaluated by MIOLO
+     *
+     **/
+    public function lookupLegalPerson(&$lookup)
+    {
+        global $MIOLO;
+        $module = MIOLO::_request('lmodule');
+
+        $MIOLO->uses('classes/sagu.class',$module);
+        $MIOLO->conf->loadConf($module);
+
+        $personId          = $lookup->getFilterValue('personId');
+        $personName        = $lookup->getFilterValue('personName');
+        $location          = $lookup->getFilterValue('location');
+        $complement        = $lookup->getFilterValue('complement');
+        $neighborhood      = $lookup->getFilterValue('neighborhood');
+        $cityId            = $lookup->getFilterValue('cityId');
+        $cityName          = $lookup->getFilterValue('cityName');
+        $stateId           = $lookup->getFilterValue('stateId');
+        $countryId         = $lookup->getFilterValue('countryId');
+        $countryName       = $lookup->getFilterValue('countryName');
+        $legalPersonTypeId = $lookup->getFilterValue('legalPersonTypeId');
+
+        $lookup->addFilterField( new MTextField('personId',       $personId,       _M('Code', $module), FIELD_ID_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('personName',     $personName,     _M('Name', $module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('location',       $location,       _M('Location', $module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('cityName',       $cityName,       _M('City', $module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+        $lookup->addFilterField( fields::country($countryId) );
+        $lookup->addFilterField( fields::legalLegalPersonType());
+
+        global $page;
+        $page->onLoad('document.' . $page->name . '.personName.focus()');
+
+        $columns = array(
+           new DataGridColumn('personId',     _M('Code', $module),         'right', true, null, true),
+           new DataGridColumn('personName',   _M('Name', $module),         'left',  true, null, true),
+           new DataGridColumn('location',     _M('Location', $module),     'left',  true, null, true),
+           new DataGridColumn('complement',   _M('Complement', $module),   'left',  true, null, false),
+           new DataGridColumn('neighborhood', _M('Neighborhood', $module), 'left',  true, null, false),
+           new DataGridColumn('cityId',       _M('City id', $module),      'left',  true, null, true),
+           new DataGridColumn('cityName',     _M('City name', $module),    'left',  true, null, true),
+           new DataGridColumn('stateId',      _M('UF', $module),           'left',  true, null, true),
+           new DataGridColumn('countryId',    _M('Country id', $module),   'left',  true, null, false),
+           new DataGridColumn('countryName',  _M('Country', $module),      'left',  true, null, true),
+           new DataGridColumn('legalPersonTypeId',  _M('Legal person type', $module), 'left',  true, null, true),
+        );
+
+        $sql = 'SELECT A.personId,
+                       A.name AS personName,
+                       A.location,
+                       A.complement,
+                       A.neighborhood,
+                       A.cityId,
+                       B.name AS cityName,
+                       B.stateId,
+                       B.countryId,
+                       C.name AS countryName
+             FROM ONLY basLegalPerson A
+             LEFT JOIN basCity B
+                    ON ( B.cityId = A.cityId )
+             LEFT JOIN basCountry C
+                    ON ( C.countryId = B.countryId )';
+
+        if ( strlen((string)$personId) > 0 )
+        {
+            $where .= ' AND A.personId = ?';
+            $args[] = $personId;
+        }
+
+        if ( strlen((string)$personName) > 0 )
+        {
+            $where .= ' AND ( TO_ASCII(A.name) ILIKE TO_ASCII(?) OR TO_ASCII(A.shortName) ILIKE TO_ASCII(?) OR TO_ASCII(A.fakeName) ILIKE TO_ASCII(?) OR TO_ASCII(A.currentName) ILIKE TO_ASCII(?) )';
+            $args[] = $personName . '%';
+            $args[] = $personName . '%';
+            $args[] = $personName . '%';
+            $args[] = $personName . '%';
+        }
+
+        if ( strlen((string)$location) > 0 )
+        {
+            $where .= ' AND TO_ASCII(A.location) ILIKE TO_ASCII(?)';
+            $args[] = $location . '%';
+        }
+
+        if ( strlen((string)$complement) > 0 )
+        {
+            $where .= ' AND A.complement ILIKE ?';
+            $args[] = $complement . '%';
+        }
+
+        if ( strlen((string)$neighborhood) > 0 )
+        {
+            $where .= ' AND TO_ASCII(A.neighborhood) ILIKE TO_ASCII(?)';
+            $args[] = $neighborhood . '%';
+        }
+
+        if ( strlen((string)$cityId) > 0 )
+        {
+            $where .= ' AND A.cityId = ?';
+            $args[] = $cityId;
+        }
+
+        if ( strlen((string)$cityName) > 0 )
+        {
+            $where .= ' AND TO_ASCII(B.name) ILIKE TO_ASCII(?)';
+            $args[] = $cityName . '%';
+        }
+
+        if ( strlen((string)$stateId) > 0 )
+        {
+            $where .= ' AND B.stateId ILIKE ?';
+            $args[] = $stateId;
+        }
+
+        if ( strlen((string)$countryId) > 0 )
+        {
+            $where .= ' AND C.countryId = ?';
+            $args[] = $countryId;
+        }
+
+        if ( strlen((string)$countryName) > 0 )
+        {
+            $where .= ' AND TO_ASCII(C.name) ILIKE TO_ASCII(?)';
+            $args[] = $countryName . '%';
+        }
+        if ( strlen((string)$legalPersonTypeId) > 0 )
+        {
+            $where .= ' AND A.legalPersonTypeId = ?';
+            $args[] = $legalPersonTypeId;
+        }
+
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE ' . substr($where, 5) . '
+                   ORDER BY A.name';
+        }
+        else
+        {
+            $sql .= ' LIMIT 0';
+        }
+
+        $sqlObject = new sql();
+        $sqlObject->createFrom(SAGU::prepare($sql,$args));
+        $lookup->setFilterColumns(LOOKUP_FILTER_COLUMNS);
+        $lookup->setLookupGrid($module, $sqlObject, $columns, _M('Legal person search',$module), 15, 0);
+        $lookup->grid->setIsScrollable();
+
+    }
+
+    public function autoCompleteLegalPersonHealthCare(&$context)
+    {
+        $sql = 'SELECT A.name AS personName,
+                       A.location,
+                       A.complement,
+                       A.neighborhood,
+                       A.cityId,
+                       B.name AS cityName,
+                       B.stateId,
+                       B.countryId,
+                       C.name AS countryName
+             FROM ONLY basLegalPerson A
+             LEFT JOIN basCity B
+                    ON ( B.cityId = A.cityId )
+             LEFT JOIN basCountry C
+                    ON ( C.countryId = B.countryId )
+                 WHERE A.personId = ?
+                       AND A.legalPersonTypeId = '. LEGAL_PERSON_TYPE_HEALTH_CARE;
+
+        $context->setContext('basic', $sql);
+    }
+    
+
+   public function lookupLegalPersonHealthCare(&$lookup)
+    {
+        global $MIOLO;
+        $module = MIOLO::_request('lmodule');
+
+        $MIOLO->uses('classes/sagu.class',$module);
+        $MIOLO->conf->loadConf($module);
+
+        $personId          = $lookup->getFilterValue('personId');
+        $personName        = $lookup->getFilterValue('personName');
+        $location          = $lookup->getFilterValue('location');
+        $complement        = $lookup->getFilterValue('complement');
+        $neighborhood      = $lookup->getFilterValue('neighborhood');
+        $cityId            = $lookup->getFilterValue('cityId');
+        $cityName          = $lookup->getFilterValue('cityName');
+        $stateId           = $lookup->getFilterValue('stateId');
+        $countryId         = $lookup->getFilterValue('countryId');
+        $countryName       = $lookup->getFilterValue('countryName');
+
+        $lookup->addFilterField( new MTextField('personId',       $personId,       _M('Code', $module), FIELD_ID_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('personName',     $personName,     _M('Name', $module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('location',       $location,       _M('Location', $module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('cityName',       $cityName,       _M('City', $module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+        $lookup->addFilterField( fields::country($countryId) );
+
+        global $page;
+        $page->onLoad('document.' . $page->name . '.personName.focus()');
+
+        $columns = array(
+           new DataGridColumn('personId',     _M('Code', $module),         'right', true, null, true),
+           new DataGridColumn('personName',   _M('Name', $module),         'left',  true, null, true),
+           new DataGridColumn('location',     _M('Location', $module),     'left',  true, null, true),
+           new DataGridColumn('complement',   _M('Complement', $module),   'left',  true, null, false),
+           new DataGridColumn('neighborhood', _M('Neighborhood', $module), 'left',  true, null, false),
+           new DataGridColumn('cityId',       _M('City id', $module),      'left',  true, null, true),
+           new DataGridColumn('cityName',     _M('City name', $module),    'left',  true, null, true),
+           new DataGridColumn('stateId',      _M('UF', $module),           'left',  true, null, true),
+           new DataGridColumn('countryId',    _M('Country id', $module),   'left',  true, null, false),
+           new DataGridColumn('countryName',  _M('Country', $module),      'left',  true, null, true)
+        );
+
+        $sql = 'SELECT A.personId,
+                       A.name AS personName,
+                       A.location,
+                       A.complement,
+                       A.neighborhood,
+                       A.cityId,
+                       B.name AS cityName,
+                       B.stateId,
+                      B.countryId,
+                       C.name AS countryName
+             FROM ONLY basLegalPerson A
+             LEFT JOIN basCity B
+                    ON ( B.cityId = A.cityId )
+             LEFT JOIN basCountry C
+                    ON ( C.countryId = B.countryId )';
+
+        if ( strlen((string)$personId) > 0 )
+        {
+            $where .= ' AND A.personId = ?';
+            $args[] = $personId;
+        }
+
+        if ( strlen((string)$personName) > 0 )
+        {
+            $where .= ' AND ( TO_ASCII(A.name) ILIKE TO_ASCII(?) OR TO_ASCII(A.shortName) ILIKE TO_ASCII(?) OR TO_ASCII(A.fakeName) ILIKE TO_ASCII(?) OR TO_ASCII(A.currentName) ILIKE TO_ASCII(?) )';
+            $args[] = $personName . '%';
+            $args[] = $personName . '%';
+            $args[] = $personName . '%';
+            $args[] = $personName . '%';
+        }
+
+        if ( strlen((string)$location) > 0 )
+        {
+            $where .= ' AND TO_ASCII(A.location) ILIKE TO_ASCII(?)';
+            $args[] = $location . '%';
+        }
+
+        if ( strlen((string)$complement) > 0 )
+        {
+            $where .= ' AND A.complement ILIKE ?';
+            $args[] = $complement . '%';
+        }
+
+        if ( strlen((string)$neighborhood) > 0 )
+        {
+            $where .= ' AND TO_ASCII(A.neighborhood) ILIKE TO_ASCII(?)';
+            $args[] = $neighborhood . '%';
+        }
+
+        if ( strlen((string)$cityId) > 0 )
+        {
+            $where .= ' AND A.cityId = ?';
+            $args[] = $cityId;
+        }
+        if ( strlen((string)$cityName) > 0 )
+        {
+            $where .= ' AND TO_ASCII(B.name) ILIKE TO_ASCII(?)';
+            $args[] = $cityName . '%';
+        }
+
+        if ( strlen((string)$stateId) > 0 )
+        {
+            $where .= ' AND B.stateId ILIKE ?';
+            $args[] = $stateId;
+        }
+
+        if ( strlen((string)$countryId) > 0 )
+        {
+            $where .= ' AND C.countryId = ?';
+            $args[] = $countryId;
+        }
+
+        if ( strlen((string)$countryName) > 0 )
+        {
+            $where .= ' AND TO_ASCII(C.name) ILIKE TO_ASCII(?)';
+            $args[] = $countryName . '%';
+        }
+
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE A.legalPersonTypeId = '. LEGAL_PERSON_TYPE_HEALTH_CARE . ' ' . $where . '
+                   ORDER BY A.name';
+        }
+        else
+        {
+            $sql .= ' LIMIT 0';
+        }
+
+        $sqlObject = new sql();
+        $sqlObject->createFrom(SAGU::prepare($sql,$args));
+        $lookup->setFilterColumns(LOOKUP_FILTER_COLUMNS);
+        $lookup->setLookupGrid($module, $sqlObject, $columns, _M('Health care search',$module), 15, 0);
+        $lookup->grid->setIsScrollable();
+
+    }
+
+
+    public function autoCompleteLegalPersonInstitution(&$context)
+    {
+
+        $sql = 'SELECT CASE WHEN ( length(shortName) > 0 ) THEN 
+                                  A.shortName
+                       ELSE
+                                  A.name
+                       END,
+                       A.location,
+                       A.complement,
+                       A.neighborhood,
+                       A.cityId,
+                       B.name AS cityName,
+                       B.stateId,
+                       B.countryId,
+                       C.name AS countryName,
+                       A.shortName
+             FROM ONLY basLegalPerson A
+             LEFT JOIN basCity B
+                    ON ( B.cityId = A.cityId )
+             LEFT JOIN basCountry C
+                    ON ( C.countryId = B.countryId )
+                 WHERE A.personId = ?
+                   AND A.legalPersonTypeId IN (' . LEGAL_PERSON_TYPE_INSTITUTIONS . ')';
+
+        $context->setContext('basic', $sql);
+    }
+
+    /**
+     * Lookup for legal person
+     *
+     * @param $lookup: Lookup Object used by MIOLO
+     *
+     * @return MIOLO Lookup function as actions evaluated by MIOLO
+     *
+     **/
+    public function lookupLegalPersonInstitution(&$lookup)
+    {
+        global $MIOLO;
+        $module = MIOLO::_request('lmodule');
+
+        $MIOLO->uses('classes/sagu.class',$module);
+        $MIOLO->conf->loadConf($module);
+
+        $business  = $MIOLO->getBusiness('basic','BusConfig');
+        $constants = $business->getModuleValues('basic');
+        if ( count($constants)>0 )
+        {
+            foreach ( $constants as $cnt )
+            {
+                define($cnt[0],$cnt[1]);
+            }
+        }
+
+        $personId     = $lookup->getFilterValue('personId');
+        $personName   = $lookup->getFilterValue('personName');
+        $location     = $lookup->getFilterValue('location');
+        $complement   = $lookup->getFilterValue('complement');
+        $neighborhood = $lookup->getFilterValue('neighborhood');
+        $cityId       = $lookup->getFilterValue('cityId');
+        $cityName     = $lookup->getFilterValue('cityName');
+        $stateId      = $lookup->getFilterValue('stateId');
+        $countryId    = $lookup->getFilterValue('countryId');
+        $countryName  = $lookup->getFilterValue('countryName');
+
+        $lookup->addFilterField( new MTextField('personId',       $personId,       _M('Code', $module), FIELD_ID_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('personName',     $personName,     _M('Name', $module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('location',       $location,       _M('Location', $module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('cityName',       $cityName,       _M('City', $module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+        $lookup->addFilterField( fields::country($countryId) );
+
+        global $page;
+        $page->onLoad('document.' . $page->name . '.personName.focus()');
+
+        $columns = array(
+           new DataGridColumn('personId',     _M('Code', $module),         'right', true, null, true),
+           new DataGridColumn('personName',   _M('Name', $module),         'left',  true, null, true),
+           new DataGridColumn('location',     _M('Location', $module),     'left',  true, null, true),
+           new DataGridColumn('complement',   _M('Complement', $module),   'left',  true, null, false),
+           new DataGridColumn('neighborhood', _M('Neighborhood', $module), 'left',  true, null, false),
+           new DataGridColumn('cityId',       _M('City id', $module),      'left',  true, null, true),
+           new DataGridColumn('cityName',     _M('City name', $module),    'left',  true, null, true),
+           new DataGridColumn('stateId',      _M('UF', $module),           'left',  true, null, true),
+           new DataGridColumn('countryId',    _M('Country id', $module),   'left',  true, null, false),
+           new DataGridColumn('countryName',  _M('Country', $module),      'left',  true, null, true)
+        );
+
+        $sql = 'SELECT A.personId,
+                       CASE WHEN ( length(shortName) > 0 ) THEN 
+                                  A.shortName
+                       ELSE
+                                  A.name
+                       END as personName,
+                       A.location,
+                       A.complement,
+                       A.neighborhood,
+                       A.cityId,
+                       B.name AS cityName,
+                       B.stateId,
+                       B.countryId,
+                       C.name AS countryName,
+                       A.shortName
+             FROM ONLY basLegalPerson A
+             LEFT JOIN basCity B
+                    ON ( B.cityId = A.cityId )
+             LEFT JOIN basCountry C
+                    ON ( C.countryId = B.countryId )';
+
+        if ( strlen((string)$personId) > 0 )
+        {
+            $where .= ' AND A.personId = ?';
+            $args[] = $personId;
+        }
+
+        if ( strlen((string)$personName) > 0 )
+        {
+            $where .= ' AND TO_ASCII(A.name) ILIKE TO_ASCII(?)';
+            $args[] = $personName . '%';
+        }
+
+        if ( strlen((string)$location) > 0 )
+        {
+            $where .= ' AND TO_ASCII(A.location) ILIKE TO_ASCII(?)';
+            $args[] = $location . '%';
+        }
+
+        if ( strlen((string)$complement) > 0 )
+        {
+            $where .= ' AND A.complement ILIKE ?';
+            $args[] = $complement . '%';
+        }
+
+        if ( strlen((string)$neighborhood) > 0 )
+        {
+            $where .= ' AND TO_ASCII(A.neighborhood) ILIKE TO_ASCII(?)';
+            $args[] = $neighborhood . '%';
+        }
+
+        if ( strlen((string)$cityId) > 0 )
+        {
+            $where .= ' AND A.cityId = ?';
+            $args[] = $cityId;
+        }
+
+        if ( strlen((string)$cityName) > 0 )
+        {
+            $where .= ' AND TO_ASCII(B.name) ILIKE TO_ASCII(?)';
+            $args[] = $cityName . '%';
+        }
+
+        if ( strlen((string)$stateId) > 0 )
+        {
+            $where .= ' AND B.stateId ILIKE ?';
+            $args[] = $stateId;
+        }
+
+        if ( strlen((string)$countryId) > 0 )
+        {
+            $where .= ' AND C.countryId = ?';
+            $args[] = $countryId;
+        }
+
+        if ( strlen((string)$countryName) > 0 )
+        {
+            $where .= ' AND TO_ASCII(C.name) ILIKE TO_ASCII(?)';
+            $args[] = $countryName . '%';
+        }
+
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE A.legalPersonTypeId IN ( ' . LEGAL_PERSON_TYPE_INSTITUTIONS . ' )' . $where . '
+                   ORDER BY A.name';
+        }
+
+//         if ( strlen((string)$where) > 0 )
+//         {
+//             $sql .= ' WHERE ' . substr($where, 5) . '
+//                    ORDER BY A.name';
+//         }
+        
+        else
+        {
+            $sql .= ' LIMIT 0';
+        }
+
+        $sqlObject = new sql();
+        $sqlObject->createFrom(SAGU::prepare($sql,$args));
+        $lookup->setFilterColumns(LOOKUP_FILTER_COLUMNS);
+        $lookup->setLookupGrid($module, $sqlObject, $columns, _M('Institution search',$module), 15, 0);
+        $lookup->grid->setIsScrollable();
+
+    }
+
+    /**
+     * Auto complete for physical person
+     *
+     * @param $context (object): MIOLO Context object
+     *
+     * @return (object): MIOLO Gives the action evaluating the code by setContext call
+     *
+     **/
+    public function autoCompletePhysicalPerson(&$context)
+    {
+        $sql = 'SELECT A.name AS personName,
+                       A.location,
+                       A.complement,
+                       A.neighborhood,
+                       A.cityId,
+                       B.name AS cityName,
+                       B.stateId,
+                       B.countryId,
+                       C.name AS countryName,
+                       D.externalCourseIdHs,
+                       E.name,
+                       D.institutionIdHs,
+                       F.name,
+                       D.cityIdHs,
+                       G.name,
+                       D.yearHs,
+                       D.isInsured,
+                       D.passive
+             FROM ONLY basPhysicalPerson A
+             LEFT JOIN basCity B
+                    ON ( B.cityId = A.cityId )
+             LEFT JOIN basCountry C
+                    ON ( C.countryId = B.countryId )
+             LEFT JOIN basPhysicalPersonStudent D
+                    ON ( D.personId = A.personId )
+             LEFT JOIN acdExternalCourse E
+                    ON (E.externalCourseId = D.externalCourseIdHs)
+             LEFT JOIN basLegalPerson F
+                    ON (F.personId = D.institutionIdHs)
+             LEFT JOIN basCity G
+                    ON (G.cityId = D.cityIdHs)
+                 WHERE A.personId = ?';
+
+        $context->setContext('basic', $sql);
+    }
+
+    /**
+     * Lookup for physical person
+     *
+     * @param $lookup: Lookup Object used by MIOLO
+     *
+     * @return MIOLO Lookup function as actions evaluated by MIOLO
+     *
+     **/
+    public function lookupPhysicalPerson(&$lookup)
+    {
+        global $MIOLO;
+        $module = MIOLO::_request('lmodule');
+
+        $MIOLO->uses('classes/sagu.class',$module);
+        $MIOLO->conf->loadConf($module);
+
+        $personId       = $lookup->getFilterValue('personId');
+        $personName     = $lookup->getFilterValue('personName');
+        $personLastName = $lookup->getFilterValue('personLastName');
+        $location       = $lookup->getFilterValue('location');
+        $complement     = $lookup->getFilterValue('complement');
+        $neighborhood   = $lookup->getFilterValue('neighborhood');
+        $cityId         = $lookup->getFilterValue('cityId');
+        $cityName       = $lookup->getFilterValue('cityName');
+        $stateId        = $lookup->getFilterValue('stateId');
+        $countryId      = $lookup->getFilterValue('countryId');
+        $countryName    = $lookup->getFilterValue('countryName');
+        $workId         = $lookup->getFilterValue('workId');
+        $workName       = $lookup->getFilterValue('workName');
+
+        $lookup->addFilterField( new MTextField('personId',       $personId,       _M('Code', $module), FIELD_ID_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('personName',     $personName,     _M('Name', $module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('personLastName', $personLastName, _M('Last name', $module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('location',       $location,       _M('Location', $module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('cityName',       $cityName,       _M('City', $module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+        $lookup->addFilterField( fields::country($countryId) );
+
+        if ( strlen((string)$workId)>0 )
+        {
+            $lookup->addFilterField( new MTextField('workId', $workId, _M('Company id', $module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+            $lookup->addFilterField( new MTextField('workName', $workName, _M('Company', $module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+        }
+
+        global $page;
+        $page->onLoad('document.' . $page->name . '.personName.focus()');
+
+        $columns = array(
+           new DataGridColumn('personId',     _M('Code', $module),         'right', true, null, true),
+           new DataGridColumn('personName',   _M('Name', $module),         'left',  true, null, true),
+           new DataGridColumn('location',     _M('Location', $module),     'left',  true, null, true),
+           new DataGridColumn('complement',   _M('Complement', $module),   'left',  true, null, false),
+           new DataGridColumn('neighborhood', _M('Neighborhood', $module), 'left',  true, null, false),
+           new DataGridColumn('cityId',       _M('City id', $module),      'left',  true, null, true),
+           new DataGridColumn('cityName',     _M('City name', $module),    'left',  true, null, true),
+           new DataGridColumn('stateId',      _M('UF', $module),           'left',  true, null, true),
+           new DataGridColumn('countryId',    _M('Country id', $module),   'left',  true, null, false),
+           new DataGridColumn('countryName',  _M('Country', $module),      'left',  true, null, true)
+        );
+
+        $sql = 'SELECT A.personId,
+                       A.name AS personName,
+                       A.location,
+                       A.complement,
+                       A.neighborhood,
+                       A.cityId,
+                       B.name AS cityName,
+                       B.stateId,
+                       B.countryId,
+                       C.name AS countryName,
+                       D.externalCourseIdHs,
+                       E.name,
+                       D.institutionIdHs,
+                       F.name,
+                       D.cityIdHs,
+                       G.name,
+                       D.yearHs,
+                       D.isInsured,
+                       D.passive
+             FROM ONLY basPhysicalPerson A
+             LEFT JOIN basCity B
+                    ON ( B.cityId = A.cityId )
+             LEFT JOIN basCountry C
+                    ON ( C.countryId = B.countryId )
+             LEFT JOIN basPhysicalPersonStudent D
+                    ON ( D.personId = A.personId )
+             LEFT JOIN acdExternalCourse E
+                    ON (E.externalCourseId = D.externalCourseIdHs)
+             LEFT JOIN basLegalPerson F
+                    ON (F.personId = D.institutionIdHs)
+             LEFT JOIN basCity G
+                    ON (G.cityId = D.cityIdHs)';
+
+        if ( strlen((string)$personId) > 0 )
+        {
+            $where .= ' AND A.personId = ?';
+            $args[] = $personId;
+        }
+
+        if ( strlen((string)$personName) > 0 )
+        {
+            $where .= ' AND TO_ASCII(A.name) ILIKE TO_ASCII(?)';
+            $args[] = $personName . '%';
+        }
+
+        if ( strlen((string)$personLastName) > 0 )
+        {
+            $where .= ' AND TO_ASCII(A.name) ILIKE TO_ASCII(?)';
+            $args[] = '%' . $personLastName . '%';
+        }
+
+        if ( strlen((string)$location) > 0 )
+        {
+            $where .= ' AND TO_ASCII(A.location) ILIKE TO_ASCII(?)';
+            $args[] = $location . '%';
+        }
+
+        if ( strlen((string)$complement) > 0 )
+        {
+            $where .= ' AND A.complement ILIKE ?';
+            $args[] = $complement . '%';
+        }
+
+        if ( strlen((string)$neighborhood) > 0 )
+        {
+            $where .= ' AND A.neighborhood ILIKE ?';
+            $args[] = $neighborhood . '%';
+        }
+
+        if ( strlen((string)$cityId) > 0 )
+        {
+            $where .= ' AND A.cityId = ?';
+            $args[] = $cityId;
+        }
+
+        if ( strlen((string)$cityName) > 0 )
+        {
+            $where .= ' AND TO_ASCII(B.name) ILIKE TO_ASCII(?)';
+            $args[] = $cityName . '%';
+        }
+
+        if ( strlen((string)$stateId) > 0 )
+        {
+            $where .= ' AND B.stateId ILIKE ?';
+            $args[] = $stateId;
+        }
+
+        if ( strlen((string)$countryId) > 0 )
+        {
+            $where .= ' AND C.countryId = ?';
+            $args[] = $countryId;
+        }
+
+        if ( strlen((string)$countryName) > 0 )
+        {
+            $where .= ' AND TO_ASCII(C.name) ILIKE TO_ASCII(?)';
+            $args[] = $countryName . '%';
+        }
+
+        if ( strlen((string)$workId) > 0 )
+        {
+            $where .= ' AND A.workId = ?';
+            $args[] = $workId;
+        }
+
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE ' . substr($where, 5) . '
+                   ORDER BY A.name';
+        }
+        else
+        {
+            $sql .= ' LIMIT 0';
+        }
+
+        $sqlObject = new sql();
+        $sqlObject->createFrom(SAGU::prepare($sql,$args));
+        $lookup->setFilterColumns(LOOKUP_FILTER_COLUMNS);
+        $lookup->setLookupGrid($module, $sqlObject, $columns, _M('Physical person search',$module), 15, 0);
+        $lookup->grid->setIsScrollable();
+        $lookup->grid->header[] = '<b><center><a href="' . $MIOLO->getActionURL('basic', 'physicalPersonLookup', '', $_GET) . '">' . _M('Insert new', 'basic') . '</a></center></b><br>';
+    }
+
+    /**
+     * Auto complete for physical person student
+     *
+     * @param $context (object): MIOLO Context object
+     *
+     * @return (object): MIOLO Gives the action evaluating the code by setContext call
+     *
+     **/
+    public function autoCompletePhysicalPersonStudent(&$context)
+    {
+        $sql = 'SELECT A.name AS personName,
+                       A.location,
+                       A.complement,
+                       A.neighborhood,
+                       A.cityId,
+                       B.name AS cityName,
+                       B.stateId,
+                       B.countryId,
+                       C.name AS countryName
+             FROM ONLY basPhysicalPersonStudent A
+             LEFT JOIN basCity B
+                    ON ( B.cityId = A.cityId )
+             LEFT JOIN basCountry C
+                    ON ( C.countryId = B.countryId )
+                 WHERE A.personId = ?';
+
+        $context->setContext('basic', $sql);
+    }
+
+    /**
+     * Lookup for physical person student
+     *
+     * @param $lookup: Lookup Object used by MIOLO
+     *
+     * @return MIOLO Lookup function as actions evaluated by MIOLO
+     *
+     **/
+    public function lookupPhysicalPersonStudent(&$lookup)
+    {
+        global $MIOLO;
+        $module = MIOLO::_request('lmodule');
+
+        $MIOLO->uses('classes/sagu.class',$module);
+        $MIOLO->conf->loadConf($module);
+
+        $personId       = $lookup->getFilterValue('personId');
+        $personName     = $lookup->getFilterValue('personName');
+        $personLastName = $lookup->getFilterValue('personLastName');
+        $location       = $lookup->getFilterValue('location');
+        $complement     = $lookup->getFilterValue('complement');
+        $neighborhood   = $lookup->getFilterValue('neighborhood');
+        $cityId         = $lookup->getFilterValue('cityId');
+        $cityName       = $lookup->getFilterValue('cityName');
+        $stateId        = $lookup->getFilterValue('stateId');
+        $countryId      = $lookup->getFilterValue('countryId');
+        $countryName    = $lookup->getFilterValue('countryName');
+
+        $lookup->addFilterField( new MTextField('personId',       $personId,       _M('Code', $module), FIELD_ID_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('personName',     $personName,     _M('Name', $module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('personLastName', $personLastName, _M('Last name', $module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('location',       $location,       _M('Location', $module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('cityName',       $cityName,       _M('City', $module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+        $lookup->addFilterField( fields::country($countryId) );
+
+        global $page;
+        $page->onLoad('document.' . $page->name . '.personName.focus()');
+
+        $columns = array(
+           new DataGridColumn('personId',     _M('Code', $module),         'right', true, null, true),
+           new DataGridColumn('personName',   _M('Name', $module),         'left',  true, null, true),
+           new DataGridColumn('location',     _M('Location', $module),     'left',  true, null, true),
+           new DataGridColumn('complement',   _M('Complement', $module),   'left',  true, null, false),
+           new DataGridColumn('neighborhood', _M('Neighborhood', $module), 'left',  true, null, false),
+           new DataGridColumn('cityId',       _M('City id', $module),      'left',  true, null, true),
+           new DataGridColumn('cityName',     _M('City name', $module),    'left',  true, null, true),
+           new DataGridColumn('stateId',      _M('UF', $module),           'left',  true, null, true),
+           new DataGridColumn('countryId',    _M('Country id', $module),   'left',  true, null, false),
+           new DataGridColumn('countryName',  _M('Country', $module),      'left',  true, null, true)
+        );
+
+        $sql = 'SELECT A.personId,
+                       A.name AS personName,
+                       A.location,
+                       A.complement,
+                       A.neighborhood,
+                       A.cityId,
+                       B.name AS cityName,
+                       B.stateId,
+                       B.countryId,
+                       C.name AS countryName
+             FROM ONLY basPhysicalPersonStudent A
+             LEFT JOIN basCity B
+                    ON ( B.cityId = A.cityId )
+             LEFT JOIN basCountry C
+                    ON ( C.countryId = B.countryId )';
+
+        if ( strlen((string)$personId) > 0 )
+        {
+            $where .= ' AND A.personId = ?';
+            $args[] = $personId;
+        }
+
+        if ( strlen((string)$personName) > 0 )
+        {
+            $where .= ' AND TO_ASCII(A.name) ILIKE TO_ASCII(?)';
+            $args[] = $personName . '%';
+        }
+
+        if ( strlen((string)$personLastName) > 0 )
+        {
+            $where .= ' AND TO_ASCII(A.name) ILIKE TO_ASCII(?)';
+            $args[] = '%' . $personLastName . '%';
+        }
+
+        if ( strlen((string)$location) > 0 )
+        {
+            $where .= ' AND TO_ASCII(A.location) ILIKE TO_ASCII(?)';
+            $args[] = $location . '%';
+        }
+
+        if ( strlen((string)$complement) > 0 )
+        {
+            $where .= ' AND A.complement ILIKE ?';
+            $args[] = $complement . '%';
+        }
+
+        if ( strlen((string)$neighborhood) > 0 )
+        {
+            $where .= ' AND TO_ASCII(A.neighborhood) ILIKE TO_ASCII(?)';
+            $args[] = $neighborhood . '%';
+        }
+
+        if ( strlen((string)$cityId) > 0 )
+        {
+            $where .= ' AND A.cityId = ?';
+            $args[] = $cityId;
+        }
+
+        if ( strlen((string)$cityName) > 0 )
+        {
+            $where .= ' AND TO_ASCII(B.name) ILIKE TO_ASCII(?)';
+            $args[] = $cityName . '%';
+        }
+
+        if ( strlen((string)$stateId) > 0 )
+        {
+            $where .= ' AND B.stateId ILIKE ?';
+            $args[] = $stateId;
+        }
+
+        if ( strlen((string)$countryId) > 0 )
+        {
+            $where .= ' AND C.countryId = ?';
+            $args[] = $countryId;
+        }
+
+        if ( strlen((string)$countryName) > 0 )
+        {
+            $where .= ' AND TO_ASCII(C.name) ILIKE TO_ASCII(?)';
+            $args[] = $countryName . '%';
+        }
+
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE ' . substr($where, 5) . '
+                   ORDER BY A.name';
+        }
+        else
+        {
+            $sql .= ' LIMIT 0';
+        }
+
+        $sqlObject = new sql();
+        $sqlObject->createFrom(SAGU::prepare($sql,$args));
+        $lookup->setFilterColumns(LOOKUP_FILTER_COLUMNS);
+        $lookup->setLookupGrid($module, $sqlObject, $columns, _M('Student search',$module), 15, 0);
+        $lookup->grid->setIsScrollable();
+
+    }
+
+    /**
+     * Auto complete for physical person professor
+     *
+     * @param $context (object): MIOLO Context object
+     *
+     * @return (object): MIOLO Gives the action evaluating the code by setContext call
+     *
+     **/
+    public function autoCompletePhysicalPersonProfessor(&$context)
+    {
+        $sql = 'SELECT A.name AS personName,
+                       A.location,
+                       A.complement,
+                       A.neighborhood,
+                       A.cityId,
+                       B.name AS cityName,
+                       B.stateId,
+                       B.countryId,
+                       C.name AS countryName
+             FROM ONLY basPhysicalPersonProfessor A
+             LEFT JOIN basCity B
+                    ON ( B.cityId = A.cityId )
+             LEFT JOIN basCountry C
+                    ON ( C.countryId = B.countryId )
+                 WHERE A.personId = ?';
+
+        $context->setContext('basic', $sql);
+    }
+
+    /**
+     * Lookup for physical person professor
+     *
+     * @param $lookup: Lookup Object used by MIOLO
+     *
+     * @return MIOLO Lookup function as actions evaluated by MIOLO
+     *
+     **/
+    public function lookupPhysicalPersonProfessor(&$lookup)
+    {
+        global $MIOLO;
+        $module = MIOLO::_request('lmodule');
+
+        $MIOLO->uses('classes/sagu.class',$module);
+        $MIOLO->conf->loadConf($module);
+
+        $personId       = $lookup->getFilterValue('personId');
+        $personName     = $lookup->getFilterValue('personName');
+        $personLastName = $lookup->getFilterValue('personLastName');
+        $location       = $lookup->getFilterValue('location');
+        $complement     = $lookup->getFilterValue('complement');
+        $neighborhood   = $lookup->getFilterValue('neighborhood');
+        $cityId         = $lookup->getFilterValue('cityId');
+        $cityName       = $lookup->getFilterValue('cityName');
+        $stateId        = $lookup->getFilterValue('stateId');
+        $countryId      = $lookup->getFilterValue('countryId');
+        $countryName    = $lookup->getFilterValue('countryName');
+        $curricularComponentId      = $lookup->getFilterValue('curricularComponentId');
+        $curricularComponentVersion = $lookup->getFilterValue('curricularComponentVersion');
+        $checkCurricularComponent   = $lookup->getFilterValue('checkCurricularComponent');
+
+        $lookup->addFilterField( new MTextField('personId',       $personId,       _M('Code', $module), FIELD_ID_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('personName',     $personName,     _M('Name', $module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('personLastName', $personLastName, _M('Last name', $module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('location',       $location,       _M('Location', $module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('cityName',       $cityName,       _M('City', $module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+        $lookup->addFilterField( fields::country($countryId) );
+        if ( strlen((string)$curricularComponentId) > 0 )
+        {
+            $lookup->addFilterField( new MCheckBox('checkCurricularComponent', true, null, $checkCurricularComponent, _M('Check if the professor can give this cancurricular component', $module)));
+            $lookup->addFilterField( new MHiddenField('curricularComponentId', $curricularComponentId));
+            $lookup->addFilterField( new MHiddenField('curricularComponentVersion', $curricularComponentVersion));
+        }
+
+        global $page;
+        $page->onLoad('document.' . $page->name . '.personName.focus()');
+
+        $columns = array(
+           new DataGridColumn('personId',     _M('Code', $module),         'right', true, null, true),
+           new DataGridColumn('personName',   _M('Name', $module),         'left',  true, null, true),
+           new DataGridColumn('location',     _M('Location', $module),     'left',  true, null, true),
+           new DataGridColumn('complement',   _M('Complement', $module),   'left',  true, null, false),
+           new DataGridColumn('neighborhood', _M('Neighborhood', $module), 'left',  true, null, false),
+           new DataGridColumn('cityId',       _M('City id', $module),      'left',  true, null, true),
+           new DataGridColumn('cityName',     _M('City name', $module),    'left',  true, null, true),
+           new DataGridColumn('stateId',      _M('UF', $module),           'left',  true, null, true),
+           new DataGridColumn('countryId',    _M('Country id', $module),   'left',  true, null, false),
+           new DataGridColumn('countryName',  _M('Country', $module),      'left',  true, null, true)
+        );
+
+        $sql = 'SELECT A.personId,
+                       A.name AS personName,
+                       A.location,
+                       A.complement,
+                       A.neighborhood,
+                       A.cityId,
+                       B.name AS cityName,
+                       B.stateId,
+                       B.countryId,
+                       C.name AS countryName
+             FROM ONLY basPhysicalPersonProfessor A ';
+
+        if ( $checkCurricularComponent == true )
+        {
+            $sql .= 'INNER JOIN acdProfessorCurricularComponent A2
+                             ON (     A.personId                    = A2.professorId 
+                                  AND A2.curricularComponentId      = ?
+                                  AND A2.curricularComponentVersion = ?) ';
+            $args[] = $curricularComponentId;
+            $args[] = $curricularComponentVersion;
+        }
+
+        $sql .= '
+             LEFT JOIN basCity B
+                    ON ( B.cityId = A.cityId )
+             LEFT JOIN basCountry C
+                    ON ( C.countryId = B.countryId )';
+
+        if ( strlen((string)$personId) > 0 )
+        {
+            $where .= ' AND A.personId = ?';
+            $args[] = $personId;
+        }
+
+        if ( strlen((string)$personName) > 0 )
+        {
+            $where .= ' AND TO_ASCII(A.name) ILIKE TO_ASCII(?)';
+            $args[] = $personName . '%';
+        }
+
+        if ( strlen((string)$personLastName) > 0 )
+        {
+            $where .= ' AND TO_ASCII(A.name) ILIKE TO_ASCII(?)';
+            $args[] = '%' . $personLastName . '%';
+        }
+
+        if ( strlen((string)$location) > 0 )
+        {
+            $where .= ' AND TO_ASCII(A.location) ILIKE TO_ASCII(?)';
+            $args[] = $location . '%';
+        }
+
+        if ( strlen((string)$complement) > 0 )
+        {
+            $where .= ' AND A.complement ILIKE ?';
+            $args[] = $complement . '%';
+        }
+
+        if ( strlen((string)$neighborhood) > 0 )
+        {
+            $where .= ' AND TO_ASCII(A.neighborhood) ILIKE TO_ASCII(?)';
+            $args[] = $neighborhood . '%';
+        }
+
+        if ( strlen((string)$cityId) > 0 )
+        {
+            $where .= ' AND A.cityId = ?';
+            $args[] = $cityId;
+        }
+
+        if ( strlen((string)$cityName) > 0 )
+        {
+            $where .= ' AND TO_ASCII(B.name) ILIKE TO_ASCII(?)';
+            $args[] = $cityName . '%';
+        }
+
+        if ( strlen((string)$stateId) > 0 )
+        {
+            $where .= ' AND B.stateId ILIKE ?';
+            $args[] = $stateId;
+        }
+
+        if ( strlen((string)$countryId) > 0 )
+        {
+            $where .= ' AND C.countryId = ?';
+            $args[] = $countryId;
+        }
+
+        if ( strlen((string)$countryName) > 0 )
+        {
+            $where .= ' AND TO_ASCII(C.name) ILIKE TO_ASCII(?)';
+            $args[] = $countryName . '%';
+        }
+
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE ' . substr($where, 5) . '
+                   ORDER BY A.name';
+        }
+        else
+        {
+            $sql .= ' LIMIT 0';
+        }
+
+        $sqlObject = new sql();
+        $sqlObject->createFrom(SAGU::prepare($sql,$args));
+        $lookup->setFilterColumns(LOOKUP_FILTER_COLUMNS);
+        $lookup->setLookupGrid($module, $sqlObject, $columns, _M('Professor search',$module), 15, 0);
+        $lookup->grid->setIsScrollable();
+
+    }
+
+    /**
+     * Auto complete for physical person professor
+     *
+     * @param $context (object): MIOLO Context object
+     *
+     * @return (object): MIOLO Gives the action evaluating the code by setContext call
+     *
+     **/
+    public function autoCompletePhysicalPersonEmployee(&$context)
+    {
+        $sql = 'SELECT A.name AS personName,
+                       A.location,
+                       A.complement,
+                       A.neighborhood,
+                       A.cityId,
+                       B.name AS cityName,
+                       B.stateId,
+                       B.countryId,
+                       C.name AS countryName
+             FROM ONLY basPhysicalPersonEmployee A
+             LEFT JOIN basCity B
+                    ON ( B.cityId = A.cityId )
+             LEFT JOIN basCountry C
+                    ON ( C.countryId = B.countryId )
+                 WHERE A.personId = ?';
+
+        $context->setContext('basic', $sql);
+    }
+
+    /**
+     * Lookup for physical person professor
+     *
+     * @param $lookup: Lookup Object used by MIOLO
+     *
+     * @return MIOLO Lookup function as actions evaluated by MIOLO
+     *
+     **/
+    public function lookupPhysicalPersonEmployee(&$lookup)
+    {
+        global $MIOLO;
+        $module = MIOLO::_request('lmodule');
+
+        $MIOLO->uses('classes/sagu.class',$module);
+        $MIOLO->conf->loadConf($module);
+
+        $personId       = $lookup->getFilterValue('personId');
+        $personName     = $lookup->getFilterValue('personName');
+        $personLastName = $lookup->getFilterValue('personLastName');
+        $location       = $lookup->getFilterValue('location');
+        $complement     = $lookup->getFilterValue('complement');
+        $neighborhood   = $lookup->getFilterValue('neighborhood');
+        $cityId         = $lookup->getFilterValue('cityId');
+        $cityName       = $lookup->getFilterValue('cityName');
+        $stateId        = $lookup->getFilterValue('stateId');
+        $countryId      = $lookup->getFilterValue('countryId');
+        $countryName    = $lookup->getFilterValue('countryName');
+
+        $lookup->addFilterField( new MTextField('personId',       $personId,       _M('Code', $module), FIELD_ID_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('personName',     $personName,     _M('Name', $module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('personLastName', $personLastName, _M('Last name', $module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('location',       $location,       _M('Location', $module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('cityName',       $cityName,       _M('City', $module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+        $lookup->addFilterField( fields::country($countryId) );
+
+        global $page;
+        $page->onLoad('document.' . $page->name . '.personName.focus()');
+
+        $columns = array(
+           new DataGridColumn('personId',     _M('Code', $module),         'right', true, null, true),
+           new DataGridColumn('personName',   _M('Name', $module),         'left',  true, null, true),
+           new DataGridColumn('location',     _M('Location', $module),     'left',  true, null, true),
+           new DataGridColumn('complement',   _M('Complement', $module),   'left',  true, null, false),
+           new DataGridColumn('neighborhood', _M('Neighborhood', $module), 'left',  true, null, false),
+           new DataGridColumn('cityId',       _M('City id', $module),      'left',  true, null, true),
+           new DataGridColumn('cityName',     _M('City name', $module),    'left',  true, null, true),
+           new DataGridColumn('stateId',      _M('UF', $module),           'left',  true, null, true),
+           new DataGridColumn('countryId',    _M('Country id', $module),   'left',  true, null, false),
+           new DataGridColumn('countryName',  _M('Country', $module),      'left',  true, null, true)
+        );
+
+        $sql = 'SELECT A.personId,
+                       A.name AS personName,
+                       A.location,
+                       A.complement,
+                       A.neighborhood,
+                       A.cityId,
+                       B.name AS cityName,
+                       B.stateId,
+                       B.countryId,
+                       C.name AS countryName
+             FROM ONLY basPhysicalPersonEmployee A
+             LEFT JOIN basCity B
+                    ON ( B.cityId = A.cityId )
+             LEFT JOIN basCountry C
+                    ON ( C.countryId = B.countryId )';
+
+        if ( strlen((string)$personId) > 0 )
+        {
+            $where .= ' AND A.personId = ?';
+            $args[] = $personId;
+        }
+
+        if ( strlen((string)$personName) > 0 )
+        {
+            $where .= ' AND TO_ASCII(A.name) ILIKE TO_ASCII(?)';
+            $args[] = $personName . '%';
+        }
+
+        if ( strlen((string)$personLastName) > 0 )
+        {
+            $where .= ' AND TO_ASCII(A.name) ILIKE TO_ASCII(?)';
+            $args[] = '%' . $personLastName . '%';
+        }
+
+        if ( strlen((string)$location) > 0 )
+        {
+            $where .= ' AND TO_ASCII(A.location) ILIKE TO_ASCII(?)';
+            $args[] = $location . '%';
+        }
+
+        if ( strlen((string)$complement) > 0 )
+        {
+            $where .= ' AND A.complement ILIKE ?';
+            $args[] = $complement . '%';
+        }
+
+        if ( strlen((string)$neighborhood) > 0 )
+        {
+            $where .= ' AND TO_ASCII(A.neighborhood) ILIKE TO_ASCII(?)';
+            $args[] = $neighborhood . '%';
+        }
+
+        if ( strlen((string)$cityId) > 0 )
+        {
+            $where .= ' AND A.cityId = ?';
+            $args[] = $cityId;
+        }
+
+        if ( strlen((string)$cityName) > 0 )
+        {
+            $where .= ' AND TO_ASCII(B.name) ILIKE TO_ASCII(?)';
+            $args[] = $cityName . '%';
+        }
+
+        if ( strlen((string)$stateId) > 0 )
+        {
+            $where .= ' AND B.stateId ILIKE ?';
+            $args[] = $stateId;
+        }
+
+        if ( strlen((string)$countryId) > 0 )
+        {
+            $where .= ' AND C.countryId = ?';
+            $args[] = $countryId;
+        }
+
+        if ( strlen((string)$countryName) > 0 )
+        {
+            $where .= ' AND TO_ASCII(C.name) ILIKE TO_ASCII(?)';
+            $args[] = $countryName . '%';
+        }
+
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE ' . substr($where, 5) . '
+                   ORDER BY A.name';
+        }
+        else
+        {
+            $sql .= ' LIMIT 0';
+        }
+
+        $sqlObject = new sql();
+        $sqlObject->createFrom(SAGU::prepare($sql,$args));
+        $lookup->setFilterColumns(LOOKUP_FILTER_COLUMNS);
+        $lookup->setLookupGrid($module, $sqlObject, $columns, _M('Employee search',$module), 15, 0);
+        $lookup->grid->setIsScrollable();
+
+    }
+
+    /**
+     * Auto complete for physical person employee and professor
+     *
+     * @param $context (object): MIOLO Context object
+     *
+     * @return (object): MIOLO Gives the action evaluating the code by setContext call
+     *
+     **/
+    public function autoCompletePhysicalPersonEmployeeAndProfessor(&$context)
+    {
+
+        $sql = 'SELECT A.name AS personName,
+                       A.location,
+                       A.complement,
+                       A.neighborhood,
+                       A.cityId,
+                       B.name AS cityName,
+                       B.stateId,
+                       B.countryId,
+                       C.name AS countryName
+             FROM ONLY basPhysicalPerson A
+             LEFT JOIN basCity B
+                    ON ( B.cityId = A.cityId )
+             LEFT JOIN basCountry C
+                    ON ( C.countryId = B.countryId )
+                 WHERE A.personId = ? ';
+
+        $context->setContext('basic', $sql);
+    }
+
+    /**
+     * Lookup for physical person employee and professor
+     *
+     * @param $lookup: Lookup Object used by MIOLO
+     *
+     * @return MIOLO Lookup function as actions evaluated by MIOLO
+     *
+     **/
+    public function lookupPhysicalPersonEmployeeAndProfessor(&$lookup)
+    {
+        global $MIOLO;
+        $module = MIOLO::_request('lmodule');
+
+        $MIOLO->uses('classes/sagu.class',$module);
+        $MIOLO->conf->loadConf($module);
+
+        //flag que identifica se a variavel where deve utilizar a experessao AND no SQL
+        $flag_in = FALSE;
+
+        $personId       = $lookup->getFilterValue('personId');
+        $personName     = $lookup->getFilterValue('personName');
+        $personLastName = $lookup->getFilterValue('personLastName');
+        $location       = $lookup->getFilterValue('location');
+        $complement     = $lookup->getFilterValue('complement');
+        $neighborhood   = $lookup->getFilterValue('neighborhood');
+        $cityId         = $lookup->getFilterValue('cityId');
+        $cityName       = $lookup->getFilterValue('cityName');
+        $stateId        = $lookup->getFilterValue('stateId');
+        $countryId      = $lookup->getFilterValue('countryId');
+        $countryName    = $lookup->getFilterValue('countryName');
+
+        $lookup->addFilterField( new MTextField('personId',       $personId,       _M('Code', $module), FIELD_ID_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('personName',     $personName,     _M('Name', $module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('personLastName', $personLastName, _M('Last name', $module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('location',       $location,       _M('Location', $module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('cityName',       $cityName,       _M('City', $module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+        $lookup->addFilterField( fields::country($countryId) );
+
+        global $page;
+        $page->onLoad('document.' . $page->name . '.personName.focus()');
+
+        $columns = array(
+           new DataGridColumn('personId',     _M('Code', $module),         'right', true, null, true),
+           new DataGridColumn('personName',   _M('Name', $module),         'left',  true, null, true),
+           new DataGridColumn('location',     _M('Location', $module),     'left',  true, null, true),
+           new DataGridColumn('complement',   _M('Complement', $module),   'left',  true, null, false),
+           new DataGridColumn('neighborhood', _M('Neighborhood', $module), 'left',  true, null, false),
+           new DataGridColumn('cityId',       _M('City id', $module),      'left',  true, null, true),
+           new DataGridColumn('cityName',     _M('City name', $module),    'left',  true, null, true),
+           new DataGridColumn('stateId',      _M('UF', $module),           'left',  true, null, true),
+           new DataGridColumn('countryId',    _M('Country id', $module),   'left',  true, null, false),
+           new DataGridColumn('countryName',  _M('Country', $module),      'left',  true, null, true)
+        );
+
+        $sql = 'SELECT A.personId,
+                       A.name AS personName,
+                       A.location,
+                       A.complement,
+                       A.neighborhood,
+                       A.cityId,
+                       B.name AS cityName,
+                       B.stateId,
+                       B.countryId,
+                       C.name AS countryName
+             FROM ONLY basPhysicalPerson A
+             LEFT JOIN basCity B
+                    ON ( B.cityId = A.cityId )
+             LEFT JOIN basCountry C
+                    ON ( C.countryId = B.countryId )
+        LEFT JOIN ONLY basPhysicalPersonEmployee D
+                    ON ( D.personId = A.personId )
+        LEFT JOIN ONLY basPhysicalPersonProfessor E
+                    ON ( E.personId = A.personId )';
+
+        if ( strlen((string)$personId) > 0 )
+        {
+            $where .= ' AND D.personId = ?';
+            $args[] = $personId;
+        }
+        if ( strlen((string)$personName) > 0 )
+        {
+            $where .= ' AND TO_ASCII(D.name) ILIKE TO_ASCII(?)';
+            $args[] = $personName . '%';
+        }
+        if ( strlen((string)$personLastName) > 0 )
+        {
+            $where .= ' AND TO_ASCII(D.name) ILIKE TO_ASCII(?)';
+            $args[] = '%'. $personLastName . '%';
+        }
+        if ( strlen((string)$location) > 0 )
+        {
+            $where .= ' AND TO_ASCII(D.location) ILIKE TO_ASCII(?)';
+            $args[] = $location . '%';
+        }
+        if ( strlen((string)$location) > 0 )
+        {
+            $where .= ' AND TO_ASCII(A.location) ILIKE TO_ASCII(?) ';
+            $args[] = $location . '%';
+        }
+        if ( strlen((string)$complement) > 0 )
+        {
+            $where .= ' AND D.complement ILIKE ?';
+            $args[] = $complement . '%';
+        }
+        if ( strlen((string)$complement) > 0 )
+        {
+            $where .= ' AND E.complement ILIKE ? ';
+            $args[] = $complement . '%';
+        }
+        if ( strlen((string)$neighborhood) > 0 )
+        {
+            $where .= ' AND TO_ASCII(D.neighborhood) ILIKE TO_ASCII(?)';
+            $args[] = $neighborhood . '%';
+        }
+        if ( strlen((string)$cityId) > 0 )
+        {
+            $where .= ' AND D.cityId = ?';
+            $args[] = $cityId;
+        }
+        if ( strlen((string)$cityName) > 0 )
+        {
+            $where .= ' AND TO_ASCII(B.name) ILIKE TO_ASCII(?)';
+            $args[] = $cityName . '%';
+        }
+        if ( strlen((string)$stateId) > 0 )
+        {
+            $where .= ' AND B.stateId ILIKE ?';
+            $args[] = $stateId;
+        }
+        if ( strlen((string)$countryId) > 0 )
+        {
+            $where .= ' AND B.countryId = ?';
+            $args[] = $countryId;
+        }
+        if ( strlen((string)$countryName) > 0 )
+        {
+            $where .= ' AND TO_ASCII(C.name) ILIKE TO_ASCII(?)';
+            $args[] = $countryName . '%';
+        }
+
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE ' . substr($where, 5) . ' ORDER BY A.name';
+        }
+        else
+        {
+            $sql .= ' LIMIT 0';
+        }
+
+        $sqlObject = new sql();
+
+        $sqlObject->createFrom(SAGU::prepare($sql,$args));
+        $lookup->setFilterColumns(LOOKUP_FILTER_COLUMNS);
+        $lookup->setLookupGrid($module, $sqlObject, $columns, _M('Employee and professor search',$module), 15, 0);
+        $lookup->grid->setIsScrollable();
+
+    }
+
+    /**
+     * Auto complete for turn
+     *
+     * @param $context (object): MIOLO Context object
+     *
+     * @return (object): MIOLO Gives the action evaluating the code by setContext call
+     *
+     **/
+    public function autoCompleteTurn(&$context)
+    {
+        $sql = 'SELECT A.description,
+                       A.shortDescription,
+                       A.beginHour,
+                       A.endHour,
+                       A.charId
+                  FROM basTurn A
+                 WHERE A.turnId = ?';
+
+        $context->setContext('basic', $sql);
+    }
+
+    /**
+     * Lookup for turn
+     *
+     * @param $lookup: Lookup Object used by MIOLO
+     *
+     * @return MIOLO Lookup function as actions evaluated by MIOLO
+     *
+     **/
+    public function lookupTurn(&$lookup)
+    {
+        global $MIOLO;
+        $module = MIOLO::_request('lmodule');
+
+        $MIOLO->uses('classes/sagu.class',$module);
+        $MIOLO->conf->loadConf($module);
+
+        $turnId           = $lookup->getFilterValue('turnId');
+        $description      = $lookup->getFilterValue('description');
+        $shortDescription = $lookup->getFilterValue('shortDescription');
+        $beginHour        = $lookup->getFilterValue('beginHour');
+        $endHour          = $lookup->getFilterValue('endHour');
+        $charId           = $lookup->getFilterValue('charId');
+
+        $lookup->addFilterField( new MHiddenField('turnId',         $turId) );
+        $lookup->addFilterField( new MTextField('description',      $description,      _M('Turn', $module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('shortDescription', $shortDescription, _M('Short description', $module), FIELD_TIME_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('beginHour',        $beginHour,        _M('Begin hour', $module), FIELD_TIME_LOOKUP_SIZE) );
+        $validators[] = new MTimeValidator('beginHour','','optional');
+        $lookup->addFilterField( new MTextField('endHour',          $endHour,          _M('End hour', $module), FIELD_TIME_LOOKUP_SIZE) );
+        $validators[] = new MTimeValidator('endHour','','optional');
+        $lookup->addFilterField( new MTextField('charId',           $charId,           _M('Identification char', $module), FIELD_ID_LOOKUP_SIZE) );
+
+        $columns = array(
+           new DataGridColumn('turnId',           _M('Code', $module),              'right', true, null, true),
+           new DataGridColumn('description',      _M('Turn', $module),              'left',  true, null, true),
+           new DataGridColumn('shortDescription', _M('Short description', $module), 'left',  true, null, true),
+           new DataGridColumn('beginHour',        _M('Begin hour', $module),        'left',  true, null, true),
+           new DataGridColumn('endHour',          _M('End hour', $module),          'left',  true, null, true),
+           new DataGridColumn('charId',           _M('Identification char', $module),           'left',  true, null, true)
+        );
+
+        $sql = 'SELECT A.turnId,
+                       A.description,
+                       A.shortDescription,
+                       TO_CHAR(A.beginHour, \'' . MASK_TIME . '\') as beginHour,
+                       TO_CHAR(A.endHour, \'' . MASK_TIME . '\') as endHour,
+                       A.charId
+                  FROM basTurn A';
+
+        if ( strlen((string)$turnId) > 0 )
+        {
+            $where .= ' AND A.turnId = ?';
+            $args[] = $turnId;
+        }
+
+        if ( strlen((string)$description) > 0 )
+        {
+            $where .= ' AND TO_ASCII(A.description) ILIKE TO_ASCII(?)';
+            $args[] = $description . '%';
+        }
+
+        if ( strlen((string)$shortDescription) > 0 )
+        {
+            $where .= ' AND TO_ASCII(A.shortDescription) ILIKE TO_ASCII(?)';
+            $args[] = $shortDescription . '%';
+        }
+
+        if ( strlen((string)$beginHour) > 0 )
+        {
+            $where .= ' AND TO_TIMESTAMP(A.beginHour, \'' . MASK_TIME . '\') = TO_TIMESTAMP(?, \'' . MASK_TIME . '\')';
+            $args[] = $beginHour;
+        }
+
+        if ( strlen((string)$endHour) > 0 )
+        {
+            $where .= ' AND TO_TIMESTAMP(A.endHour, \'' . MASK_TIME . '\') = TO_TIMESTAMP(?, \'' . MASK_TIME . '\')';
+            $args[] = $endHour;
+        }
+
+        if ( strlen((string)$charId) > 0 )
+        {
+            $where .= ' AND A.charId ILIKE ?';
+            $args[] = $charId;
+        }
+
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE ' . substr($where, 5) . '
+                   ORDER BY A.description';
+        }
+        else
+        {
+            $sql .= ' LIMIT 0';
+        }
+
+        $sqlObject = new sql();
+        $sqlObject->createFrom(SAGU::prepare($sql,$args));
+        $lookup->setFilterColumns(LOOKUP_FILTER_COLUMNS);
+        $lookup->setLookupGrid($module, $sqlObject, $columns, _M('Turn search',$module), 15, 0);
+        //$lookup->setValidators($validators);
+        $lookup->grid->setIsScrollable();
+
+    }
+
+    /**
+     * Auto complete for unit
+     *
+     * @param $context (object): MIOLO Context object
+     *
+     * @return (object): MIOLO Gives the action evaluating the code by setContext call
+     *
+     **/
+    public function autoCompleteUnit(&$context)
+    {
+        $sql = 'SELECT A.cityId,
+                       A.description,
+                       B.name AS cityName,
+                       B.stateId,
+                       B.countryId,
+                       C.name AS countryName,
+                       A.accountingCode
+                  FROM basUnit A
+             LEFT JOIN basCity B
+                    ON ( B.cityId = A.cityId )
+             LEFT JOIN basCountry C
+                    ON ( C.countryId = B.countryId )
+                 WHERE A.unitId = ?';
+
+        $context->setContext('basic', $sql);
+    }
+
+    /**
+     * Lookup for unit
+     *
+     * @param $lookup: Lookup Object used by MIOLO
+     *
+     * @return MIOLO Lookup function as actions evaluated by MIOLO
+     *
+     **/
+    public function lookupUnit(&$lookup)
+    {
+        global $MIOLO;
+        $module = MIOLO::_request('lmodule');
+
+        $MIOLO->uses('classes/sagu.class',$module);
+        $MIOLO->conf->loadConf($module);
+
+        $unitId         = $lookup->getFilterValue('unitId');
+        $cityId         = $lookup->getFilterValue('cityId');
+        $cityName       = $lookup->getFilterValue('cityName');
+        $stateId        = $lookup->getFilterValue('stateId');
+        $countryId      = $lookup->getFilterValue('countryId');
+        $countryName    = $lookup->getFilterValue('countryName');
+        $description    = $lookup->getFilterValue('description');
+        $accountingCode = $lookup->getFilterValue('accountingCode');
+
+        $lookup->addFilterField( new MTextField('description',    $description,    _M('Unit', $module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('cityId',         $cityId,         _M('City id', $module), FIELD_ID_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('cityName',       $cityName,       _M('City name', $module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('stateId',        $stateId,        _M('State id', $module), FIELD_ID_LOOKUP_SIZE) );
+        $lookup->addFilterField( fields::country($countryId) );
+        $lookup->addFilterField( new MTextField('accountingCode', $accountingCode, _M('Accounting code', $module), FIELD_ID_LOOKUP_SIZE) );
+
+        $columns = array(
+           new DataGridColumn('unitId',         _M('Code', $module),            'right', true, null, true),
+           new DataGridColumn('description',    _M('Unit', $module),            'left',  true, null, true),
+           new DataGridColumn('cityId',         _M('City id', $module),         'right', true, null, true),
+           new DataGridColumn('cityName',       _M('City', $module),            'left',  true, null, true),
+           new DataGridColumn('stateId',        _M('UF', $module),              'left',  true, null, true),
+           new DataGridColumn('countryId',      _M('Country id', $module),      'right', true, null, true),
+           new DataGridColumn('countryName',    _M('Country', $module),         'left',  true, null, true),
+           new DataGridColumn('accountingCode', _M('Accounting code', $module), 'center',  true, null, true)
+        );
+
+        $sql = 'SELECT A.unitId,
+                       A.description,
+                       A.cityId,
+                       B.name AS cityName,
+                       B.stateId,
+                       B.countryId,
+                       C.name AS countryName,
+                       A.accountingCode
+                  FROM basUnit A
+             LEFT JOIN basCity B
+                    ON ( B.cityId = A.cityId )
+             LEFT JOIN basCountry C
+                    ON ( C.countryId = B.countryId )';
+
+        if ( strlen((string)$unitId) > 0 )
+        {
+            $where .= ' AND A.unitId = ?';
+            $args[] = $unitId;
+        }
+
+        if ( strlen((string)$cityId) > 0 )
+        {
+            $where .= ' AND A.cityId = ?';
+            $args[] = $cityId;
+        }
+
+        if ( strlen((string)$cityName) > 0 )
+        {
+            $where .= ' AND TO_ASCII(B.name) ILIKE TO_ASCII(?)';
+            $args[] = $cityName . '%';
+        }
+
+        if ( strlen((string)$stateId) > 0 )
+        {
+            $where .= ' AND B.stateId ILIKE ?';
+            $args[] = $stateId;
+        }
+
+        if ( strlen((string)$countryId) > 0 )
+        {
+            $where .= ' AND C.countryId = ?';
+            $args[] = $countryId;
+        }
+
+        if ( strlen((string)$countryName) > 0 )
+        {
+            $where .= ' AND TO_ASCII(C.name) ILIKE TO_ASCII(?)';
+            $args[] = $countryName . '%';
+        }
+
+        if ( strlen((string)$description) > 0 )
+        {
+            $where .= ' AND TO_ASCII(A.description) ILIKE TO_ASCII(?)';
+            $args[] = $description . '%';
+        }
+
+        if ( strlen((string)$accountingCode) > 0 )
+        {
+            $where .= ' AND A.accountingCode ILIKE ?';
+            $args[] = $accountingCode . '%';
+        }
+
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE ' . substr($where, 5) . '
+                   ORDER BY A.description';
+        }
+        else
+        {
+            $sql .= ' LIMIT 0';
+        }
+
+        $sqlObject = new sql();
+        $sqlObject->createFrom(SAGU::prepare($sql,$args));
+        $lookup->setFilterColumns(LOOKUP_FILTER_COLUMNS);
+        $lookup->setLookupGrid($module, $sqlObject, $columns, _M('Unit search',$module), 15, 0);
+        $lookup->grid->setIsScrollable();
+
+    }
+
+    /**
+     * Auto complete for company
+     *
+     * @param $context (object): MIOLO Context object
+     *
+     * @return (object): MIOLO Gives the action evaluating the code by setContext call
+     *
+     **/
+    public function autoCompleteCompany(&$context)
+    {
+        $sql = 'SELECT name
+                  FROM basCompanyConf
+                 WHERE companyId = ?';
+
+        $context->setContext('basic', $sql);
+    }
+
+    /**
+     * Lookup for company
+     *
+     * @param $lookup: Lookup Object used by MIOLO
+     *
+     * @return MIOLO Lookup function as actions evaluated by MIOLO
+     *
+     **/
+    public function lookupCompany(&$lookup)
+    {
+        global $MIOLO;
+        $module = MIOLO::_request('lmodule');
+
+        $MIOLO->uses('classes/sagu.class',$module);
+        $MIOLO->conf->loadConf($module);
+
+        $companyId   = $lookup->getFilterValue('companyId');
+        $companyName = $lookup->getFilterValue('companyName');
+        $personName  = $lookup->getFilterValue('personName');
+
+        $lookup->addFilterField( new MTextField('companyId',   $companyId, _M('Code', $module), FIELD_ID_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('companyName', $cityId,    _M('Company', $module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('personName',  $cityName,  _M('Person', $module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+
+        global $page;
+        $page->onLoad('document.' . $page->name . '.companyName.focus()');
+
+        $columns = array(
+           new DataGridColumn('companyId',   _M('Company id', $module),   'right', true, null, true),
+           new DataGridColumn('companyName', _M('Company name', $module), 'left',  true, null, true),
+           new DataGridColumn('personName',  _M('Person name', $module),  'left',  true, null, true),
+        );
+
+        $sql = 'SELECT A.companyId,
+                       A.name AS companyName,
+                       B.name AS personName
+                  FROM basCompanyConf A
+        LEFT JOIN ONLY basLegalPerson B
+                 USING ( personId ) ';
+
+        if ( strlen((string)$companyId) > 0 )
+        {
+            $where .= ' AND A.companyId = ?';
+            $args[] = $companyId;
+        }
+
+        if ( strlen((string)$companyName) > 0 )
+        {
+            $where .= ' AND ( TO_ASCII(A.name) ILIKE TO_ASCII(?) OR TO_ASCII(A.acronym) ILIKE TO_ASCII(?) )';
+            $args[] = $companyName . '%';
+            $args[] = $companyName . '%';
+        }
+
+        if ( strlen((string)$personName) > 0 )
+        {
+            $where .= ' AND TO_ASCII(B.name) ILIKE TO_ASCII(?)';
+            $args[] = $personName . '%';
+        }
+
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE ' . substr($where, 5) . '
+                   ORDER BY B.name,
+                            A.name';
+        }
+        else
+        {
+            $sql .= ' LIMIT 0';
+        }
+
+        $sqlObject = new sql();
+        $sqlObject->createFrom(SAGU::prepare($sql,$args));
+        $lookup->setFilterColumns(LOOKUP_FILTER_COLUMNS);
+        $lookup->setLookupGrid($module, $sqlObject, $columns, _M('Company search',$module), 15, 0);
+        $lookup->grid->setIsScrollable();
+
+    }
+
+    /**
+     * Auto complete for professional activity
+     *
+     * @param $context (object): MIOLO Context object
+     *
+     * @return (object): MIOLO Gives the action evaluating the code by setContext call
+     *
+     **/
+    public function autoCompleteProfessionalActivity(&$context)
+    {
+        $sql = 'SELECT description AS professionalActivityDescription
+                  FROM basProfessionalActivity
+                 WHERE professionalActivityId = ?';
+ 
+        $context->setContext('basic', $sql);
+    }
+
+    /**
+     * Lookup for professional activity
+     *
+     * @param $lookup: Lookup Object used by MIOLO
+     *
+     * @return MIOLO Lookup function as actions evaluated by MIOLO
+     *
+     **/
+    public function lookupProfessionalActivity(&$lookup)
+    {
+        global $MIOLO;
+        $module = MIOLO::_request('lmodule');
+
+        $MIOLO->uses('classes/sagu.class',$module);
+        $MIOLO->conf->loadConf($module);
+
+        $professionalActivityId          = $lookup->getFilterValue('professionalActivityId');
+        $professionalActivityDescription = $lookup->getFilterValue('professionalActivityDescription');
+
+        $lookup->addFilterField( new MHiddenField('professionalActivityId') );
+        $lookup->addFilterField( new MTextField('professionalActivityDescription', $professionalActivityDescription, _M('Professional activity',$module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+
+        global $page;
+        $page->onLoad('document.' . $page->name . '.professionalActivityDescription.focus()');
+
+        $columns = array(
+           new DataGridColumn('professionalActivityId',          _M('Code', $module), 'left', true, null, true),
+           new DataGridColumn('professionalActivityDescription', _M('Professional activity', $module), 'left', true, null, true)
+        );
+
+        $sql = 'SELECT professionalActivityId,
+                       description as professionalActivityDescription
+                  FROM basProfessionalActivity';
+
+        if ( strlen((string)$professionalActivityId) > 0 )
+        {
+            $where .= ' AND professionalActivityId = ?';
+            $args[] = $professionalActivityId;
+        }
+
+        if ( strlen((string)$professionalActivityDescription) > 0 )
+        {
+            $where .= ' AND TO_ASCII(description) ILIKE TO_ASCII(?)';
+            $args[] = $professionalActivityDescription . '%';
+        }
+
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE ' . substr($where, 5) . '
+                   ORDER BY description';
+        }
+        else
+        {
+            $sql .= ' LIMIT 0';
+        }
+
+        $sqlObject = new sql();
+        $sqlObject->createFrom(SAGU::prepare($sql,$args));
+        $lookup->setFilterColumns(LOOKUP_FILTER_COLUMNS);
+        $lookup->setLookupGrid($module, $sqlObject, $columns, _M('Professional activity search',$module), 15, 0);
+        $lookup->grid->setIsScrollable();
+
+    }
+
+
+    /**
+     * Auto complete for professional activity
+     *
+     * @param $context (object): MIOLO Context object
+     *
+     * @return (object): MIOLO Gives the action evaluating the code by setContext call
+     *
+     **/
+    public function autoCompleteProfessionalActivityAgent(&$context)
+    {
+        $sql = 'SELECT description AS professionalActivityDescription
+                  FROM basProfessionalActivityAgent
+                 WHERE professionalActivityAgentId = ?';
+ 
+        $context->setContext('basic', $sql);
+    }
+
+    /**
+     * Lookup for professional activity agent
+     *
+     * @param $lookup: Lookup Object used by MIOLO
+     *
+     * @return MIOLO Lookup function as actions evaluated by MIOLO
+     *
+     **/
+    public function lookupProfessionalActivityAgent(&$lookup)
+    {
+        global $MIOLO;
+        $module = MIOLO::_request('lmodule');
+
+        $MIOLO->uses('classes/sagu.class',$module);
+        $MIOLO->conf->loadConf($module);
+
+        $professionalActivityAgentId          = $lookup->getFilterValue('professionalActivityAgentId');
+        $professionalActivityAgentDescription = $lookup->getFilterValue('professionalActivityAgentDescription');
+
+        $lookup->addFilterField( new MHiddenField('professionalActivityAgentId',          $professionalActivityAgentId) );
+        $lookup->addFilterField( new MTextField('professionalActivityAgentDescription', $professionalActivityAgentDescription, _M('Professional activity agent',$module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+
+        global $page;
+        $page->onLoad('document.' . $page->name . '.professionalActivityAgentDescription.focus()');
+
+        $columns = array(
+           new DataGridColumn('professionalActivityAgentId',          _M('Code', $module),          'left', true, null, true),
+           new DataGridColumn('professionalActivityAgentDescription', _M('Professional activity agent', $module), 'left', true, null, true)
+        );
+
+        $sql = 'SELECT professionalActivityAgentId,
+                       description as professionalActivityAgentDescription
+                  FROM basProfessionalActivityAgent';
+
+        if ( strlen((string)$professionalActivityAgentId) > 0 )
+        {
+            $where .= ' AND professionalActivityAgentId = ?';
+            $args[] = $professionalActivityAgentId;
+        }
+
+        if ( strlen((string)$professionalActivityAgentDescription) > 0 )
+        {
+            $where .= ' AND TO_ASCII(description) ILIKE TO_ASCII(?)';
+            $args[] = $professionalActivityAgentDescription . '%';
+        }
+
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE ' . substr($where, 5) . '
+                   ORDER BY description';
+        }
+        else
+        {
+            $sql .= ' LIMIT 0';
+        }
+
+        $sqlObject = new sql();
+
+        $sqlObject->createFrom(SAGU::prepare($sql,$args));
+        $lookup->setFilterColumns(LOOKUP_FILTER_COLUMNS);
+        $lookup->setLookupGrid($module, $sqlObject, $columns, _M('Professional activity agent search',$module), 15, 0);
+        $lookup->grid->setIsScrollable();
+
+    }
+
+    /**
+     * Auto complete for document type
+     *
+     * @param $context (object): MIOLO Context object
+     *
+     * @return (object): MIOLO Gives the action evaluating the code by setContext call
+     *
+     **/
+    public function autoCompleteDocumentType(&$context)
+    {
+        $sql = 'SELECT A.name,
+                       A.mask,
+                       A.sex,
+                       A.personType,
+                       A.minAge,
+                       A.maxAge,
+                       A.needDeliver
+                  FROM basDocumentType A
+                 WHERE A.documentTypeId = ?';
+
+        $context->setContext('basic', $sql);
+    }
+
+    /**
+     * Lookup for turn
+     *
+     * @param $lookup: Lookup Object used by MIOLO
+     *
+     * @return MIOLO Lookup function as actions evaluated by MIOLO
+     *
+     **/
+    public function lookupDocumentType(&$lookup)
+    {
+        global $MIOLO;
+        $module = MIOLO::_request('lmodule');
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->uses('classes/sagu.class',$module);
+        $MIOLO->conf->loadConf($module);
+        $business = $MIOLO->getBusiness('basic', 'BusConfig');
+
+        $business  = $MIOLO->getBusiness('basic','BusConfig');
+        $constants = $business->getModuleValues('basic');
+        foreach ( $constants as $cnt )
+        {
+            define($cnt[0],$cnt[1]);
+        }
+
+        $documentTypeId   = $lookup->getFilterValue('documentTypeId');
+        $documentTypeName = $lookup->getFilterValue('documentTypeName');
+        $mask             = $lookup->getFilterValue('mask');
+        $sex              = $lookup->getFilterValue('sex');
+        $personType       = $lookup->getFilterValue('personType');
+        $minAge           = $lookup->getFilterValue('minAge');
+        $maxAge           = $lookup->getFilterValue('maxAge');
+        $needDeliver      = $lookup->getFilterValue('needDeliver');
+
+        $lookup->addFilterField( new MHiddenField('documentTypeId', $documentTypeId) );
+        $lookup->addFilterField( new MTextField('documentTypeName', $documentTypeName, _M('Document', $module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MSelection('sex',              $sex,              _M('Sex', $module), SAGU::listSex()) );
+        $lookup->addFilterField( new MSelection('personType',       $personType,       _M('Person type', $module), SAGU::listPersonTypes()) );
+        $lookup->addFilterField( new MTextField('minAge',           $minAge,           _M('Minimum age', $module), FIELD_ID_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('maxAge',           $maxAge,           _M('Maximum age', $module), FIELD_ID_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MSelection('needDeliver',      $needDeliver,      _M('Does it need deliver', $module) . '?', SAGU::listTrueFalse()) );
+
+        global $page;
+        $page->onLoad('document.' . $page->name . '.documentTypeName.focus()');
+
+        $columns = array(
+           new DataGridColumn('documentTypeId',   _M('Code', $module),   'right', true, null, true),
+           new DataGridColumn('documentTypeName', _M('Document', $module), 'left',  true, null, true),
+           new DataGridColumn('mask',             _M('Mask', $module),               'left',  true, null, true),
+           new DataGridColumn('sex',              _M('Sex', $module),                'left',  true, null, true, array('M' => _M('Male',$module), 'F' => _M('Female',$module))),
+//           new DataGridColumn('personType',       _M('Person type', $module),        'left',  true, null, true),
+           new MDataGridColumn('personType',      _M('Person type', $module),        'left',  true, null, true, array( DB_PHYSICAL => _M('Physical',$module), DB_LEGAL => _M('Legal',$module) ), true ),
+           new DataGridColumn('minAge',            _M('Minimum age', $module),                'center',  true, null, true),
+           new DataGridColumn('maxAge',            _M('Maximum age', $module),                'center',  true, null, true),
+           new DataGridColumn('needDeliver',      _M('Does it need deliver', $module),       'left',  true, null, true, array(DB_TRUE => _M('Yes',$module), DB_FALSE => _M('No',$module)))
+        );
+
+        $sql = 'SELECT A.documentTypeId,
+                       A.name AS documentTypeName,
+                       A.mask,
+                       A.sex,
+                       A.personType,
+                       A.minAge,
+                       A.maxAge,
+                       A.needDeliver
+                  FROM basDocumentType A';
+
+        if ( strlen((string)$documentTypeId) > 0 )
+        {
+            $where .= ' AND A.documentTypeId = ?';
+            $args[] = $documentTypeId;
+        }
+
+        if ( strlen((string)$documentTypeName) > 0 )
+        {
+            $where .= ' AND TO_ASCII(A.name) ILIKE TO_ASCII(?)';
+            $args[] = $documentTypeName . '%';
+        }
+
+        if ( strlen((string)$mask) > 0 )
+        {
+            $where .= ' AND A.mask ILIKE ?';
+            $args[] = $mask . '%';
+        }
+
+        if ( strlen((string)$sex) > 0 )
+        {
+            $where .= ' AND A.sex ILIKE ?';
+            $args[] = $sex;
+        }
+
+        if ( strlen((string)$personType) > 0 )
+        {
+            $where .= ' AND A.personType ILIKE ?';
+            $args[] = $personType;
+        }
+
+        if ( strlen((string)$minAge) > 0 )
+        {
+            $where .= ' AND A.minAge = ?';
+            $args[] = $minAge;
+        }
+
+        if ( strlen((string)$maxAge) > 0 )
+        {
+            $where .= ' AND A.maxAge = ?';
+            $args[] = $maxAge;
+        }
+
+        if ( strlen((string)$needDeliver) > 0 )
+        {
+            $where .= ' AND A.needDeliver = ?';
+            $args[] = $needDeliver;
+        }
+
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE ' . substr($where, 5) . '
+                   ORDER BY A.name';
+        }
+
+        $sqlObject = new sql();
+        if ( strlen((string)$where) == 0 )
+        {
+            $sql .= ' LIMIT 0';
+        }
+
+        $sqlObject->createFrom(SAGU::prepare($sql,$args));
+        $lookup->setFilterColumns(LOOKUP_FILTER_COLUMNS);
+        $lookup->setLookupGrid($module, $sqlObject, $columns, _M('Document type search',$module), 15, 0);
+        $lookup->grid->setIsScrollable();
+
+    }
+
+    /**
+     * Auto complete for file
+     *
+     * @param $context (object): MIOLO Context object
+     *
+     * @return (object): MIOLO Gives the action evaluating the code by setContext call
+     *
+     **/
+    public function autoCompleteFile(&$context)
+    {
+        $sql = 'SELECT A.fileName
+                  FROM basFile A
+                 WHERE A.fileId = ?';
+ 
+        $context->setContext('basic', $sql);
+    }
+
+    /**
+     * Lookup for file
+     *
+     * @param $lookup: Lookup Object used by MIOLO
+     *
+     * @return MIOLO Lookup function as actions evaluated by MIOLO
+     *
+     **/
+    public function lookupFile(&$lookup)
+    {
+        global $MIOLO;
+        $module = MIOLO::_request('lmodule');
+
+        $MIOLO->uses('classes/sagu.class',$module);
+        $MIOLO->conf->loadConf($module);
+
+        $fileId   = $lookup->getFilterValue('fileId');
+        $fileName = $lookup->getFilterValue('fileName');
+
+        $lookup->addFilterField( new MHiddenField('fileId', $fileId) );
+        $lookup->addFilterField( new MTextField('fileName', $fileName, _M('File',$module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+
+        $columns = array(
+           new DataGridColumn('fileId',   _M('Code', $module), 'left', true, null, true),
+           new DataGridColumn('fileName', _M('File', $module), 'left', true, null, true),
+        );
+
+        $sql = 'SELECT A.fileId,
+                       A.fileName
+                  FROM basFile A';
+
+        if ( strlen((string)$fileId) > 0 )
+        {
+            $where .= ' AND A.fileId = ?';
+            $args[] = $fileId;
+        }
+
+        if ( strlen((string)$fileName) > 0 )
+        {
+            $where .= ' AND A.fileName ILIKE ?';
+            $args[] = $fileName . '%';
+        }
+
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE ' . substr($where, 5);
+        }
+
+        $sql .= ' ORDER BY A.fileName';
+
+        $sqlObject = new sql();
+        if ( strlen((string)$where) == 0 )
+        {
+            $sql .= ' LIMIT 0';
+        }
+
+        $sqlObject->createFrom(SAGU::prepare($sql,$args));
+        $lookup->setFilterColumns(LOOKUP_FILTER_COLUMNS);
+        $lookup->setLookupGrid($module, $sqlObject, $columns, _M('File search',$module), 15, 0);
+        $lookup->grid->setIsScrollable();
+
+    }
+
+    /**
+     * Auto complete for link
+     *
+     * @param $context (object): MIOLO Context object
+     *
+     * @return (object): MIOLO Gives the action evaluating the code by setContext call
+     *
+     **/
+    public function autoCompleteLink(&$context)
+    {
+        $sql = 'SELECT description
+                  FROM basLink
+                 WHERE linkId = ?';
+ 
+        $context->setContext('basic', $sql);
+    }
+
+    /**
+     * Lookup for link
+     *
+     * @param $lookup: Lookup Object used by MIOLO
+     *
+     * @return MIOLO Lookup function as actions evaluated by MIOLO
+     *
+     **/
+    public function lookupLink(&$lookup)
+    {
+        global $MIOLO;
+        $module = MIOLO::_request('lmodule');
+
+        $MIOLO->uses('classes/sagu.class',$module);
+        $MIOLO->conf->loadConf($module);
+
+        $linkId          = $lookup->getFilterValue('linkId');
+        $linkDescription = $lookup->getFilterValue('description');
+
+        $lookup->addFilterField( new MHiddenField('linkId', $linkId) );
+        $lookup->addFilterField( new MTextField('description', $linkDescription, _M('Description',$module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+
+        global $page;
+        $page->onLoad('document.' . $page->name . '.description.focus()');
+
+        $columns = array(
+           new DataGridColumn('linkId',      _M('Code', $module),             'left', true, null, true),
+           new DataGridColumn('description', _M('Link description', $module), 'left', true, null, true)
+        );
+
+        $sql = 'SELECT linkId,
+                       description
+                  FROM basLink';
+
+        if ( strlen((string)$linkId) > 0 )
+        {
+            $where .= ' AND linkId = ?';
+            $args[] = $linkId;
+        }
+
+        if ( strlen((string)$linkDescription) > 0 )
+        {
+            $where .= ' AND TO_ASCII(description) ILIKE TO_ASCII(?)';
+            $args[] = $linkDescription . '%';
+        }
+
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE ' . substr($where, 5);
+        }
+
+        $sql .= ' ORDER BY description';
+
+        $sqlObject = new sql();
+        if ( strlen((string)$where) == 0 )
+        {
+            $sql .= ' LIMIT 0';
+        }
+
+        $sqlObject->createFrom(SAGU::prepare($sql,$args));
+        $lookup->setFilterColumns(LOOKUP_FILTER_COLUMNS);
+        $lookup->setLookupGrid($module, $sqlObject, $columns, _M('Link search',$module), 15, 0);
+        $lookup->grid->setIsScrollable();
+
+    }
+
+    /**
+     * Auto complete for employee type
+     *
+     * @param $context (object): MIOLO Context object
+     *
+     * @return (object): MIOLO Gives the action evaluating the code by setContext call
+     *
+     **/
+    public function autoCompleteEmployeeType(&$context)
+    {
+        $sql = 'SELECT A.description
+                  FROM basEmployeeType A
+                 WHERE A.employeeTypeId = ?';
+
+        $context->setContext('basic', $sql);
+    }
+
+    /**
+     * Lookup for employee type
+     *
+     * @param $lookup: Lookup Object used by MIOLO
+     *
+     * @return MIOLO Lookup function as actions evaluated by MIOLO
+     *
+     **/
+    public function lookupEmployeeType(&$lookup)
+    {
+        global $MIOLO;
+        $module = MIOLO::_request('lmodule');
+
+        $MIOLO->uses('classes/sagu.class',$module);
+        $MIOLO->conf->loadConf($module);
+
+        $employeeTypeId   = $lookup->getFilterValue('employeeTypeId');
+        $description      = $lookup->getFilterValue('description');
+
+        $lookup->addFilterField( new MTextField('employeeTypeId', $employeeTypeId, _M('Code', $module), FIELD_ID_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('description',    $description,    _M('Description', $module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+
+        $columns = array(
+           new DataGridColumn('employeeTypeId',   _M('Code', $module),        'right', true, null, true),
+           new DataGridColumn('description',      _M('Description', $module), 'left',  true, null, true)
+        );
+
+        $sql = 'SELECT A.employeeTypeId,
+                       A.description
+                  FROM basEmployeeType A';
+
+        if ( strlen((string)$employeeTypeId) > 0 )
+        {
+            $where .= ' AND A.employeeTypeId = ?';
+            $args[] = $employeeTypeId;
+        }
+
+        if ( strlen((string)$description) > 0 )
+        {
+            $where .= ' AND TO_ASCII(A.description) ILIKE TO_ASCII(?)';
+            $args[] = $description . '%';
+        }
+
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE ' . substr($where, 5);
+        }
+
+        $sql .= ' ORDER BY A.description';
+
+        $sqlObject = new sql();
+        if ( strlen((string)$where) == 0 )
+        {
+            $sql .= ' LIMIT 0';
+        }
+        $sqlObject->createFrom(SAGU::prepare($sql,$args));
+        $lookup->setFilterColumns(LOOKUP_FILTER_COLUMNS);
+        $lookup->setLookupGrid($module, $sqlObject, $columns, _M('Employee type search',$module), 15, 0);
+        $lookup->grid->setIsScrollable();
+
+    }
+
+    /**
+     * Auto complete for s
+     *
+     * @param $context (object): MIOLO Context object
+     *
+     * @return (object): MIOLO Gives the action evaluating the code by setContext call
+     *
+     **/
+    public function autoCompleteStamp(&$context)
+    {
+        $sql = ' SELECT A.personId as employeeId,
+                        B.name as employeeName,
+                        A.functionDescription,
+                        D.description as sector
+                   FROM basStamp A
+        INNER JOIN ONLY basPerson B
+                     ON (A.personId = B.personId)
+              LEFT JOIN basSectorBoss C
+                     ON ( B.personId = C.bossId )
+              LEFT JOIN basSector D
+                     ON ( C.sectorId = D.sectorId )
+                  WHERE A.personId = ? ';
+
+        $context->setContext('basic', $sql);
+    }
+
+    /**
+     * Lookup for s
+     *
+     * @param $lookup: Lookup Object used by MIOLO
+     *
+     * @return MIOLO Lookup function as actions evaluated by MIOLO
+     *
+     **/
+    public function lookupStamp(&$lookup)
+    {
+        global $MIOLO;
+        $module = MIOLO::_request('lmodule');
+
+//        $MIOLO->uses('classes/sagu.class','basic');
+        $MIOLO->conf->loadConf($module);
+
+        $employeeId          = $lookup->getFilterValue('employeeId');
+        $employeeName        = $lookup->getFilterValue('employeeName');
+        $functionDescription = $lookup->getFilterValue('functionDescription');
+
+        $lookup->addFilterField( new MTextField('employeeId', $employeeId, _M('Person id', $module), FIELD_ID_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('employeeName', $employeeName, _M('Name', $module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('functionDescription', $periodId, _M('Function', $module), FIELD_DESCRIPTION_LOOKUP_SIZE));
+
+        global $page;
+        $page->onLoad('document.' . $page->name . '.employeeName.focus()');
+
+        /*
+         * Note: the name of the grid columns must match the SQL columns names below
+         */
+        $columns = array(
+            new DataGridColumn('employeeId',          _M('Person id', $module), 'right', true, null, true),
+            new DataGridColumn('employeeName',        _M('Name', $module),      'left',  true, null, true),
+            new DataGridColumn('functionDescription', _M('Function', $module),  'left',  true, null, true),
+            new DataGridColumn('sector',              _M('Sector', $module),    'left',  true, null, true),
+        );
+
+        $sql = ' SELECT A.personId as employeeId,
+                        B.name as employeeName,
+                        A.functionDescription,
+                        D.description as sector
+                   FROM basStamp A
+        INNER JOIN ONLY basPerson B
+                     ON (A.personId = B.personId)
+              LEFT JOIN basSectorBoss C
+                     ON ( B.personId = C.bossId )
+              LEFT JOIN basSector D
+                     ON ( C.sectorId = D.sectorId )
+                  WHERE A.personId = B.personId ';
+
+        if ( strlen((string)$employeeId) > 0 )
+        {
+            $where .= ' AND A.personid = ?';
+            $args[] = $employeeId;
+        }
+        if ( strlen((string)$employeeName) > 0 )
+        {
+            $where .= ' AND TO_ASCII(B.name) ILIKE TO_ASCII(?)';
+            $args[] = $employeeName . '%';
+        }
+        if ( strlen((string)$functionDescription) > 0 )
+        {
+            $where .= ' AND TO_ASCII(A.functionDescription) ILIKE TO_ASCII(?)';
+            $args[] = $functionDescription . '%';
+        }
+
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= $where;
+        }
+
+        $sql .= ' ORDER BY 2';
+
+        $sqlObject = new sql();
+        $sqlObject->createFrom(SAGU::prepare($sql,$args));
+        $lookup->setFilterColumns(LOOKUP_FILTER_COLUMNS);
+        $lookup->setLookupGrid($module, $sqlObject, $columns, _M('Stamp search',$module), 15, 0);
+        $lookup->grid->setIsScrollable();
+    }
+
+
+    /**
+     * Auto complete for registed e-mails
+     *
+     * @param $context (object): MIOLO Context object
+     *
+     * @return (object): MIOLO Gives the action evaluating the code by setContext call
+     *
+     **/
+    public function autoCompleteEmail(&$context)
+    {
+        $sql = ' SELECT A.description,
+                        A.from,
+                        A.bcc,
+                        A.subject,
+                        A.body,
+                        A.server,
+                        A.port,
+                        A.mimeVersion,
+                        A.contentType
+                   FROM basEmail A
+                  WHERE A.emailId = ?';
+
+        $context->setContext('basic', $sql);
+    }
+
+    /**
+     * Lookup for s
+     *
+     * @param $lookup: Lookup Object used by MIOLO
+     *
+     * @return MIOLO Lookup function as actions evaluated by MIOLO
+     *
+     **/
+    public function lookupEmail(&$lookup)
+    {
+        global $MIOLO;
+        $module = MIOLO::_request('lmodule');
+
+        $MIOLO->conf->loadConf($module);
+
+        $description = $lookup->getFilterValue('description');
+        $from        = $lookup->getFilterValue('from');
+        $subject     = $lookup->getFilterValue('subject');
+        $body        = $lookup->getFilterValue('body');
+
+        $lookup->addFilterField( new MTextField('description', $description, _M('Description', $module), FIELD_ID_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('from', $from, _M('From', $module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('subject', $subject, _M('Subject', $module), FIELD_DESCRIPTION_LOOKUP_SIZE));
+
+        global $page;
+        $page->onLoad('document.' . $page->name . '.description.focus()');
+
+        /*
+         * Note: the name of the grid columns must match the SQL columns names below
+         */
+        $columns = array(
+            new DataGridColumn('emailId',        _M('E-mail id', $module), 'right', true, null, true),
+            new DataGridColumn('description',    _M('Description', $module), 'left', true, null, true),
+            new DataGridColumn('from',           _M('From', $module),      'left',  true, null, true),
+            new DataGridColumn('subject',        _M('Subject', $module),    'left',  true, null, true)
+        );
+
+        $sql = ' SELECT A.emailId,
+                        A.description,
+                        A.from,
+                        A.bcc,
+                        A.subject,
+                        A.server,
+                        A.port,
+                        A.mimeVersion,
+                        A.contentType
+                   FROM basEmail A ';
+
+        if ( strlen((string)$description) > 0 )
+        {
+            $where .= ' AND TO_ASCII(A.description) ILIKE TO_ASCII(?)';
+            $args[] = $description . '%';
+        }
+        if ( strlen((string)$from) > 0 )
+        {
+            $where .= ' AND A.from ILIKE ?';
+            $args[] = $from . '%';
+        }
+        if ( strlen((string)$subject) > 0 )
+        {
+            $where .= ' AND A.subject ILIKE ?';
+            $args[] = $subject . '%';
+        }
+
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE ' . substr($where, 5);
+            //$sql .= $where;
+        }
+
+        $sql .= ' ORDER BY 2';
+
+        $sqlObject = new sql();
+        $sqlObject->createFrom(SAGU::prepare($sql,$args));
+        $lookup->setFilterColumns(LOOKUP_FILTER_COLUMNS);
+        $lookup->setLookupGrid($module, $sqlObject, $columns, _M('E-mail search',$module), 15, 0);
+        $lookup->grid->setIsScrollable();
+    }
+
+    /**
+     * Auto complete for physical person
+     *
+     * @param $context (object): MIOLO Context object
+     *
+     * @return (object): MIOLO Gives the action evaluating the code by setContext call
+     *
+     **/
+    public function autoCompleteLegalPersonWork(&$context)
+    {
+        $sql = 'SELECT A.name AS personName,
+                       A.cityId,
+                       B.name AS cityName,
+                       B.stateId,
+                       B.countryId,
+                       C.name AS countryName,
+                       A.zipCode,
+                       A.location,
+                       A.complement,
+                       A.neighborhood
+                  FROM basLegalPerson A
+             LEFT JOIN basCity B
+                    ON ( B.cityId = A.cityId )
+             LEFT JOIN basCountry C
+                    ON ( C.countryId = B.countryId )
+                 WHERE A.personId = ?';
+
+        $context->setContext('basic', $sql);
+    }
+
+    /**
+     * Lookup for physical person
+     *
+     * @param $lookup: Lookup Object used by MIOLO
+     *
+     * @return MIOLO Lookup function as actions evaluated by MIOLO
+     *
+     **/
+    public function lookupLegalPersonWork(&$lookup)
+    {
+        global $MIOLO;
+        $module = MIOLO::_request('lmodule');
+
+        $MIOLO->uses('classes/sagu.class',$module);
+        $MIOLO->conf->loadConf($module);
+
+        $personId       = $lookup->getFilterValue('personId');
+        $personName     = $lookup->getFilterValue('personName');
+        $cityName       = $lookup->getFilterValue('cityName');
+        $countryId      = $lookup->getFilterValue('countryId');
+
+        $lookup->addFilterField( new MTextField('personId',       $personId,       _M('Code', $module), FIELD_ID_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('personName',     $personName,     _M('Name', $module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+        $lookup->addFilterField( new MTextField('cityName',       $cityName,       _M('City', $module), FIELD_DESCRIPTION_LOOKUP_SIZE) );
+        $lookup->addFilterField( fields::country($countryId) );
+
+        global $page;
+        $page->onLoad('document.' . $page->name . '.personName.focus()');
+
+        $columns = array(
+           new DataGridColumn('personId',     _M('Code', $module),         'right', true, null, true),
+           new DataGridColumn('personName',   _M('Name', $module),         'left',  true, null, true),
+           new DataGridColumn('cityId',       _M('City id', $module),      'left',  true, null, false),
+           new DataGridColumn('cityName',     _M('City', $module),         'left',  true, null, true),
+           new DataGridColumn('stateId',      _M('UF', $module),           'left',  true, null, true),
+           new DataGridColumn('countryId',    _M('Country id', $module),   'left',  true, null, false),
+           new DataGridColumn('countryName',  _M('Country', $module),      'left',  true, null, true)
+        );
+
+        $sql = 'SELECT A.personId,
+                       A.name AS personName,
+                       A.cityId,
+                       B.name AS cityName,
+                       B.stateId,
+                       B.countryId,
+                       C.name AS countryName,
+                       A.zipCode,
+                       A.location,
+                       A.complement,
+                       A.neighborhood
+                  FROM basLegalPerson A
+             LEFT JOIN basCity B
+                    ON ( B.cityId = A.cityId )
+             LEFT JOIN basCountry C
+                    ON ( C.countryId = B.countryId ) ';
+
+        if ( strlen((string)$personId) > 0 )
+        {
+            $where .= ' AND A.personId = ?';
+            $args[] = $personId;
+        }
+
+        if ( strlen((string)$personName) > 0 )
+        {
+            $where .= ' AND TO_ASCII(A.name) ILIKE TO_ASCII(?)';
+            $args[] = $personName . '%';
+        }
+
+        if ( strlen((string)$cityName) > 0 )
+        {
+            $where .= ' AND TO_ASCII(B.name) ILIKE TO_ASCII(?)';
+            $args[] = $cityName . '%';
+        }
+
+        if ( strlen((string)$countryId) > 0 )
+        {
+            $where .= ' AND C.countryId = ?';
+            $args[] = $countryId;
+        }
+
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE ' . substr($where, 5) . '
+                   ORDER BY A.name';
+        }
+        else
+        {
+            $sql .= ' LIMIT 0';
+        }
+
+        $sqlObject = new sql();
+        $sqlObject->createFrom(SAGU::prepare($sql,$args));
+        $lookup->setFilterColumns(LOOKUP_FILTER_COLUMNS);
+        $lookup->setLookupGrid($module, $sqlObject, $columns, _M('Company search', 'basic'), 15, 0);
+        $lookup->grid->setIsScrollable();
+        $lookup->grid->header[] = '<b><center><a href="' . $MIOLO->getActionURL('basic', 'companyLookup', '', $_GET) . '">' . _M('Insert new company', 'basic') . '</a></center></b><br>';
+    }
+}
+
+?>

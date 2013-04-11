@@ -1,0 +1,551 @@
+<?php
+
+/**
+ * This class contains methods to search
+ *
+ * @author Jamiel Spezia [jamiel@solis.coop.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ *
+ * @since
+ * This class was created 2005/09/06
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2005 SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br
+ *
+ */
+
+class BusinessAcademicBusDiverseConsultation extends Business
+{
+    public $db;
+    
+    /**
+     * Class constructor
+     **/
+    
+    function __construct()
+    {
+        $this->db = $this->getDatabase();
+    }    
+    
+    /**
+     * Creates a connection with the specified database. 
+     * If no database is specified, assume the current module name.
+     *
+     * @author Jamiel Spezia [jamiel@solis.coop.br]
+     *
+     * @param $dbname (string): Specifies the database name to which we want to connect.
+     *
+     * @return (object): A database object.
+     *
+     */
+    function getDatabase($dbname=null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic', 'sagu');
+        $module = is_null($module) ? 'academic' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+    /**
+     * Obtain the curricular component coursed.
+     *
+     * @author Jamiel Spezia [jamiel@solis.coop.br]
+     *
+     * @param $filters (object): Fields to be searched
+     *
+     * @return (array): return curricular component coursed
+     *
+     */
+    function getCurricularComponentCoursed($filters)
+    {
+
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $ui     = $MIOLO->getUI();
+
+        $sql = ' SELECT C.enrollId,
+                        E.periodId,
+                        A.curricularComponentId || \'/\' || A.curricularComponentVersion,
+                        C.isExploitation,
+                        CASE WHEN B.curriculumTypeId = '.ACD_CURRICULUM_TYPE_COMPLEMENTARY_ACTIVITY.'
+                             THEN A.name || \'(\' || Q.complementaryActivity || \')\'
+                             ELSE A.name
+                        END,
+                        E.turnId,
+                        L.shortDescription,
+                        CASE WHEN ROUND(C.finalNote::numeric, \'' . REAL_ROUND_VALUE . '\') > 0
+                             THEN ROUND(C.finalNote::numeric, \'' . REAL_ROUND_VALUE . '\') :: text
+                             ELSE C.concept
+                        END,
+                        --ROUND(C.finalNote::NUMERIC, \'' . REAL_ROUND_VALUE . '\'),
+                        C.concept,
+                        G.weekDayId,
+                        H.shortDescription as weekDayShortDescription,
+                        F.statusId,
+                        CASE WHEN C.isDependence THEN F.description || \' [\' || \'' . _M('Dep.', $module) . '\' || \']\'
+                             WHEN ( C.isAdaptation ) THEN F.description || \' [\' || \'' . _M('Adap.', $module) . '\' || \']\'
+                             ELSE F.description END as statusDescription,
+                        ROUND(A.academicCredits::NUMERIC, \'' . REAL_ROUND_VALUE . '\'),
+                        I.room || \'-\' || I.building,
+                        G.scheduleId,
+                        D.groupId,
+                        G.unitId,
+                        B.courseId,
+                        C.contractId,
+                        B.curriculumId,
+                        A.curricularComponentId,
+                        A.curricularComponentVersion,
+                        C.isInternet,
+                        D.classId,
+                        M.courseId || \'-\' || N.shortName,
+                        O.personId,
+                        D.groupId,
+                        G.scheduleId,
+                        E.periodId,
+                        P.professorId
+                   FROM acdCurricularComponent A
+             INNER JOIN acdCurriculum B
+                     ON (B.curricularComponentId = A.curricularComponentId
+                         AND B.curricularComponentVersion = A.curricularComponentVersion)
+             INNER JOIN acdEnroll C
+                     ON (C.curriculumId = B.curriculumId)
+             INNER JOIN acdGroup D
+                     ON (D.groupId = C.groupId)
+              LEFT JOIN acdLearningPeriod E
+                     ON (E.learningPeriodId = D.learningPeriodId)
+             INNER JOIN acdEnrollStatus F
+                     ON (C.statusId = F.statusId )
+              LEFT JOIN acdSchedule G
+                     ON (D.groupId = G.groupId)
+              LEFT JOIN basWeekDay H
+                     ON (G.weekDayId = H.weekDayId )
+              LEFT JOIN insPhysicalResource I
+                     ON (G.physicalResourceId = I.physicalResourceId )
+              LEFT JOIN acdScheduleLearningPeriod J
+                     ON (J.scheduleLearningPeriodId = G.scheduleLearningPeriodId )
+              LEFT JOIN basTurn L
+                     ON (J.turnId = L.turnId )
+             INNER JOIN acdCurriculum M 
+                     ON (M.curriculumId = D.curriculumId)
+             INNER JOIN acdCourse N
+                     ON (N.courseId = M.courseId)
+             INNER JOIN acdContract O
+                     ON (O.contractId = C.contractId)
+              LEFT JOIN acdScheduleProfessor P
+                     ON (P.scheduleId = G.scheduleId)
+              LEFT JOIN acdComplementaryActivities Q
+                     ON (Q.contractId = C.contractId)';
+
+        if ( count($filters->contractId) > 0 )
+        {
+            $where .= ' AND C.contractId in ( ' . implode(",", $filters->contractId) . ' )';
+        }
+
+        if ( strlen((string)$filters->periodId) > 0)
+        {
+            $where .= ' AND E.periodId = ? ';
+            $args[] = $filters->periodId;
+        }
+
+        if ( strlen((string)$filters->statusId) > 0)
+        {
+            $where .= ' AND C.statusId = ? ';
+            $args[] = $filters->statusId;
+        }
+
+        if ( strlen((string)$filters->notInPeriodId) > 0)
+        {
+            $where .= ' AND E.periodId <> ? ';
+            $args[] = $filters->notInPeriodId;
+        }
+
+        if ( $filters->proficiency )
+        {
+            $where .= ' AND B.curriculumTypeId = ? ';
+            $args[] = ACD_CURRICULUM_TYPE_PROFICIENCY;
+        }
+        else
+        {
+            $where .= ' AND B.curriculumTypeId != ? ';
+            $args[] = ACD_CURRICULUM_TYPE_PROFICIENCY;
+        }
+
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE ' . substr($where, 4) . ' AND isExploitation = \'' . DB_FALSE . '\'' . 
+                 ' ORDER BY E.periodId DESC,
+                            A.curricularComponentId,
+                            C.enrollId,
+                            G.weekDayId, 
+                            J.beginHour, 
+                            C.statusId, 
+                            A.name';
+
+            $result = $this->db->query(SAGU::prepare($sql, $args));
+
+            if ( count($result) > 0 )
+            {
+                $x = 0;
+                foreach ( $result as $row )
+                {
+                    //cores dos status de matrícula
+                    if ( $result[$x][11] == ENROLL_STATUS_APPROVED || $result[$x][11] == ENROLL_STATUS_APPROVED_INEXAM ) //aprovado
+                    {
+                        $result[$x][12] = '<font color="' . CURRICULUM_STATUS_COLOR_FREE . '">' . $result[$x][12] . '</font>';
+                    }
+                    elseif ( $result[$x][11] == ENROLL_STATUS_ENROLLED ) //matriculado
+                    {
+                        $result[$x][12] = '<font color="' . CURRICULUM_STATUS_COLOR_ENROLLED . '">' . $result[$x][12] . '</font>';
+                    }
+                    elseif ( $result[$x][11] == ENROLL_STATUS_CANCELLED ) //cancelado
+                    {
+                        $sql = 'SELECT A.description
+                                  FROM acdReasonCancellation A
+                            INNER JOIN acdEnroll B
+                                    ON A.reasonCancellationId = B.reasonCancellationId
+                                 WHERE B.enrollId = ?';
+
+                        $res22    = $this->db->query(SAGU::prepare($sql, $row[0]));
+                        $str      = $res22[0][0];
+
+                        if ( strlen((string)$str) > 0 )
+                        {
+                            $path     = $ui->getImage($module, 'red.png');
+                            $string   = new MImage('imgRed', $str, $path);
+                            unset($str);
+                            $result[$x][12] = '<font color="' . CURRICULUM_STATUS_COLOR_DISABLED . '">' . $result[$x][12] . '</font>' . $string->generate();
+                        }
+                        else
+                        {
+                            $result[$x][12] = '<font color="' . CURRICULUM_STATUS_COLOR_DISABLED . '">' . $result[$x][12] . '</font>';
+                        }
+                    }
+                    elseif ( $result[$x][11] == ENROLL_STATUS_EXCUSED ) //dispensado
+                    {
+                        $result[$x][12] = '<font color="' . CURRICULUM_STATUS_COLOR_ENROLLED . '">' . $result[$x][12] . '</font>';
+                    }
+                    elseif ( $result[$x][11] == ENROLL_STATUS_DISAPPROVED || $result[$x][11] == ENROLL_STATUS_DISAPPROVED_FOR_LACKS || ENROLL_STATUS_DISAPPROVED_INEXAM) //reprovado ou reprovado por faltas
+                    {
+                        $result[$x][12] = '<font color="' . CURRICULUM_STATUS_COLOR_CANCELLED . '">' . $result[$x][12] . '</font>';
+                    }
+                    elseif ( $result[$x][11] == ENROLL_STATUS_DEPENDENT || $result[$x][11] == ENROLL_STATUS_DEPENDENT_FOR_LACKS) //dependente ou dependente por faltas
+                    {
+                        $result[$x][12] = '<font color="' . CURRICULUM_STATUS_COLOR_DEPENDENT . '">' . $result[$x][12] . '</font>';
+                    }
+
+                    unset($result2);
+                    if ( strlen((string)$row[15])>0 )
+                    {
+                        //professores
+                        $sql = 'SELECT A.name
+                             FROM ONLY basPerson A
+                             LEFT JOIN acdScheduleProfessor B
+                                    ON ( B.professorId = A.personId )
+                                  WHERE B.scheduleId = ?';
+                        $result2 = $this->db->query(SAGU::prepare($sql, $row[15]));
+
+                    }
+                    if ( count($result2)>0 )
+                    {
+                        $result[$x][4] .= '<br>(&nbsp;';
+                        foreach ( $result2 as $row2 )
+                        {
+                            $result[$x][4] .= $row2[0] . ',&nbsp;';
+                        }
+                        $result[$x][4] = substr($result[$x][4],0, strlen((string)$result[$x][4])-7) . '&nbsp;)';
+                    }
+
+                    //Armazenar o tipo de aproveitamento na posição 30 de $result
+                    $result[$x][30] = $row[3];
+
+                    if ( $row[17] == DEFAULT_UNIT_ID )
+                    {
+                        $str    = _M('In default unit', $module);
+                        $path   = $ui->getImage($module, 'checkOn.png');
+                        $string = new MImage('img1', $str, $path);
+                    }
+                    //disciplinas cursadas fora da sede
+                    elseif ( strlen((string)$row[17]) > 0 )
+                    {
+                        $str    = _M('Out default unit', $module);
+                        $path   = $ui->getImage($module, 'checkGray.png');
+                        $string = new MImage('img1', $str, $path);
+                    }
+                    else
+                    {
+                        $string = null;
+                    }
+                    
+                    if ($string != null)
+                    {
+                        $result[$x][3] = $string->generate( );
+                    }
+                    else
+                    {
+                        $result[$x][3] = null;
+                    }
+
+                    //verifica se houve desbloqueio
+                    $sql = 'SELECT count(*)
+                              FROM acdCurricularComponentUnblock
+                             WHERE contractId                  = ?
+                               AND ( curriculumId              = ? 
+                                     OR (curricularComponentId ILIKE ?
+                                    AND  curricularComponentVersion  = ?) )';
+                    unset($args);
+                    $args = array(
+                                   $row[19],
+                                   $row[20],
+                                   $row[21],
+                                   $row[22]
+                                 );
+                    $result3 = $this->db->query(SAGU::prepare($sql, $args));
+                    if ( $result3[0][0] > 0 )
+                    {
+                        $str    = _M('Enroll with unblock', $module);
+                        $path   = $ui->getImage($module, 'red.png');
+                        $string = new MImage('img2', $str, $path);
+                    }
+                    else
+                    {
+                        $str    = _M('Enroll without unblock', $module);
+                        $path   = $ui->getImage($module, 'green.png');
+                        $string = new MImage('img2', $str, $path);
+                    }
+                    $result[$x][15] = $string->generate( );
+
+                    //verifica se a matricula foi feita pela internet
+                    if ( strtoupper($row[23]) == strtoupper(DB_TRUE) )
+                    {
+                        $str    = _M('Enroll made in internet', $module);
+                        $path   = $ui->getImage($module, 'blue.png');
+                        $string = new MImage('img2', $str, $path);
+                    }
+                    else
+                    {
+                        $str    = _M('Enroll made in default unit', $module);
+                        $path   = $ui->getImage($module, 'yellow.png');
+                        $string = new MImage('img2', $str, $path);
+                    }
+                    $result[$x][16] = $string->generate( );
+
+                    //coloca o ícone de frequências dos alunos
+//                     $str        = _M('Register the frequency to this curricular component', $module);
+//                     $path   = $ui->getImage($module, 'frequency.gif');
+//                     $string = new MImage('img2', $str, $path);
+//                     $result[$x][25] = $string->generate( );
+
+                    //caso for a mesma turma, mesmo status de matrícula e não for aproveitamento interno
+
+                    if ( ($oldGroupId == $row[16] && $result[$x-1][11] == $row[11]) && ($result[$x][30] != DB_TRUE) )
+                    {
+                        //dia da semana
+                        if ( strlen((string)$result[$x-1][10])>0 )
+                        {
+                            $result[$x-1][10] .= '/' . $row[10];
+                        }
+                        //sala
+                        if ( strlen((string)$result[$x-1][14])>0 )
+                        {
+                            $result[$x-1][14] = trim($result[$x-1][14]) . '/' . trim($row[14]);
+                        }
+                        //unset($result[$x]);
+                        $result[$x][0] = 'D';
+                    }
+                    else
+                    {
+                        $oldGroupId = $row[16];
+                    }
+
+                    $x++;
+                } //foreach ( $data
+            } // if ( count($data) )
+        }
+
+        unset($result2);
+
+        if ( count($result) > 0 )
+        {
+            foreach ( $result as $row )
+            {
+                if ( $row[0] != 'D' )
+                {
+                    $result2[] = $row;
+                }
+            }
+        }
+        $result = $result2;
+
+        return $result;
+    }
+
+   /**
+     * Search a specific document filtering by specific fields
+     *
+     * @param $range (object): MIOLO PageNavigator Object
+     * @param $filter (object): Object containing filters
+     *
+     * @return (array): Array containing a document list 
+     *
+    **/
+    public function searchPerson($filter)
+    {
+        if ( strlen((string)$filter->documentTypeId)>0 )
+        {
+            $where .= ' AND B.documentTypeId = ? ';
+            $args[] = $filter->documentTypeId;
+        }
+
+        if ( strlen((string)$filter->content)>0 )
+        {
+            $where .= ' AND B.content ILIKE ? ';
+            $args[] = $filter->content . '%';
+            $field = 'B.content';
+        }
+
+        if ( strlen((string)$filter->carPlate)>0 )
+        {
+            $where .= ' AND A.carPlate ILIKE ? ';
+            $args[] = '%' . $filter->carPlate . '%';
+            $field = 'A.carPlate';
+        }
+
+        if ( strlen((string)$filter->cellPhone)>0 )
+        {
+            $where .= ' AND A.cellPhone ILIKE ? ';
+            $args[] = $filter->cellPhone;
+            $field = 'A.cellPhone';
+        }
+
+        if ( strlen((string)$filter->residentialPhone)>0 )
+        {
+            $where .= ' AND A.residentialPhone ILIKE ? ';
+            $args[] = $filter->residentialPhone;
+            $field = 'A.residentialPhone';
+        }
+
+        if ( strlen((string)$filter->workPhone)>0 )
+        {
+            $where .= ' AND A.workPhone ILIKE ? ';
+            $args[] = $filter->workPhone;
+            $field = 'A.workPhone';
+        }
+
+        if ( strlen((string)$filter->email)>0 )
+        {
+            $where .= ' AND A.email ILIKE ? ';
+            $args[] = $filter->email;
+            $field = 'A.email';
+        }
+
+        if ( strlen((string)$filter->fatherName)>0 )
+        {
+            $where .= ' AND TO_ASCII(D.name) ILIKE TO_ASCII(?) ';
+            $args[] = $filter->fatherName . '%';
+            $field = 'D.name';
+        }
+
+        if ( strlen((string)$filter->motherName)>0 )
+        {
+            $where .= ' AND TO_ASCII(E.name) ILIKE TO_ASCII(?) ';
+            $args[] = $filter->motherName . '%';
+            $field = 'E.name';
+        }
+
+        $sql = 'SELECT DISTINCT A.personId,
+                                A.name,
+                            ' . $field . '
+                           FROM basPhysicalPersonStudent A
+                      LEFT JOIN basDocument B
+                             ON (B.personId = A.personId)
+                      LEFT JOIN basDocumentType C
+                             ON (C.documentTypeId = B.documentTypeId)
+                 LEFT JOIN ONLY basPerson D
+                             ON (A.fatherId = D.personId)
+                 LEFT JOIN ONLY basPerson E
+                             ON (A.motherId = E.personId)';
+
+        if ( strlen((string)$where)>0 )
+        {
+            $sql   .= ' WHERE ' . substr($where, 4, strlen((string)$where)) . 
+                   ' ORDER BY A.name ';
+
+            $result = $this->db->query(SAGU::Prepare($sql,$args));
+        }
+        return $result;
+    }
+    
+    /**
+     * Obtain the curricular component exploited.
+     *
+     * @author Leovan Tavares da Silva [leovan@solis.coop.br]
+     *
+     * @param $personId (int): Person wich data will be got
+     *
+     * @return (array): return curricular component exploited
+     *
+     */
+    function getCurricularComponentExploited($personId)
+    {
+        $sql = 'SELECT A.enrollId,
+                       E.periodId,
+                       C.curricularComponentId || \'/\' || C.curricularComponentVersion,
+                       C.name as curricularComponentName,
+                       F.description as status,
+                       CASE WHEN H.finalNote IS NOT NULL 
+                            THEN ROUND(REPLACE(H.finalNote::varchar, \',\', \'.\')::NUMERIC, \'' . REAL_ROUND_VALUE . '\')
+                            ELSE ( SELECT ROUND(REPLACE(acdEnroll.finalNote::varchar, \',\', \'.\')::NUMERIC, \'' . REAL_ROUND_VALUE . '\')
+                                    FROM acdEnroll
+                                   WHERE enrollId = H.exploitationEnrollId )
+                             END,
+                       ROUND(C.academicCredits::NUMERIC, \'' . REAL_ROUND_VALUE . '\'),
+                       C.academicNumberHours,
+                       (SELECT sum(XX.exploitationNumberHours)
+                          FROM acdExploitation XX
+                         WHERE XX.enrollId = A.enrollId) as exploitedNumberHours,
+                       D.courseId || \'/\' || D.courseVersion || \' - \' || G.name as course
+                  FROM acdEnroll A
+            INNER JOIN acdCurriculum B
+                    ON (B.curriculumId = A.curriculumId)
+            INNER JOIN acdCurricularComponent C
+                    ON (C.curricularComponentId      = B.curricularComponentId AND
+                        C.curricularComponentVersion = B.curricularComponentVersion)
+            INNER JOIN acdContract D
+                    ON (D.contractId = A.contractId)
+            INNER JOIN acdLearningPeriod E
+                    ON (E.learningPeriodId = A.learningPeriodId)
+            INNER JOIN acdEnrollStatus F
+                    ON (F.statusId = A.statusId)
+            INNER JOIN acdCourse G
+                    ON (G.courseId = D.courseId)
+            INNER JOIN acdExploitation H
+                    ON (H.enrollId = A.enrollId)
+                 WHERE D.personId = ?';
+                   
+        $args = array($personId);
+        
+        $result = $this->db->query(SAGU::prepare($sql, $args));
+        
+        return $result;
+    }
+}
+
+?>

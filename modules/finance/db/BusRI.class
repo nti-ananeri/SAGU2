@@ -1,0 +1,2062 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for finReceivableInvoice table
+ *
+ * @author Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * Rafael Luís Spengler [rafael@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 13/12/2005
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+$MIOLO  = MIOLO::getInstance();
+$MIOLO->uses('db/BusInvoice.class', 'finance');
+
+/**
+ * Class to manipulate the finReceivableInvoice table
+ **/
+class BusinessFinanceBusReceivableInvoice extends BusinessFinanceBusInvoice
+{
+    /**
+     * This attribute is an object used by the receivableInvoiceGeneration method,
+     * which breaks out as follows:
+     *
+     * generationData
+     * |
+     * +- totalIncomeForecasts: shows the number of income forecasts that need to be
+     * |                         processed.
+     * +- receivableInvoice: an array where the key is the invoice number. Each item
+     *    |                  of it contains two attributes named invoice and entries,
+     *    |                  explained below.
+     *    +- invoice: contains a FinReceivableInvoice object with all the information
+     *    |           about the generated invoice.
+     *    +- entries: contains all entries which composes the invoice.
+     **/
+    public $generationData;
+
+    /**
+     * Class constructor to instantiate a new database connection. This makes possible to use transactions
+     **/
+    function BusinessFinanceBusReceivableInvoice()
+    {
+        parent::__construct();
+    }
+
+    /**
+     * List all records from the table handled by the class
+     *
+     * @param: None
+     *
+     * @returns (array): Return an array with the entire table
+     *
+     **/
+    public function listReceivableInvoice()
+    {
+    }
+
+    
+
+    /**
+     * Return a specific record from the database
+     *
+     * @param $invoiceId (integer): Primary key of the record to be retrieved
+     *
+     * @return (object): Return an object of the type handled by the class
+     *
+     **/
+    public function getReceivableInvoice($invoiceId)
+    {
+        $receivableInvoice = $this->getInvoice($invoiceId);
+
+        $sql = 'SELECT TO_CHAR(A.sendDate,\'' . MASK_DATE . '\') AS sendDate,
+                       TO_CHAR(A.returnDate,\'' . MASK_DATE . '\') AS returnDate,
+                       A.returnFileId
+                  FROM finReceivableInvoice A
+                 WHERE A.invoiceId = ?';
+
+        $result = $this->db->query(SAGU::prepare($sql, $invoiceId));
+
+        list ( $receivableInvoice->sendDate,
+               $receivableInvoice->returnDate,
+               $receivableInvoice->returnFileId ) = $result[0];
+
+        return $receivableInvoice; 
+    }
+
+    /**
+     * Do a search on the database table handled by the class
+     *
+     * @param $filters (object): Search filters
+     *
+     * @return (array): An array containing the search results
+     **/
+    public function searchReceivableInvoice($data)
+    {
+        $sql = 'SELECT A.invoiceId,
+                       A.personId,
+                       A.accountSchemeId,
+                       A.costCenterId,
+                       A.courseId,
+                       A.courseVersion,
+                       A.unitId,
+                       A.parcelNumber,
+                       TO_CHAR(A.emissionDate,\'' . MASK_DATE . '\'),
+                       TO_CHAR(A.maturityDate,\'' . MASK_DATE . '\'),
+                       A.value,
+                       A.policyId,
+                       A.bankInvoiceId,
+                       A.automaticDebit,
+                       A.comments,
+                       A.incomeSourceId,
+                       A.bankAccountId,
+                       A.sagu1InvoiceId,
+                       TO_CHAR(A.sendDate,\'' . MASK_DATE . '\'),
+                       TO_CHAR(A.returnDate,\'' . MASK_DATE . '\'),
+                       A.returnFileId
+                  FROM finReceivableInvoice A';
+
+        $where = '';
+        unset($args);
+        if ( strlen((string)$data->invoiceId) > 0 )
+        {
+            $where .= '    AND   A.invoiceId = ?';
+            $args[] = $data->invoiceId;
+        }
+        if ( strlen((string)$data->personId) > 0 )
+        {
+            $where .= '    AND   A.personId = ?';
+            $args[] = $data->personId;
+        }
+        if ( strlen((string)$data->accountSchemeId) > 0 )
+        {
+            $where .= '    AND   A.accountSchemeId ILIKE ?';
+            $args[] = $data->accountSchemeId;
+        }
+        if ( strlen((string)$data->costCenterId) > 0 )
+        {
+            $where .= '    AND   A.costCenterId ILIKE ?';
+            $args[] = $data->costCenterId;
+        }
+        if ( strlen((string)$data->courseId) > 0 )
+        {
+            $where .= '    AND   A.courseId ILIKE ?';
+            $args[] = $data->courseId;
+        }
+        if ( strlen((string)$data->courseVersion) > 0 )
+        {
+            $where .= '    AND   A.courseVersion = ?';
+            $args[] = $data->courseVersion;
+        }
+        if ( strlen((string)$data->unitId) > 0 )
+        {
+            $where .= '    AND   A.unitId = ?';
+            $args[] = $data->unitId;
+        }
+        if ( strlen((string)$data->parcelNumber) > 0 )
+        {
+            $where .= '    AND   A.parcelNumber = ?';
+            $args[] = $data->parcelNumber;
+        }
+        if ( strlen((string)$data->emissionDate) > 0 )
+        {
+            $where .= '    AND   A.emissionDate = TO_DATE(?,\'' . MASK_DATE . '\')';
+            $args[] = $data->emissionDate;
+        }
+        if ( strlen((string)$data->maturityDate) > 0 )
+        {
+            $where .= '    AND   A.maturityDate = TO_DATE(?,\'' . MASK_DATE . '\')';
+            $args[] = $data->maturityDate;
+        }
+        if ( strlen((string)$data->value) > 0 )
+        {
+            $where .= '    AND   A.value = ?';
+            $args[] = $data->value;
+        }
+        if ( strlen((string)$data->policyId) > 0 )
+        {
+            $where .= '    AND   A.policyId = ?';
+            $args[] = $data->policyId;
+        }
+        if ( strlen((string)$data->bankInvoiceId) > 0 )
+        {
+            $where .= '    AND   A.bankInvoiceId ILIKE ?';
+            $args[] = $data->bankInvoiceId;
+        }
+        if ( strlen((string)$data->automaticDebit) > 0 )
+        {
+            $where .= '    AND   A.automaticDebit = ?';
+            $args[] = $data->automaticDebit;
+        }
+        if ( strlen((string)$data->comments) > 0 )
+        {
+            $where .= '    AND   A.comments ILIKE ?';
+            $args[] = $data->comments;
+        }
+        if ( strlen((string)$data->incomeSourceId) > 0 )
+        {
+            $where .= '    AND   A.incomeSourceId = ?';
+            $args[] = $data->incomeSourceId;
+        }
+        if ( strlen((string)$data->bankAccountId) > 0 )
+        {
+            $where .= '    AND   A.bankAccountId = ?';
+            $args[] = $data->bankAccountId;
+        }
+        if ( strlen((string)$data->sagu1InvoiceId) > 0 )
+        {
+            $where .= '    AND   A.sagu1InvoiceId ILIKE ?';
+            $args[] = $data->sagu1InvoiceId;
+        }
+        if ( strlen((string)$data->sendDate) > 0 )
+        {
+            $where .= '    AND   A.sendDate = TO_DATE(?,\'' . MASK_DATE . '\')';
+            $args[] = $data->sendDate;
+        }
+        if ( strlen((string)$data->returnDate) > 0 )
+        {
+            $where .= '    AND   A.returnDate = TO_DATE(?,\'' . MASK_DATE . '\')';
+            $args[] = $data->returnDate;
+        }
+        if ( strlen((string)$data->returnFileId) > 0 )
+        {
+            $where .= '    AND   A.returnFileId = ?';
+            $args[] = $data->returnFileId;
+        }
+
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE ' . substr($where, 8) .
+                    ' ORDER BY A.maturityDate';
+
+            $result = $this->db->query(SAGU::prepare($sql,$args));
+        }
+
+        return $result;
+
+    }
+
+    /**
+     * Insert a new record
+     *
+     * @param $data (object): An object of the type handled by the class
+     *
+     * @return The new generated invoice id if succed, otherwise FALSE
+     *
+     **/
+    public function insertReceivableInvoice($data)
+    {
+        $invoiceId = $this->insertInvoice($data);
+
+        if ( $invoiceId !== false )
+        {
+            unset($field, $prepareValue, $dataValue);
+
+            $field[] = 'invoiceId';
+            $prepareValue[] = '?';
+            $dataValue[] = $invoiceId;
+            $field[] = 'personId';
+            $prepareValue[] = '?';
+            $dataValue[] = $data->personId;
+            $field[] = 'accountSchemeId';
+            $prepareValue[] = '?';
+            $dataValue[] = $data->accountSchemeId;
+            $field[] = 'costCenterId';
+            $prepareValue[] = '?';
+            $dataValue[] = $data->costCenterId;
+            $field[] = 'courseId';
+            $prepareValue[] = '?';
+            $dataValue[] = $data->courseId;
+            $field[] = 'courseVersion';
+            $prepareValue[] = '?';
+            $dataValue[] = $data->courseVersion;
+            $field[] = 'unitId';
+            $prepareValue[] = '?';
+            $dataValue[] = $data->unitId;
+            $field[] = 'parcelNumber';
+            $prepareValue[] = '?';
+            $dataValue[] = $data->parcelNumber;
+            $field[] = 'emissionDate';
+            if ( is_null($data->emissionDate) )
+            {
+                $prepareValue[] = 'now()';
+            }
+            else
+            {
+                $prepareValue[] = 'TO_DATE(?,\'' . MASK_DATE . '\')';
+                $dataValue[] = $data->emissionDate;
+            }
+            $field[] = 'maturityDate';
+            $prepareValue[] = 'TO_DATE(?,\'' . MASK_DATE . '\')';
+            $dataValue[] = $data->maturityDate;
+            $field[] = 'value';
+            $prepareValue[] = '?';
+            $dataValue[] = $data->value;
+            $field[] = 'policyId';
+            $prepareValue[] = '?';
+            $dataValue[] = $data->policyId;
+            $field[] = 'bankInvoiceId';
+            $prepareValue[] = '?';
+            $dataValue[] = $data->bankInvoiceId;
+            $field[] = 'automaticDebit';
+            $prepareValue[] = '?';
+            $dataValue[] = $data->automaticDebit;
+            $field[] = 'comments';
+            $prepareValue[] = '?';
+            $dataValue[] = $data->comments;
+            $field[] = 'incomeSourceId';
+            $prepareValue[] = '?';
+            $dataValue[] = $data->incomeSourceId;
+            $field[] = 'bankAccountId';
+            $prepareValue[] = '?';
+            $dataValue[] = $data->bankAccountId;
+            $field[] = 'sagu1InvoiceId';
+            $prepareValue[] = '?';
+            $dataValue[] = $data->sagu1InvoiceId;
+            $field[] = 'sendDate';
+            $prepareValue[] = 'TO_DATE(?,\'' . MASK_DATE . '\')';
+            $dataValue[] = $data->sendDate;
+            $field[] = 'returnDate';
+            $prepareValue[] = 'TO_DATE(?,\'' . MASK_DATE . '\')';
+            $dataValue[] = $data->returnDate;
+            $field[] = 'returnFileId';
+            $prepareValue[] = '?';
+            $dataValue[] = $data->returnFileId;
+
+            $sql = 'INSERT INTO finReceivableInvoice
+                                (';
+            for ( $i=0; $i<count($field); $i++ )
+            {
+                $sql .= $field[$i] . ',';
+            }
+            $sql = substr($sql, 0, strlen((string)$sql)-1) . ')
+                         VALUES (';
+            for ( $i=0; $i<count($prepareValue); $i++ )
+            {
+                $sql .= $prepareValue[$i] . ',';
+            }
+            $sql = substr($sql, 0, strlen((string)$sql)-1) . ')';
+
+            if ( ! $this->db->execute(SAGU::prepare($sql, $dataValue)) )
+            {
+                $invoiceId = false;
+            }
+        }
+
+        return $invoiceId;
+
+    }
+
+    /**
+     * Update data from a specific record
+     *
+     * @param $data (object): Data which will replace the old record data
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+    public function updateReceivableInvoice($data)
+    {
+        $this->updateInvoice($data);
+
+        $sql = 'UPDATE finReceivableInvoice
+                   SET personId        = ?,
+                       accountSchemeId = ?,
+                       costCenterId    = ?,
+                       courseId        = ?,
+                       courseVersion   = ?,
+                       unitId          = ?,
+                       parcelNumber    = ?,
+                       emissionDate    = TO_DATE(?,\'' . MASK_DATE . '\'),
+                       maturityDate    = TO_DATE(?,\'' . MASK_DATE . '\'),
+                       value           = ?,
+                       policyId        = ?,
+                       bankInvoiceId   = ?,
+                       automaticDebit  = ?,
+                       comments        = ?,
+                       incomeSourceId  = ?,
+                       bankAccountId   = ?,
+                       sagu1InvoiceId  = ?,
+                       sendDate        = TO_DATE(?,\'' . MASK_DATE . '\'),
+                       returnDate      = TO_DATE(?,\'' . MASK_DATE . '\'),
+                       returnFileId    = ?
+                 WHERE invoiceId = ?';
+
+        unset($args);
+        $args[] = $data->personId;
+        $args[] = $data->accountSchemeId;
+        $args[] = $data->costCenterId;
+        $args[] = $data->courseId;
+        $args[] = $data->courseVersion;
+        $args[] = $data->unitId;
+        $args[] = $data->parcelNumber;
+        $args[] = $data->emissionDate;
+        $args[] = $data->maturityDate;
+        $args[] = $data->value;
+        $args[] = $data->policyId;
+        $args[] = $data->bankInvoiceId;
+        $args[] = $data->automaticDebit;
+        $args[] = $data->comments;
+        $args[] = $data->incomeSourceId;
+        $args[] = $data->bankAccountId;
+        $args[] = $data->sagu;
+        $args[] = $data->sendDate;
+        $args[] = $data->returnDate;
+        $args[] = $data->returnFileId;
+        $args[] = $data->invoiceId;
+
+        $sqls = SAGU::prepare($sql, $args); 
+        for ( $i=0; $i<count($sqls); $i++ )
+        {
+            $retVal = $this->db->execute($sqls[$i]);
+        }
+
+        return $retVal;
+    }
+
+    /**
+     * Delete a record
+     *
+     * @param $invoiceId (string): Primary key for deletion
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+    public function deleteReceivableInvoice($invoiceId)
+    {
+        $this->deleteInvoice($invoiceId);
+
+        $sql = 'DELETE FROM finReceivableInvoice
+                      WHERE invoiceId = ?';
+
+        $retVal = $this->db->execute(SAGU::prepare($sql, $invoiceId));
+
+        return $retVal;
+    }
+
+    /**
+     * Convert a date to the format used by the system, based on the
+     * MASK_DATE define.
+     *
+     * @param $year (integer|string): Year date part
+     * @param $month (integer|string): Month date part
+     * @param $day (integer|string): Day date part
+     *
+     * @return (string): The formatted date
+     *
+     **/
+    public function getSystemFormattedDate($year, $month, $day)
+    {
+        $date = str_pad($year,  4, '0', STR_PAD_LEFT) . '-' . 
+                str_pad($month, 2, '0', STR_PAD_LEFT) . '-' .
+                str_pad($day,   2, '0', STR_PAD_LEFT);
+
+        $sql = 'SELECT TO_CHAR(TO_DATE(\'' . $date . '\',\'yyyy-mm-dd\'),\'' . MASK_DATE . '\')';
+        $retVal = $this->db->query($sql);
+
+        return $retVal[0][0];
+    }
+
+    /**
+     * Obtain all the incentives for a specified contract id.
+     *
+     * @author Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+     *
+     * @param $contractId The contract from which we want to obtain the incentives
+     *
+     * @return On success, return an object containing all the incentive. Otherwise
+     * return false.
+     *
+     **/
+    function getIncentives($contractId)
+    {
+        $sql = 'SELECT A.incentiveId,
+                       A.contractId,
+                       A.startDate,
+                       A.endDate,
+                       A.incentiveTypeId,
+                       A.valueIsPercent,
+                       A.value,
+                       A.supporterId,
+                       A.agglutinate,
+                       CASE WHEN A.costCenterId IS NULL
+                            THEN (SELECT costCenterId
+                                    FROM accCourseAccount D
+                                   WHERE D.courseId = C.courseId
+                                     AND D.courseVersion = C.courseVersion
+                                     AND D.unitId = C.unitId)
+                            ELSE A.costCenterId
+                       END,
+                       B.description,
+                       B.operationId,
+                       B.needAdjustAuthorization,
+                       B.sendInvoices,
+                       B.generateCredits,
+                       B.accountSchemeId,
+                       B.collectionOperationId
+                  FROM astIncentive A
+            INNER JOIN astSupport B
+                    ON (B.incentiveTypeId = A.incentiveTypeId)
+            INNER JOIN acdContract C
+                    ON (A.contractId=C.contractId)
+                 WHERE now() BETWEEN A.startDate AND A.endDate
+                   AND A.isActive
+                   AND A.contractId = ?';
+
+        $result = $this->db->query(SAGU::prepare($sql, $contractId));
+        for ( $i=0; $i<count($result); $i++ )
+        {
+            list ( $retVal->support[$i]->incentiveId,
+                   $retVal->support[$i]->contractId,
+                   $retVal->support[$i]->startDate,
+                   $retVal->support[$i]->endDate,
+                   $retVal->support[$i]->incentiveTypeId,
+                   $retVal->support[$i]->valueIsPercent,
+                   $retVal->support[$i]->value,
+                   $retVal->support[$i]->supporterId,
+                   $retVal->support[$i]->agglutinate,
+                   $retVal->support[$i]->costCenterId,
+                   $retVal->support[$i]->description,
+                   $retVal->support[$i]->operationId,
+                   $retVal->support[$i]->needAdjustAuthorization,
+                   $retVal->support[$i]->sendInvoices,
+                   $retVal->support[$i]->generateCredits,
+                   $retVal->support[$i]->accountSchemeId,
+                   $retVal->support[$i]->collectionOperationId ) = $result[$i];
+        }
+
+        $sql = 'SELECT A.incentiveId,
+                       A.contractId,
+                       A.startDate,
+                       A.endDate,
+                       A.incentiveTypeId,
+                       A.valueIsPercent,
+                       A.value,
+                       A.supporterId,
+                       A.agglutinate,
+                       A.costCenterId,
+                       B.description,
+                       B.operationId,
+                       B.needAdjustAuthorization,
+                       B.sendInvoices,
+                       B.generateCredits,
+                       B.accountSchemeId,
+                       B.loanerId,
+                       B.rotative,
+                       B.groupInvoicesValues,
+                       B.collectionOperationId
+                  FROM astIncentive A
+            INNER JOIN astLoan B
+                    ON (B.incentiveTypeId = A.incentiveTypeId)
+                 WHERE now() BETWEEN A.startDate AND A.endDate
+                   AND A.isActive
+                   AND A.contractId = ?';
+
+        $result = $this->db->query(SAGU::prepare($sql, $contractId));
+        for ( $i=0; $i<count($result); $i++ )
+        {
+            list ( $retVal->loan[$i]->incentiveId,
+                   $retVal->loan[$i]->contractId,
+                   $retVal->loan[$i]->startDate,
+                   $retVal->loan[$i]->endDate,
+                   $retVal->loan[$i]->incentiveTypeId,
+                   $retVal->loan[$i]->valueIsPercent,
+                   $retVal->loan[$i]->value,
+                   $retVal->loan[$i]->supporterId,
+                   $retVal->loan[$i]->agglutinate,
+                   $retVal->loan[$i]->costCenterId,
+                   $retVal->loan[$i]->description,
+                   $retVal->loan[$i]->operationId,
+                   $retVal->loan[$i]->needAdjustAuthorization,
+                   $retVal->loan[$i]->sendInvoices,
+                   $retVal->loan[$i]->generateCredits,
+                   $retVal->loan[$i]->accountSchemeId,
+                   $retVal->loan[$i]->loanerId,
+                   $retVal->loan[$i]->rotative,
+                   $retVal->loan[$i]->groupInvoicesValues,
+                   $retVal->loan[$i]->collectionOperationId ) = $result[$i];
+        }
+
+        $sql = 'SELECT A.incentiveId,
+                       A.contractId,
+                       A.startDate,
+                       A.endDate,
+                       A.incentiveTypeId,
+                       A.valueIsPercent,
+                       A.value,
+                       A.supporterId,
+                       A.agglutinate,
+                       A.costCenterId,
+                       B.description,
+                       B.operationId,
+                       B.needAdjustAuthorization,
+                       B.sendInvoices,
+                       B.generateCredits,
+                       B.requireCostCenter
+                  FROM astIncentive A
+            INNER JOIN astFinancialAid B
+                    ON (B.incentiveTypeId = A.incentiveTypeId)
+                 WHERE now() BETWEEN A.startDate AND A.endDate
+                   AND A.isActive
+                   AND A.contractId = ?';
+
+        $result = $this->db->query(SAGU::prepare($sql, $contractId));
+        for ( $i=0; $i<count($result); $i++ )
+        {
+            list ( $retVal->financialAid[$i]->incentiveId,
+                   $retVal->financialAid[$i]->contractId,
+                   $retVal->financialAid[$i]->startDate,
+                   $retVal->financialAid[$i]->endDate,
+                   $retVal->financialAid[$i]->incentiveTypeId,
+                   $retVal->financialAid[$i]->valueIsPercent,
+                   $retVal->financialAid[$i]->value,
+                   $retVal->financialAid[$i]->supporterId,
+                   $retVal->financialAid[$i]->agglutinate,
+                   $retVal->financialAid[$i]->costCenterId,
+                   $retVal->financialAid[$i]->description,
+                   $retVal->financialAid[$i]->operationId,
+                   $retVal->financialAid[$i]->needAdjustAuthorization,
+                   $retVal->financialAid[$i]->sendInvoices,
+                   $retVal->financialAid[$i]->generateCredits,
+                   $retVal->financialAid[$i]->requireCostCenter ) = $result[$i];
+        }
+        return $retVal;
+    }
+ 
+    /**
+     * Generate the receivable invoices for the support and loan incentives,
+     * returning TRUE if everything goes alright or FALSE otherwise.
+     *
+     * @author Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+     *
+     * @param $supportInvoices An object containing the invoices to be generated
+     *                         from incentives of type support.
+     * @param $loanInvoices An object containing the invoices to be generated
+     *                      from incentives of type loan.
+     *
+     * @return Return true if everything goes right. Otherwise, return false.
+     *
+     **/
+    private function generateIncentiveInvoices($supportInvoices, $loanInvoices)
+    {
+        $keepGoing = true;
+
+        // Generation of the support invoices
+        if ( count($supportInvoices) > 0 )
+        {
+            // Generation of the invoices who need to be
+            // aglutinated
+            $invoiceCreated = false;
+            foreach ( $supportInvoices as $supporterId => $invoices )
+            {
+                foreach ( $invoices as $contractId => $invoice )
+                {
+                    if ( $invoice->aglutinate )
+                    {
+                        if ( ! $invoiceCreated )
+                        {
+                            $invoiceId = $this->insertReceivableInvoice($invoice);
+                            $generatedInvoices[] = $invoiceId;
+                            // Generate statistics
+                            $this->generationData->receivableInvoice[$invoiceId]->invoiceData = $invoice;
+                            $keepGoing = ( $invoiceId !== false );
+                            $invoiceCreated = true;
+                        }
+                        if ( $keepGoing )
+                        {
+                            foreach ( $invoice->entries as $entry )
+                            {
+                                // Insert invoice entries
+                                $sql = 'INSERT INTO finEntry
+                                                    (invoiceId,
+                                                     operationId,
+                                                     entryDate,
+                                                     value,
+                                                     costCenterId,
+                                                     comments,
+                                                     isAccounted,
+                                                     creationType)
+                                             VALUES (?,?,now(),?,?,?,FALSE,\'A\')';
+
+                                $args = array($invoiceId,
+                                              $entry->operationId,
+                                              $entry->value,
+                                              $entry->costCenterId,
+                                              $entry->comments);
+                                $keepGoing = $this->db->execute(SAGU::prepare($sql,$args));
+
+                                // Generate statistics
+                                $this->generationData->receivableInvoice[$invoiceId]->entries[] = $entry;
+
+                                if ( ! $keepGoing )
+                                {
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    if ( ! $keepGoing )
+                    {
+                        break;
+                    }
+                }
+                if ( ! $keepGoing )
+                {
+                    break;
+                }
+            }
+            if ( $keepGoing )
+            {
+                // Generation of the invoices who won't be aglutinated
+                foreach ( $supportInvoices as $supporterId => $invoices )
+                {
+                    foreach ( $invoices as $contractId => $invoice )
+                    {
+                        if ( ! $invoice->aglutinate )
+                        {
+                            $invoiceId = $this->insertReceivableInvoice($invoice);
+                            $generatedInvoices[] = $invoiceId;
+                            // Generate statistics
+                            $this->generationData->receivableInvoice[$invoiceId]->invoiceData = $invoice;
+                            $keepGoing = ( $invoiceId !== false );
+                            if ( $keepGoing )
+                            {
+                                foreach ( $invoice->entries as $entry )
+                                {
+                                    // Insert invoice entries
+                                    $sql = 'INSERT INTO finEntry
+                                                        (invoiceId,
+                                                         operationId,
+                                                         entryDate,
+                                                         value,
+                                                         costCenterId,
+                                                         comments,
+                                                         isAccounted,
+                                                         creationType)
+                                                 VALUES (?,?,now(),?,?,?,FALSE,\'A\')';
+
+                                    $args = array($invoiceId,
+                                                  $entry->operationId,
+                                                  $entry->value,
+                                                  $entry->costCenterId,
+                                                  $entry->comments);
+
+                                    $keepGoing = $this->db->execute(SAGU::prepare($sql,$args));
+
+                                    // Generate statistics
+                                    $this->generationData->receivableInvoice[$invoiceId]->entries[] = $entry;
+
+                                    if ( ! $keepGoing )
+                                    {
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if ( ! $keepGoing )
+                    {
+                        break;
+                    }
+                }
+            }
+        }
+        // Generation of the loan invoices
+        if ( count($loanInvoices) > 0 && $keepGoing )
+        {
+            // Generation of the invoices who need to group
+            // its values
+            $invoiceCreated = false;
+            foreach ( $loanInvoices as $loanerId => $invoices )
+            {
+                foreach ( $invoices as $contractId => $invoice )
+                {
+                    if ( $invoice->groupInvoicesValues )
+                    {
+                        if ( ! $invoiceCreated )
+                        {
+                            $invoiceId = $this->insertReceivableInvoice($invoice);
+                            $generatedInvoices[] = $invoiceId;
+                            // Generate statistics
+                            $this->generationData->receivableInvoice[$invoiceId]->invoiceData = $invoice;
+                            $invoiceCreated = true;
+                            $keepGoing = ( $invoiceId !== false );
+                        }
+                        if ( $keepGoing )
+                        {
+                            foreach ( $invoice->entries as $entry )
+                            {
+                                // Insert invoice entries
+                                $sql = 'INSERT INTO finEntry
+                                                    (invoiceId,
+                                                     operationId,
+                                                     entryDate,
+                                                     value,
+                                                     costCenterId,
+                                                     comments,
+                                                     isAccounted,
+                                                     creationType)
+                                             VALUES (?,?,now(),?,?,?,FALSE,\'A\')';
+
+                                $args = array($invoiceId,
+                                              $entry->operationId,
+                                              $entry->value,
+                                              $entry->costCenterId,
+                                              $entry->comments);
+
+                                $keepGoing = $this->db->execute(SAGU::prepare($sql,$args));
+
+                                // Generate statistics
+                                $this->generationData->receivableInvoice[$invoiceId]->entries[] = $entry;
+
+                                if ( ! $keepGoing )
+                                {
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    if ( ! $keepGoing )
+                    {
+                        break;
+                    }
+                }
+                if ( ! $keepGoing )
+                {
+                    break;
+                }
+            }
+            if ( $keepGoing )
+            {
+                // Generation of the invoices who won't be aglutinated
+                foreach ( $loanInvoices as $loanerId => $invoices )
+                {
+                    foreach ( $invoices as $contractId => $invoice )
+                    {
+                        if ( ! $invoice->groupInvoicesValues )
+                        {
+                            $invoiceId = $this->insertReceivableInvoice($invoice);
+                            $generatedInvoices[] = $invoiceId;
+                            // Generate statistics
+                            $this->generationData->receivableInvoice[$invoiceId]->invoiceData = $invoice;
+                            $keepGoing = ( $invoiceId !== false );
+                            if ( $keepGoing )
+                            {
+                                foreach ( $invoice->entries as $entry )
+                                {
+                                    // Insert invoice entries
+                                    $sql = 'INSERT INTO finEntry
+                                                        (invoiceId,
+                                                         operationId,
+                                                         entryDate,
+                                                         value,
+                                                         costCenterId,
+                                                         comments,
+                                                         isAccounted,
+                                                         creationType)
+                                                 VALUES (?,?,now(),?,?,?,FALSE,\'A\')';
+
+                                    $args = array($invoiceId,
+                                                  $entry->operationId,
+                                                  $entry->value,
+                                                  $entry->costCenterId,
+                                                  $entry->comments);
+
+                                    $keepGoing = $this->db->execute(SAGU::prepare($sql,$args));
+
+                                    // Generate statistics
+                                    $this->generationData->receivableInvoice[$invoiceId]->entries[] = $entry;
+
+                                    if ( ! $keepGoing )
+                                    {
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        if ( ! $keepGoing )
+                        {
+                            break;
+                        }
+                    }
+                    if ( ! $keepGoing )
+                    {
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Update the value of every generated invoice
+        if ( $keepGoing && count($generatedInvoices) > 0 )
+        {
+            // Set all invoices balance to the correct value
+            $sql = 'UPDATE finInvoice
+                       SET value = (SELECT SUM(A.value * CASE WHEN B.operationTypeId = \'C\' THEN -1 ELSE 1 END)
+                                      FROM finEntry A
+                                INNER JOIN finOperation B
+                                        ON (B.operationId = A.operationId)
+                                     WHERE A.invoiceId = finInvoice.invoiceId)
+                     WHERE invoiceId IN (' . implode($generatedInvoices, ',') . ')';
+
+            $keepGoing = $this->db->execute($sql);
+        }
+
+        return $keepGoing;
+    }
+
+    /**
+     * Get the respectively value for the month for a specific group of income forecasts
+     *
+     * @author: William Prigol Lopes [william@solis.coop.br]
+     *
+     * @param $data (object): An object containing the necessary parameters to return the value
+     *
+     * @return (float): balance for the month specified in parameters for income forecasts
+     */
+    private function getIncomeForecastBalance($data)
+    {
+        $sql = '     SELECT sum( ( A.value * (CASE WHEN B.operationTypeId = \'D\' THEN 1 
+                                                   WHEN B.operationTypeId = \'C\' THEN -1 
+                                               END)
+                                 )
+                               )
+                       FROM finIncomeForecast A
+                 INNER JOIN finOperation B
+                      USING (operationId)
+                 INNER JOIN acdContract C
+                      USING (contractId)
+                      WHERE C.personId = ?
+                        AND extract(MONTH FROM A.maturityDate) = ? 
+                        AND extract(YEAR FROM A.maturityDate) = ? ';
+        
+        $args = array( $data->personId,
+                       $data->month,
+                       $data->year 
+                     );
+
+        $return = $this->db->query(SAGU::prepare($sql, $args));
+        return (string)$return[0][0];
+    }
+     
+
+    /**
+     * Generate the receivable invoices for every nonprocessed entry
+     * at finIncomeForecast table. If something goes wrong, a ROLLBACK
+     * is executed. Otherwise, the changes are COMMITed.
+     *
+     * @author Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+     * @maintainer William Prigol Lopes [william@solis.coop.br]
+     * @lastModification: 26/01/2005 - Include income forecast close operation for each invoice created
+     *
+     * @param $data An object containing the necessary parameters to generate the receivable invoices.
+     *
+     * @return Return true if everything gone right. Otherwise, return false.
+     *
+     **/
+    function generateReceivableInvoices($inData)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = 'finance';
+
+        // This process is very strong, needs this function to could be executable.
+        $this->db->execute('BEGIN TRANSACTION');
+
+        $keepGoing = true;
+
+        // Select all income forecasts to be processed
+        $sql = 'SELECT A.incomeForecastId,
+                       A.contractId,
+                       B.personId,
+                       B.courseId,
+                       B.courseVersion,
+                       B.unitId,
+                       B.maturityDay,
+                       A.operationId,
+                       A.accountSchemeId,
+                       CASE WHEN A.costCenterId IS NULL
+                            THEN (SELECT costCenterId
+                                    FROM accCourseAccount E
+                                   WHERE E.courseId = B.courseId
+                                     AND E.courseVersion = B.courseVersion
+                                     AND E.unitId = B.unitId)
+                            ELSE A.costCenterId
+                            END,
+                       A.value,
+                       A.comments,
+                       TO_CHAR(A.recordDate,\'' . MASK_DATE . '\') AS recordDate,
+                       TO_CHAR(A.maturityDate,\'' . MASK_DATE . '\') AS maturityDate,
+                       C.policyId,
+                       D.incomeSourceId
+                  FROM finIncomeForecast A
+            INNER JOIN acdContract B
+                    ON (B.contractId = A.contractId)
+            INNER JOIN acdLearningPeriod C
+                    ON (C.courseId = B.courseId
+                        AND C.courseVersion = B.courseVersion
+                        AND C.unitId = B.unitId
+                        AND C.turnId = B.turnId
+                        AND A.recordDate BETWEEN C.beginDate AND C.endDate)
+            INNER JOIN acdCourse D
+                    ON (D.courseId = B.courseId)
+                 WHERE A.isAccounted = FALSE
+                   AND A.isProcessed = FALSE
+                   AND EXTRACT(MONTH FROM A.maturityDate) = ?
+                   AND EXTRACT(YEAR FROM A.maturityDate) = ?';
+
+        $args = array ( $inData->month,
+                        $inData->year );
+       
+        if ( strlen((string)$inData->costCenterId) > 0 )
+        {
+            $sql .= ' AND A.costCenterId = ?';
+            $args[] = $inData->costCenterId;
+        }
+        if ( strlen((string)$inData->accountSchemeId) > 0 )
+        {
+            $sql .= ' AND A.accountSchemeId ILIKE ?';
+            $args[] = $inData->accountSchemeId;
+        }
+        if ( strlen((string)$inData->contractId) > 0 )
+        {
+            $sql .= ' AND A.contractId = ?';
+            $args[] = $inData->contractId;
+        }
+        $sql .= ' ORDER BY A.maturityDate,
+                           A.contractId';
+        $res = $this->db->query( $sql = SAGU::prepare( $sql, $args ) );
+        
+        // For each record, insert a new receivable invoice and
+        // create the invoice entries.
+        $totalRegs = count($res);
+        $oldContractId = '';
+        unset($generatedInvoices);
+        
+        // Get default operations 
+        $businessDefaultOperations = $MIOLO->getBusiness($module, 'BusDefaultOperations');
+        $dataDefaultOperations     = $businessDefaultOperations->getDefaultOperations();
+       
+        // Generate statistics
+        $this->generationData->totalIncomeForecasts = $totalRegs;
+        if ($totalRegs>0)
+        {
+            for ( $i=0; $i<$totalRegs && $keepGoing; $i++ )
+            {
+                list ( $data->incomeForecastId,
+                       $data->contractId,
+                       $data->personId,
+                       $data->courseId,
+                       $data->courseVersion,
+                       $data->unitId,
+                       $data->maturityDay,
+                       $data->operationId,
+                       $data->accountSchemeId,
+                       $data->costCenterId,
+                       $data->value,
+                       $data->comments,
+                       $data->recordDate,
+                       $data->maturityDate,
+                       $data->policyId,
+                       $data->incomeSourceId ) = $res[$i];
+
+                // Create a new invoice each time the contract id changes
+                if ( $data->contractId != $oldContractId )
+                {
+                    $receivableInvoice = new FinReceivableInvoice();
+                    $receivableInvoice->personId        = $data->personId;
+                    $receivableInvoice->accountSchemeId = $data->accountSchemeId;
+                    $receivableInvoice->costCenterId    = $data->costCenterId;
+                    $receivableInvoice->courseId        = $data->courseId;
+                    $receivableInvoice->courseVersion   = $data->courseVersion;
+                    $receivableInvoice->unitId          = $data->unitId;
+                    $receivableInvoice->parcelNumber    = 1;
+                    $receivableInvoice->maturityDate    = $this->getSystemFormattedDate($inData->year, $inData->month, $data->maturityDay);
+
+                    $receivableInvoice->value           = 0;
+                    $receivableInvoice->policyId        = $data->policyId;
+                    $receivableInvoice->automaticDebit  = 'f';
+                    $receivableInvoice->incomeSourceId  = $data->incomeSourceId;
+                    $receivableInvoice->invoiceId = $this->insertReceivableInvoice($receivableInvoice);
+                    if ( $receivableInvoice->invoiceId === false )
+                    {
+                        $keepGoing = false;
+                    }
+                    else
+                    {
+                        // This is used on the final update to set the correct
+                        // invoice balance for every generated invoice.
+                        $generatedInvoices[] = $receivableInvoice->invoiceId;
+
+                        // ---
+                        $icData->personId = $data->personId;
+                        $icData->month    = $inData->month;
+                        $icData->year     = $inData->year;
+                        // ---
+                        
+                        $incomeForecast[$data->contractId]->contractId      = $data->contractId;
+                        $incomeForecast[$data->contractId]->operationId     = $dataDefaultOperations->closeIncomeForecastOperation;
+                        $incomeForecast[$data->contractId]->accountSchemeId = $data->accountSchemeId;
+                        $incomeForecast[$data->contractId]->costCenterId    = $data->costCenterId;
+                        $incomeForecast[$data->contractId]->value           = $this->getIncomeForecastBalance($icData);
+                        $incomeForecast[$data->contractId]->comments        = ' Close income forecast operation executed on generate receivable invoice for invoiceId '.$receivableInvoice->invoiceId.' - on '.date(MASK_DATE_PHP);
+                        $incomeForecast[$data->contractId]->maturityDate    = $this->getSystemFormattedDate($inData->year, $inData->month, $data->maturityDay);
+                        $incomeForecast[$data->contractId]->isGenerated     = true;
+                        
+                        // Get all the contract's incentives
+                        $incentives = $this->getIncentives($data->contractId);
+                        
+                        // Generate statistics
+                        $this->generationData->receivableInvoice[$receivableInvoice->invoiceId]->invoiceData = $receivableInvoice;
+
+                    }
+                    $oldContractId = $data->contractId;
+                }
+
+                // Insert invoice entries
+                $sql = 'INSERT INTO finEntry
+                                    (invoiceId,
+                                     operationId,
+                                     entryDate,
+                                     value,
+                                     costCenterId,
+                                     isAccounted,
+                                     creationType)
+                             VALUES (?, ?, now(), ?, ?, FALSE, \'A\')';
+
+                $args = array($receivableInvoice->invoiceId,
+                              $data->operationId,
+                              $data->value,
+                              $data->costCenterId);
+                              
+                $keepGoing = $this->db->execute(SAGU::prepare($sql,$args));
+
+                // Mark each income forecast as processed, so that it won't be
+                // processed anymore
+                $sql = 'UPDATE finIncomeForecast
+                           SET isProcessed = TRUE
+                         WHERE incomeForecastId = ' . $data->incomeForecastId;
+
+                $keepGoing = $this->db->execute($sql);
+
+                // If there are incentives of type SUPPORT, put them
+                // inside an object for later generation
+                if ( count($incentives->support) > 0 )
+                {
+                    foreach ( $incentives->support as $support )
+                    {
+                        if ( $data->operationId == $support->operationId )
+                        {
+                            // Create a new entry to be added to a new or to an existing invoice
+                            $entry = new FinEntry();
+                            $entry->sourceContractId = $receivableInvoice->contractId;
+                            $entry->operationId      = $support->collectionOperationId;
+                            $entry->value            = $data->value;
+                            $entry->costCenterId     = $support->costCenterId;
+                            $entry->comments         = _M('Source invoice', $module) . ': ' . $receivableInvoice->invoiceId;
+                            
+                            // If no invoice has been already created for the current contract,
+                            // create one. Otherwise, just add a new entry
+                            if ( is_null($supportInvoices[$support->supporterId][$data->contractId]) )
+                            {
+                                $invoice = new FinInvoice();
+                                $invoice->personId        = $support->supporterId;
+                                $invoice->accountSchemeId = $receivableInvoice->accountSchemeId;
+                                $invoice->costCenterId    = $support->costCenterId;
+                                $invoice->parcelNumber    = 1;
+                                $invoice->maturityDate    = $receivableInvoice->maturityDate;
+                                $invoice->value           = 0;
+                                $invoice->policyId        = $receivableInvoice->policyId;
+                                $invoice->automaticDebit  = 'f';
+                                $invoice->unitId          = $data->unitId;
+                                $invoice->courseId        = $data->courseId;
+                                $invoice->courseVersion   = $data->courseVersion;
+                                
+                                $invoice->entries[] = clone($entry);
+                                $invoice->aglutinate = ($support->agglutinate == 't');
+                                
+                                $supportInvoices[$support->supporterId][$data->contractId] = clone($invoice);
+                            }
+                            else
+                            {
+                                $supportInvoices[$support->supporterId][$data->contractId]->entries[] = clone($entry);
+                            }
+                        }
+                    }
+                }
+                if ( count($incentives->loan) > 0 )
+                {
+                    foreach ( $incentives->loan as $loan )
+                    {
+                        if ( $data->operationId == $loan->operationId )
+                        {
+                            // Create a new entry to be added to a new or to an existing invoice
+                            $entry = new FinEntry();
+                            $entry->sourceContractId = $receivableInvoice->contractId;
+                            $entry->operationId      = $loan->collectionOperationId;
+                            $entry->value            = $data->value;
+                            $entry->costCenterId     = $loan->costCenterId;
+                            $entry->comments         = _M('Source invoice', $module) . ': ' . $receivableInvoice->invoiceId;
+                            
+                            // If no invoice has been already created for the current contract,
+                            // create one. Otherwise, just add a new entry
+                            if ( is_null($loanInvoices[$loan->loanerId][$data->contractId]) )
+                            {
+                                $invoice = new FinInvoice();
+                                $invoice->personId        = $loan->loanerId;
+                                $invoice->accountSchemeId = $receivableInvoice->accountSchemeId;
+                                $invoice->costCenterId    = $loan->costCenterId;
+                                $invoice->parcelNumber    = 1;
+                                $invoice->maturityDate    = $receivableInvoice->maturityDate;
+                                $invoice->value           = 0;
+                                $invoice->policyId        = $receivableInvoice->policyId;
+                                $invoice->automaticDebit  = 'f';
+                                $invoice->entries[] = clone($entry);
+
+                                $invoice->groupInvoicesValues = ($loan->groupInvoicesValues == 't');
+                                $loanInvoices[$loan->loanerId][$data->contractId] = clone($invoice);
+                                
+                            }
+                            else
+                            {
+                                $loanInvoices[$loan->loanerId][$data->contractId]->entries[] = clone($entry);
+                            }
+                        }
+                    }
+                }
+
+                // Generate statistics
+                unset($entry);
+                $entry->operationId  = $data->operationId;
+                $entry->value        = $data->value;
+                $entry->costCenterId = $data->costCenterId;
+                $this->generationData->receivableInvoice[$receivableInvoice->invoiceId]->entries[] = $entry;
+            }
+
+            $keepGoing = $this->generateIncentiveInvoices($supportInvoices, $loanInvoices);
+            if ( $keepGoing && count($generatedInvoices) > 0 )
+            {
+
+                // Set all invoices balance to the correct value
+                $sql = 'UPDATE finInvoice
+                           SET value = (SELECT SUM(A.value * CASE WHEN B.operationTypeId = \'C\' THEN -1 ELSE 1 END)
+                                          FROM finEntry A
+                                    INNER JOIN finOperation B
+                                            ON (B.operationId = A.operationId)
+                                         WHERE A.invoiceId = finInvoice.invoiceId)
+                         WHERE invoiceId IN (' . implode($generatedInvoices, ',') . ')';
+
+                $keepGoing = $this->db->execute($sql);
+            }
+
+            // Insert the income forecasts to close the specific period for income forecasts
+            if ($keepGoing && is_array($incomeForecast))
+            {
+                foreach ($incomeForecast as $if)
+                {
+                    $sql = 'SELECT NEXTVAL(\'seq_incomeforecastid\')';
+
+                    $retVal = $this->db->query($sql);
+
+                    unset($incomeForecastId);
+                    if ( isset($retVal) )
+                    {
+                        $incomeForecastId = $retVal[0][0];
+                        $sql = 'INSERT INTO finIncomeForecast
+                                            (incomeForecastId,
+                                             contractId,
+                                             operationId,
+                                             accountSchemeId,
+                                             costCenterId,
+                                             value,
+                                             comments,       
+                                             recordDate,
+                                             maturityDate,
+                                             isAccounted,
+                                             isProcessed,
+                                             isGenerated)
+                                     VALUES (?,?,?,?,?,?, 
+                                             ?, now(),
+                                             TO_DATE(?,\'' . MASK_DATE . '\'),
+                                             FALSE, TRUE, ?) ';
+
+                        $args = array($incomeForecastId,
+                                      $if->contractId,
+                                      $if->operationId,
+                                      $if->accountSchemeId,
+                                      $if->costCenterId,
+                                      $if->value,
+                                      $if->comments,
+                                      $if->maturityDate,
+                                      $if->isGenerated );
+            
+                        $keepGoing = $this->db->execute(SAGU::prepare($sql, $args));
+                    }
+                    if ($keepGoing === false)
+                    {
+                        break 2;
+                    }
+                }
+            }
+        }
+        else
+        {
+            $keepGoing = false;
+        }
+        // If everything gone right, we may COMMIT the database changes, otherwise, ROLLBACK them
+        $this->db->execute(($keepGoing ? 'COMMIT' : 'ROLLBACK'));
+
+        return $keepGoing;
+    }
+    
+    /**
+     * @author: William Prigol Lopes [william@solis.coop.br]
+     *
+     * @param: $data (object): Object containing data to close invoice
+     *
+     * @return: True if succeed otherwise false
+     *
+     */
+    public function closeInvoice($data)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        
+        $keepGoing = true;
+        // Begin Transaction
+        $this->db->execute('BEGIN TRANSACTION');
+
+        // Select values related to this invoice and data to work
+        $sql = ' SELECT costCenterId,
+                        balance(invoiceId),
+                        balanceWithPolicies(invoiceId),
+                        abs(balance(invoiceId)-balanceWithPolicies(invoiceId)),
+                        CASE WHEN (balance(invoiceId)-balanceWithPolicies(invoiceId)) > 0
+                             THEN \'D\'
+                             WHEN (balance(invoiceId)-balanceWithPolicies(invoiceId)) < 0
+                             THEN \'I\'
+                             WHEN (balance(invoiceId)-balanceWithPolicies(invoiceId)) = 0
+                             THEN \'E\'
+                        END
+                   FROM finReceivableInvoice
+                  WHERE invoiceId = ? ';
+
+        $args = array($data->invoiceId);
+        $return = $this->db->query(SAGU::prepare($sql, $args));
+
+        $dataInvoice->costCenterId        = $return[0][0];
+        $dataInvoice->invoiceId           = $data->invoiceId;
+        $dataInvoice->balance             = $return[0][1];
+        $dataInvoice->balanceWithPolicies = $return[0][2];
+        $dataInvoice->difference          = $return[0][3];
+        $dataInvoice->situation           = $return[0][4];
+  
+        // Get all default operations
+        $businessDefaultOperations = $MIOLO->getBusiness($module, 'BusDefaultOperations');
+        $dataDefaultOperations = $businessDefaultOperations->getDefaultOperations();
+  
+        switch ($data->closeType)
+        {
+            case 'I':
+            {
+                if ($dataInvoice->situation != 'E')
+                {
+                    if ($dataInvoice->situation == 'D')
+                    {
+                        $situation = $dataDefaultOperations->discountOperation;
+                    }
+                    elseif ($dataInvoice->situation == 'I')
+                    {
+                        $situation = $dataDefaultOperations->interestOperation;
+                    }
+                    $dataEntry->invoiceId      = $data->invoiceId;
+                    $dataEntry->operationId    = $situation;
+                    $dataEntry->value          = $dataInvoice->difference;
+                    $dataEntry->costCenterId   = $dataInvoice->costCenterId;
+                    $dataEntry->comments       = _M('Discount or interest applied on payment of invoice', $module);
+                    $dataEntry->bankReturnCode = NULL;
+                    $dataEntry->isAccounted    = 'F';
+                    $dataEntry->creationType   = 'M';
+                    
+                    $sql = ' INSERT INTO finEntry
+                                       ( invoiceId,
+                                         operationId,
+                                         entryDate,
+                                         value,
+                                         costCenterId,
+                                         comments,
+                                         bankReturnCode,
+                                         isAccounted,
+                                         creationType
+                                       )
+                                VALUES (?, ?, now()::date, ?, ?, ?, ?, ?, ?) ';
+               
+                    $args = array( $dataEntry->invoiceId,
+                                   $dataEntry->operationId,
+                                   $dataEntry->value,
+                                   $dataEntry->costCenterId,
+                                   $dataEntry->comments,
+                                   $dataEntry->bankReturnCode,
+                                   $dataEntry->isAccounted,
+                                   $dataEntry->creationType
+                                 );
+                    if ($this->db->execute(SAGU::prepare($sql, $args)) === false)
+                    {
+                        $keepGoing = false;
+                    }
+                }
+                
+                //
+                // Insert the entry to close invoice
+                //
+                $dataEntry->invoiceId      = $data->invoiceId;
+                $dataEntry->operationId    = $data->operationId;
+                $dataEntry->value          = $dataInvoice->balanceWithPolicies;
+                $dataEntry->costCenterId   = $dataInvoice->costCenterId;
+                $dataEntry->comments       = _M('Entry created by close invoice process on @1 for invoice @2. Total close', $module, date(MASK_DATE_PHP), $data->invoiceId);
+                $dataEntry->bankReturnCode = NULL;
+                $dataEntry->isAccounted    = 'F';
+                $dataEntry->creationType   = 'M';
+
+                // Insert a entry closing the invoice
+                $sql = ' INSERT INTO finEntry
+                                   ( invoiceId,
+                                     operationId,
+                                     entryDate,
+                                     value,
+                                     costCenterId,
+                                     comments,
+                                     bankReturnCode,
+                                     isAccounted,
+                                     creationType
+                                   )
+                            VALUES (?, ?, now()::date, ?, ?, ?, ?, ?, ?) ';
+           
+                $args = array( $dataEntry->invoiceId,
+                               $dataEntry->operationId,
+                               $dataEntry->value,
+                               $dataEntry->costCenterId,
+                               $dataEntry->comments,
+                               $dataEntry->bankReturnCode,
+                               $dataEntry->isAccounted,
+                               $dataEntry->creationType
+                             );
+                if ($this->db->execute(SAGU::prepare($sql, $args)) === false)
+                {
+                    $keepGoing = false;
+                }
+                break;
+            }
+            case 'P':
+            {
+                // Get the cost center to put in entry
+                $sql = ' SELECT costCenterId,
+                           FROM finReceivableInvoice
+                          WHERE invoiceId = ? ';
+
+                $args = array($data->invoiceId);
+                $return = $this->db->query(SAGU::prepare($sql, $args));
+
+                $dataInvoice->costCenterId        = $return[0][0];
+                $dataInvoice->invoiceId           = $data->invoiceId;
+                $dataInvoice->balance             = $return[0][1];
+                $dataInvoice->balanceWithPolicies = $return[0][2];
+                $dataInvoice->difference          = $return[0][3];
+                $dataInvoice->situation           = $return[0][4];
+                
+                //
+                // Insert the entry to close partially the invoice
+                //
+                $dataEntry->invoiceId      = $data->invoiceId;
+                $dataEntry->operationId    = $data->operationId;
+                $dataEntry->value          = $data->value;
+                $dataEntry->costCenterId   = $dataInvoice->costCenterId;
+                $dataEntry->comments       = _M('Entry created by close invoice process on @1 for invoice @2. Partial close', date(MASK_DATE_PHP), $data->invoiceId);
+                $dataEntry->bankReturnCode = NULL;
+                $dataEntry->isAccounted    = 'F';
+                $dataEntry->creationType   = 'M';
+
+                $sql = ' INSERT INTO finEntry
+                                   ( invoiceId,
+                                     operationId,
+                                     entryDate,
+                                     value,
+                                     costCenterId,
+                                     comments,
+                                     bankReturnCode,
+                                     isAccounted,
+                                     creationType
+                                   )
+                            VALUES (?, ?, now()::date, ?, ?, ?, ?, ?, ?) ';
+           
+                $args = array( $dataEntry->invoiceId,
+                               $dataEntry->operationId,
+                               $dataEntry->value,
+                               $dataEntry->costCenterId,
+                               $dataEntry->comments,
+                               $dataEntry->bankReturnCode,
+                               $dataEntry->isAccounted,
+                               $dataEntry->creationType
+                             );
+                if ($this->db->execute(SAGU::prepare($sql, $args)) === false)
+                {
+                    $keepGoing = false;
+                }
+                
+                // 
+                // Now... apply the interests on entry with new value.
+                //
+                
+                // Get the updated values
+                $sql = ' SELECT costCenterId,
+                                balance(invoiceId),
+                                balanceWithPolicies(invoiceId),
+                                abs(balance(invoiceId)-balanceWithPolicies(invoiceId)),
+                                CASE WHEN (balance(invoiceId)-balanceWithPolicies(invoiceId)) > 0
+                                     THEN \'D\'
+                                     WHEN (balance(invoiceId)-balanceWithPolicies(invoiceId)) < 0
+                                     THEN \'I\'
+                                     WHEN (balance(invoiceId)-balanceWithPolicies(invoiceId)) = 0
+                                     THEN \'E\'
+                                END
+                           FROM finReceivableInvoice
+                          WHERE invoiceId = ? ';
+
+                $args = array($data->invoiceId);
+                $return = $this->db->query(SAGU::prepare($sql, $args));
+
+                $dataInvoice->costCenterId        = $return[0][0];
+                $dataInvoice->invoiceId           = $data->invoiceId;
+                $dataInvoice->balance             = $return[0][1];
+                $dataInvoice->balanceWithPolicies = $return[0][2];
+                $dataInvoice->difference          = $return[0][3];
+                $dataInvoice->situation           = $return[0][4];
+
+                // Now insert the interests for this invoice
+                if ($dataInvoice->situation != 'E')
+                {
+                    // Insert the entry data
+                    if ($dataInvoice->situation == 'D')
+                    {
+                        $situation = $dataDefaultOperations->discountOperation;
+                    }
+                    elseif ($dataInvoice->situation == 'I')
+                    {
+                        $situation = $dataDefaultOperations->interestOperation;
+                    }
+                    else
+                    {
+                        return false;
+                    }
+                    $dataEntry->invoiceId      = $data->invoiceId;
+                    $dataEntry->operationId    = $situation;
+                    $dataEntry->value          = $dataInvoice->difference;
+                    $dataEntry->costCenterId   = $dataInvoice->costCenterId;
+                    $dataEntry->comments       = _M('Discount or interest applied on payment of invoice', $module);
+                    $dataEntry->bankReturnCode = NULL;
+                    $dataEntry->isAccounted    = 'F';
+                    $dataEntry->creationType   = 'M';
+                    
+                    $sql = ' INSERT INTO finEntry
+                                       ( invoiceId,
+                                         operationId,
+                                         entryDate,
+                                         value,
+                                         costCenterId,
+                                         comments,
+                                         bankReturnCode,
+                                         isAccounted,
+                                         creationType
+                                       )
+                                VALUES (?, ?, now()::date, ?, ?, ?, ?, ?, ?) ';
+               
+                    $args = array( $dataEntry->invoiceId,
+                                   $dataEntry->operationId,
+                                   $dataEntry->value,
+                                   $dataEntry->costCenterId,
+                                   $dataEntry->comments,
+                                   $dataEntry->bankReturnCode,
+                                   $dataEntry->isAccounted,
+                                   $dataEntry->creationType
+                                 );
+                    if ($this->db->execute(SAGU::prepare($sql, $args)) === false)
+                    {
+                        $keepGoing = false;
+                    }
+                }
+                break;
+            }
+            default:
+            {
+                $keepGoing = false;
+                break;
+            }
+        }
+        // If everything gone right, we may COMMIT the database changes, otherwise, ROLLBACK them
+        if ($keepGoing == true)
+        {
+            $this->db->execute('COMMIT');
+        }
+        else
+        {
+            $this->db->execute('ROLLBACK');
+        }
+        return $keepGoing;
+    }
+     
+        
+
+
+    /**
+     *
+     * @author: William Prigol Lopes [william@solis.coop.br]
+     *
+     * @param: $data (object): Object containing data to begin a process for titles
+     *
+     * @return (boolean): True if succeed, otherwise false
+     *
+     **/
+    public function processLongTermShortTermInvoice($dataInvoice, $dataProcess)
+    {
+       if (is_array($dataInvoice[0]))
+       {
+            $this->db->execute('BEGIN TRANSACTION');
+            $keepGoing = true;
+
+            $businessDefaultOperations = $MIOLO->getDefaultOperations();
+            $defaultOperationsData = $businessDefaultOperations->getDefaultOperations();
+
+            // PHP function to unlimit the time (When a lot of titles is processed a lot of time is needed) ;)
+            set_time_limit(0);
+
+            // For each invoice execute the process (obviously)
+            // $keepGoing verify if some transaction fails
+            for ($count = 0; $count<count($dataInvoice) && $keepGoing; $count++)
+            {
+                $dataEntry = new FinEntry();
+
+                // Get information about invoice
+                $dataEntry->invoiceId      = $dataInvoice[$count][0];
+                $dataEntry->operationId    = $dataProcess->closeOperationId;
+                $dataEntry->entryDate      = date(MASK_DATE_PHP);
+                $dataEntry->value          = $dataInvoice[$count][7];
+                $dataEntry->costCenterId   = $dataInvoice[$count][8];
+                $dataEntry->comments       = 'Created by LongTerm->ShortTerm process in '.date(MASK_DATE_PHP).' to close and get a new title to short term ';
+                $dataEntry->bankReturnCode = null;
+                $dataEntry->isAccounted    = 'F';
+                $dataEntry->creationType   = 'A';
+ 
+                // Insert a entry closing the invoice
+                $sql = ' INSERT INTO finEntry
+                                   ( invoiceId,
+                                     operationId,
+                                     entryDate,
+                                     value,
+                                     costCenterId,
+                                     comments,
+                                     bankReturnCode,
+                                     isAccounted,
+                                     creationType
+                                   )
+                            VALUES (?, ?, to_date(?, \''.MASK_DATE.'\'), ?, ?, ?, ?, ?, ?) ';
+           
+                $args = array( $dataEntry->invoiceId,
+                               $dataDefaultOperations->closeIncomeForecastOperation,
+                               $dataEntry->entryDate,
+                               $dataEntry->value,
+                               $dataEntry->costCenterId,
+                               $dataEntry->comments,
+                               $dataEntry->bankReturnCode,
+                               $dataEntry->isAccounted,
+                               $dataEntry->creationType
+                             );
+                if ($this->db->execute(SAGU::prepare($sql, $args)) === false)
+                {
+                    $keepGoing = false;
+                }
+               
+                // Insert a invoice information 
+                $dataReceivableInvoice->personId        = $dataInvoice[$count][2];
+                $dataReceivableInvoice->accountSchemeId = $dataInvoice[$count][9];
+                $dataReceivableInvoice->costCenterId    = $dataInvoice[$count][8];
+                $dataReceivableInvoice->courseId        = strlen((string)$dataProcess->newCourseId)>0 ? $dataProcess->newCourseId : $dataProcess->oldCourseId;
+                $dataReceivableInvoice->courseVersion   = strlen((string)$dataProcess->courseVersion)>0 ? $dataProcess->courseVersion : $dataInvoice[$count][11];
+                $dataReceivableInvoice->unitId          = $dataInvoice[$count][12]; 
+                $dataReceivableInvoice->parcelNumber    = $dataInvoice[$count][13];
+                $dataReceivableInvoice->emissionDate    = $dataInvoice[$count][4];
+                $dataReceivableInvoice->maturityDate    = $dataInvoice[$count][5];
+                $dataReceivableInvoice->value           = '0';
+                $dataReceivableInvoice->policyId        = strlen((string)$dataProcess->newPolicyId)>0 ? $dataProcess->newPolicyId : $dataProcess->oldPolicyId;
+                $dataReceivableInvoice->bankInvoiceId   = null;
+                $dataReceivableInvoice->automaticDebit  = 'F'; 
+                $dataReceivableInvoice->comments        = 'CREATED BY LongTerm->ShortTerm process in ' . date(MASK_DATE_PHP) . ' substituting the closed invoice ' . $dataInvoice[$count][0] . '.';
+                $dataReceivableInvoice->incomeSourceId  = $dataInvoice[$count][15];
+                $dataReceivableInvoice->bankAccountId   = strlen((string)$dataProcess->bankAccountId)>0 ? $dataProcess->bankAccountId : $dataInvoice[$count][16];
+                $dataReceivableInvoice->sagu1InvoiceId  = null;
+
+                $newInvoice = $this->insertReceivableInvoice($dataReceivableInvoice);
+                if ($newInvoice === false)
+                {   
+                    $keepGoing = false;
+                }
+                
+                // Adjust the entry data for entry for invoice
+                $dataNewEntry->invoiceId      = $newInvoice;
+                $dataNewEntry->operationId    = $dataProcess->openOperationId;
+                $dataNewEntry->entryDate      = date(MASK_DATE_PHP);
+                $dataNewEntry->value          = $dataInvoice[$count][7];
+                $dataNewEntry->costCenterId   = $dataInvoice[$count][8];
+                $dataNewEntry->comments       = 'CREATED BY longTerm->shortTerm process in ' . date(MASK_DATE_PHP) . ' substituting the closed invoice ';
+                $dataNewEntry->bankReturnCode = null;
+                $dataNewEntry->isAccounted    = 'F';
+                $dataNewEntry->creationType   = 'A';
+
+                // Insert a entry closing the invoice
+                $sql = ' INSERT INTO finEntry
+                                   ( invoiceId,
+                                     operationId,
+                                     entryDate,
+                                     value,
+                                     costCenterId,
+                                     comments,
+                                     bankReturnCode,
+                                     isAccounted,
+                                     creationType
+                                   )
+                            VALUES (?, ?, to_date(?, \''.MASK_DATE.'\'), ?, ?, ?, ?, ?, ?) ';
+           
+                $args = array( $dataNewEntry->invoiceId,
+                               $dataNewEntry->operationId,
+                               $dataNewEntry->entryDate,
+                               $dataNewEntry->value,
+                               $dataNewEntry->costCenterId,
+                               $dataNewEntry->comments,
+                               $dataNewEntry->bankReturnCode,
+                               $dataNewEntry->isAccounted,
+                               $dataNewEntry->creationType
+                             );
+                             
+                if ($this->db->execute(SAGU::prepare($sql, $args)) === false)
+                {
+                    $keepGoing = false;
+                }
+               
+                // Update the invoice value because have a new insert
+                if ($this->updateInvoiceBalance($newInvoice) === false)
+                {
+                    $keepGoing = false;
+                }
+                $dataInvoice[$count][1] = $newInvoice;
+                
+            }
+
+            // If everything gone right, we may COMMIT the database changes, otherwise, ROLLBACK them
+            if ($keepGoing == true)
+            {
+                $this->db->execute('COMMIT');
+                return $dataInvoice;
+            }
+            else
+            {
+                $this->db->execute('ROLLBACK');
+                return false;
+            }
+        }
+    }
+
+    /**
+     *
+     * @author: william prigol lopes [william@solis.coop.br]
+     *
+     * @param: $data (object): object containing data to begin a process for titles
+     *
+     * @return (boolean): true if succeed, otherwise false
+     *
+     */
+    public function listReceivableInvoiceToBankRemittance($data)
+    {
+        $sql = '         SELECT A.invoiceId,
+                                A.personId,
+                                \'limbo_origem\',
+                                \'limbo_ocorrencia\',
+                                TO_CHAR(A.maturityDate, \' ' . MASK_DATE . ' \'),
+                                TO_CHAR((A.value*100), \'000000000000\'),
+                                \'limbo_aceite\',
+                                B.cityId,
+                                balance(A.invoiceId),
+                                C.square,
+                                TO_CHAR(A.emissionDate, \' ' . MASK_DATE . ' \'),
+                                A.bankInvoiceId
+                      FROM ONLY finReceivableInvoice A
+                     INNER JOIN basPerson B
+                          USING (personId)
+                     INNER JOIN basCitySquare C
+                          USING (cityId)
+                          WHERE A.maturityDate 
+                        BETWEEN TO_DATE(?, \''. MASK_DATE .'\')
+                            AND TO_DATE(?, \''. MASK_DATE .'\')
+                            AND balance(A.invoiceId) > '. MINIMAL_VALUE_TO_PRINT_INVOICE .'
+                            AND (SELECT D.payrollDiscountEmployeeId 
+                                   FROM basPhysicalPersonStudent D
+                                  WHERE A.personId = D.personId ) IS NULL 
+                            AND (SELECT dateDeath 
+                              FROM ONLY basPhysicalPerson AA
+                                  WHERE A.personId = AA.personId ) IS NULL ';
+                            
+        $db = $this->getDatabase();
+
+        $args = array( $data->initialMaturityDate,
+                       $data->finalMaturityDate );
+
+        if ( (strlen((string)$data->initialEmissionDate)>0) && (strlen((string)$data->finalEmissionDate)>0) )
+        {
+            $args[] = $data->initialEmissionDate;
+            $args[] = $data->finalEmissionDate;
+
+            $sql.= '     AND A.emissionDate 
+                     BETWEEN to_date(?, \''.MASK_DATE .'\')
+                         AND to_date(?, \''.MASK_DATE .'\') ';
+        }
+
+        if ($data->resendInvoices == 0)
+        {
+            $sql.= ' AND A.bankInvoiceId IS NULL ';
+        }
+
+        $return = $db->query(SAGU::prepare($sql, $args) );
+        return $return;
+    }
+
+
+    /**
+     * @author: William Prigol Lopes [william@solis.coop.br]
+     *
+     * @param: $invoiceId (int): primary key for receivable invoice
+     *
+     * @return (object): Simple object containing the values for invoice
+     *
+     */
+    public function getReceivableInvoiceValues($invoiceId)
+    {
+        $sql = ' SELECT round(value, '.REAL_ROUND_VALUE.'),
+                        round(balance(invoiceId)::numeric, '.REAL_ROUND_VALUE.'),
+                        round(balanceWithPolicies(invoiceId)::numeric, '.REAL_ROUND_VALUE.')
+                   FROM finReceivableInvoice
+                  WHERE invoiceId = ? ';
+        $db = $this->getDatabase();
+        
+        $args   = array($invoiceId);
+        $return = $db->query(SAGU::prepare($sql, $args));
+
+        $return = $return[0];
+
+        $data->nominalValue        = $return[0];
+        $data->balance             = $return[1];
+        $data->balanceWithPolicies = $return[2];
+        
+        return $data;
+    }
+
+    /**
+     *
+     * @author: William Prigol Lopes [william@solis.coop.br]
+     *
+     * @param: $personId (int): Person id to get her invoices
+     *
+     * @return (array): A tri dimensional array containing invoices information for person
+     *
+     */
+    public function listInvoicesForPerson($personId)
+    {
+        $sql = '  SELECT periodId,
+                         invoiceId,
+                         TO_CHAR(A.emissionDate, \''. MASK_DATE .'\') as emissionDate,
+                         TO_CHAR(A.maturityDate, \''. MASK_DATE .'\') as maturityDate,
+                         value,
+                         balanceWithPolicies,
+                         updatedTime,
+                         periodDate
+                    FROM ( SELECT (  SELECT periodId
+                                       FROM acdLearningPeriod B
+                                      WHERE A.maturityDate
+                                    BETWEEN B.beginDate
+                                        AND B.endDate
+                                        AND A.courseId = B.courseId
+                                        AND A.courseVersion = B.courseVersion
+                                        AND A.policyId = B.policyId
+                                        AND A.unitId = B.unitId
+                                   GROUP BY periodId
+                                    LIMIT 1) as periodId,
+                                  A.invoiceId,
+                                  emissionDate,
+                                  maturityDate,
+                                  ROUND(A.value, ' . REAL_ROUND_VALUE . ') as value,
+                                  ROUND((balanceWithPolicies(A.invoiceId))::numeric, ' . REAL_ROUND_VALUE . ') as balanceWithPolicies,
+                                  updatedTime(invoiceId) as updatedTime,
+                                  (  SELECT beginDate::date
+                                       FROM acdLearningPeriod B
+                                      WHERE A.maturityDate
+                                    BETWEEN B.beginDate
+                                        AND B.endDate
+                                        AND A.courseId = B.courseId
+                                        AND A.courseVersion = B.courseVersion
+                                        AND A.policyId = B.policyId
+                                        AND A.unitId = B.unitId
+                                    LIMIT 1) as periodDate
+                        FROM ONLY finReceivableInvoice A
+                            WHERE A.personId = ? 
+                         ) AS A
+                ORDER BY periodDate DESC,
+                         maturityDate ASC ';
+
+        $args = array($personId);
+        $db   = $this->getDatabase();
+        $ret = $db->query(SAGU::prepare($sql, $args));
+        
+        if (is_array($ret[0]))
+        {
+            foreach ($ret as $r)
+            {
+                if ($r[0] != $periodId)
+                {
+                    $periodId = $r[0];
+                }
+                $return[$periodId][] = $r;
+            }
+        }
+        return $return;
+    }
+
+
+    /** 
+     * Verify if the receivable invoice id really exists ;)
+     * 
+     * @args: $invoiceId (int): Invoice id code
+     *
+     * @param: True if exists otherwise false
+     *
+     */
+    public function verifyReceivableInvoice($invoiceId)
+    {
+        $sql = ' SELECT invoiceId
+                   FROM finReceivableInvoice
+                  WHERE invoiceId = ? ';
+                  
+        $db = $this->getDatabase();
+
+        $args = array($invoiceId);
+
+        $return = $db->query(SAGU::prepare($sql, $args));
+
+        if (is_array($return[0]))
+        {
+            return true;
+        }
+        else
+        {
+            return false;
+        }
+    }
+
+    /** 
+     * Get all agreements related to a person
+     * 
+     * @args: $personId (int): Person id
+     *
+     * @param: An array containing information about agreements
+     *
+     */
+    public function listReceivableInvoiceWithAgreements($personId)
+    {
+        $sql = ' SELECT invoiceId,
+                        incomeSourceId,
+                        TO_CHAR(maturityDate, \'' . MASK_DATE . '\'),
+                        TO_CHAR(entryDate, \' ' . MASK_DATE . '\'),
+                        operation,
+                        invoiceValue,
+                        SUM((entryValue * CASE WHEN operationTypeId = \'C\' THEN  0 ELSE 1 END)),
+                        SUM((entryValue * CASE WHEN operationTypeId = \'C\' THEN  1 ELSE 0 END)),
+                        SUM((entryValue * CASE WHEN operationTypeId = \'C\' THEN -1 ELSE 1 END))
+                 FROM ( SELECT A.invoiceId,
+                               A.incomeSourceId,
+                               A.maturityDate,
+                               B.entryDate,
+                               B.operationId ||\' - \'|| C.description as operation,
+                               A.value as invoiceValue,
+                               B.value as entryValue,
+                               C.operationTypeId
+                          FROM (SELECT invoiceId,
+                                       incomeSourceId,
+                                       maturityDate,
+                                       value
+                             FROM ONLY finReceivableInvoice
+                                 WHERE personId = ? ) AS A
+                    INNER JOIN (SELECT invoiceId,
+                                       entryDate,
+                                       operationId,
+                                       value
+                                  FROM finEntry) AS B
+                         USING (invoiceId)
+                    INNER JOIN (SELECT operationId,
+                                       description,
+                                       operationTypeId
+                                  FROM finOperation
+                               ) AS C
+                         USING (operationId)
+                         WHERE B.operationId IN (' . AGREEMENT_OPERATIONS . ')
+                            OR A.incomesourceId IN (' . AGREEMENT_INCOME_SOURCE_ID . ')
+                            OR B.entryDate > CASE WHEN TO_CHAR(maturityDate, \'D\') = \'1\'
+                                                     THEN maturityDate + 1
+                                                  WHEN TO_CHAR(maturityDate, \'D\') = \'7\'
+                                                     THEN maturityDate + 2
+                                                  ELSE maturityDate
+                                             END 
+                      ) AS A 
+                 GROUP BY 1,2,3,4,5 ';
+        $db     = $this->getDatabase();
+        $args   = array($personId);
+        /*
+        $sql = ' SELECT incomeSourceId,
+                        TO_CHAR(maturityDate, \'' . MASK_DATE . '\'),
+                        TO_CHAR(entryDate, \' ' . MASK_DATE . '\'),
+                        operation,
+                        invoiceValue,
+                        SUM((entryValue * CASE WHEN operationTypeId = \'C\' THEN  0 ELSE 1 END)),
+                        SUM((entryValue * CASE WHEN operationTypeId = \'C\' THEN  1 ELSE 0 END)),
+                        SUM((entryValue * CASE WHEN operationTypeId = \'C\' THEN -1 ELSE 1 END))
+*/
+        $return = $db->query(SAGU::prepare($sql, $args));
+        if (is_array($return[0]))
+        {
+            foreach ($return as $ret)
+            {
+                if ($invouceId
+            }
+            return false;
+        }
+        return $return;
+    }
+}
+
+?>

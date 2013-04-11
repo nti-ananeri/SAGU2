@@ -1,0 +1,60 @@
+\i miolo.sql
+\i sagu2.sql
+\i sagu2-functions.sql
+\i sagu2-indexes.sql
+\i sagu2-triggers.sql
+\i basConfig.sql
+\i basDocumentType.sql
+\i basEmail.sql
+\i basEmployeeType.sql
+\i basEthnicOrigin.sql
+\i basLegalPersonType.sql
+\i basLink.sql
+\i basMaritalStatus.sql
+\i basProfessionalActivityLinkType.sql
+\i basProfessionalActivityAgent.sql
+\i basProfessionalActivity.sql
+\i basSpecialNecessity.sql
+\i basTurn.sql
+\i basWeekDay.sql
+\i acdCertifiedType.sql
+\i acdComplementaryActivitiesCategory.sql
+\i acdCourseVersionType.sql
+\i acdCurricularComponentType.sql
+\i acdCurriculumType.sql
+\i acdEducationArea.sql
+\i acdEnrollStatus.sql
+\i acdFormationLevel.sql
+\i acdInterchangeType.sql
+\i acdKnowledgeArea.sql
+\i acdRegimen.sql
+\i acdStateContract.sql
+\i acdStateContractField.sql
+\i acdStateEnrollBook.sql
+\i acdStateEnrollBookRules.sql
+\i acdStateTransition.sql
+\i acdTestEndCourseType.sql
+\i sprSelectiveProcessType.sql
+\i finBank.sql
+\i finCollectionType.sql
+\i finOperationGroup.sql
+\i finSpecies.sql
+\i finDefaultOperations.sql
+\i finPolicy.sql
+\i finMessage.sql
+\i ptcSituation.sql
+\i ptcOriginPlace.sql
+\i ptcRequeriment.sql
+\i ptcRequerimentField.sql
+\i ptcRequerimentCompl.sql
+\i basCountry.sql
+\i basState.sql
+\i basCity.sql
+\i basNeighborhood.sql
+\i basLocation.sql
+SELECT setval('seq_locationid', max(locationid)) from baslocation;
+SELECT setval('seq_cityid', max(cityid)) from bascity;
+SELECT setval('seq_countryid', max(countryid)) from bascountry;
+SELECT setval('seq_neighborhoodid', max(neighborhoodid)) from basneighborhood;
+\i changes.sql
+

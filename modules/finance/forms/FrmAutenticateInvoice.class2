@@ -1,0 +1,172 @@
+<?php
+
+/**
+ * Form For Authentication Printer
+ *
+ * @author Giovani Murilo Dantas Corrêa [gmurilo@isolution.inf.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Daniel Afonso Heisler [daniel@isolution.inf.br]
+ *
+ * @since
+ * Class created on 09/11/2007
+ *
+ * \b Organization: \n
+ * iSolution - Soluções em TI \n
+ * The iSolution Development Team
+ *
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+
+class FrmAutenticateInvoice extends MForm
+{
+
+    private $module;
+
+
+    /**
+     * Class constructor
+     **/
+    function __construct()
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $this->module = $module;
+
+
+        parent::__construct(_M('Autenticate invoice', $module));
+
+        // hide the 'Submit' button
+        // $this->setShowPostButton(false);
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+    }
+
+   /**
+    * Default method to define fields
+   **/
+    public function createFields()
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $goto     = MIOLO::_request('goto') ? MIOLO::_request('goto') : MIOLO::_request('goto', 'GET');
+
+        $businessCounter = $MIOLO->getBusiness($module,'BusCounter');
+        $personId = new Mselection('counterId', $this->getFormValue('counterId', $data->counterId), 'Caixa', $businessCounter->listCounter(), false);
+        $personId->setAutoSubmit(true);
+        $fields[] = $personId;
+        
+        if ( strlen($this->getFormValue('counterId', $data->counterId))>0 )
+        {
+
+        $numeroDocumento = new MTextField('numeroDocumento', $this->value->numeroDocumento, 'Número do documento');
+        $validators[]    = new MRequiredValidator('numeroDocumento', 'Número do documento');
+        $fields[]        = $numeroDocumento;
+
+        $valorPago    = new MTextField('valorPago', $this->value->valorPago, 'Valor pago');
+        $validators[] = new MFloatValidator('valorPago', 'Valor pago', FLOAT_SEPARATOR, REAL_ROUND_VALUE, 'required');
+        $fields[]     = $valorPago;
+
+        $fields[]     = new MCalendarField('dataPagamento', strlen($this->value->dataPagamento)>0 ? $this->value->dataPagamento : date('d/m/Y'), 'Data do pagamento');
+        $validators[] = new MDATEDMYValidator('dataPagamento', 'Data do pagamento', FLOAT_SEPARATOR, REAL_ROUND_VALUE, 'required');
+
+        if ( strlen($this->getFormValue('counterId', $data->counterId)) > 0 )
+        {
+            $data->counterId     = $this->getFormValue('counterId', $data->counterId);
+            $printerName         = $businessCounter->searchCounter($data);
+
+            if ( count($printerName) > 1 )
+            {
+                $businessCounter = $MIOLO->getBusiness($module,'BusCounter');
+                $options         = $businessCounter->listPrinters();
+                $fields[]        = new MSelection('printerName', $this->getFormValue('printerName', $printerName[0][6]), 'Nome da impressora',$options);
+                $validators[]    = new MRequiredValidator('printerName', 'Nome da impressora');
+            }
+            else {}
+        }
+        else
+        {
+            $businessCounter = $MIOLO->getBusiness($module,'BusCounter');
+            $options         = $businessCounter->listPrinters();
+            $fields[]        = new MSelection('printerName','','Nome da impressora',$options);
+            $validators[]    = new MRequiredValidator('printerName', 'Nome da impressora');
+        }
+
+        $submitButton = new MButton('submit_button', _M('Submit', $module), 'SUBMIT');
+        $hct[] = $submitButton;
+
+        $fields[] = new Separator('');
+        $fields[] = new MHContainer('hctButtons', $hct);
+        }
+        $fields[] = new Separator('');
+        
+        $this->setFields($fields);
+        $this->setValidators($validators);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setClose($MIOLO->getActionURL($module, substr($action, 0, strrpos($action, ':'))));
+        $this->setShowPostButton(false);
+        $this->page->onLoad('document.'.$this->name.'.numeroDocumento.focus();');
+     }
+
+    /**
+     * Event used when submit_button is clicked
+     */
+    public function submit_button_click($sender = null)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $data->numeroDocumento = MIOLO::_request('numeroDocumento') ? MIOLO::_request('numeroDocumento') : MIOLO::_request('numeroDocumento', 'GET');
+        $data->valorPago       = MIOLO::_request('valorPago')       ? MIOLO::_request('valorPago')       : MIOLO::_request('valorPago', 'GET');
+        $data->dataPagamento   = MIOLO::_request('dataPagamento')   ? MIOLO::_request('dataPagamento') : MIOLO::_request('dataPagamento', 'GET');
+        $data->printerName     = $this->getFormValue('printerName') ? $this->getFormValue('printerName')   : MIOLO::_request('printerName', 'GET');
+        $data->counterId       = $this->getFormValue('counterId') ? $this->getFormValue('counterId')      : MIOLO::_request('counterId', 'GET');
+
+        $businessCounter = $MIOLO->getBusiness($module,'BusCounter');
+        $printerName2    = $businessCounter->searchCounter($data);
+        $printerName     = strtolower($printerName2[0][6]);
+
+        $businessCompany = $MIOLO->getBusiness('basic', 'BusCompany');
+        $company         = $businessCompany->getCompany(DEFAULT_COMPANY_CONF);
+
+        $file    = $MIOLO->GetModulePath('basic','upload/' . $data->numeroDocumento . '.tmp');
+        if ( file_exists($file) )
+        {
+            unlink($file);
+        }
+
+        $fp = fopen($file, 'w');
+        $ln = $company->acronym . ' ' . $data->dataPagamento . ' ' . $data->numeroDocumento . ' R$ ' . substr(round($data->valorPago,2),0,9) . ' ' . substr(strtoupper(md5($company->acronym . $data->dataPagamento . $data->numeroDocumento . substr(round($data->valorPago,2),0,9) . '_educareprevinirofuturo')),0,8);
+        fwrite($fp,$ln);
+        fwrite($fp,"\n");
+        fclose($fp);
+        if ( strlen($printerName)>0 )
+        {
+            $printer = strtolower($printerName);
+            shell_exec('lp -d '.$printer.' -o cpi=12 -o lpi=8 -o page-left=72 '.$file);
+        }
+        $msg = _M('Autentication was send for printer @1 @2 Would you like to resend ?',$module,$printerName,'<br>');
+        $opts    =    array ( 'numeroDocumento' => $data->numeroDocumento,
+                              'dataPagamento'   => $data->dataPagamento,
+                              'valorPago'       => $data->valorPago,
+                              'counterId'       => $data->counterId  );
+
+        $gotoYes =    $MIOLO->GetActionURL($module,$action,null,$opts);
+        $gotoNo  =    $MIOLO->GetActionURL($module,$action);
+        $event   = "";
+        $MIOLO->Question($msg, $gotoYes, $gotoNo, 'submit_button_click','btnSearch_click');
+    }
+}
+
+?>

@@ -1,0 +1,360 @@
+<?php
+
+/**
+ * Enroll person form
+ *
+ * @author Daniel Afonso Heisler [daniel@solis.coop.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ *
+ * @since
+ * Class created on 06/10/2005
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2005 SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+
+/**
+ * Form to manipulate an enroll
+ **/
+class FrmEnrollServicesUpdatePerson extends MForm
+{
+
+    var $enrollData;
+
+    /**
+     * Class constructor
+     **/
+    function __construct()
+    {
+
+        $action = MIOLO::getCurrentAction();
+        $module = MIOLO::getCurrentModule();
+        $MIOLO  = MIOLO::getInstance();
+
+        $this->enrollData = unserialize(urldecode(stripslashes(MIOLO::_request('enrollData'))));
+
+        parent::__construct('Atualizacao de dados');
+
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+        $MIOLO  = MIOLO::getInstance();
+        //        $module = MIOLO::getCurrentModule();
+        $module = 'academic';
+        $action = MIOLO::getCurrentAction();
+        
+        $mioloUserName = trim($MIOLO->getLogin()->id);
+        $busPerson     = $MIOLO->getBusiness('basic', 'BusPerson');
+
+        //se for um usuário do sistema logado
+        $personId = MIOLO::_request('personId', 'GET');
+        $business = $MIOLO->getBusiness('services', 'BusEnroll');
+        $businessDocument = $MIOLO->getBusiness('basic', 'BusDocument');
+        $data     = $business->getPhysicalPerson($personId);
+        if(!$data)
+        {
+            unset($business);
+            $business = $MIOLO->getBusiness('basic', 'BusPhysicalPerson');
+            $data     = $business->getPhysicalPerson($personId);
+            $rg = $businessDocument->getDocument($personId, RG_CODE);
+            $cpf = $businessDocument->getDocument($personId, CPF_CODE);
+            $data->contentCPF = strlen((string)$cpf->content) > 0 ? SAGU::convertInCPFFormat($cpf->content) : "" ;
+            $data->contentRG = $rg->content;
+            $data->organRG = $rg->organ;
+            $data->dateExpeditionRG = $rg->dataExpedition;
+        }
+        else
+        {
+            $data->contentCPF = strlen((string)$data->contentCPF) > 0 ? SAGU::convertInCPFFormat($data->contentCPF) : "" ;
+        }
+
+        $fields[] = new MHiddenField('limbo');
+        $fields[] = new MHiddenField('personId', isset($this->enrollData->personId) ? $this->enrollData->personId : $data->personId);
+
+        //BaseGroup 1
+        $personName   = new MTextField('personName', isset($this->enrollData->personName) ? $this->enrollData->personName : $data->name, _M('Name',$module), FIELD_DESCRIPTION_SIZE);
+        $validators[] = new MRequiredValidator('personName');
+        $flds[]       = $personName;
+        $personName->setJsHint(_M('Enter the person name',$module));
+        $personName->setReadOnly(true);
+
+ 
+        $zipCode      = new MLookupTextField('zipCode', isset($this->enrollData->zipCode) ? $this->enrollData->zipCode : $data->zipCode, _M('Zip code','basic'), FIELD_ZIPCODE_SIZE, null, null, array ( 'location', 'limbo', 'limbo', 'limbo', 'stateName', 'cityId', 'cityName', 'limbo', 'neighborhood'), 'basic', 'Location' , null, null, $this->page->isPostBack());
+        $zipCode->setJsHint(_M('Enter the zip code',$module));
+        $validators[] = new MRangeValidator('zipCode', '', '10000000', '99999999', 'i', 'required');
+        $flds[]       = $zipCode;
+
+        $location1 = new MHiddenField('location1', $this->getFormValue('location1', $location1));
+        $flds[]  = $location1;
+        $flds[] = new MHiddenField('cityId', $this->getFormValue('cityId', $data->cityId));
+
+        if ( (strlen((string)$location1->value) > 0) && (!(strlen((string)$this->enrollData->location)>0)) && (!(strlen((string)$data->location)>0)))
+        {
+            $data->location = $location1->value;
+        }
+
+        $stateName    = new MTextField('stateName', isset($this->enrollData->stateName) ? $this->enrollData->stateName : $data->stateName, _M('State name',$module), 20);
+        $stateName->setReadOnly(true);
+        $flds[]       = $stateName;
+
+        $cityName     = new MTextField('cityName', isset($this->enrollData->cityName) ? $this->enrollData->cityName : $data->cityName, _M('City name',$module), 20);
+        $cityName->setReadOnly(true);
+        $f[]       = $cityName;
+        $neighborhood = new MTextField('neighborhood', isset($this->enrollData->neighborhood) ? $this->enrollData->neighborhood : $data->neighborhood, _M('Neighborhood',$module), 20);
+        $neighborhood->setJsHint(_M('Enter the person neighborhood',$module));
+        $validators[] = new MRequiredValidator('neighborhood');
+        $f[]       = $neighborhood;
+        $flds[] = new MHContainer('hctContainer2', $f);
+        unset($f);
+
+        $location     = new MTextField('location', isset($this->enrollData->location) ? $this->enrollData->location : $data->location, _M('Location',$module), 30);
+        $location->setJsHint(_M('Enter the person location',$module));
+        $validators[] = new MRequiredValidator('location');
+        
+        $number       = new MTextField('number', isset($this->enrollData->number) ? $this->enrollData->number : $data->number, _M('Number', $module), 5);
+        $number->setJsHint(_M('Enter the person address number'));
+        $validators[] = new MRequiredValidator('number');
+        
+        $lochct            = new MHContainer('hctContainer3', array($location, $number));
+        $lochct->showLabel = true;
+        
+        $flds[]       = $lochct;
+
+        $complement   = new MTextField('complement', isset($this->enrollData->complement) ? $this->enrollData->complement : $data->complement, _M('Complement',$module), 39);
+        $complement->setJsHint(_M('Enter the location complement',$module));
+        $flds[]       = $complement;
+
+
+        $bsg1 = new BaseGroup('bsg1',_M('Address',$module),$flds,'vertical');
+        $bsg1->showLabel = false;
+        $bsg1->width = '97%';
+        unset($flds);
+
+        $contentCPF = new MTextField('contentCPF', isset($this->enrollData->contentCPF) ? SAGU::convertInCPFFormat($this->enrollData->contentCPF) : $data->contentCPF, 'CPF', 20);
+        $contentCPF->setJsHint(_M('Enter the document content',$module));
+        $validators[]  = new MCPFValidator('contentCPF', _M('CPF',$module), 'required');
+        $f[]       = $contentCPF;
+        $flds[] = new MHContainer('hctContainer4', $f);
+        unset($f);
+        $contentRG = new MTextField('contentRG', isset($this->enrollData->contentRG) ? $this->enrollData->contentRG : $data->contentRG, 'RG', 20);
+        $contentRG->setJsHint(_M('Enter the document content',$module));
+        $validators[]  = new MRequiredValidator('contentRG', _M('RG',$module));
+        $f[]       = $contentRG;
+        $organ = new MTextField('organRG' , isset($this->enrollData->organRG) ? $this->enrollData->organRG : $data->organRG, _M('Organ','basic'), 6);
+        $organ->setJsHint(_M('Enter the document organ','basic'));
+        $validators[]  = new MRequiredValidator('organRG');
+        $f[] = $organ;
+        $dateExpedition = new MCalendarField('dateExpeditionRG', isset($this->enrollData->dateExpeditionRG) ? $this->enrollData->dateExpeditionRG : $data->dateExpeditionRG , _M('Expedition date','basic'), FIELD_DATE_SIZE);
+        $dateExpedition->setJsHint(_M('Enter the document expedition date','basic'));
+        $validators[] = new MDateDMYValidator('dateExpeditionRG', '', 'required');
+        $f[] = $dateExpedition;
+
+        $flds[] = new MHContainer('hctContainer11', $f);
+        unset($f);
+        
+        $bsg4 = new BaseGroup('bsg4',_M('Document','basic').'s',$flds,'vertical');
+        $bsg4->showLabel = false;
+        $bsg4->width = '97%';
+        unset($flds);
+
+        //BaseGroup 2
+        $residentialPhone = new MTextField('residentialPhone', isset($this->enrollData->residentialPhone) ? $this->enrollData->residentialPhone : $data->residentialPhone, _M('Residential Phone',$module), 20);
+        $residentialPhone->setJsHint(_M('Enter the residential phone',$module));
+        $flds[]       = $residentialPhone;
+
+        $workPhone    = new MTextField('workPhone', isset($this->enrollData->workPhone) ? $this->enrollData->workPhone : $data->workPhone, _M('Work Phone',$module), 20);
+        $workPhone->setJsHint(_M('Enter the work phone',$module));
+        $flds[]       = $workPhone;
+        $f = $flds;
+        unset($flds);
+        $flds[] = new MHContainer('hctContainer5', $f);
+        unset($f);
+
+        $cellPhone    = new MTextField('cellPhone', isset($this->enrollData->cellPhone) ? $this->enrollData->cellPhone : $data->cellPhone, _M('Cell Phone',$module), 20);
+        $cellPhone->setJsHint(_M('Enter the cell phone',$module));
+        $f[]       = $cellPhone;
+
+        $messagePhone = new MTextField('messagePhone', isset($this->enrollData->messagePhone) ? $this->enrollData->messagePhone : $data->messagePhone, _M('Message Phone',$module), 20);
+        $messagePhone->setJsHint(_M('Enter the message phone',$module));
+        $f[]       = $messagePhone;
+        $flds[] = new MHContainer('hctContainer6', $f);
+
+
+        $email        = new MTextField('email', isset($this->enrollData->email) ? $this->enrollData->email : $data->email, _M('E-mail',$module), 30);
+        $email->setJsHint(_M('Enter the person e-mail',$module));
+        $validators[] = new MEmailValidator('email','','optional');
+        $flds[]       = $email;
+
+        $emailAlternative = new MTextField('emailAlternative', isset($this->enrollData->emailAlternative) ? $this->enrollData->emailAlternative : $data->emailAlternative, _M('E-mail alternative',$module), 30);
+        $emailAlternative->setJsHint(_M('Enter the person alternative e-mail',$module));
+        $validators[] = new MEmailValidator('emailAlternative','','optional');
+        $flds[]       = $emailAlternative;
+
+        $bsg2            = new BaseGroup('bsg2',_M('Contacts',$module),$flds,'vertical');
+        $bsg2->showLabel = false;
+        $bsg2->width     = '97%';
+        unset($flds);
+        unset($f);
+        //BaseGroup 3
+        
+        $dateBirth    = new MCalendarField('dateBirth', $this->getFormValue('dateBirth',$data->dateBirth), _M('Birth date',$module), FIELD_DATE_SIZE);
+        $validators[] = new MDateDMYValidator('dateBirth','','required');
+        $dateBirth->setJsHint(_M('Enter the birth date',$module));
+        $f[]    = $dateBirth;
+        $f[]       = new MSelection('sex', $this->getFormValue('sex', $data->sex), _M('Sex',$module), SAGU::listSex());
+        $validators[] = new MRequiredValidator('sex');
+        $flds[] = new MHContainer('hctContainer12', $f);
+        unset($f);
+        $business     = $MIOLO->getBusiness('basic', 'BusEthnicOrigin');
+        $f[]       = new MSelection('ethnicOriginId', isset($this->enrollData->ethnicOriginId) ? $this->enrollData->ethnicOriginId : $data->ethnicOriginId, _M('Enter the ethnic origin code',$module), $business->listEthnicOrigin());
+        $validators[] = new MRequiredValidator('ethnicOriginId');
+
+        $flds[] = new MHContainer('hctContainer7', $f);
+        unset($f);
+
+        $business     = $MIOLO->getBusiness('basic', 'BusSpecialNecessity');
+        $f[]       = new MSelection('specialNecessityId', isset($this->enrollData->specialNecessityId) ? $this->enrollData->specialNecessityId : $data->specialNecessityId, _M('Special necessity id',$module), $business->listSpecialNecessity());
+        $validators[] = new MRequiredValidator('specialNecessityId');
+
+        $specialNecessityDescription = new MTextField('specialNecessityDescription', isset($this->enrollData->specialNecessityDescription) ? $this->enrollData->specialNecessityDescription : $data->specialNecessityDescription, _M('Special necessity description',$module), 30);
+        $specialNecessityDescription->setJsHint(_M('Enter the person special necessity description',$module));
+        $f[]       = $specialNecessityDescription;
+        $flds[] = new MHContainer('hctContainer8', $f);
+        unset($f);
+        $business     = $MIOLO->GetBusiness('basic', 'BusMaritalStatus');
+        $f[]       = new MSelection('maritalStatusId', $this->getFormValue('maritalStatusId', $data->maritalStatusId), _M('Marital status','basic'), $business->listMaritalStatus());
+        $validators[] = new MRequiredValidator('maritalStatusId');
+        $carPlate     = new MTextField('carPlate', isset($this->enrollData->carPlate) ? $this->enrollData->carPlate : $data->carPlate, _M('Car plate',$module), 10);
+        $carPlate->setJsHint(_M('Enter the plate car',$module));
+        $f[]       = $carPlate;
+        $flds[] = new MHContainer('hctContainer9', $f);
+/*        $businessReligion = $MIOLO->GetBusiness('basic', 'BusReligion');
+        $flds[]           = new MSelection('religionId', $this->getFormValue('religionId', $data->religionId), _M('Religion','basic'), $businessReligion->listReligion());*/
+
+ 
+        $bsg3            = new BaseGroup('bsg3', _M('General data',$module), $flds, 'vertical');
+        $bsg3->showLabel = false;
+        $bsg3->width     = '97%';
+        unset($flds);
+
+        //VerticalContainer 1: BaseGroup 2 + BaseGroup 3
+        $vct1            = new MVContainer('vct1', array($bsg2, $bsg3));
+        $vct1->showLabel = false;
+        $vct1->width     = '49%';
+
+        //VerticalContainer 2: BaseGroup 1
+        $vct2            = new MVContainer('vct2', array($bsg1, $bsg4));
+        $vct2->showLabel = false;
+        $vct2->width     = '49%';
+
+        //HorizontalContainer 1: VerticalContainer 2 + VerticalContainer 1
+        $hct1            = new MHContainer('hct1', array($vct2, $vct1));
+        $hct1->width     = '100%';
+        $hct1->showLabel = false;
+        
+        //Error container
+        $divError        = new MDiv('divError', $lblMsg, null, 'align=center');
+
+        //Div 2
+        $btn1[] = new MButton('btnNext', _M('Update', $module));
+        $div2   = new MDiv('div2', $btn1, null, 'align=center');
+
+        //VeticalContainer 3: HorizontalContainer 1 + ErrorDiv + Div 2
+        $vct3            = new MVContainer('vct2', array($hct1, $divError, $div2));
+        $vct3->width     = '100%';
+        $vct3->showLabel = false;
+
+        $fields[] = $vct3;
+        
+
+        $this->page->onLoad('document.' . $this->name . '.personName.focus();');
+
+        $this->setFields($fields);
+        $this->setValidators($validators);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+    }
+    /**
+     * Event triggered when user click next
+     **/
+    public function btnNext_click($sender = null)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+        $physicalPerson = $this->getTypesData();
+        $business = $MIOLO->getBusiness('services', 'BusEnroll');
+        $ok = $business->updatePersonData($physicalPerson);
+
+        //if personal data are saved with sucess and none insert in cvsLog generate errors
+        if ( $ok == true )
+        {   
+            foreach ( $physicalPerson as $k => $v )
+            {
+                $this->enrollData->$k = $v;
+            }
+            $this->page->mGoto($MIOLO->getActionURL($module, $action, null, array('event'=>'btnSearch_click')));
+ 
+        }
+        else
+        {
+            $msg           = _M('Incorrect data',$module);
+
+            $lblMsg        = new MText('lblMsg',$msg);
+            $lblMsg->color = 'red';
+
+            $flds[]        = $lblMsg;
+            $flds[]        = new Separator('');
+
+            $this->divError->addControl($flds);
+        }
+    }
+
+    /**
+     * Method to gather all information from the form fields
+     * and put them on a database compatible object
+     **/
+    public function getTypesData($action = NULL)
+    {
+        $data = new SrvEnrollPhysicalPersonStudent();
+        
+        $vars = get_object_vars($data);
+        
+        foreach ( $vars as $var => $value )
+        {
+            if ( $this->$var && $var != 'name' )
+            {
+                $data->$var = MIOLO::_request($var);
+            }
+        }
+        $data->contentCPF   =  SAGU::convertInCPFWithoutDelimiters($data->contentCPF);
+        return $data;
+    }
+}
+?>

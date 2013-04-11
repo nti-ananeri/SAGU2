@@ -1,0 +1,278 @@
+<?php
+
+/**
+ * Physical person lookup form
+ *
+ * @author Daniel Afonso Heisler [daniel@solis.coop.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ *
+ * @since
+ * Class created on 28/03/2006
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2005 SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+
+/**
+ * Load global defines for the basic module
+ */
+$business  = $MIOLO->getBusiness('basic','BusConfig');
+$constants = $business->getModuleValues('basic');
+if ( count($constants)>0 )
+{
+    foreach ( $constants as $cnt )
+    {
+        define($cnt[0],$cnt[1]);
+    }
+}
+
+/**
+ * Form to manipulate a city lookup
+ **/
+class FrmCompanyLookup extends MForm
+{
+
+    function __construct()
+    {
+        $MIOLO  = MIOLO::getInstance( );
+        $module   = 'basic';
+
+        parent::__construct( _M('Insert new company', 'basic') );
+
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+    }
+
+
+    /**
+     * this method is automatically called by MIOLO
+     * and is intended to create the form fields
+     */
+    function createFields()
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $personName   = new MTextField('personName', $this->getFormValue('personName', $data->personName), _M('Name',$module), FIELD_DESCRIPTION_SIZE);
+        $personName->setJsHint(_M('Enter the person name',$module));
+        $fields[]     = $personName; 
+        $validators[] = new MRequiredValidator('personName');
+
+        $cityId       = new MLookupTextField('cityId', $this->getFormValue('cityId',$data->cityId), _M('City',$module), FIELD_ID_SIZE, null, null, 'cityName, limbo, stateName, limbo, countryName', $module, 'City', null, null, true);
+        $cityId->setWidth($WIDTH);
+        $cityId->setJsHint(_M('Enter the  city code',$module));
+        $fields[]     = $cityId;
+        $validators[] = new MIntegerValidator('cityId', '', 'required');
+ 
+        $cityName     = new MTextField('cityName', $this->getFormValue('cityName',$data->cityName), _M('City name',$module), 20);
+        $cityName->setReadOnly(true);
+        $fields[]     = $cityName;
+ 
+        $stateName    = new MTextField('stateName', $this->getFormValue('stateName',$data->stateName), _M('State name',$module), 20);
+        $stateName->setReadOnly(true);
+        $fields[]     = $stateName;
+ 
+        $countryName  = new MTextField('countryName', $this->getFormValue('countryName',$data->countryName), _M('Country name',$module), 20);
+        $countryName->setReadOnly(true);
+        $fields[]     = $countryName;
+
+        $location     = new MTextField('location', $this->getFormValue('location',$data->location), _M('Location',$module), 30);
+        $location->setJsHint(_M('Enter the  location',$module));
+        $fields[]     = $location;
+
+        $complement   = new MTextField('complement', $this->getFormValue('complement',$data->complement), _M('Complement',$module), 10);
+        $location->setJsHint(_M('Enter the location complement',$module));
+        $fields[]     = $complement;
+
+        $neighborhood = new MTextField('neighborhood', $this->getFormValue('neighborhood',$data->neighborhood), _M('Neighborhood',$module), 20);
+        $neighborhood->setJsHint(_M('Enter the  neighborhood',$module));
+        $fields[]     = $neighborhood;
+
+        $this->setFields($fields);
+        $this->setValidators( $validators );
+        $this->setShowPostButton( false );
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->page->onLoad('document.'.$this->name.'.personName.focus();');
+
+        $this->addButton( new formButton('tbBtnSave' , _M('Save', $module)));
+        $this->addButton( new formButton('tbBtnBack' , _M('Back', $module), 'history.go(-1)'));
+    }
+
+    function tbBtnSave_click()
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = 'basic';
+        $action   = MIOLO::getCurrentAction();
+        $name     = MIOLO::_Request('name');
+
+        $data     = $this->getTypesData();
+
+        $filters->name = $this->getFormValue('personName', $data->personName);
+
+        $business   = $this->manager->getBusiness($module,'BusLegalPerson');
+        $data2      = $business->searchLegalPerson($filters);
+
+        //se nao existirem pessoas com esse nome, grava os dados
+        if ( count($data2) == 0 )
+        {
+            if ( $data = $business->insertLegalPerson($data) )
+            {
+                $this->page->addScript('m_lookup.js');
+                $this->page->addJsCode("MIOLO_Deliver('$name', 0, '{$data->personId}','{$data->name}')" );
+            }
+            else
+            {
+                $this->AddError(_M('Invalid parameters','basic'));
+            }
+        }
+        //senao exibe para ver se nao é umadessas pessoas
+        else
+        {
+            unset($fields);
+            unset($this->buttons[0], $this->buttons[1]);
+
+            if ( count($data2)>0 )
+            {
+                $this->page->addScript('m_lookup.js');
+                for ( $x=0; $x<count($data2); $x++)
+                {
+                    $data3[$x]    = $data2[$x];
+                    $data3[$x][0] = "<a href=\"javascript:MIOLO_Deliver('$name', 0, '{$data2[$x][0]}','{$data2[$x][3]}')\">" . $data2[$x][0] . '</a>';
+                }
+                $grdResults = $MIOLO->getUI()->getGrid($module,'GrdCompanySearch2',$filters);
+                $grdResults->setData($data3);
+
+//                $fields[] = new MText('lbl', '<br>' . 'Are you sure that the person is not one of the persons below? Case is one of them, click on top of their code. Otherwise, click Save.' . '</b>');
+                $fields[] = new MText('lbl', '<br>' . _M('Are you sure that the person is not one of the persons below? Case is one of them, click on top of their code. Otherwise, click Save.', 'basic') . '</b>');
+                $fields[] = $grdResults;
+                $fields[] = new Separator();
+                $fields[] = new Separator();
+            }
+
+            //pessoa
+            $personName = new MText('personName_text', _M('Name',$module) . ': ' . $this->getFormValue('personName', $data->personName));
+            $fields[]   = $personName; 
+
+            $personName = new MHiddenField('personName', $this->getFormValue('personName', $data->personName));
+            $fields[]   = $personName; 
+
+            //logradouro
+            $location   = new MText('location_text', _M('Location',$module) . ': ' . $this->getFormValue('location', $data->location));
+            $fields[]   = $location; 
+
+            $location   = new MHiddenField('location', $this->getFormValue('location', $data->location));
+            $fields[]   = $location; 
+
+            //complemento
+            $complement = new MText('complement_text', _M('Complement',$module) . ': ' . $this->getFormValue('complement', $data->complement));
+            $fields[]   = $complement; 
+
+            $complement = new MHiddenField('complement', $this->getFormValue('complement', $data->complement));
+            $fields[]   = $complement; 
+
+            //bairro
+            $neighborhood = new MText('neighborhood_text', _M('Neighborhood',$module) . ': ' . $this->getFormValue('neighborhood', $data->neighborhood));
+            $fields[]     = $neighborhood; 
+
+            $neighborhood = new MHiddenField('neighborhood', $this->getFormValue('neighborhood', $data->neighborhood));
+            $fields[]     = $neighborhood; 
+
+            //cidade
+            $cityName   = new MText('cityName_text', _M('City',$module) . ': ' . $this->getFormValue('cityName', $data->cityName));
+            $fields[]   = $cityName; 
+
+            $cityName   = new MHiddenField('cityName', $this->getFormValue('cityName', $data->cityName));
+            $fields[]   = $cityName; 
+
+            $cityId     = new MHiddenField('cityId', $this->getFormValue('cityId', $data->cityId));
+            $fields[]   = $cityId; 
+
+            //estado
+            $stateName  = new MText('stateName_text', _M('State',$module) . ': ' . $this->getFormValue('stateName', $data->stateName));
+            $fields[]   = $stateName; 
+
+            $stateName  = new MHiddenField('stateName', $this->getFormValue('stateName', $data->stateName));
+            $fields[]   = $stateName; 
+
+            //país
+            $countryName  = new MText('countryName_text', _M('Country',$module) . ': ' . $this->getFormValue('countryName', $data->countryName));
+            $fields[]     = $countryName; 
+
+            $countryName  = new MHiddenField('countryName', $this->getFormValue('countryName', $data->countryName));
+            $fields[]     = $countryName; 
+
+            $this->setFields($fields);
+            $this->setShowPostButton( false );
+            $this->setLabelWidth(FIELD_LABEL_SIZE);
+
+            $this->addButton( new formButton('tbBtnSave2' , _M('Save', $module)));
+            $this->addButton( new formButton('tbBtnBack2' , _M('Back', $module), 'history.go(-1)'));
+        }
+    }
+
+    function tbBtnSave2_click()
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = 'basic';
+        $action   = MIOLO::getCurrentAction();
+        $name     = MIOLO::_Request('name');
+
+        $data     = $this->getTypesData();
+        $business = $MIOLO->getBusiness($module, 'BusLegalPerson');
+
+        if ( $data = $business->insertLegalPerson($data) )
+        {
+            $this->page->addScript('m_lookup.js');
+            $this->page->addJsCode("MIOLO_Deliver('$name', 0, '{$data->personId}','{$data->name}')" );
+        }
+        else
+        {
+            $this->AddError(_M('Invalid parameters','basic'));
+        }
+    }
+
+    /**
+     * Method to gather all information from the form fields
+     * and put them on a database compatible object
+     **/
+    public function getTypesData()
+    {
+        $data = new BasLegalPerson();
+        $vars = get_object_vars($data);
+        foreach ( $vars as $var => $value )
+        {
+            if ( $this->$var && $var != 'name' )
+            {
+                eval('$data->' . $var . ' = $this->' . $var . '->value;');
+            }
+        }
+        $data->name              = $this->personName->value;
+        $data->currentName       = $this->personName->value;
+        $data->fakeName          = $this->personName->value;
+        $data->legalPersonTypeId = LEGAL_PERSON_TYPE_COMPANY;
+
+        return $data;
+    }
+
+}
+?>

@@ -1,0 +1,338 @@
+<?
+/**
+*
+* @author Giovani Murilo Dantas Correa [gmurilo@isolution.inf.br]
+*
+* $version: $Id$
+*
+* \b Maintainers \n
+* Daniel Afonso Heisler [daniel@isolution.inf.br]
+*
+* @since
+* Class created on 26/03/2009
+*
+* \b Organization: \n
+* iSolution - Soluções de Internet \n
+* The iSolution TEAM
+*
+* \b CopyLeft: \n
+* CopyLeft (L) 2007 iSolution - Soluções de Internet \n
+*
+* \b License \n
+* Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+*
+* \b History \n
+* See history in CVS repository: http://isolution.inf.br   
+*
+**/
+set_time_limit(0);        
+$MIOLO = MIOLO::getInstance();
+
+define('FPDF_FONTPATH', $MIOLO->getModulePath('basic', '/classes/fpdf/font/'));
+$MIOLO->Uses('classes/fpdf/pdf.php', 'basic');
+
+class RptAgreementsReport extends PDF
+{
+    public $module = 'finance';
+    public function __construct($filters = NULL)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $this->useUserInfo = true;
+        $this->title = strtoupper(_M('Agreements report', 'finance'));
+        parent::__construct($filters);
+        $this->busAgreements = $MIOLO->getBusiness($this->module, 'BusAgreementsReport');
+        $this->agreements = $this->busAgreements->getAgreements($this->filters);
+        if(strlen((string)$this->filters->beginYear) > 0 && strlen((string)$this->filters->beginMonth) > 0 )
+        {
+            $this->beginDate = mktime(0,0,0,$this->filters->beginMonth,1, $this->filters->beginYear);
+            //$this->tolDate = mktime(0,0,0,$this->filters->beginMonth, $this->filters->beginYear);
+            $this->period = ( $this->filters->beginMonth < 7 ) ? 1 : 2;
+            $this->year   = ($this->filters->beginYear);
+            $this->period = $this->year . '.' . $this->period;
+        }
+        $this->aliasNbPages();
+        $this->generatePDF();
+    }
+    public function Header()
+    {
+        parent::Header();
+        $this->setFont(DEFAULT_REPORT_FONT, 'I', $this->fontSizeBody);
+        $this->cell($this->psize-40, $this->lsize, _M('Year', 'finance'). ': ', null, null, 'R');
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->fontSizeBody);
+        $this->cell(40, $this->lsize, $this->filters->beginYear . ' à '. $this->filters->endYear, null, null, 'R');
+        $this->ln();
+        $this->setFont(DEFAULT_REPORT_FONT, 'I', $this->fontSizeBody);
+        $this->cell($this->psize-40, $this->lsize, _M('Month', 'finance').': ', null, null, 'R');
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->fontSizeBody);
+        $this->cell(40, $this->lsize, $this->filters->beginMonth. ' à '. $this->filters->endMonth, null, null, 'R');
+        $this->ln();
+        $this->ln($this->lsize/2);
+    }
+
+    public function getInvoicesDescritives($type = 1)
+    {
+        
+        foreach ( $this->agreements  as $negociacao )
+        {
+            $nt[] = $negociacao->codNegociacao;
+            if( count($negociacao->invoices) > 0 )
+            {
+                foreach($negociacao->invoices as $titulo)
+                {
+                    if( $titulo->tipo == 'Input' && strlen((string)$titulo->status) == 0 )
+                    {
+                        $p = explode('/', $titulo->dataVencimento);
+                        $semester[0] = $p[2];
+                        $semester[1] = (integer)$p[1] < 7 ? 1 : 2;
+                        unset($p);
+                        $s = implode('.', $semester);
+                        $invoices[$s]->invoicesNumber++;
+                        $titulo->valido = FALSE;
+                        $invoices[$s]->parValue       += $titulo->valor-$titulo->incentivos;
+                        $invoices[$s]->updatedValue   += $titulo->valorPago;
+                        $titulo->codNegociacao = $negociacao->codNegociacao;
+                        $invoices[$s]->titulos[] = $titulo;
+                    }
+                    elseif( $titulo->tipo == 'Output' && ($s) && $titulo->valorPago > 0 )
+                    {
+                        $p = explode('/', $titulo->dataVencimento);
+                        $validDate = TRUE;
+                        $titulo->valido = FALSE;
+                        $data = mktime(0,0,0,(int)$p[1], (int)$p[0], (int)$p[2]);
+                        if( ($this->filters->beginYear) > 0 && ($this->filters->beginMonth) > 0 )
+                        {
+                            $validDate = ($data >= mktime(0,0,0,$this->filters->beginMonth, 1, $this->filters->beginYear)) ? TRUE : FALSE;
+                        }
+                        if($validDate)
+                        {
+                            if( ($this->filters->endYear) > 0 && ($this->filters->endMonth) > 0 )
+                            {
+                                $validDate = ($data <= mktime(0,0,0,$this->filters->endMonth+1, 0, $this->filters->endYear));
+                            }
+                        }
+                        $vd = TRUE;
+                        if($validDate && $this->filters->useRule)
+                        {
+                            $titulo->valido = TRUE;
+                            $vd = FALSE;
+                            $nGera = array(1,12,6,7);
+                            $dV2 = explode('-', $negociacao->datetime);
+                            $period2 = $dV[1] < 7 ? (($dV2[0]-1).'.2') : ($dV2[0].'.1');
+                            foreach($negociacao->invoices as $a1 => $b1)
+                            {
+                                $dV = explode('/', $b1->dataVencimento);
+                                $period = $dV[1] < 7 ? ($dV[2]).'.1' : $dV[2] . '.2';
+                                if($b1->tipo == 'Input' && in_array((int)$dV[0],$nGera))
+                                {
+                                    $pcomp = explode('.', $period);
+                                    $pref = explode('.', $period2);
+                                    $pcomp = mktime(0,0,0,$pcomp[1]*6,1, $pcomp[0]);
+                                    $pref = mktime(0,0,0,$pref[1]*6,1,$pref[0]);
+                                    if($pcomp < $pref  )
+                                    {
+                                        $vd = TRUE;
+                                    }
+                                }
+                                else if ( $b1->tipo == 'Input' && !in_array((int)$dV[0],$nGera) )
+                                {
+                                    $vd = TRUE;
+                                }
+                            }
+                        }
+                        if($vd && $validDate)
+                        {
+                            $invoices[$s]->payments += $titulo->valorPago;
+                            $titulo->valido = TRUE;
+                            $nt2[$negociacao->codNegociacao] = $negociacao->personId;
+                        }
+                    }
+                    $titulo->codNegociacao = $negociacao->codNegociacao;
+                    $invoices[$s]->titulos[] = $titulo;
+                }
+                $invoices[$s]->agreementValue += $negociacao->valor;
+                $invoices[$s]->downPayment += $negociacao->valorEntrada;
+            }
+        }
+        ksort($invoices);
+        return $invoices;
+    }
+
+    public function defaultFormat()
+    {
+        $this->addPage('P', 'mm', 'A4');
+        foreach ( $this->agreements  as $negociacao )
+        {
+            $this->setFont(DEFAULT_REPORT_FONT, 'BI', $this->fontSizeBody);
+            $this->SetFillColor(180,180,180);
+            $this->cell($this->psize-50, $this->lsize, _M('Agreement id', 'finance'). ': ', 'LT', null,  'R', 1);
+            $this->setFont(DEFAULT_REPORT_FONT, '', $this->fontSizeBody);
+            $this->cell(50, $this->lsize,$negociacao->codNegociacao, 'TR', null, 'R', 1);
+            $this->ln();
+            $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->fontSizeBody);
+            $this->cell($this->psize*.07, $this->lsize, _M('Name', 'basic'). ': ', 'TL', null);
+            $this->setFont(DEFAULT_REPORT_FONT, '', $this->fontSizeBody);
+            $this->cell($this->psize*.47, $this->lsize, $negociacao->name, 'T');
+            $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->fontSizeBody);
+            $this->cell($this->psize*.2, $this->lsize, _M('Person id', 'basic'). ': ', 'T', null, 'R');
+            $this->setFont(DEFAULT_REPORT_FONT, '', $this->fontSizeBody);
+            $this->cell($this->psize*.06, $this->lsize, $negociacao->personId, 'T', null, 'R');
+            $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->defaultFontSize);
+            $this->cell(($this->psize)*0.07, $this->lsize, _M('CPF', 'basic') . ':', 'T', null, 'R');    
+            $this->setFont(DEFAULT_REPORT_FONT, '', $this->defaultFontSize);         
+            $this->cell(($this->psize)*0.13, $this->lsize, SAGU::convertInCPFFormat($negociacao->cpf), 'TR', null, 'R');  
+            $this->ln();
+            $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->defaultFontSize);
+            $this->cell(($this->psize)*0.12, $this->lsize, _M('Responsable', 'finance') .':', 'L');
+            $this->setFont(DEFAULT_REPORT_FONT, '', $this->defaultFontSize);
+            $this->cell(($this->psize)*0.68,$this->lsize, $negociacao->responsableName,  '');
+            $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->defaultFontSize);
+            $this->cell(($this->psize)*0.07, $this->lsize, _M('CPF', 'basic') . ':', '', null, 'R');    
+            $this->setFont(DEFAULT_REPORT_FONT, '', $this->defaultFontSize);         
+            $this->cell(($this->psize)*0.13, $this->lsize, SAGU::convertInCPFFormat($negociacao->responsableCpf), 'R', null, 'R');  
+            $this->ln();
+            $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->fontSizeBody);
+            $this->cell($this->psize*.13, $this->lsize, _M('Par value', 'finance'). ': ', 'L');
+            $this->setFont(DEFAULT_REPORT_FONT, '', $this->fontSizeBody);
+            $this->cell($this->psize*.10, $this->lsize, 'R$ '. SAGU::formatNumber($negociacao->valorTotalSemJuros), '', null, 'R');
+            $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->fontSizeBody);
+            $this->cell($this->psize*.13, $this->lsize, _M('Valor negociado', 'finance'). ': ', '');
+            $this->setFont(DEFAULT_REPORT_FONT, '', $this->fontSizeBody);
+            $this->cell($this->psize*.11, $this->lsize, 'R$ '. SAGU::formatNumber($negociacao->valor), '', null, 'R');
+            $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->fontSizeBody);
+            $this->cell($this->psize*.07, $this->lsize, _M('Down payment', 'finance'). ': ', '');
+            $this->setFont(DEFAULT_REPORT_FONT, '', $this->fontSizeBody);
+            $this->cell($this->psize*.11, $this->lsize, 'R$ '. SAGU::formatNumber($negociacao->valorEntrada), '', null, 'R');
+            $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->fontSizeBody);
+            $this->cell($this->psize*.07, $this->lsize, _M('Discount', 'finance'). ': ', '');
+            $this->setFont(DEFAULT_REPORT_FONT, '', $this->fontSizeBody);
+            $this->cell($this->psize*.10, $this->lsize, 'R$ '. SAGU::formatNumber($negociacao->desconto), '', null, 'R');
+            $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->fontSizeBody);
+            $this->cell($this->psize*.07, $this->lsize, _M('Interest', 'finance'). ': ', '');
+            $this->setFont(DEFAULT_REPORT_FONT, '', $this->fontSizeBody);
+            $this->cell($this->psize*.11, $this->lsize, 'R$ '. SAGU::formatNumber($negociacao->jurosTotal), 'R', null, 'R');
+            $this->ln();
+            $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->fontSizeBody);
+            $this->cell($this->psize*.25, $this->lsize, _M('Discount interest percent', 'finance'). ': ', 'LB');
+            $this->setFont(DEFAULT_REPORT_FONT, '', $this->fontSizeBody);
+            $this->cell($this->psize*.08, $this->lsize, SAGU::formatNumber((( $negociacao->desconto > 0 && $negociacao->jurosTotal > 0 ) ? ROUND((($negociacao->desconto/$negociacao->jurosTotal)*100),2) : $negociacao->desconto)). '%', 'B', null, 'R');
+            $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->fontSizeBody);
+            $this->cell($this->psize*.05, $this->lsize, _M('Date', 'finance'). ': ', 'B');
+            $this->setFont(DEFAULT_REPORT_FONT, '', $this->fontSizeBody);
+            $this->cell($this->psize*.09, $this->lsize, $negociacao->dia.'/'.$negociacao->mes.'/'.$negociacao->ano, 'B', null, 'R');
+            $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->fontSizeBody);
+            $this->cell($this->psize*.07, $this->lsize, _M('User', 'admin'). ': ', 'B');
+            $this->setFont(DEFAULT_REPORT_FONT, '', $this->fontSizeBody);
+            $this->cell($this->psize*.24, $this->lsize, $negociacao->usuario, 'B', null, 'L');
+            $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->fontSizeBody);
+            $this->cell($this->psize*.2, $this->lsize, _M('Parcels number', 'finance'). ': ', 'B', null, 'R');
+            $this->setFont(DEFAULT_REPORT_FONT, '', $this->fontSizeBody);
+            $this->cell($this->psize*.02, $this->lsize, $negociacao->numeroDeParcelas, 'BR', null, 'R');
+            $this->ln();
+            $this->ln($this->lsize/2);
+            if(count($negociacao->invoices) > 0 && $this->filters->printMode == 1 )
+            {
+                $this->line($this->x, $this->y, $this->psize+$this->lMargin, $this->y);
+                $this->setFont(DEFAULT_REPORT_FONT, 'BI', $this->fontSizeBody);
+                $this->cell($this->psize, $this->lsize, _M('Invoices', 'finance'), 'B', null, 'C');
+                $this->ln();
+                unset($col);
+                $col[0] = $this->psize*.08;
+                $col[1] = $this->psize*.06;
+                $col[2] = $this->psize*.09;
+                $col[3] = $this->psize*.09;
+                $col[4] = $this->psize*.09;
+                $col[5] = $this->psize*.09;
+                $col[6] = $this->psize*.08;
+                $col[7] = $this->psize*.09;
+                $col[8] = $this->psize*.09;
+                $col[9] = $this->psize*.06;
+                $col[10] = $this->psize-(array_sum($col));
+
+                $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->fontSizeBody);
+                $this->cell($col[0], $this->lsize, _M('Invoice', 'finance'), 1, null, 'C');
+                $this->cell($col[1], $this->lsize, _M('Type', 'basic'), 1, null, 'C');
+                $this->cell($col[10], $this->lsize, _M('Income source', 'finance'), 1, null, 'C');
+                $this->cell($col[2], $this->lsize, _M('Maturity', 'finance'), 1, null, 'C');
+                $this->cell($col[3], $this->lsize, _M('Payment', 'finance'), 1, null, 'C');
+                $this->cell($col[4], $this->lsize, _M('Value', 'finance'), 1, null, 'C');
+                $this->cell($col[5], $this->lsize, _M('Updated', 'finance'), 1, null, 'C');
+                $this->cell($col[6], $this->lsize, _M('Discount', 'finance'), 1, null, 'C');
+                $this->cell($col[7], $this->lsize, _M('Incentive', 'finance'), 1, null, 'C');
+                $this->cell($col[8], $this->lsize, _M('Interest', 'finance'), 1, null, 'C');
+                $this->cell($col[9], $this->lsize, _M('Input', 'finance'), 1, null, 'C');
+                $this->ln();
+                $this->setFont(DEFAULT_REPORT_FONT, '', $this->fontSizeBody);
+                $this->setTextColor(0,0,0);
+                foreach($negociacao->invoices as $invoices => $invoice)
+                {
+                    if(strlen((string)$invoice->status) > 0 )
+                    {
+                        $this->setTextColor(255,0,0);
+                    }
+                    else
+                    {
+                        $this->setTextColor(0,0,0);
+                    }
+                    $this->cell($col[0], $this->lsize, $invoices, 1, null, 'C');
+                    $this->cell($col[1], $this->lsize, strlen((string)$invoice->tipo) > 0 ? _M($invoice->tipo, 'finance') : '', 1, null, 'C');
+                    
+                    $this->setFont(DEFAULT_REPORT_FONT, '', (($invoice->origem)*$this->FontSize) > $col[10]  ? ($col[10]/($invoice->origem*.7)) : $this->fontBodySize);
+                    $this->cell($col[10], $this->lsize, $invoice->origem, 1, null, 'C');
+                    $this->setFont(DEFAULT_REPORT_FONT, '', $this->fontSizeBody);
+                    $this->cell($col[2], $this->lsize, $invoice->dataVencimento, 1, null, 'C');
+                    $this->cell($col[3], $this->lsize, $invoice->dataPagamento, 1, null, 'C');
+                    $this->cell($col[4], $this->lsize, SAGU::formatNumber($invoice->valor), 1, null, 'C');
+                    $this->cell($col[5], $this->lsize, SAGU::formatNumber($invoice->valorAtualizado), 1, null, 'C');
+                    $this->cell($col[6], $this->lsize, SAGU::formatNumber($invoice->descontos), 1, null, 'C');
+                    $this->cell($col[7], $this->lsize, SAGU::formatNumber($invoice->incentivos), 1, null, 'C');
+                    $this->cell($col[8], $this->lsize, SAGU::formatNumber($invoice->juros), 1, null, 'C');
+                    $this->cell($col[9], $this->lsize, ($invoice->eParcelaEntrada == DB_TRUE ? _M('Yes', 'basic') : _M('No', 'basic')), 1, null, 'C');
+                    $this->ln();
+                    if( trim($invoice->comentarios) > 0 )
+                    {
+                        $this->multicell($this->psize, $this->lsize, $invoice->comentario);
+                    }
+                }
+                $this->setTextColor(0,0,0);
+            }
+            $this->ln();
+        }
+    }
+    public function generatePDF()
+    {
+        $this->setFont(DEFAULT_REPORT_FONT, '', $this->fontSizeBody);
+        if(count($this->agreements) == 0 )
+        {
+            $this->cell($this->psize, $this->lsize, _M('No data found to process', 'finance'), null, null, 'C');
+            $this->ln();
+            parent::generatePDF();
+            return;
+        }
+        switch($this->filters->reportType)
+        {
+            default:
+                $this->defaultFormat();
+                break;
+        }
+        parent::generatePDF();
+    }
+
+    public function Footer()
+    {
+        
+        $this->setY(-15);
+        $pn = $this->PageNo();
+        if($this->AutoPageBreak)
+        {
+            $pn .='/{nb}';
+        }
+        $this->cell($this->psize, $this->lsize, '', 'B', 1);
+        $this->ln(); 
+		$this->setFont(DEFAULT_REPORT_FONT, 'BI', 8);
+		$this->cell($this->psize/2, $this->lsize, $this->title, 0, 0, 'L');
+		$this->setFont(DEFAULT_REPORT_FONT, 'I', 8);
+		$this->cell($this->psize/2, $this->lsize, _M('Page @1', $this->module, $pn), 0, 0, 'R');
+        $this->ln();
+    }
+}
+?>

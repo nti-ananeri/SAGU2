@@ -1,0 +1,398 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for finLoan table
+ *
+ * @author Armando Taffarel Neto [taffarel@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Armando Taffarel Neto [taffarel@solis.coop.br]
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 12/12/2005
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Form to search the basCenter table
+ */
+class FrmLoan extends MForm
+{
+    private $module;
+
+    /**
+     * Class constructor
+     */
+    function __construct()
+    {
+        $module = MIOLO::getCurrentModule();
+        if ( MIOLO::_request('function') == 'insert' )
+        {
+            parent::__construct(_M('Insert', $module));
+        }
+        else
+        {
+            parent::__construct(_M('Update', $module));
+        }
+
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+
+    }
+
+    /**
+     *  Default method to define fields
+     */
+    public function createFields()
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+
+        $toolBar = new MToolBar('toolBar',$MIOLO->getActionURL($module,$action));
+        
+        if ( $function == 'insert' )
+        {
+            $toolBar->disableButton('tbBtnDelete');
+            $toolBar->disableButton('tbBtnPrint');
+        }
+        elseif ( $function == 'delete' )
+        {
+            $toolBar->disableButton('tbBtnSave');
+        }
+        
+        $fields[] = $toolBar;
+        
+        if ( in_array($function, array('update', 'delete')) )
+        {
+            $incentiveTypeId = MIOLO::_request('incentiveTypeId');
+
+            $business = $MIOLO->getBusiness($module, 'BusLoan');
+            $data     = $business->getLoan($incentiveTypeId);
+
+            $fields[]  = new MHiddenField('incentiveTypeId', $incentiveTypeId);
+            $fields[]  = new MTextLabel('incentiveTypeId', $data->incentiveTypeId, _M('Incentive type id', $module).':');
+        }
+        
+        // Description
+        $loanDescription = new MTextField('loanDescription', $this->getFormValue('loanDescription', $data->description), _M('Incentive description', $module), FIELD_DESCRIPTION_SIZE);
+        $validators[]    = new MRequiredValidator('loanDescription',_M('Incentive description', $module), 'required');
+        $fields[]        = $loanDescription;
+
+        // Operation id
+        $operationIdLabel     = new MText('operationIdLabel', _M('Operation id', $module).':');
+        $operationIdLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $flds[]               = $operationIdLabel;
+        $operationIdLabel->setClass('m-caption m-caption-required');
+        $operationId          = new MLookupTextField('operationId', $this->getFormValue('operationId', $data->operationId), '', FIELD_ID_SIZE, null, null, 'operationDescription', 'finance', 'Operation', null, null, true);
+        $operationId->setJsHint(_M('Select the operation id', $module));
+        $validators[]         = new MIntegerValidator('operationId', _M('Operation id', $module), 'required');
+        $flds[]               = $operationId;
+        $operationDescription = new MTextField('operationDescription', $this->getFormValue('operationDescription', $data->operationDescription), '', FIELD_DESCRIPTION_SIZE, _M('Operation used to give discount', $module));
+        $operationDescription->setReadOnly(true);
+        $flds[]               = $operationDescription;
+        $hctOperation         = new MHContainer('hctOperation', $flds);
+        $hctOperation->setShowLabel(true);
+        $fields[]             = $hctOperation;
+        unset($flds);
+
+        // Need adjust authorization
+        $messagesType                 = SAGU::listTrueFalse(1);
+        $needAdjustAuthorizationLabel = new MText('needAdjustAuthorizationLabel', _M('Need adjust authorization',$module).':');
+        $needAdjustAuthorizationLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $needAdjustAuthorizationLabel->setClass('m-caption m-caption-required');
+        $needAdjustAuthorization      = $this->GetFormValue('needAdjustAuthorization', $data->needAdjustAuthorization ? $data->needAdjustAuthorization : DB_FALSE );
+        $needAdjustAuthorization      = new MRadioButtonGroup('needAdjustAuthorization', '', $messagesType, $needAdjustAuthorization, null, 'horizontal');
+        $needAdjustAuthorization->SetShowLabel(false);
+        $hctNeedAdjustAuthorization   = new MHContainer('hctNeedAdjustAuthorization', array($needAdjustAuthorizationLabel, $needAdjustAuthorization));
+        $fields[]                     = $hctNeedAdjustAuthorization;
+
+        // Send invoices
+        $sendInvoicesLabel = new MText('sendInvoicesLabel', _M('Send invoices',$module).':');
+        $sendInvoicesLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $sendInvoicesLabel->setClass('m-caption m-caption-required');
+
+        $sendInvoices      = $this->GetFormValue('sendInvoices', $data->sendInvoices ? $data->sendInvoices : t );
+
+        $sendInvoices      = new MRadioButtonGroup('sendInvoices', '', $messagesType, $sendInvoices, null, 'horizontal');
+        $sendInvoices->SetShowLabel(false);
+        $hctSendInvoices   = new MHContainer('hctSendInvoices', array($sendInvoicesLabel, $sendInvoices));
+        $fields[]          = $hctSendInvoices;
+
+        // Generate credits
+        $generateCreditsLabel = new MText('generateCreditsLabel', _M('Generate credits',$module).':');
+        $generateCreditsLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $generateCreditsLabel->setClass('m-caption m-caption-required');
+        $generateCredits      = $this->GetFormValue('generateCredits', $data->generateCredits ? $data->generateCredits : t );
+        $generateCredits      = new MRadioButtonGroup('generateCredits', '', $messagesType, $generateCredits, null, 'horizontal');
+        $generateCredits->SetShowLabel(false);
+        $hctGenerateCredits   = new MHContainer('hctGenerateCredits', array($generateCreditsLabel, $generateCredits));
+        $fields[]             = $hctGenerateCredits;
+
+        // Account scheme
+        $accountSchemeIdLabel     = new MText('accountSchemeIdLabel', _M('Account scheme id',$module).':');
+        $accountSchemeIdLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $flds[]                   = $accountSchemeIdLabel;
+        $accountSchemeIdLabel->setClass('m-caption m-caption-required');
+        $accountSchemeId          = new MLookupTextField('accountSchemeId', $this->getFormValue('accountSchemeId', $data->accountSchemeId), _M('',$module), FIELD_ID_SIZE, null, null, 'accountSchemeDescription', 'accountancy', 'AccountScheme', null, null, true);
+        $accountSchemeId->setJsHint(_M('Select the account scheme id', $module));
+        $validators[]             = new MRequiredValidator('accountSchemeId',_M('Account scheme id',$module), 'required');
+        $flds[]                   = $accountSchemeId;
+        $accountSchemeDescription = new MTextField('accountSchemeDescription', $this->getFormValue('accountSchemeDescription', $data->accountSchemeDescription), _M('', $module), FIELD_DESCRIPTION_SIZE);
+        $accountSchemeDescription->setReadOnly(true);
+        $flds[]                   = $accountSchemeDescription;
+        $hctAccountScheme         = new MHContainer('hctAccountScheme', $flds);
+        $hctAccountScheme->setShowLabel(true);
+        $fields[]                 = $hctAccountScheme;
+        unset($flds);
+
+        // Loaner id
+        $loanerIdLabel = new MText('loanerIdLabel', _M('Loaner id',$module).':');
+        $loanerIdLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $flds[]        = $loanerIdLabel;
+        $loanerIdLabel->setClass('m-caption m-caption-required');
+        $loanerId      = new MLookupTextField('loanerId', $this->getFormValue('loanerId', $data->loanerId), _M('',$module), FIELD_ID_SIZE, null, null, 'loanerName', 'basic', 'LegalPerson', null, null, true);
+        $loanerId->setJsHint(_M('Select loaner id', $module));
+        $validators[]  = new MIntegerValidator('loanerId',_M('Loaner id',$module), 'required');
+        $flds[]        = $loanerId;  
+        $loanerName    = new MTextField('loanerName', $this->getFormValue('loanerName', $data->loanerName), _M('', $module), FIELD_DESCRIPTION_SIZE, _M('Enter with the operation for the loaner receive the loans payments', $module));
+        $loanerName->setReadOnly(true);
+        $flds[]        = $loanerName;
+        $hctLoanerName = new MHContainer('hctLoanerName', $flds);
+        $hctLoanerName->setShowLabel(true);
+        $fields[]      = $hctLoanerName;   
+        unset($flds);
+
+        // Rotative
+        $rotativeLabel = new MText('rotativeLabel', _M('Rotative',$module).':');
+        $rotativeLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $rotativeLabel->setClass('m-caption m-caption-required');
+        $rotative      = $this->GetFormValue('rotative', $data->rotative ? $data->rotative : f );
+        $rotative      = new MRadioButtonGroup('rotative', '', $messagesType, $rotative, null, 'horizontal');
+        $rotative->SetShowLabel(false);
+        $hctRotative   = new MHContainer('hctRotative', array($rotativeLabel, $rotative));
+        $fields[]      = $hctRotative;
+
+        // Group invoices values
+        $groupInvoicesValuesLabel = new MText('groupInvoicesValuesLabel', _M('Group invoices values',$module).':');
+        $groupInvoicesValuesLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $groupInvoicesValuesLabel->setClass('m-caption m-caption-required');
+
+        $groupInvoicesValues      = $this->GetFormValue('groupInvoicesValues', $data->groupInvoicesValues ? $data->groupInvoicesValues : DB_FALSE );
+        $groupInvoicesValues      = new MRadioButtonGroup('groupInvoicesValues', '', $messagesType, $groupInvoicesValues, null, 'horizontal');
+        $groupInvoicesValues->SetShowLabel(false);
+        $hctGroupInvoicesValues   = new MHContainer('hctGroupInvoicesValues', array($groupInvoicesValuesLabel, $groupInvoicesValues));
+        $fields[]                 = $hctGroupInvoicesValues;
+
+        // Collection operation id
+        $collectionOperationIdLabel     = new MText('collectionOperationIdLabel', _M('Collection operation id',$module).':');
+        $collectionOperationIdLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $flds[]                         = $collectionOperationIdLabel;
+        $collectionOperationIdLabel->setClass('m-caption m-caption-required');
+        $collectionOperationId          = new MLookupTextField('collectionOperationId', $this->getFormValue('collectionOperationId', $data->collectionOperationId), _M('',$module), FIELD_ID_SIZE, null, null, 'collectionOperationDescription', 'finance', 'Operation', null, null, true);
+        $collectionOperationId->setJsHint(_M('Select the collection operation id', $module));
+        $validators[]                   = new MIntegerValidator('collectionOperationId',_M('Collection operation id',$module), 'required');
+        $flds[]                         = $collectionOperationId;
+        $collectionOperationDescription = new MTextField('collectionOperationDescription', $this->getFormValue('collectionOperationDescription', $collectionOperationDescription), _M('', $module), FIELD_DESCRIPTION_SIZE);
+        $collectionOperationDescription->setReadOnly(true);
+        $flds[]                         = $collectionOperationDescription;
+        $hctCollectionOperation         = new MHContainer('hctCollectionOperation', $flds);
+        $hctCollectionOperation->setShowLabel(true);
+        $fields[]                       = $hctCollectionOperation;
+        unset($flds);
+
+        // Is extinct
+        $isExtinctLabel = new MText('isExtinctLabel', _M('Is extinct',$module).':');
+        $isExtinctLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $isExtinctLabel->setClass('m-caption m-caption-required');
+        $isExtinct      = $this->GetFormValue('isExtinct', $data->isExtinct ? $data->isExtinct : DB_FALSE );
+        $isExtinct      = new MRadioButtonGroup('isExtinct', '', $messagesType, $isExtinct, null, 'horizontal');
+        $isExtinct->SetShowLabel(false);
+        $hctIsExtinct   = new MHContainer('hctIsExtinct', array($isExtinctLabel, $isExtinct));
+        $fields[]       = $hctIsExtinct;
+
+        if ( $function == 'update' )
+        {
+            $fields[] = new MTextLabel('lfinModification', '['.$data->userName.' - '.$data->dateTime.']', _M('Last modification', $module));
+        }
+
+        $fields[] = new MSeparator('');
+        $this->setFields($fields);
+        $this->setValidators($validators);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+        $this->setClose($MIOLO->getActionURL($module, substr($action, 0, strrpos($action, ':'))));
+        $this->page->onLoad('document.'.$this->name.'.loanDescription.focus();');
+
+    }
+    
+    /**
+     * Event triggered when user chooses New from the toolbar
+     **/
+    public function tbBtnNew_click($sender = null)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $data = $this->getTypesData();
+        $vars = get_object_vars($data);
+        foreach ( $vars as $var => $value )
+        {
+            if ( $this->$var && $var != 'description' )
+            {
+                $this->$var->value = $this->getFormValue($var.'S') ? $this->getFormValue($var.'S') : '';
+            }
+        }
+        $this->description->value = $this->getFormValue('descriptionS') ? $this->getFormValue('loanDescriptionS') : '';
+    }
+    
+        /**
+     * Event triggered when user chooses Delete from the toolbar
+     **/
+    public function tbBtnDelete_click($sender = null)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $data   = $this->getTypesData();
+        $opts   = array('event'           => 'tbBtnDelete_confirm',
+                        'function'        => 'delete',
+                        'incentiveTypeId' => MIOLO::_request('incentiveTypeId')
+                       );
+                       
+        $gotoYes = $MIOLO->getActionURL( $module, $action, null, $opts );
+        $goto    = SAGU::getStackBackUrl();
+        $gotoNo  = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+        $msg     = MSG_CONFIRM_RECORD_DELETE;
+        $caption = _M('Question',$module);
+        $MIOLO->question($msg, $gotoYes, $gotoNo);
+    }
+
+    /**
+     * Event triggered when user chooses Yes from the Delete prompt dialog
+     **/
+    public function tbBtnDelete_confirm($sender = null)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $business = $MIOLO->getBusiness($module, 'BusLoan');
+        $ok = $business->deleteLoan(MIOLO::_request('incentiveTypeId'));
+
+        if ( $ok )
+        {
+            $msg  = MSG_RECORD_DELETED;
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Information',$module);
+            $MIOLO->information($msg, $goto);
+        }
+        else
+        {
+            $msg  = _M('Error executing requested operation.',$module);
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Error', $module);
+            $MIOLO->error( $msg, $goto, $caption );
+        }
+    }
+
+    /**
+     * Event triggered when user chooses Save from the toolbar
+     **/
+    public function tbBtnSave_click($sender = null)
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+
+        $data     = $this->getTypesData();
+        $business = $MIOLO->getBusiness($module, 'BusLoan');
+
+        if ( $function == 'update' )
+        {
+            $ok  = $business->updateLoan($data);
+            $msg = MSG_RECORD_UPDATED;
+        }
+        else
+        {
+            $ok  = $business->insertLoan($data);
+            $msg = MSG_RECORD_INSERTED;
+        }
+
+        if ( $ok )
+        {
+            $opts = array('incentiveTypeIdS'=>$data->incentiveTypeId);
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL( $module, $action, null, $opts);
+            if ( $function == 'update' )
+            {
+                $caption = _M('Information', $module);
+                $MIOLO->information($msg, $goto);
+            }
+            else
+            {
+                $opts    = array('event'=>'tbBtnNew_click',
+                                 'function'=>'insert');
+
+                $gotoYes = $MIOLO->getActionURL($module, $action, null, $opts);
+                $caption = _M('Question',$module);
+                $MIOLO->question($msg, $gotoYes, $goto);
+            }
+        }
+        else
+        {
+            $msg  = _M('Error executing requested operation.', $module);
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Error', $module);
+            $MIOLO->error( $msg, $goto, $caption );
+        }
+    }
+    
+    
+    public function getTypesData()
+    {
+        $data = new finLoan();
+        $vars = get_object_vars($data);
+        foreach ( $vars as $var => $value )
+        {
+            if ( $this->$var && $var != 'description' )
+            {
+                $data->$var = $this->$var->value;
+            }
+            $data->description = $this->loanDescription->value;
+        }
+
+        return $data;
+    }
+
+}
+
+?>

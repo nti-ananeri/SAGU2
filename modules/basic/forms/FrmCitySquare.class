@@ -1,0 +1,309 @@
+<?php
+
+/**
+ * CitySquare form
+ *
+ * @author Daniel Afonso Heisler [daniel@solis.coop.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ *
+ * @since
+ * Class created on 02/09/2005
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2005 SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+
+/**
+ * Form to manipulate a citySquare
+ **/
+class FrmCitySquare extends MForm
+{
+
+    /**
+     * Class constructor
+     **/
+    function __construct()
+    {
+
+        $module = MIOLO::getCurrentModule();
+
+        if ( MIOLO::_request('function') == 'insert' )
+        {
+            parent::__construct(_M('Insert', $module));
+        }
+        else
+        {
+            parent::__construct(_M('Update', $module));
+        }
+
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+
+        $toolBar = new MToolBar('toolBar',$MIOLO->getActionURL($module,$action));
+
+        if ( $function == 'insert' )
+        {
+            $toolBar->disableButton('tbBtnDelete');
+            $toolBar->disableButton('tbBtnPrint');
+        }
+        elseif ( $function == 'delete' )
+        {
+            $toolBar->disableButton('tbBtnSave');
+        }
+        $fields[] = $toolBar;
+
+        if ( in_array($function,array('update','delete')) )
+        {
+            $cityId    = $_GET['cityId'] ? $_GET['cityId'] : $_POST['cityId'];
+            $fields[]  = new MTextLabel('cityId', $cityId, _M('City id',$module));
+            $fields[]  = new MHiddenField('cityId', $cityId);
+
+            $square    = $_GET['square'] ? $_GET['square'] : $_POST['square'];
+
+            $business  = $MIOLO->getBusiness($module,'BusCitySquare');
+            $data      = $business->getCitySquare($cityId, $square);
+
+            $fields[]  = new MHiddenField('squareOld', $data->square);
+        }
+        else
+        {
+            $limbo    = new MHiddenField('limbo', '');
+            $fields[] = $limbo;
+            /*
+             * MLookupTextField class constructor prototype:
+             *
+             * function __construct($name = '', $value     = '',       $label   = '', $size         = 10,
+             *                      $hint = '', $validator = null,     $related = '', $module       = '',
+             *                      $item = '', $event     = 'filler', $filter  = '', $autocomplete = false)
+             */
+            $cityLabel = new MText('cityLabel', _M('City',$module) . ':');
+            $cityLabel->setWidth(FIELD_CONTAINER_SIZE);
+            $cityLabel->setClass('m-caption m-caption-required');
+
+            $cityId   = new MLookupTextField('cityId', $this->cityId->value, '', FIELD_LOOKUPFIELD_SIZE, null, null, 'cityName,limbo,stateName,limbo,countryName', $module, 'City', null, null, true);
+//            $fields[] = $cityId;
+            $validators[] = new MIntegerValidator('cityId', _M('City',$module), 'required');
+
+            $cityName = new MTextField('cityName', $this->getFormValue('cityName', $data->cityName), '', FIELD_DESCRIPTION_SIZE);
+            $cityName->setJsHint(_M('Enter the city name',$module));
+            $cityName->setReadOnly(true);
+//            $fields[] = $cityName;
+
+            $hctCity = new MHContainer('hctCity', array($cityLabel, $cityId, $cityName));
+            $fields[]  = $hctCity;
+
+            $stateName = new MTextField('stateName', $this->getFormValue('stateName', $data->stateName), _M('State name',$module), FIELD_DESCRIPTION_SIZE);
+            $stateName->setReadOnly(true);
+            $stateName->setJsHint(_M('Enter the state name',$module));
+            $fields[]  = $stateName;
+
+            $countryName = new MTextField('countryName', $this->getFormValue('countryName', $data->countryName), _M('Country name',$module), FIELD_DESCRIPTION_SIZE);
+            $countryName->setJsHint(_M('Enter the country name',$module));
+            $countryName->setReadOnly(true);
+            $fields[]    = $countryName;
+        }
+
+        $square       = new MTextField('square', $this->getFormValue('square', $data->square), _M('Square',$module), 6);
+        $square->setJsHint(_M('Enter the city square',$module));
+//        $validators[] = new MIntegerValidator('square', _M('Square',$module), 'required');
+        $validators[] = new MMaskValidator('square', _M('Square',$module), '999999', 'required');
+
+        $fields[]     = $square;
+
+        if ( $function == 'update' )
+        {
+            $fields[] = new MTextLabel('lastModification', '[' . $data->userName . ' - ' . $data->dateTime . ']', _M('Last modification',$module));
+
+        }
+
+        $fields[] = new Separator('');
+
+        $this->setFields($fields);
+        $this->setValidators($validators);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+        $this->setClose($MIOLO->getActionURL($module,substr($action,0,strrpos($action,':'))));
+        $this->page->onLoad('document.' . $this->name . '.cityId.focus();');
+
+    }
+
+    /**
+     * Event triggered when user chooses New from the toolbar
+     **/
+    public function tbBtnNew_click($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $data = $this->getTypesData();
+        $vars = get_object_vars($data);
+        foreach ( $vars as $var => $value )
+        {
+            if ( $this->$var && $var != 'name' )
+            {
+                eval('$this->' . $var . '->value = $this->getFormValue(\'' . $var . 'S\') ? $this->getFormValue(\'' . $var . 'S\') : \'\';');
+            }
+        }
+    }
+
+    /**
+     * Event triggered when user chooses Delete from the toolbar
+     **/
+    public function tbBtnDelete_click($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $data   = $this->getTypesData();
+        $opts   = array('event'    => 'tbBtnDelete_confirm',
+                        'function' => 'delete',
+                        'cityId'   => MIOLO::_request('cityId'),
+                        'square'   => MIOLO::_request('square'));
+
+        $gotoYes = $MIOLO->getActionURL( $module, $action, null, $opts );
+        $goto    = SAGU::getStackBackUrl();
+        $gotoNo  = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+        $msg     = MSG_CONFIRM_RECORD_DELETE;
+        $caption = _M('Question',$module);
+        $MIOLO->question($msg, $gotoYes, $gotoNo);
+    }
+
+    /**
+     * Event triggered when user chooses Yes from the Delete prompt dialog
+     **/
+    public function tbBtnDelete_confirm($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $business = $MIOLO->getBusiness($module, 'BusCitySquare');
+        $ok       = $business->deleteCitySquare($this->cityId->value, $this->square->value);
+
+        if ( $ok )
+        {
+            $msg  = MSG_RECORD_DELETED;
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Information',$module);
+            $MIOLO->information($msg, $goto);
+        }
+        else
+        {
+            $msg  = _M('Error executing requested operation.',$module);
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Error',$module);
+            $MIOLO->error( $msg, $goto, $caption );
+        }
+    }
+
+    /**
+     * Event triggered when user chooses Save from the toolbar
+     **/
+    public function tbBtnSave_click($sender=NULL)
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+
+        $data     = $this->getTypesData();
+        $business = $MIOLO->getBusiness($module, 'BusCitySquare');
+
+        if ( $function == 'update' )
+        {
+            $ok  = $business->updateCitySquare($data);
+            $msg = MSG_RECORD_UPDATED;
+        }
+        else
+        {
+            $ok  = $business->insertCitySquare($data);
+            $msg = MSG_RECORD_INSERTED;
+        }
+
+        if ( $ok )
+        {
+            $opts = array('cityIdS'=>$data->cityId);
+
+            if ( $function == 'update' )
+            {
+                $caption = _M('Information', $module);
+                $MIOLO->information($msg, $MIOLO->getActionURL( $module, $action, null, $opts));
+            }
+            else
+            {
+                unset($opts);
+                $goto = SAGU::getStackBackUrl();
+                $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL( $module, $action, null, $opts);
+                $opts = array('function'=>'insert');
+
+                $gotoYes = $MIOLO->getActionURL($module, $action, null, $opts);
+                $caption = _M('Question',$module);
+                $MIOLO->question($msg, $gotoYes, $goto);
+            }
+        }
+        else
+        {
+            $msg  = _M('Error executing requested operation.',$module);
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Error',$module);
+            $MIOLO->error( $msg, $goto, $caption );
+        }
+    }
+
+    /**
+     * Method to gather all information from the form fields
+     * and put them on a database compatible object
+     **/
+    public function getTypesData()
+    {
+        $data = new BasCitySquare();
+        $vars = get_object_vars($data);
+        foreach ( $vars as $var => $value )
+        {
+            if ( $this->$var && $var != 'name' )
+            {
+                eval('$data->' . $var . ' = $this->' . $var . '->value;');
+            }
+        }
+        $data->squareOld = $this->squareOld->value;
+
+        return $data;
+    }
+}
+
+?>

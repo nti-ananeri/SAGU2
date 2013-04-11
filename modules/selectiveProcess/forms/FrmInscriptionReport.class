@@ -1,0 +1,666 @@
+<?php
+
+/**
+ * Inscription reports form
+ *
+ * @author Leovan Tavares da Silva [leovan@solis.coop.br]
+ * @author Rafael Luis Spengler [rafael@solis.coop.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ *
+ * @since
+ * Class created on 13/12/2005
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2005 SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+
+/**
+ * Form to manipulate inscription reports
+ **/
+class FrmInscriptionReport extends MForm
+{
+    private $home;
+
+    var $business;
+    var $gridData;
+    /**
+     * Class constructor
+     **/
+    function __construct($data)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $this->business = $MIOLO->getBusiness($module, 'BusInscriptionReport');
+        $this->home   = $data->home;
+
+        parent::__construct(_M('Inscription', $module));
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+        $event    = MIOLO::_request('event');
+
+        $toolBar = new MToolBar('toolBar', $MIOLO->getActionURL($module, $action));
+        $toolBar->disableButton('tbBtnNew');
+        $toolBar->disableButton('tbBtnSave');
+        $toolBar->disableButton('tbBtnDelete');
+        $toolBar->disableButton('tbBtnSearch');
+        $toolBar->disableButton('tbBtnPrint');
+
+        //favoritos
+        $enabledImage  = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-20x20.png');
+        $disabledImage = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-disabled-20x20.png');
+        $url           = $MIOLO->getActionURL($module, $this->home, null, array('event' => 'bookmark'));
+        $toolBar->addButton('tbBtnBookmark', _M('Add to bookmarks', 'basic'), $url, null, true, $enabledImage, $disabledImage);
+
+        if ( MIOLO::_request('event') == 'bookmark' )
+        {
+            $MIOLO->getClass('basic', 'access');
+            access::insert(_M('Inscriptions report', $module), $this->home, 'inscription-16x16.png', true);
+        }
+        //fim favoritos
+
+        $fields[] = $toolBar;
+
+        $data->reportOption = MIOLO::_request('reportOption');
+
+        // Selective process id
+        $business                = $MIOLO->getBusiness($module, 'BusSelectiveProcess');
+        $selectiveProcessIdLabel = new MLabel(_M('Selective process id', $module).':');
+        $selectiveProcessIdLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $selectiveProcessId      = new MComboBox('selectiveProcessId', $this->getFormValue('selectiveProcessId', $data->selectiveProcessId), '', $business->listSelectiveProcess());
+        $selectiveProcessId->setJsHint(_M('Enter the selective process code',$module));
+        $validators[]            = new MRequiredValidator('selectiveProcessId'); 
+        $fields[]                = new MHContainer('hctSelectiveProcessId', array($selectiveProcessIdLabel, $selectiveProcessId));
+
+        // Report options
+        $reportOptions = array( array(_M('Inscriptions by normal course',    $module), 1),
+                                array(_M('Inscriptions by sex',              $module), 2),
+                                array(_M('Inscriptions by exam place',       $module), 3),
+                                array(_M('Inscriptions by exam room',        $module), 4),
+                                array(_M('Inscriptions by general location', $module), 5)
+                              );
+
+        $reportOptionLabel = new MLabel(_M('Report option', $module).':');
+        $reportOptionLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $reportOption      = new MRadioButtonGroup('reportOption', '', $reportOptions, $this->getFormValue('reportOption', '1'));
+        $validators[]      = new MRequiredValidator('reportOption');
+        $reportOption->setShowLabel(false);
+        $fields[]            = new MHContainer('hctReportOption', array($reportOptionLabel, $reportOption));
+
+        // Separator
+        $sep1 = new MSeparator('<hr>');
+        $sep1->setWidth('99%');
+        $fields[] = $sep1;
+
+        // Button
+        $fields[] = new MButton('btnGenerate', _M('Generate', $module), 'SUBMIT');
+
+        // Separator
+        $fields[] = new MSeparator('');
+
+        $this->setFields($fields);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+        $this->setClose($MIOLO->getActionURL($module, substr($action, 0, strrpos($action, ':'))));
+    }
+
+    //
+    public function btnAct_click($sender=NULL)
+    {
+        if ( $this->getFormValue('reportOption', $data->reportOption) == 4 )
+        {
+            $MIOLO  = MIOLO::getInstance();
+            $module = MIOLO::getCurrentModule();
+
+            $data->selectiveProcessId = MIOLO::_request('selectiveProcessId');
+            $data->reportOption       = MIOLO::_request('reportOption');
+            $data->placeRoomId        = MIOLO::_request('placeRoomId');
+            $data->build              = MIOLO::_request('build');
+            $data->room               = MIOLO::_request('room');
+            $data->count              = MIOLO::_request('count');
+
+            $MIOLO->getClass($module, 'RptInscriptionByRoomAct');
+            $data->optionNumber = 1;
+            $data->act          = 1;
+            $report = new RptInscriptionByRoomAct($data);
+        }
+    }
+
+    //
+//     public function btnAct2_click($sender=NULL)
+//     {
+// 
+//         if ( $this->getFormValue('reportOption', $data->reportOption) ==4 )
+//         {
+//             $MIOLO  = MIOLO::getInstance();
+//             $module = MIOLO::getCurrentModule();
+// 
+//             $data->selectiveProcessId = MIOLO::_request('selectiveProcessId');
+//             $data->reportOption       = MIOLO::_request('reportOption');
+//             $data->placeRoomId        = MIOLO::_request('placeRoomId');
+//             $data->build              = MIOLO::_request('build');
+//             $data->room               = MIOLO::_request('room');
+//             $data->count              = MIOLO::_request('count');
+// 
+//             $MIOLO->getClass($module, 'RptInscriptionByRoomAct');
+//             $data->optionNumber = 1;
+//             $data->act          = 2;
+//             $report = new RptInscriptionByRoomAct($data);
+//         }
+//     }
+
+    //
+    public function btnAct3_click($sender=NULL)
+    {
+        $reportOption = MIOLO::_request('reportOption');
+
+        if ( $this->getFormValue('reportOption', $data->reportOption) == 4 )
+        {
+            $MIOLO  = MIOLO::getInstance();
+            $module = MIOLO::getCurrentModule();
+
+            $selectiveProcessId = MIOLO::_request('selectiveProcessId');
+            $reportOption       = MIOLO::_request('reportOption');
+            $this->processGridData();
+
+            unset($this->gridData[count($this->gridData)-1]);
+
+            foreach ($this->gridData as $key => $gridData)
+            {
+                $data[$key]->selectiveProcessId = MIOLO::_request('selectiveProcessId');
+                $data[$key]->reportOption       = MIOLO::_request('reportOption');
+                $data[$key]->placeRoomId        = $gridData[2];
+                $data[$key]->build              = $gridData[4];
+                $data[$key]->room               = $gridData[3];
+                $data[$key]->count              = $gridData[6];
+                $data[$key]->optionNumber       = 1;
+                $data[$key]->act                = 1;
+                $data[$key]->iterador           = 0;
+            }
+            $MIOLO->getClass($module, 'RptInscriptionByRoomAct');
+            $report = new RptInscriptionByRoomAct($data);
+        }
+
+    }
+
+    //
+//     public function btnAct4_click($sender=NULL)
+//     {
+//         if ( $this->getFormValue('reportOption', $data->reportOption) == 4 )
+//         {
+//             $MIOLO  = MIOLO::getInstance();
+//             $module = MIOLO::getCurrentModule();
+// 
+//             $selectiveProcessId = MIOLO::_request('selectiveProcessId');
+//             $reportOption       = MIOLO::_request('reportOption');
+//             $this->processGridData();
+// 
+// 
+//             foreach ($this->gridData as $key=>$gridData)
+//             {
+//                 $data[$key]->selectiveProcessId = MIOLO::_request('selectiveProcessId');
+//                 $data[$key]->reportOption       = MIOLO::_request('reportOption');
+//                 $data[$key]->placeRoomId        = $gridData[2];
+//                 $data[$key]->build              = $gridData[4];
+//                 $data[$key]->room               = $gridData[3];
+//                 $data[$key]->count              = $gridData[6];
+//                 $data[$key]->optionNumber       = 1;
+//                 $data[$key]->act                = 2;
+//             }
+// 
+//             $MIOLO->getClass($module, 'RptInscriptionByRoomAct');
+//             $report = new RptInscriptionByRoomAct($data);
+//         }
+//     }
+
+    public function btnOnLblRoom_click($sender=NULL)
+    {
+        if ( $this->getFormValue('reportOption', MIOLO::_request('reportOption') ? MIOLO::_request('reportOption') : MIOLO::_request('reportOption', 'GET')) == 4 )
+        {
+            $MIOLO  = MIOLO::getInstance();
+            $module = MIOLO::getCurrentModule();
+
+            $data->selectiveProcessId = MIOLO::_request('selectiveProcessId');
+            $data->reportOption       = MIOLO::_request('reportOption');
+            $data->placeRoomId        = MIOLO::_request('placeRoomId');
+            $data->build              = MIOLO::_request('build');
+            $data->room               = MIOLO::_request('room');
+            $data->count              = MIOLO::_request('count');
+            $data->optionNumber       = 1;
+
+            $MIOLO->getClass($module, 'RptInscriptionByRoom');
+            $report = new RptInscriptionByRoom($data);
+        }
+    }
+
+    public function btnAll_click($sender=NULL)
+    {
+        if ( $this->getFormValue('reportOption', MIOLO::_request('reportOption') ? MIOLO::_request('reportOption') : MIOLO::_request('reportOption', 'GET')) == 4 )
+        {
+            $MIOLO  = MIOLO::getInstance();
+            $module = MIOLO::getCurrentModule();
+            $selectiveProcessId = MIOLO::_request('selectiveProcessId');
+            $reportOption       = MIOLO::_request('reportOption');
+            $this->processGridData();
+
+            foreach ($this->gridData as $key=>$gridData)
+            {
+                $data[$key]->selectiveProcessId = $selectiveProcessId;
+                $data[$key]->reportOption       = $reportOption;
+                $data[$key]->placeRoomId        = $gridData[2];
+                $data[$key]->build              = $gridData[4];
+                $data[$key]->room               = strlen((string)$gridData[3]) ? $gridData[3] : _M('Not allocated', $module);
+                $data[$key]->count              = $gridData[6];
+                $data[$key]->optionNumber       = 1;
+            }
+            $MIOLO->getClass($module, 'RptInscriptionByRoom');
+            $report = new RptInscriptionByRoom($data);
+        }
+    }
+
+    public function btnOnLblList_click($sender=NULL)
+    {
+        if ($this->getFormValue('reportOption', $data->reportOption) == 5)
+        {
+            $MIOLO  = MIOLO::getInstance();
+            $module = MIOLO::getCurrentModule();
+
+            $data->selectiveProcessId  = MIOLO::_request('selectiveProcessId');
+            $data->reportOption        = MIOLO::_request('reportOption');
+            $data->cityExam            = MIOLO::_request('cityExam');
+            $data->build               = MIOLO::_request('buildingNumber');
+
+            $MIOLO->getClass($module, 'RptInscriptionByGeneralLocation');
+            $report = new RptInscriptionByGeneralLocation($data);
+        }
+    }
+
+    /*
+     * Process grid information
+     */
+    public function processGridData()
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+
+        $selectiveProcessId = $this->getFormValue('selectiveProcessId', MIOLO::_request('selectiveProcessId') ? MIOLO::_request('selectiveProcessId') : MIOLO::_request('selectiveProcessId', 'GET'));
+
+        $query = $this->business->inscriptionForRoom($selectiveProcessId);
+        if (is_array($query[0]))
+        {
+            foreach ($query as $key => $line)
+            {
+                if (($line[2] != null) && ($line[6] != null))
+                {
+                    $link = new MLink('link', $line[1]);
+                    $this->gridData[] = $line;
+                }
+                if ( $line[3] === NULL )
+                {
+                    $query[$key][3] = _M('Not Alocaded', $module);
+                }
+
+                if ($line[7] != null)
+                {
+                    $link = new MLinkButton('link', $line[2]);
+                    $this->gridData[] = $line;
+                }
+
+                $totalGeral+= $line[5];
+            }
+        }
+
+        $sizeOfGridData = count($this->gridData);
+
+/*        for ($i = 0; $i < count($query); $i++)
+        {
+            if ( $tmpUnitId != $query[$i][0] || $tmpCourseId != $query[$i][2] )
+            {
+                $this->gridData[$sizeOfGridData] = $query[$i];
+                unset($this->gridData[$sizeOfGridData][8],$this->gridData[$sizeOfGridData][6]);
+                $this->gridData[$sizeOfGridData++][4] = 'Ata';
+
+                $tmpUnitId   = $query[$i][0];
+                $tmpCourseId = $query[$i][2];
+            }
+        }*/
+        $this->gridData[] = array(null, '<b>'._M('MAIN TOTAL', $module).'</b>', null, null, "", "<b>$totalGeral</b>");
+    }
+
+   /* 
+    * Function called when generate button is clicked
+    */
+    public function btnGenerate_click()
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+        $reportOption       = $this->getFormValue('reportOption');
+        $selectiveProcessId = $this->getFormValue('selectiveProcessId');
+        $totalInscriptions = 0;
+        
+        // Confere se existe valores para geração de relatório
+        if ( strlen((string)$reportOption)>0 && strlen((string)$selectiveProcessId)>0 )
+        {
+            // Opção 1 - Inscrição por curso
+            if ( $reportOption == 1 )
+            {
+                $query = $this->business->inscriptionForCourse($selectiveProcessId);
+                $total = 0;
+                for ($i = 0; $i < count($query); $i++)
+                {
+                    if ($query[$i][4] != null)
+                    {
+                        if ($query[$i+1][3] == $query[$i][3] && $query[$i+1][0] == $query[$i][0])
+                        {
+                            if ($query[$i+1][4] == 'f')
+                            {
+                                $query[$i][4] = $query[$i+1][5];
+                            }
+                            elseif ($query[$i][4] == 'f')
+                            {
+                                $query[$i][4] = $query[$i][5];
+                            }
+
+                            $query[$i][5] = $query[$i+1][5] + $query[$i][5];
+                            $query[$i][8] = $query[$i][7];
+                            $query[$i][7] = number_format(($query[$i][5] / $query[$i][6]), 2);                             
+                            $query[$i+1]  = array();
+                            $gridData[]   = $query[$i];
+                        }
+                        else
+                        {                        	
+                            $query[$i][4] = '';
+                            $query[$i][8] = $query[$i][7];
+                            $query[$i][7] = number_format(($query[$i][5] / $query[$i][6]), 2);
+                            $gridData[]   = $query[$i];
+                        }
+                    }
+                    $totalInscriptions += $query[$i][5];
+                    $totalIncHighSchool += $query[$i][4];
+                }
+                $gridData[] = array(null, '<b>'._M('Inscriptions total', $module).'</b>', null, null, "<b>$totalIncHighSchool</b>", "<b>$totalInscriptions</b>");
+
+                $grdResults = $MIOLO->getUI()->getGrid ($module, 'GrdInscriptionByCourse', $filters);
+                $grdResults->setData($gridData);    
+                $grdResults->setClose(null);
+                $grdResults->setTitle(_M('Inscriptions by normal course', $module));
+            }
+
+            // Inscriptions by sex
+            if ( $reportOption == 2 )
+            {
+                $query   = $this->business->inscriptionForSex($selectiveProcessId);
+                $totalMasculino = 0;
+                $totalFeminino  = 0;
+
+                for ($i = 0; $i < count($query); $i++)
+                {
+                    if ($query[$i][4] != null)
+                    {
+                        if ($query[$i][0] == $query[$i+1][0] &&
+                            $query[$i][2] == $query[$i+1][2]   )
+                        {
+                            if ($query[$i][4] == 'M' &&
+                                $query[$i+1][4] == 'F' )
+                            {
+                                $query[$i][4] = $query[$i][5];
+                                $query[$i][5] = $query[$i+1][5];
+                            }
+                            elseif ($query[$i][4] == 'F' &&
+                                    $query[$i+1][4] == 'M' )
+                            {
+                                $query[$i][4] = $query[$i+1][5];
+                            }
+                            elseif ($query[$i][4] == 'M')
+                            {
+                                $query[$i][4] = $query[$i][5];
+                            }
+                            elseif ($query[$i][4] == 'F')
+                            {
+                                $query[$i][4] = null;
+                            }
+                            $query[$i+1] = array();
+                        }
+                        else
+                        {
+                            if ($query[$i][4] == 'M')
+                            {
+                                $query[$i][4] = $query[$i][5];
+                                $query[$i][5] = '';
+                            }
+                            else
+                            {
+                                $query[$i][4] = '';
+                            }
+                        }
+
+                        $query[$i][6] = $query[$i][5]; // Pula uma coluna com total feminino
+
+                        $total = $query[$i][6] + $query[$i][4]; // Total da linha
+
+                        if ( $query[$i][4] > 0 )
+                        {
+                            $percMasculino  = SAGU::formatNumber(SAGU::calcNumber('('.SAGU::formatNumber($query[$i][4]) . ' / ' . SAGU::formatNumber($total).')' . ' * 100', true )) . '%';
+                        }
+                        else
+                        {
+                            $query[$i][4] = 0;
+                            $percMasculino = '0,00%';
+                        }
+
+                        if ( $query[$i][6] > 0 )
+                        {
+                            $percFeminino = SAGU::calcNumber('('. SAGU::formatNumber($query[$i][6]) . ' / ' . SAGU::formatNumber($total) .') * 100', true ) . '%';
+                        }
+                        else
+                        {
+                            $query[$i][6] = 0;
+                            $percFeminino = '0,00%';
+                        }
+
+                        $query[$i][5]  = $percMasculino;
+                        $query[$i][7]  = $percFeminino;
+                        $query[$i][8]  = $total;
+                        $query[$i][9]  = '100%';
+                        $gridData[]  = $query[$i];
+
+                        $totalFeminino  += $query[$i][6];
+                        $totalMasculino += $query[$i][4];
+                    }
+                }
+                $totalGeral = $totalMasculino+$totalFeminino;
+                $gridData[] = array(null, '<b>'._M('Inscriptions total', $module).'</b>', null, null, "<b>$totalMasculino</b>", "<b></b>", "<b>$totalFeminino</b>", "<b></b>", "<b>$totalGeral</b>");
+
+                $grdResults = $MIOLO->getUI()->getGrid ($module, 'GrdInscriptionBySex', $filters);
+                $grdResults->setData($gridData);
+                $grdResults->setClose(null);
+                $grdResults->setTitle(_M('Inscriptions by sex', $module));
+
+            }
+            // Inscriptions by exam place
+            if ( $reportOption == 3 )
+            {
+                $query = $this->business->inscriptionForCityExam($selectiveProcessId);
+                $total = 0;
+                $totalGeral = 0;
+
+                for ($i = 0; $i < count($query); $i++)
+                {
+                    if ($query[$i][0] == $query[$i+1][0])
+                    {
+                        $gridData[] = $query[$i];
+                        $total += $query[$i][4];
+                        $totalGeral += $query[$i][4];
+                    }
+                    else
+                    {
+                        $gridData[] = $query[$i];
+                        $total += $query[$i][4];
+                        $gridData[] = array(null, '<b>'._M('TOTAL', $module).' '.$query[$i][1].'</b>', null, null, "<b>$total</b>");
+
+                        $totalGeral += $query[$i][4];
+                        $total = 0;
+                    }
+                }
+                $gridData[] = array(null, '<b>'._M('MAIN TOTAL', $module).'</b>', null, null, "<b>$totalGeral</b>");
+                $grdResults = $MIOLO->getUI()->getGrid($module, 'GrdInscriptionByCityExam', $filters);
+                $grdResults->setData($gridData);
+                $grdResults->setClose(null);
+            }
+ 
+            // Inscriptions by exam room
+            if ( $reportOption == 4 )
+            {
+                $this->processGridData();
+                $grdResults = $MIOLO->getUI()->getGrid($module, 'GrdInscriptionByRoom', $filters);
+
+                $grdResults->setData($this->gridData);
+                $grdResults->setClose(null);
+
+                //$url = $MIOLO->getActionURL($module, $action, null, array('reportOption'=>$reportOption, 'selectiveProcessId'=>$selectiveProcessId, 'event'=>'btnAll_click'));
+
+                $url = $MIOLO->getActionURL($module, $action, null, array('reportOption'=>$reportOption, 'selectiveProcessId'=>$selectiveProcessId, 'event'=>'btnAct3_click'));
+
+                $linkAll = new MLink('printAll', _M('Print all', $module), $url);
+
+                $grdResults->setTitle(_M('Inscriptions by room', $module).': '.$linkAll->generate());
+                $attachEvent = MIOLO::_request('attachEvent') ? MIOLO::_request('attachEvent') : MIOLO::_request('attachEvent', 'GET');
+
+                if ( ($attachEvent == 'print') && ($this->getFormValue('count', $data->count)!=0) )
+                {
+                    // Message default
+                    $txtMessage = '<b>'._M('Please, select what act you want to print:', $module).'</b>';
+                    $lblAct     = new MText('lblAct', $txtMessage);
+                    $flds[]    = $lblAct;
+
+                    // Extra options
+                    $buildCurrent = MIOLO::_request('build');
+                    $unitCurrent  = MIOLO::_request('cityName');
+                    $roomCurrent = MIOLO::_request('room'); 
+
+                    if ( strlen((string)$roomCurrent) > 0 )
+                    {
+                        $txtMessage2 = _M('Selected room is', $module) . ' ' . $roomCurrent . ' ' . _M('from build', $module) . ' ' . $buildCurrent . ' ' . _M('from unit', $module). ' ' . $unitCurrent;
+                        $lblAct3     = new MText('lblAct3', $txtMessage2);
+                        $flds[]     = $lblAct3;
+                    }
+                    $fields[] = new MHContainer('hctMessages', $flds);
+                    unset($flds);
+
+                    // Buttons options
+                    // Complete selective process
+                    //$btnOnLblAct = new MButton('btnAct',_M('Complete selective process', $module));
+                    $btnOnLblAct = new MButton('btnAct',_M('Act from this room', $module));
+                    $flds[] = $btnOnLblAct;
+                    // Writing only
+                    //$btnWO = new MButton('btnAct2',_M('Writing only', $module));
+                    //$flds[] = $btnWO;
+                    // All acts of selective process
+                    //$btnAllCS = new MButton('btnAct3',_M('Complete selective process all acts',$module));
+                    $btnAllCS = new MButton('btnAct3',_M('Act from all rooms',$module));
+                    $flds[] = $btnAllCS;
+                    // All acts for writings
+                    //$btnAllW = new MButton('btnAct4',_M('Writing\'s all acts',$module));
+                    //$flds[] = $btnAllW;
+
+                    // Div
+                    $hctFlds3 = new MDiv('div3b', $flds, null, 'align="center"');
+                    $fields[] = $hctFlds3;
+                    $divAct   = new BaseGroup ('divAct', _M('Select the report', $module), $fields, 'vertical');
+                    $divAct->showLabel = true;
+
+                    $fields_[] = $divAct;
+                    $fields_[] = new Mseparator('');
+                    $this->setFields($fields_);
+                }
+                elseif ( $attachEvent == 'print' )
+                {
+                    $txtMessage = _M('Please, select what type of report\'s candidate\'s room you want to print', $module) . ':';
+                    $lblAct = new MText('lblAct', $txtMessage);
+                    $flds3[] = $lblAct;
+
+                    $flds3[] = new Separator('');      
+                    $roomCurrent  = MIOLO::_request('room');
+                    $buildCurrent = MIOLO::_request('build');
+                    $unitCurrent  = MIOLO::_request('cityName');
+
+                    // Buttons
+                    $btnOnLblRoom = new MButton('btnOnLblRoom',_M('Selected room', $module).' - '.$roomCurrent.' - '.$buildCurrent.' - '.$unitCurrent);
+                    $div3     = new MDiv('buttonsDiv', array($btnOnLblRoom), null, 'align="center"');
+                    $div3->setWidth('99%');
+                    $flds3b[] = $div3;
+                    $flds3[]  = new MHContainer('hct3flds3b', $flds3b);
+
+                    // Main Div
+                    $divAct   = new MBaseGroup ('divAct', _M('Select the report', $module), $flds3, 'vertical');
+                    $fields[] = $divAct;
+                    $this->setFields($fields);
+                }
+            }
+            if ( $reportOption == 5 )
+            {
+                $gridData = $this->business->inscriptionForGeneralLocation($selectiveProcessId);
+
+                $grdResults = $MIOLO->getUI()->getGrid($module, 'GrdInscriptionByGeneralLocation', $filters);
+                $grdResults->setData($gridData);
+                $grdResults->setClose(null);
+                $attachEvent = MIOLO::_request('attachEvent') ? MIOLO::_request('attachEvent') : MIOLO::_request('attachEvent', 'GET');
+                if ( $attachEvent == 'print')
+                {
+                    // Main message
+                    $txtMessage     = '<b>'._M('Inform the building number or keep it empty to list all the buildings and rooms', $module).'</b>';
+                    $lblGenLocation = new MText('lblGenLocation', $txtMessage);
+                    $flds4[] = $lblGenLocation;
+
+                    // Field for building number
+                    $buildingNumberLabel = new MText('buildingNumberLabel', _M('Building number', $module).':');
+                    $buildingNumberLabel->setWidth(FIELD_CONTAINER_SIZE);
+                    $buildingNumber      = new MTextField('buildingNumber', $this->getFormValue('buildingNumber'), '', 5);
+                    $flds4[]             = new MHContainer('hctBuildingNumber', array($buildingNumberLabel, $buildingNumber));
+
+
+                    $divAct = new BaseGroup('divAct', _M('Report data', $module), $flds4, 'vertical');
+                    $fields[] = $divAct;
+                    $sep1     = new MSeparator('<hr>');
+                    $sep1->setWidth('99%');
+                    $fields[] = $sep1;
+                    $fields[] = new MButton('btnOnLblList', _M('List', $module));
+                    $this->setFields($fields);
+                }
+            }
+        }
+
+        if (($grdResults) && (strlen((string)$attachEvent) == 0))
+        {
+            $this->addField($grdResults);
+        }
+    }
+}
+
+?>

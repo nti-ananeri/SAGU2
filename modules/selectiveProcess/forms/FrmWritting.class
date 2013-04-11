@@ -1,0 +1,666 @@
+<?php
+
+/**
+ * Inscription reports form
+ *
+ * @author Hélio H. R. Guimarães [helio@solis.coop.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ *
+ * @since
+ * Class created on 29/05/2006
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2005 SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+
+/**
+ * Form to manipulate inscription reports
+ **/
+class FrmWritting extends MForm
+{
+    private $home;
+    
+    var $business;
+    var $gridData;
+    /**
+     * Class constructor
+     **/
+    function __construct($data)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $this->business = $MIOLO->getBusiness($module, 'BusInscriptionReport');
+        $this->home   = $data->home;
+
+        parent::__construct(_M('Writting', $module));
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+        $this->eventHandler();
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+        $event    = MIOLO::_request('event');
+
+        $toolBar = new MToolBar('toolBar', $MIOLO->getActionURL($module, $action));
+        $toolBar->disableButton('tbBtnNew');
+        $toolBar->disableButton('tbBtnSave');
+        $toolBar->disableButton('tbBtnDelete');
+        $toolBar->disableButton('tbBtnSearch');
+
+//         if ($function == 'print')
+//         {
+            $toolBar->disableButton('tbBtnPrint');
+//         }
+
+        //favoritos
+        $enabledImage  = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-20x20.png');
+        $disabledImage = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-disabled-20x20.png');
+        $url           = $MIOLO->getActionURL($module, $this->home, null, array('event' => 'bookmark'));
+        $toolBar->addButton('tbBtnBookmark', _M('Add to bookmarks', 'basic'), $url, null, true, $enabledImage, $disabledImage);
+
+        if ( MIOLO::_request('event') == 'bookmark' )
+        {
+            $MIOLO->getClass('basic', 'access');
+            access::insert('Writting', $this->home, 'writting-16x16.png', true);
+        }
+        //fim favoritos
+
+        $fields[] = $toolBar;
+
+
+        if ((strlen((string)$function) == 0) || ($function == null))
+        {
+            $flds[] = new Separator('');
+
+            $business           = $MIOLO->getBusiness($module, 'BusSelectiveProcess');
+            $selectiveProcessId = new MComboBox('selectiveProcessId', $this->getFormValue('selectiveProcessId', $data->selectiveProcessId), _M('Selective process id',$module), $business->listSelectiveProcess());
+            $selectiveProcessId->setJsHint(_M('Enter the selective process code',$module));
+            $validators[]       = new MRequiredValidator('selectiveProcessId'); 
+            $flds1[]           = $selectiveProcessId;
+            $flds1[]           = new Separator('');
+
+
+            $numberSheet  = new MTextField('numberSheet', $this->getFormValue('numberSheet', $data->numberSheet), _M('Number of answer sheet',$module), 10);
+            $numberSheet->setJsHint(_M('Enter the number of answer sheet',$module));
+            $flds1[]     = $numberSheet;
+            $validators[] = new MRequiredValidator('numberSheet');
+            $flds1[]             = new Separator('');
+
+
+            $inscriptionLabel = new MText('inscriptionLabel', _M('Inscription id',$module) . ':');
+            $inscriptionLabel->setWidth(FIELD_CONTAINER_SIZE);
+
+            $inscriptionIdS = new MLookupTextField('inscriptionIdS', $this->getFormValue('inscriptionIdS', $data->inscriptionIdS), '', FIELD_LOOKUPFIELD_SIZE, null, null, ('limbo, inscriptionPersonIdS, inscriptionPersonNameS'), 'selectiveProcess', 'Inscription', null, array('selectiveProcessId' => 'selectiveProcessId'), true);
+            $inscriptionIdS->setJsHint(_M('Enter the inscription id',$module));
+
+
+            //$fields[] = $inscriptionIdS;
+            $validators[] = new MIntegerValidator('inscriptionIdS', '', 'optional');
+
+            $inscriptionPersonIdS = new MTextField('inscriptionPersonIdS', $this->getFormValue('inscriptionPersonIdS', $data->inscriptionPersonIdS), '', FIELD_ID_SIZE);
+            $inscriptionPersonIdS->setReadOnly(true);
+            $inscriptionPersonIdS->setJsHint(_M('Person code',$module));
+
+            $inscriptionPersonNameS = new MTextField('inscriptionPersonNameS', $this->getFormValue('inscriptionPersonNameS', $data->inscriptionPersonNameS), '', FIELD_DESCRIPTION_SIZE);
+
+            $inscriptionPersonNameS->setReadOnly(true);
+            $inscriptionPersonNameS->setJsHint(_M('Person name',$module));
+
+            $hctInscription = new MHContainer('hctInscription', array($inscriptionLabel, $inscriptionIdS, $inscriptionPersonIdS, $inscriptionPersonNameS));
+            $flds1[]  = $hctInscription;
+
+
+            $flds1[]        = new Separator('');
+            $isConfigureWrittingLabel = new MText('isConfigureWrittingLabel', _M('Configuration writting sheet',$module) . '?');
+            $isConfigureWrittingLabel->setClass('m-caption m-caption-required');
+            //$flds1[] = $isConfigureWrittingLabel;
+
+            $isConfigureWritting = new MRadioButtonGroup('isConfigureWritting', '', SAGU::listYesNo('1'), $this->getFormValue('isConfigureWritting', $data->isConfigureWritting) ? $this->getFormValue('isConfigureWritting', $data->isConfigureWritting) : DB_FALSE, null, 'horizontal');
+            $isConfigureWritting->setShowLabel(false);
+            $isConfigureWritting->setAutoPostBack(true);
+
+            $hctIsConfigureWritting = new MHContainer('hctIsConfigureWritting', array($isConfigureWrittingLabel, $isConfigureWritting));
+
+            $flds1[] = $hctIsConfigureWritting;
+
+            $btnGenerate = new MButton('btnGenerate',_M('Generate',$module));
+            $btnGenerate->attachEventHandler('click', 'btnGenerateClick');
+            $flds1[] = $btnGenerate;
+
+            $fields[]          = new MHiddenField('PageInformations', $PageInformations);
+
+            $bsg1            = new BaseGroup('bsg1', _M('Writting sheet informations', $module), $flds1, 'vertical');
+            $bsg1->showLabel = true;
+            $bsg1->width     = '70%';
+
+            $flds2[] = new Separator('');
+
+            $rightMarginOfPage = new MTextField('rightMarginOfPage', $this->getFormValue('rightMarginOfPage', $data->rightMarginOfPage) ? $this->getFormValue('rightMarginOfPage', $data->rightMarginOfPage) : FR_RIGHT_MARGIN , _M('Right margin of page',$module), 15);
+            $rightMarginOfPage->setJsHint(_M('Enter the right margin of page (in millimeters)',$module));
+            $flds2[]           = $rightMarginOfPage;
+            $validators[] = new MIntegerValidator('rightMarginOfPage', '', 'required');
+
+            $flds2[] = new Separator('');
+
+            $upperLeftMarcPositionX = new MTextField('upperLeftMarcPositionX', $this->getFormValue('upperLeftMarcPositionX', $data->upperLeftMarcPositionX) ? $this->getFormValue('upperLeftMarcPositionX', $data->upperLeftMarcPositionX) : FR_UPPER_LEFT_POS_X , _M('Upper-left position X',$module), 15);
+
+            $upperLeftMarcPositionY = new MTextField('upperLeftMarcPositionY', $this->getFormValue('upperLeftMarcPositionY', $data->upperLeftMarcPositionY) ? $this->getFormValue('upperLeftMarcPositionY', $data->upperLeftMarcPositionY) : FR_UPPER_LEFT_POS_Y , _M('Upper-left position Y',$module), 15);
+
+            $upperLeftMarcHeigth = new MTextField('upperLeftMarcHeigth', $this->getFormValue('upperLeftMarcHeigth', $data->upperLeftMarcHeigth) ? $this->getFormValue('upperLeftMarcHeigth', $data->upperLeftMarcHeigth) : FR_UPPER_LEFT_HEIGTH , _M('Upper-left height',$module), 15);
+
+            $upperLeftMarcThickness = new MTextField('upperLeftMarcThickness', $this->getFormValue('upperLeftMarcThickness', $data->upperLeftMarcThickness) ? $this->getFormValue('upperLeftMarcThickness', $data->upperLeftMarcThickness) : FR_UPPER_LEFT_THICKNESS, _M('Upper-left thickness',$module), 15);
+
+
+            $upperrightMarcPositionX = new MTextField('upperrightMarcPositionX', $this->getFormValue('upperrightMarcPositionX', $data->upperrightMarcPositionX) ? $this->getFormValue('upperrightMarcPositionX', $data->upperrightMarcPositionX) : FR_UPPER_RIGHT_POS_X , _M('Upper-right position X',$module), 15);
+
+            $upperrightMarcPositionY = new MTextField('upperrightMarcPositionY', $this->getFormValue('upperrightMarcPositionY', $data->upperrightMarcPositionY) ? $this->getFormValue('upperrightMarcPositionY', $data->upperrightMarcPositionY) : FR_UPPER_RIGHT_POS_Y , _M('Upper-right position Y',$module), 15);
+
+            $upperrightMarcHeigth = new MTextField('upperrightMarcHeigth', $this->getFormValue('upperrightMarcHeigth', $data->upperrightMarcHeigth) ? $this->getFormValue('upperrightMarcHeigth', $data->upperrightMarcHeigth) : FR_UPPER_RIGHT_HEIGTH , _M('Upper-left height',$module), 15);
+
+            $upperrightMarcThickness = new MTextField('upperrightMarcThickness', $this->getFormValue('upperrightMarcThickness', $data->upperrightMarcThickness) ? $this->getFormValue('upperrightMarcThickness', $data->upperrightMarcThickness) : FR_UPPER_RIGHT_THICKNESS , _M('Upper-right thickness',$module), 15);
+
+
+            $bottomLeftMarcPositionX = new MTextField('bottomLeftMarcPositionX', $this->getFormValue('bottomLeftMarcPositionX', $data->bottomLeftMarcPositionX) ? $this->getFormValue('bottomLeftMarcPositionX', $data->bottomLeftMarcPositionX) : FR_BOTTOM_LEFT_POS_X, _M('bottom-left position X',$module), 15);
+
+            $bottomLeftMarcPositionY = new MTextField('bottomLeftMarcPositionY', $this->getFormValue('bottomLeftMarcPositionY', $data->bottomLeftMarcPositionY) ? $this->getFormValue('bottomLeftMarcPositionY', $data->bottomLeftMarcPositionY) : FR_BOTTOM_LEFT_POS_Y , _M('bottom-left position Y',$module), 15);
+
+            $bottomLeftMarcHeigth = new MTextField('bottomLeftMarcHeigth', $this->getFormValue('bottomLeftMarcHeigth', $data->bottomLeftMarcHeigth) ? $this->getFormValue('bottomLeftMarcHeigth', $data->bottomLeftMarcHeigth) : FR_BOTTOM_LEFT_HEIGTH , _M('bottom-left height',$module), 15);
+
+            $bottomLeftMarcThickness = new MTextField('bottomLeftMarcThickness', $this->getFormValue('bottomLeftMarcThickness', $data->bottomLeftMarcThickness) ? $this->getFormValue('bottomLeftMarcThickness', $data->bottomLeftMarcThickness) : FR_BOTTOM_LEFT_THICKNESS , _M('bottom-left thickness',$module), 15);
+
+
+            $bottomrightMarcPositionX = new MTextField('bottomrightMarcPositionX', $this->getFormValue('bottomrightMarcPositionX', $data->bottomrightMarcPositionX) ? $this->getFormValue('bottomrightMarcPositionX', $data->bottomrightMarcPositionX) : FR_BOTTOM_RIGHT_POS_X , _M('bottom-right position X',$module), 15);
+
+            $bottomrightMarcPositionY = new MTextField('bottomrightMarcPositionY', $this->getFormValue('bottomrightMarcPositionY', $data->bottomrightMarcPositionY) ? $this->getFormValue('bottomrightMarcPositionY', $data->bottomrightMarcPositionY) : FR_BOTTOM_RIGHT_POS_Y , _M('bottom-right position Y',$module), 15);
+
+            $bottomrightMarcHeigth = new MTextField('bottomrightMarcHeigth', $this->getFormValue('bottomrightMarcHeigth', $data->bottomrightMarcHeigth) ? $this->getFormValue('bottomrightMarcHeigth', $data->bottomrightMarcHeigth) : FR_BOTTOM_RIGHT_HEIGTH , _M('bottom-left height',$module), 15);
+
+            $bottomrightMarcThickness = new MTextField('bottomrightMarcThickness', $this->getFormValue('bottomrightMarcThickness', $data->bottomrightMarcThickness) ? $this->getFormValue('bottomrightMarcThickness', $data->bottomrightMarcThickness) : FR_BOTTOM_RIGHT_THICKNESS , _M('bottom-right thickness',$module), 15);
+
+
+            //Configuration writting sheetCode
+            $sheetCodeFont = new MSelection('sheetCodeFont', $this->getFormValue('sheetCodeFont', $data->sheetCodeFont) ? $this->getFormValue('sheetCodeFont', $data->sheetCodeFont) : FR_SHEET_CODE_FONT, _M('Sheet code font', $module), 
+                                        array('Courier'=>_M('Courier', $module), 
+                                        'Arial'=>_M('Arial', $module),
+                                        'Times'=>_M('Times', $module),
+                                        'Symbol'=>_M('Symbol', $module),
+                                        'ZapfDingbats'=>_M('ZapfDingbats', $module)));
+
+            $stylesheetCodeFont = new MSelection('stylesheetCodeFont', $this->getFormValue('stylesheetCodeFont', $data->stylesheetCodeFont) ? $this->getFormValue('stylesheetCodeFont', $data->stylesheetCodeFont) : FR_SHEET_CODE_STYLE, _M('Sheet code style', $module), 
+                                        array('B'=>_M('bold', $module), 
+                                            'I'=>_M('italic', $module),
+                                            'U'=>_M('underline', $module)));
+
+            $heightsheetCode = new MTextField('heightsheetCode', $this->getFormValue('heightsheetCode', $data->heightsheetCode) ? $this->getFormValue('heightsheetCode', $data->heightsheetCode) : FR_SHEET_CODE_HEIGHT , _M('Height of sheet code ',$module), 15);
+            $heightsheetCode->setJsHint(_M('Enter the height of sheetCode',$module));
+            $validators[] = new MIntegerValidator('heightsheetCode', '', 'required');
+
+            $xPositionsheetCode = new MTextField('xPositionsheetCode', $this->getFormValue('xPositionsheetCode', $data->xPositionsheetCode) ? $this->getFormValue('xPositionsheetCode', $data->xPositionsheetCode) : FR_SHEET_CODE_POS_X , _M('Position in X of sheet code ',$module), 15);
+            $xPositionsheetCode->setJsHint(_M('Enter the xPosition of sheetCode',$module));
+            $validators[] = new MIntegerValidator('xPositionsheetCode', '', 'required');
+
+            $lenghtsheetCode = new MTextField('lenghtsheetCode', $this->getFormValue('lenghtsheetCode', $data->lenghtsheetCode) ? $this->getFormValue('lenghtsheetCode', $data->lenghtsheetCode) : FR_SHEET_CODE_LENGHT , _M('Lenght of Sheet Code',$module), 15);
+            $lenghtsheetCode->setJsHint(_M('Enter the lenght of sheetCode',$module));
+            $validators[] = new MIntegerValidator('lenghtsheetCode', '', 'required');
+
+
+            $vctBord1            = new MVContainer('vctBord1',array($upperLeftMarcPositionX, $upperrightMarcPositionX, $bottomLeftMarcPositionX, $bottomrightMarcPositionX, $sheetCodeFont));
+            $vctBord1->addBoxStyle('width', '20%');
+
+            $vctBord2            = new MVContainer('vctBord2',array($upperLeftMarcPositionY, $upperrightMarcPositionY, $bottomLeftMarcPositionY, $bottomrightMarcPositionY, $stylesheetCodeFont));
+            $vctBord2->addBoxStyle('width', '20%');
+
+            $vctBord3            = new MVContainer('vctBord3',array($upperLeftMarcHeigth, $upperrightMarcHeigth, $bottomLeftMarcHeigth, $bottomrightMarcHeigth, $heightsheetCode));
+            $vctBord3->addBoxStyle('width', '20%');
+
+            $vctBord4            = new MVContainer('vctBord4',array($upperLeftMarcThickness, $upperrightMarcThickness, $bottomLeftMarcThickness, $bottomrightMarcThickness, $xPositionsheetCode));
+            $vctBord4->addBoxStyle('width', '20%');
+
+            $hctBord1 = new MHContainer('hctBord1', array($vctBord1, $vctBord2, $vctBord3, $vctBord4));
+            $flds2[] = $hctBord1;
+
+            $flds2[] = $lenghtsheetCode;
+
+            $bsg2            = new BaseGroup('bsg2', _M('Configure writting sheet', $module), $flds2, 'vertical');
+            $bsg2->showLabel = true;
+            $bsg2->width     = '100%';
+            unset($flds2);
+            $flds2[]        = new Separator('');
+
+
+            //Title
+            $titleFont = new MSelection('titleFont', $this->getFormValue('titleFont', $data->titleFont) ? $this->getFormValue('titleFont', $data->titleFont) : DEFAULT_REPORT_FONT, _M('Font', $module), 
+                                        array('Courier'=>_M('Courier', $module), 
+                                        'Arial'=>_M('Arial', $module),
+                                        'Times'=>_M('Times', $module),
+                                        'Symbol'=>_M('Symbol', $module),
+                                        'ZapfDingbats'=>_M('ZapfDingbats', $module)));
+            $titleFont->addBoxStyle('width', '20%');
+
+            $styleTitleFont = new MSelection('styleTitleFont', $this->getFormValue('styleTitleFont', $data->styleTitleFont) ? $this->getFormValue('styleTitleFont', $data->styleTitleFont) : 'B', _M('Style', $module), 
+                                        array('B'=>_M('bold', $module), 
+                                            'I'=>_M('italic', $module),
+                                            'U'=>_M('underline', $module)));
+            $styleTitleFont->addBoxStyle('width', '20%');
+
+            $alignTitleFont = new MSelection('alignTitleFont', $this->getFormValue('alignTitleFont', $data->alignTitleFont) ? $this->getFormValue('alignTitleFont', $data->alignTitleFont) : 'C', _M('Align', $module), 
+                                        array('L'=>_M('left', $module), 
+                                            'R'=>_M('right', $module), 
+                                            'C'=>_M('center', $module)));
+            $alignTitleFont->addBoxStyle('width', '20%');
+
+            $heightTitle = new MTextField('heightTitle', $this->getFormValue('heightTitle', $data->heightTitle) ? $this->getFormValue('heightTitle', $data->heightTitle) : 8 , _M('Height of title',$module), 15);
+            $heightTitle->setJsHint(_M('Enter the height of title',$module));
+            $validators[] = new MIntegerValidator('heightTitle', '', 'required');
+            $heightTitle->addBoxStyle('width', '20%');
+
+            $lenghtTitle = new MTextField('lenghtTitle', $this->getFormValue('lenghtTitle', $data->lenghtTitle) ? $this->getFormValue('lenghtTitle', $data->lenghtTitle) : 16 , _M('Lenght of title',$module), 15);
+            $lenghtTitle->setJsHint(_M('Enter the lenght of title',$module));
+            $validators[] = new MIntegerValidator('lenghtTitle', '', 'required');
+
+            $titleDescription = new MTextField('titleDescription', $this->getFormValue('titleDescription', $data->titleDescription) ? $this->getFormValue('titleDescription', $data->titleDescription) : $business->getSelectiveProcess($selectiveProcessId->value)->selectiveProcessId . ' ' . $business->getSelectiveProcess($selectiveProcessId->value)->description, _M('Title',$module), 50);
+            $heightTitle->setJsHint(_M('Enter the title description',$module));
+
+            $hctTitleConfiguration = new MHContainer('hctTitleConfiguration', array($titleFont, $styleTitleFont, $alignTitleFont, $heightTitle, $lenghtTitle, $titleDescription));
+            $flds2[] = $hctTitleConfiguration;
+
+            $bsg3            = new BaseGroup('bsg3', _M('Title writting sheet', $module), $flds2, 'vertical');
+            $bsg3->showLabel = true;
+            $bsg3->width     = '100%';
+            unset($flds2);
+            $flds2[]        = new Separator('');
+
+
+            //SUB-TITULO
+            $subtitleFont = new MSelection('subtitleFont', $this->getFormValue('subtitleFont', $data->subtitleFont) ? $this->getFormValue('subtitleFont', $data->subtitleFont) : DEFAULT_REPORT_FONT, _M('Font', $module), 
+                                        array('Courier'=>_M('Courier', $module), 
+                                        'Arial'=>_M('Arial', $module),
+                                        'Times'=>_M('Times', $module),
+                                        'Symbol'=>_M('Symbol', $module),
+                                        'ZapfDingbats'=>_M('ZapfDingbats', $module)));
+
+            $subtitleFont->addBoxStyle('width', '20%');
+
+            $stylesubtitleFont = new MSelection('stylesubtitleFont', $this->getFormValue('stylesubtitleFont', $data->stylesubtitleFont) ? $this->getFormValue('stylesubtitleFont', $data->stylesubtitleFont) : 'B', _M('Style', $module), 
+                                        array('B'=>_M('bold', $module), 
+                                            'I'=>_M('italic', $module),
+                                            'U'=>_M('underline', $module)));
+
+            $stylesubtitleFont->addBoxStyle('width', '20%');
+
+            $alignsubtitleFont = new MSelection('alignsubtitleFont', $this->getFormValue('alignsubtitleFont', $data->alignsubtitleFont) ? $this->getFormValue('alignsubtitleFont', $data->alignsubtitleFont) : 'C', _M('Align', $module), 
+                                        array('L'=>_M('left', $module), 
+                                            'R'=>_M('right', $module), 
+                                            'C'=>_M('center', $module)));
+
+            $alignsubtitleFont->addBoxStyle('width', '20%');
+
+            $heightsubtitle = new MTextField('heightsubtitle', $this->getFormValue('heightsubtitle', $data->heightsubtitle) ? $this->getFormValue('heightsubtitle', $data->heightsubtitle) : 8 , _M('Height of subtitle',$module), 15);
+            $heightsubtitle->setJsHint(_M('Enter the height of subtitle',$module));
+            $validators[] = new MIntegerValidator('heightsubtitle', '', 'required');
+            $heightsubtitle->addBoxStyle('width', '20%');
+
+            $lenghtsubtitle = new MTextField('lenghtsubtitle', $this->getFormValue('lenghtsubtitle', $data->lenghtsubtitle) ? $this->getFormValue('lenghtsubtitle', $data->lenghtsubtitle) : 16 , _M('Lenght of subtitle',$module), 15);
+            $lenghtsubtitle->setJsHint(_M('Enter the lenght of subtitle',$module));
+            $validators[] = new MIntegerValidator('lenghtsubtitle', '', 'required');
+
+            $subtitleDescription = new MTextField('subtitleDescription', $this->getFormValue('subtitleDescription', $data->subtitleDescription) ? $this->getFormValue('subtitleDescription', $data->subtitleDescription) : _M('WRITING', $module), _M('subtitle',$module), 50);
+            $heightsubtitle->setJsHint(_M('Enter the subtitle description',$module));
+            $subtitleDescription->addBoxStyle('width', '20%');
+
+            $hctsubtitleConfiguration = new MHContainer('hctsubtitleConfiguration', array($subtitleFont, $stylesubtitleFont, $alignsubtitleFont, $heightsubtitle, $lenghtsubtitle, $subtitleDescription));
+            $flds2[] = $hctsubtitleConfiguration;
+
+            $bsg4            = new BaseGroup('bsg4', _M('Subtitle configuration', $module), $flds2, 'vertical');
+            $bsg4->showLabel = true;
+            $bsg4->width     = '100%';
+            unset($flds2);
+            $flds2[]        = new Separator('');
+
+
+            //Informations
+            $informationFont = new MSelection('informationFont', $this->getFormValue('informationFont', $data->informationFont) ? $this->getFormValue('informationFont', $data->informationFont) : DEFAULT_REPORT_FONT, _M('Font', $module), 
+                                        array('Courier'=>_M('Courier', $module), 
+                                        'Arial'=>_M('Arial', $module),
+                                        'Times'=>_M('Times', $module),
+                                        'Symbol'=>_M('Symbol', $module),
+                                        'ZapfDingbats'=>_M('ZapfDingbats', $module)));
+
+            $informationFont->addBoxStyle('width', '20%');
+
+            $styleinformationFont = new MSelection('styleinformationFont', $this->getFormValue('styleinformationFont', $data->styleinformationFont) ? $this->getFormValue('styleinformationFont', $data->styleinformationFont) : ' ', _M('Style', $module), 
+                                        array('B'=>_M('bold', $module), 
+                                            'I'=>_M('italic', $module),
+                                            'U'=>_M('underline', $module)));
+
+            $styleinformationFont->addBoxStyle('width', '20%');
+
+            $aligninformationFont = new MSelection('aligninformationFont', $this->getFormValue('aligninformationFont', $data->aligninformationFont) ? $this->getFormValue('aligninformationFont', $data->aligninformationFont) : 'C', _M('Align', $module), 
+                                        array('L'=>_M('left', $module), 
+                                            'R'=>_M('right', $module), 
+                                            'C'=>_M('center', $module)));
+
+            $aligninformationFont->addBoxStyle('width', '20%');
+
+
+            $heightinformation = new MTextField('heightinformation', $this->getFormValue('heightinformation', $data->heightinformation) ? $this->getFormValue('heightinformation', $data->heightinformation) : 8 , _M('Height of information',$module), 15);
+            $heightinformation->setJsHint(_M('Enter the height of information',$module));
+            $validators[] = new MIntegerValidator('heightinformation', '', 'required');
+            $heightinformation->addBoxStyle('width', '20%');
+
+            $lenghtinformation = new MTextField('lenghtinformation', $this->getFormValue('lenghtinformation', $data->lenghtinformation) ? $this->getFormValue('lenghtinformation', $data->lenghtinformation) : 12 , _M('Lenght of information',$module), 15);
+            $lenghtinformation->setJsHint(_M('Enter the lenght of information',$module));
+            $validators[] = new MIntegerValidator('lenghtinformation', '', 'required');
+
+            $informationDescription = new MMultiLineField('informationDescription', $this->getFormValue('informationDescription', $data->informationDescription) ? $this->getFormValue('informationDescription', $data->informationDescription) : '(' . _M('Don\'t write your name on this page. Just check your inscription number', $module) . ')', _M('information',$module), 50, 3, 50);
+            $heightinformation->setJsHint(_M('Enter the information description',$module));
+
+            $hctinformationConfiguration = new MHContainer('hctinformationConfiguration', array($informationFont, $styleinformationFont, $aligninformationFont, $heightinformation, $lenghtinformation, $informationDescription));
+            $flds2[] = $hctinformationConfiguration;
+
+
+            $bsg5            = new BaseGroup('bsg5', _M('Information configuration', $module), $flds2, 'vertical');
+            $bsg5->showLabel = true;
+            $bsg5->width     = '100%';
+            unset($flds2);
+            $flds2[]        = new Separator('');
+
+            //Inscription number
+            $inscriptionNumberFont = new MSelection('inscriptionNumberFont', $this->getFormValue('inscriptionNumberFont', $data->inscriptionNumberFont) ? $this->getFormValue('inscriptionNumberFont', $data->inscriptionNumberFont) : FR_INSCRIPTION_NUMBER_FONT, _M('Font', $module), 
+                                        array('Courier'=>_M('Courier', $module),
+                                        'Arial'=>_M('Arial', $module),
+                                        'Times'=>_M('Times', $module),
+                                        'Symbol'=>_M('Symbol', $module),
+                                        'ZapfDingbats'=>_M('ZapfDingbats', $module)));
+
+            $inscriptionNumberFont->addBoxStyle('width', '20%');
+
+            $styleinscriptionNumberFont = new MSelection('styleinscriptionNumberFont', $this->getFormValue('styleinscriptionNumberFont', $data->styleinscriptionNumberFont) ? $this->getFormValue('styleinscriptionNumberFont', $data->styleinscriptionNumberFont) : FR_INSCRIPTION_NUMBER_STYLE, _M('Style', $module), 
+                                        array('B'=>_M('bold', $module), 
+                                            'I'=>_M('italic', $module),
+                                            'U'=>_M('underline', $module)));
+
+            $styleinscriptionNumberFont->addBoxStyle('width', '20%');
+
+            $aligninscriptionNumberFont = new MSelection('aligninscriptionNumberFont', $this->getFormValue('aligninscriptionNumberFont', $data->aligninscriptionNumberFont) ? $this->getFormValue('aligninscriptionNumberFont', $data->aligninscriptionNumberFont) : FR_INSCRIPTION_NUMBER_ALIGN, _M('Align', $module), 
+                                        array('L'=>_M('left', $module), 
+                                            'R'=>_M('right', $module), 
+                                            'C'=>_M('center', $module)));
+            $aligninscriptionNumberFont->addBoxStyle('width', '20%');
+
+            $heightinscriptionNumber = new MTextField('heightinscriptionNumber', $this->getFormValue('heightinscriptionNumber', $data->heightinscriptionNumber) ? $this->getFormValue('heightinscriptionNumber', $data->heightinscriptionNumber) : FR_INSCRIPTION_NUMBER_HEIGHT , _M('Height of inscriptionNumber',$module), 15);
+            $heightinscriptionNumber->setJsHint(_M('Enter the height of inscriptionNumber',$module));
+            $validators[] = new MIntegerValidator('heightinscriptionNumber', '', 'required');
+            $heightinscriptionNumber->addBoxStyle('width', '20%');
+
+            $lenghtinscriptionNumber = new MTextField('lenghtinscriptionNumber', $this->getFormValue('lenghtinscriptionNumber', $data->lenghtinscriptionNumber) ? $this->getFormValue('lenghtinscriptionNumber', $data->lenghtinscriptionNumber) : FR_INSCRIPTION_NUMBER_LENGHT , _M('Lenght of inscriptionNumber',$module), 15);
+            $lenghtinscriptionNumber->setJsHint(_M('Enter the lenght of inscriptionNumber',$module));
+            $validators[] = new MIntegerValidator('lenghtinscriptionNumber', '', 'required');
+
+            $spaceTitleNumberInscription = new MTextField('spaceTitleNumberInscription', $this->getFormValue('spaceTitleNumberInscription', $data->spaceTitleNumberInscription) ? $this->getFormValue('spaceTitleNumberInscription', $data->spaceTitleNumberInscription) : FR_SPACE_TITLE_NUMBER_INSCRIPTION, _M('Space between title and value',$module), 15);
+            $spaceTitleNumberInscription->setJsHint(_M('Enter de value',$module));
+            $validators[] = new MIntegerValidator('spaceTitleNumberInscription', '', 'required');
+
+            $hctinscriptionNumberConfiguration = new MHContainer('hctinscriptionNumberConfiguration', array($inscriptionNumberFont, $styleinscriptionNumberFont, $aligninscriptionNumberFont, $heightinscriptionNumber, $lenghtinscriptionNumber, $spaceTitleNumberInscription));
+            $flds2[] = $hctinscriptionNumberConfiguration;
+
+            $bsg6            = new BaseGroup('bsg6', _M('Inscription number configuration', $module), $flds2, 'vertical');
+            $bsg6->showLabel = true;
+            $bsg6->width     = '100%';
+            unset($flds2);
+            $flds2[]        = new Separator('');
+
+
+            //Writting note
+            $writtingNoteFont = new MSelection('writtingNoteFont', $this->getFormValue('writtingNoteFont', $data->writtingNoteFont) ? $this->getFormValue('writtingNoteFont', $data->writtingNoteFont) : FR_WRITTING_NOTE_FONT, _M('Font', $module), 
+                                        array('Courier'=>_M('Courier', $module), 
+                                        'Arial'=>_M('Arial', $module),
+                                        'Times'=>_M('Times', $module),
+                                        'Symbol'=>_M('Symbol', $module),
+                                        'ZapfDingbats'=>_M('ZapfDingbats', $module)));
+
+            $writtingNoteFont->addBoxStyle('width', '20%');
+
+            $styleWrittingNoteFont = new MSelection('styleWrittingNoteFont', $this->getFormValue('styleWrittingNoteFont', $data->styleWrittingNoteFont) ? $this->getFormValue('styleWrittingNoteFont', $data->styleWrittingNoteFont) : FR_WRITTING_NOTE_STYLE, _M('Style', $module), 
+                                        array('B'=>_M('bold', $module), 
+                                            'I'=>_M('italic', $module),
+                                            'U'=>_M('underline', $module)));
+
+            $styleWrittingNoteFont->addBoxStyle('width', '20%');
+
+            $heightWrittingNote = new MTextField('heightWrittingNote', $this->getFormValue('heightWrittingNote', $data->heightWrittingNote) ? $this->getFormValue('heightWrittingNote', $data->heightWrittingNote) : FR_WRITTING_NOTE_HEIGHT, _M('Height of writting note',$module), 15);
+            $heightWrittingNote->setJsHint(_M('Enter the height of writtingnote',$module));
+            $validators[] = new MRequiredValidator('heightWrittingNote');
+            $heightWrittingNote->addBoxStyle('width', '20%');
+
+            $lenghtWrittingNote = new MTextField('lenghtWrittingNote', $this->getFormValue('lenghtWrittingNote', $data->lenghtWrittingNote) ? $this->getFormValue('lenghtWrittingNote', $data->lenghtWrittingNote) : FR_WRITTING_NOTE_LENGHT , _M('Lenght of writting note',$module), 15);
+            $lenghtWrittingNote->setJsHint(_M('Enter the lenght of writtingnote',$module));
+            $validators[] = new MIntegerValidator('lenghtWrittingNote', '', 'required');
+            $lenghtWrittingNote->addBoxStyle('width', '20%');
+
+            $spaceTitleWrittingNote = new MTextField('spaceTitleWrittingNote', $this->getFormValue('spaceTitleWrittingNote', $data->spaceTitleWrittingNote) ? $this->getFormValue('spaceTitleWrittingNote', $data->spaceTitleWrittingNote) : FR_SPACE_TITLE_WRITTING_NOTE, _M('Space between title and value',$module), 15);
+            $spaceTitleWrittingNote->setJsHint(_M('Enter de value',$module));
+            $validators[] = new MIntegerValidator('spaceTitleWrittingNote', '', 'required');
+            $spaceTitleWrittingNote->addBoxStyle('width', '20%');
+
+            $XpositionWrittingNote = new MTextField('XpositionWrittingNote', $this->getFormValue('XpositionWrittingNote', $data->XpositionWrittingNote) ? $this->getFormValue('XpositionWrittingNote', $data->XpositionWrittingNote) : FR_WRITTING_NOTE_POS_X , _M('X position of writting note',$module), 15);
+            $XpositionWrittingNote->setJsHint(_M('Enter de value',$module));
+            $validators[] = new MIntegerValidator('XpositionWrittingNote', '', 'required');
+            $XpositionWrittingNote->addBoxStyle('width', '20%');
+
+            $isShowNumbersWrittingNote = new MSelection('isShowNumbersWrittingNot', $this->getFormValue('isShowNumbersWrittingNot', $data->isShowNumbersWrittingNot) ? $this->getFormValue('isShowNumbersWrittingNot', $data->isShowNumbersWrittingNot) : FR_IS_SHOW_NUMBERS_WRITTING_NOTE, _M('Is show numbers', $module).'?', SAGU::listYesNo());
+
+            $isShowNumbersWrittingNote->addBoxStyle('width', '20%');
+
+            $numberCirclesWrittingNote = new MTextField('numberCirclesWrittingNote', $this->getFormValue('numberCirclesWrittingNote', $data->numberCirclesWrittingNote) ? $this->getFormValue('numberCirclesWrittingNote', $data->numberCirclesWrittingNote) : FR_NUMBERS_CIRCLES_WRITTING_NOTE, _M('Circles numbers in writting note',$module), 15);
+            $numberCirclesWrittingNote->setJsHint(_M('Enter de value',$module));
+            $validators[] = new MIntegerValidator('numberCirclesWrittingNote', '', 'required');
+            $numberCirclesWrittingNote->addBoxStyle('width', '20%');
+
+            $radWrittingNote = new MTextField('radWrittingNote', $this->getFormValue('radWrittingNote', $data->radWrittingNote) ? $this->getFormValue('radWrittingNote', $data->radWrittingNote) : FR_RAD_WRITTING_NOTE , _M('Circle rad',$module), 15);
+            $radWrittingNote->setJsHint(_M('Enter de value',$module));
+            $validators[] = new MRequiredValidator('radWrittingNote');
+            $radWrittingNote->addBoxStyle('width', '20%');
+
+            $spaceBetwennCircleX = new MTextField('spaceBetwennCircleX', $this->getFormValue('spaceBetwennCircleX', $data->spaceBetwennCircleX) ? $this->getFormValue('spaceBetwennCircleX', $data->spaceBetwennCircleX) : FR_SPACE_BETWEEN_CIRCLE_X, _M('Space between circles in X',$module), 15);
+            $spaceBetwennCircleX->setJsHint(_M('Enter de value',$module));
+            $validators[] = new MIntegerValidator('spaceBetwennCircleX', '', 'required');
+            $spaceBetwennCircleX->addBoxStyle('width', '20%');
+
+            $spaceBetwennCircleY = new MTextField('spaceBetwennCircleY', $this->getFormValue('spaceBetwennCircleY', $data->spaceBetwennCircleY) ? $this->getFormValue('spaceBetwennCircleY', $data->spaceBetwennCircleY) : FR_SPACE_BETWEEN_CIRCLE_Y, _M('Space between circles in Y',$module), 15);
+            $spaceBetwennCircleY->setJsHint(_M('Enter de value',$module));
+            $validators[] = new MIntegerValidator('spaceBetwennCircleY', '', 'required');
+            $spaceBetwennCircleY->addBoxStyle('width', '20%');
+
+            $numberDigitsWrittingNote = new MTextField('numberDigitsWrittingNote', $this->getFormValue('numberDigitsWrittingNote', $data->numberDigitsWrittingNote) ? $this->getFormValue('numberDigitsWrittingNote', $data->numberDigitsWrittingNote) : FR_NUMBER_DIGITS_WRITTING_NOTE, _M('Number digits to writting note',$module), 15);
+            $numberDigitsWrittingNote->setJsHint(_M('Enter de value',$module));
+            $validators[] = new MIntegerValidator('numberDigitsWrittingNote', '', 'required');
+            $numberDigitsWrittingNote->addBoxStyle('width', '20%');
+
+            $isDotNumbers = new MSelection('isDotNumbers', $this->getFormValue('isDotNumbers', $data->isDotNumbers) ? $this->getFormValue('isDotNumbers', $data->isDotNumbers) : FR_IS_DOT_NUMBERS, _M('Is dot numbers', $module).'?', SAGU::listYesNo());
+
+            $isDotNumbers->addBoxStyle('width', '20%');
+
+            $numberDigitsIndDotWrittingNote = new MTextField('numberDigitsIndDotWrittingNote', $this->getFormValue('numberDigitsIndDotWrittingNote', $data->numberDigitsIndDotWrittingNote) ? $this->getFormValue('numberDigitsIndDotWrittingNote', $data->numberDigitsIndDotWrittingNote) : FR_NUMBER_OF_DIGITS_IN_DOT_NUMBERS, _M('Number digits in dot',$module), 15);
+            $numberDigitsIndDotWrittingNote->setJsHint(_M('Enter de value',$module));
+            $validators[] = new MIntegerValidator('numberDigitsIndDotWrittingNote', '', 'required');
+            $numberDigitsIndDotWrittingNote->addBoxStyle('width', '20%');
+
+            $spaceToDotNumbers = new MTextField('spaceToDotNumbers', $this->getFormValue('spaceToDotNumbers', $data->spaceToDotNumbers) ? $this->getFormValue('spaceToDotNumbers', $data->spaceToDotNumbers) : FR_SPACE_IN_DOT_NUMBERS, _M('Space to dot numbers',$module), 15);
+            $spaceToDotNumbers->setJsHint(_M('Enter de value',$module));
+            $validators[] = new MIntegerValidator('spaceToDotNumbers', '', 'required');
+            $spaceToDotNumbers->addBoxStyle('width', '20%');
+
+            $writtingNoteDescription = new MTextField('writtingNoteDescription', $this->getFormValue('writtingNoteDescription', $data->writtingNoteDescription) ? $this->getFormValue('writtingNoteDescription', $data->writtingNoteDescription) : FR_WRITTING_DESCRIPTION, _M('Title of writting note',$module), 40);
+            $writtingNoteDescription->setJsHint(_M('Enter the writting note description',$module));
+
+            $hctwrittingnoteConfiguration = new MHContainer('hctwrittingnoteConfiguration', array($writtingNoteFont, $styleWrittingNoteFont, $alignWrittingNoteFont, $heightWrittingNote, $lenghtWrittingNote, $spaceTitleWrittingNote, $XpositionWrittingNote, $isShowNumbersWrittingNote, $numberCirclesWrittingNote, $radWrittingNote, $spaceBetwennCircleX, $spaceBetwennCircleY, $numberDigitsWrittingNote, $isDotNumbers, $numberDigitsIndDotWrittingNote, $spaceToDotNumbers, $writtingNoteDescription));
+            $flds2[] = $hctwrittingnoteConfiguration;
+
+            $bsg7           = new BaseGroup('bsg7', _M('Writting note configuration', $module), $flds2, 'vertical');
+            $bsg7->showLabel = true;
+            $bsg7->width     = '100%';
+            unset($flds2);
+            $flds2[]        = new Separator('');
+
+
+            $lenghtLinesWritting = new MTextField('lenghtLinesWritting', $this->getFormValue('lenghtLinesWritting', $data->lenghtLinesWritting) ? $this->getFormValue('lenghtLinesWritting', $data->lenghtLinesWritting) : FR_LENGHT_LINES_WRITTING, _M('Numbers of lines to writting',$module), 15);
+            $lenghtLinesWritting->setJsHint(_M('Enter de value',$module));
+            $validators[] = new MIntegerValidator('lenghtLinesWritting', '', 'required');
+            $lenghtLinesWritting->addBoxStyle('width', '20%');
+
+            $heightLinesWritting = new MTextField('heightLinesWritting', $this->getFormValue('heightLinesWritting', $data->heightLinesWritting) ? $this->getFormValue('heightLinesWritting', $data->heightLinesWritting) : FR_HEIGHT_LINES_WRITTING, _M('Height of the first line of writting',$module), 15);
+            $heightLinesWritting->setJsHint(_M('Enter de value',$module));
+            $validators[] = new MIntegerValidator('heightLinesWritting', '', 'required');
+            $heightLinesWritting->addBoxStyle('width', '20%');
+
+            $isWriterLinesOfWritting = new MSelection('isWriterLinesOfWritting', $this->getFormValue('isWriterLinesOfWritting', $data->isWriterLinesOfWritting) ? $this->getFormValue('isWriterLinesOfWritting', $data->isWriterLinesOfWritting) : FR_IS_WRITER_LINES_WRITTING, _M('Writer the lines number', $module).'?', SAGU::listYesNo());
+
+            $isWriterLinesOfWritting->addBoxStyle('width', '20%');
+
+            $hctLinesWritting = new MHContainer('hctLinesWritting', array($lenghtLinesWritting, $heightLinesWritting, $isWriterLinesOfWritting));
+            $flds2[] = $hctLinesWritting;
+
+
+            $bsg8           = new BaseGroup('bsg8', _M('Writting lines configuration', $module), $flds2, 'vertical');
+            $bsg8->showLabel = true;
+            $bsg8->width     = '100%';
+            unset($flds2);
+            $flds2[]        = new Separator('');
+
+            $vct1            = new MVContainer('vct1',array($bsg2, $bsg3, $bsg4, $bsg5, $bsg6, $bsg7, $bsg8));
+            $hct1            = new MHContainer('hct1',array($bsg1,$vct1));
+
+
+            if($isConfigureWritting->value == 'f')
+            {
+               $vct1->addBoxStyle('display', 'none');
+            }
+            $fields[] = $hct1;
+        }
+
+        $this->setFields($fields);
+        $this->setValidators($validators);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+        $this->setClose($MIOLO->getActionURL($module, substr($action, 0, strrpos($action, ':'))));
+    }
+
+    public function btnGenerateClick($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+
+        $data->selectiveProcessId                         = $this->getFormValue('selectiveProcessId');
+        $data->numberSheet                                = $this->getFormValue('numberSheet');
+        $data->inscriptionId                              = $this->getFormValue('inscriptionIdS');
+
+        //Page
+        $data->PageInformations->rightMarginOfPage        = $this->getFormValue('rightMarginOfPage');
+        $data->PageInformations->upperLeftMarcPositionX   = $this->getFormValue('upperLeftMarcPositionX');
+        $data->PageInformations->upperLeftMarcPositionY   = $this->getFormValue('upperLeftMarcPositionY');
+        $data->PageInformations->upperLeftMarcHeigth      = $this->getFormValue('upperLeftMarcHeigth');
+        $data->PageInformations->upperLeftMarcThickness   = $this->getFormValue('upperLeftMarcThickness');
+        $data->PageInformations->upperRightMarcPositionX  = $this->getFormValue('upperrightMarcPositionX');
+        $data->PageInformations->upperRightMarcPositionY  = $this->getFormValue('upperrightMarcPositionY');
+        $data->PageInformations->upperRightMarcHeigth     = $this->getFormValue('upperrightMarcHeigth');
+        $data->PageInformations->upperRightMarcThickness  = $this->getFormValue('upperrightMarcThickness');
+        $data->PageInformations->bottomLeftMarcPositionX  = $this->getFormValue('bottomLeftMarcPositionX');
+        $data->PageInformations->bottomLeftMarcPositionY  = $this->getFormValue('bottomLeftMarcPositionY');
+        $data->PageInformations->bottomLeftMarcHeigth     = $this->getFormValue('bottomLeftMarcHeigth');
+        $data->PageInformations->bottomLeftMarcThickness  = $this->getFormValue('bottomLeftMarcThickness');
+        $data->PageInformations->bottomRightMarcPositionX = $this->getFormValue('bottomrightMarcPositionX');
+        $data->PageInformations->bottomRightMarcPositionY = $this->getFormValue('bottomrightMarcPositionY');
+        $data->PageInformations->bottomRightMarcHeigth    = $this->getFormValue('bottomrightMarcHeigth');
+        $data->PageInformations->bottomRightMarcThickness = $this->getFormValue('bottomrightMarcThickness');
+
+        $data->PageInformations->sheetCodeFont            = $this->getFormValue('sheetCodeFont');
+        $data->PageInformations->stylesheetCodeFont       = $this->getFormValue('stylesheetCodeFont');
+        $data->PageInformations->heightsheetCode          = $this->getFormValue('heightsheetCode');
+        $data->PageInformations->xPositionsheetCode       = $this->getFormValue('xPositionsheetCode');
+        $data->PageInformations->lenghtsheetCode          = $this->getFormValue('lenghtsheetCode');
+
+
+
+        //Título
+        $data->PageInformations->titleFont           = $this->getFormValue('titleFont');
+        $data->PageInformations->styleTitleFont      = $this->getFormValue('styleTitleFont');
+        $data->PageInformations->alignTitleFont      = $this->getFormValue('alignTitleFont');
+        $data->PageInformations->heightTitle         = $this->getFormValue('heightTitle');
+        $data->PageInformations->lenghtTitle         = $this->getFormValue('lenghtTitle');
+        $data->PageInformations->titleDescription    = $this->getFormValue('titleDescription');
+
+        //Sub-Título
+        $data->PageInformations->subtitleFont           = $this->getFormValue('subtitleFont');
+        $data->PageInformations->stylesubtitleFont      = $this->getFormValue('stylesubtitleFont');
+        $data->PageInformations->alignsubtitleFont      = $this->getFormValue('alignsubtitleFont');
+        $data->PageInformations->heightsubtitle         = $this->getFormValue('heightsubtitle');
+        $data->PageInformations->lenghtsubtitle         = $this->getFormValue('lenghtsubtitle');
+        $data->PageInformations->subtitleDescription    = $this->getFormValue('subtitleDescription');
+
+        //Information
+        $data->PageInformations->informationFont           = $this->getFormValue('informationFont');
+        $data->PageInformations->styleinformationFont      = $this->getFormValue('styleinformationFont');
+        $data->PageInformations->aligninformationFont      = $this->getFormValue('aligninformationFont');
+        $data->PageInformations->heightinformation         = $this->getFormValue('heightinformation');
+        $data->PageInformations->lenghtinformation         = $this->getFormValue('lenghtinformation');
+        $data->PageInformations->informationDescription    = $this->getFormValue('informationDescription');
+
+        //Inscription number
+        $data->PageInformations->inscriptionNumberFont           = $this->getFormValue('inscriptionNumberFont');
+        $data->PageInformations->styleinscriptionNumberFont      = $this->getFormValue('styleinscriptionNumberFont');
+        $data->PageInformations->aligninscriptionNumberFont      = $this->getFormValue('aligninscriptionNumberFont');
+        $data->PageInformations->heightinscriptionNumber         = $this->getFormValue('heightinscriptionNumber');
+        $data->PageInformations->lenghtinscriptionNumber         = $this->getFormValue('lenghtinscriptionNumber');
+        $data->PageInformations->spaceTitleNumberInscription     = $this->getFormValue('spaceTitleNumberInscription');
+
+        //Writting note
+        $data->PageInformations->writtingNoteDescription         = $this->getFormValue('writtingNoteDescription');
+        $data->PageInformations->writtingNoteFont                = $this->getFormValue('writtingNoteFont');
+        $data->PageInformations->styleWrittingNoteFont           = $this->getFormValue('styleWrittingNoteFont');
+        $data->PageInformations->heightWrittingNote              = $this->getFormValue('heightWrittingNote');
+        $data->PageInformations->lenghtWrittingNote              = $this->getFormValue('lenghtWrittingNote');
+        $data->PageInformations->spaceTitleWrittingNote          = $this->getFormValue('spaceTitleWrittingNote');
+        $data->PageInformations->XpositionWrittingNote           = $this->getFormValue('XpositionWrittingNote');
+        $data->PageInformations->isShowNumbersWrittingNot        = $this->getFormValue('isShowNumbersWrittingNot');
+        $data->PageInformations->numberCirclesWrittingNote       = $this->getFormValue('numberCirclesWrittingNote');
+        $data->PageInformations->radWrittingNote                 = $this->getFormValue('radWrittingNote');
+        $data->PageInformations->spaceBetwennCircleX             = $this->getFormValue('spaceBetwennCircleX');
+        $data->PageInformations->spaceBetwennCircleY             = $this->getFormValue('spaceBetwennCircleY');
+        $data->PageInformations->numberDigitsWrittingNote        = $this->getFormValue('numberDigitsWrittingNote');
+        $data->PageInformations->isDotNumbers                    = $this->getFormValue('isDotNumbers');
+        $data->PageInformations->numberDigitsIndDotWrittingNote  = $this->getFormValue('numberDigitsIndDotWrittingNote');
+        $data->PageInformations->spaceToDotNumbers               = $this->getFormValue('spaceToDotNumbers');
+
+        //Writting lines
+        $data->PageInformations->lenghtLinesWritting             = $this->getFormValue('lenghtLinesWritting');
+        $data->PageInformations->heightLinesWritting             = $this->getFormValue('heightLinesWritting');
+        $data->PageInformations->isWriterLinesOfWritting         = $this->getFormValue('isWriterLinesOfWritting');
+
+        $MIOLO->getClass($module, 'RptWritting');
+        $report = new RptWritting($data);
+    }
+}
+
+?>

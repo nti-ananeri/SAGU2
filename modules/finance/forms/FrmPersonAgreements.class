@@ -1,0 +1,169 @@
+<?php
+/**
+ * Person agreements
+ *
+ * @author William Prigol Lopes [william@solis.coop.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ *
+ * @since
+ * Class created on 17/08/2005
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2005 SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+
+/**
+ * Form to show the agreements
+ **/
+class FrmPersonAgreements extends MForm
+{
+
+    /**
+     * Class constructor
+     **/
+    function __construct()
+    {
+        $module = MIOLO::getCurrentModule();
+        parent::__construct(_M('List agreements', $module));
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+        $this->setTitle(null);
+        $this->eventHandler();
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $personId = MIOLO::_request('personId') ? MIOLO::_request('personId') : MIOLO::_request('personId', 'GET');
+        $filters->personId = $personId;
+        $businessPerson = $MIOLO->getBusiness('basic', 'BusPerson');
+        
+        $personName = $businessPerson->getPersonName($personId);
+        
+        $businessReceivableInvoice = $MIOLO->getBusiness($module, 'BusReceivableInvoice');
+        $data = $businessReceivableInvoice->listReceivableInvoiceWithAgreements($personId);
+
+        if( is_array($data) )
+        {
+            $count = 0;
+            foreach ($data as $key => $ret)
+            {
+                $businessEntry = $MIOLO->getBusiness($module, 'BusEntry');
+                $dataEntry = $businessEntry->listEntryWithAgreements($ret[0], 'C');
+                if (is_array($dataEntry[0]))
+                {
+                    foreach ($dataEntry as $keyEntry => $retEntry)
+                    {
+                        if($keyEntry == 0)
+                        {
+                            $entryDate = $retEntry[0];
+                            $descriptionOperation = $retEntry[1];
+                        }
+                        else
+                        {
+                            $entryDate            .= '<br>'. $retEntry[0];
+                            $descriptionOperation .= '<br>'. $retEntry[1];
+                        }
+                    }
+                }
+                $value1 = $data[$key][3];
+                $value2 = $data[$key][4];
+                $value3 = $data[$key][5];
+                
+                $data[$key][3] = $entryDate;
+                $data[$key][4] = $descriptionOperation;
+                $data[$key][5] = $value1;
+                $data[$key][6] = $value2;
+                $data[$key][7] = $value3;
+
+                if($key == 0)
+                {
+                    $total = 0;
+                    $totalOpen = 0;
+                }
+
+                $total     = SAGU::calcNumber($data[$key][5] . ' + ' . $total) ;
+                $totalOpen = SAGU::calcNumber($data[$key][7] . ' + ' . $totalOpen);
+            }
+        }
+	
+        $fieldPerson = new MText('personName', '<b>'._M('Agreements for', $module).':</b> '.$personName);
+        
+        $grdAgreements = $MIOLO->getUI()->getGrid($module, 'GrdPersonAgreements', $filters);
+        $grdAgreements->setData($data);
+        $grdAgreements->setTitle($fieldPerson->generate());        
+        $grdAgreements->setClose('javascript:self.close();');
+        $footer1 = new MText('footer1', _M('Total value', $module).':');
+        $footer1->setWidth(150);
+        
+        $footer2 = new MText('footer2', _M('Total open', $module).':');
+        $footer2->setWidth(150);
+        
+        if (strlen((string)$total) > 0)
+        {
+            $footer[] = $footer1;
+            $footer[] = new MText('footerTotal1', $total);
+            $footer[] = new MSeparator('');
+            $footer[] = $footer2;
+            $footer[] = new MText('footerTotal2', $totalOpen);
+
+            $hctFooter = new MHContainer('hctFooter', $footer);
+            $grdAgreements->setFooter($hctFooter);
+        }
+       
+        $buttonUp = new MButton('closeAgreementsUp', _M('Close window', $module), 'self.close()');
+        $fields[] = new MDiv('upDiv', array($buttonUp), '', 'align="center"');
+        $sep = new MSeparator('<hr>');
+        $sep->setWidth('99%');
+        $fields[] = $sep;
+       
+        $fields[] = $grdAgreements;
+        $sep = new MSeparator('<hr>');
+        $sep->setWidth('99%');
+        $fields[] = $sep;
+        
+        // The second section (agreements comments)
+        $personData->personId = $personId;
+        $businessPersonAgreementsComments = $MIOLO->getBusiness($module, 'BusAgreementComments');
+        $data = $businessPersonAgreementsComments->searchAgreementComments($personData);
+        
+        $grdAgreementsComments = $MIOLO->getUI()->getGrid($module, 'GrdAgreementComments', $filters);
+        $grdAgreementsComments->setTitle(_M('Agreement comments', $module));
+        $grdAgreementsComments->setClose(false);
+        $grdAgreementsComments->setData($data);
+        $fields[] = $grdAgreementsComments;
+        
+        $fields[] = $sep;
+        $buttonClose = new MButton('btnAgreementsClosePositionDown', _M('Close window', $module), 'self.close()');
+        $goto = $MIOLO->getActionURL($module, 'main:personAgreements', null, array('personId'=>$personId));
+        $buttonNew   = new MButton('btnAgreementsCommentsNew', _M('New agreement comment', $module), $MIOLO->getActionURL($module, 'main:register:agreementComments', null, array('personId'=>$personId, 'goto'=>urlencode($goto))));
+        $fields[] = new MDiv('divDown', array($buttonNew, $buttonClose), null, 'align="center"');
+        $fields[] = new MSeparator('');
+        $this->setFields($fields);
+        $this->setShowPostButton(false);
+    }
+}
+?>

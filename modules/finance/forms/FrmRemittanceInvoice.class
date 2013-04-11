@@ -1,0 +1,265 @@
+<?php
+
+/**
+ * Receivable invoice remittance
+ *
+ * @author Giovani Murilo Dantas Corrêa [gmurilo@isolution.inf.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Daniel Afonso Heisler [daniel@isolution.inf.br]
+ *
+ * @since
+ * Class created on 04/01/2008
+ *
+ * \b Organization: \n
+ * iSolution - Soluções em TI \n
+ * The iSolution Development Team
+ *
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+class RemittanceInvoice
+{
+	public $branchNumber;
+	public $accountNumber;
+	public $companyName;
+	public $bankId;
+	public $bankName;
+	public $date;
+}
+class FrmRemittanceInvoice extends MForm
+{
+    private $home;
+	public $header;
+	private $lineNumber;
+    private $invoices;
+    private $bankAccountId;
+ // public $history;
+
+    /**
+     * Class constructor
+     **/
+    function __construct($data)
+    {
+        $module = MIOLO::getCurrentModule();
+        $this->home   = $data->home;
+
+        parent::__construct(_M('Remittance',$module));
+        $this->setShowPostButton(false);
+		
+		$this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+        $this->eventHandler();
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+        $MIOLO   = MIOLO::getInstance();
+        $module  = MIOLO::getCurrentModule();
+        $action  = MIOLO::getCurrentAction();
+        
+        $toolBar = new MToolBar('toolBar', $MIOLO->getActionURL($module, $action));
+        $toolBar->disableButton('tbBtnNew');
+        $toolBar->disableButton('tbBtnSave');
+        $toolBar->disableButton('tbBtnDelete');
+        $toolBar->disableButton('tbBtnSearch');
+        $toolBar->disableButton('tbBtnPrint');
+        // Toolbar
+        $fields[] = $toolBar;
+        // Bank account info
+        $businessBankAccount = $MIOLO->getBusiness($module, 'BusBankAccount');
+        $data->bankAccountId = $this->getFormValue('bankAccountId', $data->bankAccountId);
+        $dataBankAccount     = $businessBankAccount->listBankAccount($data);
+
+        // Verify if the specific bank account is registered
+        if ( is_array($dataBankAccount[0]) )
+        {
+            $field = new MSelection('bankAccountId', $this->getFormValue('bankAccountId', $data->bankAccountId), _M('Bank account id', $module), $dataBankAccount);
+            $field->setAutoSubmit(false);
+            $fields[] = $field;
+            $validators[] = new MRequiredValidator('bankAccountId', _M('Bank account id', $module));
+            //data de vencimento
+            $maturityDateLabelS = new MText('maturityDateLabelS', _M('Maturity date', $module) . ':');
+            $maturityDateLabelS->setWidth(FIELD_LABEL_SIZE);
+
+            $maturityDateLabel2S  = new MText('maturityDateLabel2S', _M('from', $module));
+
+            $initialMaturityDateS = new MCalendarField('initialMaturityDateS', $this->initialMaturityDateS->value, null, FIELD_DATE_SIZE);
+            $validators[]         = new MDATEDMYValidator('initialMaturityDateS', _M('Maturity date', $module), 'optional');
+
+            $maturityDateLabel3S  = new MText('maturityDateLabel3S', _M('to', $module));
+
+            $endMaturityDateS = new MCalendarField('endMaturityDateS', $this->endMaturityDateS->value, null, FIELD_DATE_SIZE);
+            $validators[]     = new MDATEDMYValidator('endMaturityDateS', _M('Maturity date', $module), 'optional');
+
+            $hctMaturityDateS = new MHContainer('hctMaturityDateS', 
+											array($maturityDateLabelS, 
+												  $maturityDateLabel2S, 
+												  $initialMaturityDateS, 
+												  $maturityDateLabel3S, 
+												  $endMaturityDateS)
+											);
+            $hctMaturityDateS->setShowLabel(false);
+            $fields[]         = $hctMaturityDateS;
+        }
+        $fields[] = new MButton('btnSubmit',_M('Submit',$module));
+		$this->setFields($fields);
+        if( strlen((string)$validators) > 0)
+        {
+            $this->setValidators($validators);
+        }
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+		
+        $this->setClose($MIOLO->getActionURL($module, substr($action, 0, strrpos($action, ':'))));
+    }
+	
+	public function btnSubmit_click($sender = NULL)
+	{
+        $MIOLO   = MIOLO::getInstance();
+        $module  = MIOLO::getCurrentModule();
+		$data->bankAccountId = MIOLO::_request('bankAccountId','POST');
+        $data->initialMaturityDateS = MIOLO::_request('initialMaturityDateS', 'POST');
+        $data->endMaturityDateS = MIOLO::_request('endMaturityDateS', 'POST');
+		$businessRemittanceInvoice = $MIOLO->getBusiness($module,'BusRemittanceInvoice');
+		$remittanceInvoice = $businessRemittanceInvoice->getHeader($data);
+        $remittanceInvoice->initialMaturityDate = $data->initialMaturityDateS;
+        $remittanceInvoice->endMaturityDate = $data->endMaturityDateS;
+		$this->lineNumber = 0;
+		switch($remittanceInvoice->bankId)
+		{
+			case '356':
+        		$f1 = 'remittace356_'.date('dmY_his').'.txt';
+				$file = $this->makeHeader($remittanceInvoice)."\n";
+			    $file .= $this->makeDetail($remittanceInvoice);
+                $data->file = $file;
+                $data->fileId = $f1;
+                $data->invoices = $this->invoices;
+                $data->bankAccountId = $this->bankAccountId;
+		        $businessRemittanceInvoice->insertRemittanceFile($data);
+                
+		        SAGU::returnAsFile($f1, $file, 'text/card-file');
+				break;
+		}
+	}
+
+	public function makeHeader($remittanceInvoice)
+	{
+        switch($remittanceInvoice->bankId)
+		{
+			case '356':
+                $this->bankAccountId = $remittanceInvoice->bankAccountId; 
+				$this->lineNumber++;
+				$this->header = strtoupper(
+						'0'.
+						str_pad('1REMESSA01COBRANCA',25,' ').
+						'0'.
+						str_pad($remittanceInvoice->branchNumber,4,0,STR_PAD_LEFT). //Agência do Cedente
+						'0'.
+						str_pad($remittanceInvoice->accountNumber,7,0,STR_PAD_LEFT). //Conta do Cedente
+						str_repeat(' ',7).
+						str_pad($remittanceInvoice->companyName,30,' '). //Nome do Cedente
+						$remittanceInvoice->bankId. //Código do Banco
+						str_pad($remittanceInvoice->bankName,15,' '). //Nome do Banco
+						$remittanceInvoice->date. //Data de processamento
+						'01600BPI'.
+						str_repeat(' ',286).
+						str_pad($this->lineNumber,6,0,STR_PAD_LEFT));
+				break;
+
+		}
+		return $this->header;
+	}
+
+	public function makeDetail($remittanceInvoice)
+	{
+        $MIOLO   = MIOLO::getInstance();
+        $module  = MIOLO::getCurrentModule();
+		$businessRemittanceInvoice = $MIOLO->getBusiness($module,'BusRemittanceInvoice');
+		$remittanceDetails = $businessRemittanceInvoice->listDetails($remittanceInvoice);
+		unset($details);
+		$details = '';
+		switch($remittanceInvoice->bankId)
+		{
+			case '356':
+            if ( count( $remittanceDetails ) > 0 )
+            {
+				foreach($remittanceDetails as $item)
+				{
+					$this->lineNumber++;
+					$details .= strtoupper(
+						'1'.
+						'02'. //Se CPF 01, CNPJ - 02 / Verifica se o cedente é pessoa fisica ou jurídica
+						$item[0]. //CPF ou CNPJ do Cedente (04 à 17) 14 campos / quando cpf inclui 000 antes do DV
+						'0'.
+						str_pad($item[1],4,0,STR_PAD_LEFT). //Agência do Cedente (19 à 22) 4 campos
+						'0'.
+						str_pad($item[2],7,0,STR_PAD_LEFT). //Conta do Cedente (24 à 30) 7 campos
+						str_repeat(' ',7).
+						str_pad('',25,' '). //Uso livre do cedente (38 à 62) 25 campos
+						'00'.
+						str_pad($item[3],7,0,STR_PAD_LEFT). //Numero do Título No Banco (65 à 71) 7 campos
+						'0'. //Valor da multa cobrado (0) sobre o titulo, (1) ou sobre o valor corrigido 
+						str_pad($item[4],2,0,STR_PAD_LEFT). //Numero de Dias Para a multa (73 à 74) 2 campos
+						'1'. //Multa informada em (0) Valor ou (1) Taxa (porcentagem) (75) 1 campo
+						str_pad(str_replace('.','',$item[5]),13,0,STR_PAD_LEFT). //Valor/taxa da multa (76 à 88) 13 campos
+						str_repeat(' ',7).
+						str_repeat(0,9).//Contrato (96 à 104) 9 campos
+						' '.
+						'00'. //Código da carteira (106 à 107) 2 campos
+						'5'.  //Tipo de cobrança (108) 1- Simples, 5- Escritural
+						'01'. //Código da ocorrência (109 à 110) 2 campos
+						str_pad($item[6],10,0,STR_PAD_LEFT). //Número do título cedente (111 à 120) 10 campos
+						$item[7].//Vencimento 333333- à vista, 222222- Contra apresentacao, DDMMYY-Data (121 à 126) 6 campos
+						str_pad(str_replace('.','',$item[8]),13,0,STR_PAD_LEFT).//Valor do título (127 à 139) 13 campos
+						str_pad($item[9],3,0,STR_PAD_LEFT).//Identificao do banco 356 
+						str_repeat(0,5).//Código da agência cobradora (143 à 147) 5 campos
+						'07'.//Esp. Ti 01- Duplicata, 06- Banco emite boleto, 07- Banco não emite boleto (148 à 149) 2 campos
+						'N'. //Aceite, 'A'- Aceito, 'N'- Não aceito (150) 1 campo (se a pessoa tem q assinar no titulo)
+						$item[10]. //Data Emissão DDMMYY (151 à 156) 6 campos
+						'99'.//Código de protesto 00- Confirmar instrução da agência, 03-55 Numero de dias, 99- Não protestar
+						str_repeat(' ',2).
+						'1'.//Tipo de juros 0- Valor, 1- Taxa (161) 1 campo 
+						str_pad(str_replace('.','',$item[11]),12,0,STR_PAD_LEFT).//Juros de mora (162 à 173) campos 12
+						$item[12].//Desconto 888888- Até pagamento, 999999- Dia corrido, DDMMYY- Até data 
+                        str_pad(str_replace('.','',$item[13]),13,0,STR_PAD_LEFT).//Valor desconto
+						str_repeat(0,13).//I.O.C (193 à 205) 13 campos
+						str_repeat(0,13).//Abatimento (206 à 218) 13 campos
+						(($item[22] == 1) ? '01' : '02').//Se o sacado é pessoa fisica ou juridica 01-CPF, 02-CNPJ
+						str_pad($item[14],14,0,STR_PAD_LEFT). //Seque CPF/CNPJ mesma aplicação anterior 14 campos
+						str_pad($item[15],40,' '). //Nome do sacado (235 à 274) 40 campos
+						str_pad($item[16],40,' '). //Endereco sacado (275 à 314) 40 campos
+						str_pad($item[17],12,' '). //Bairro (315 à 326) 12 campos
+						str_pad($item[18],8,' '). //CEP (327 à 331) 8 campos
+						str_pad($item[20],15,' '). //Cidade (335 à 349) 15 campos
+						str_pad($item[21],2,' ').  //Estado (350 à 351) 2 campos
+						str_pad($item[19],40,' '). //Nome sacador (352 à 391) 40 campos
+						'0'. //Valor/Moeda 0- valor, 1- moeda
+						'07'.//Tipo/Moeda 01-Dolar, 02- IGPM, 04- IGPM(Dez/92), 07- Real
+						str_pad($this->lineNumber,6,0,STR_PAD_LEFT) //Número de sequencia (395 à 400) 6 campos
+						)."\n";
+					/*$details .= strtoupper(
+							)."\n";*/
+				}
+				break;
+            }
+		}
+        $trailler   = $businessRemittanceInvoice->getTrailler();
+        $lTrailler  =  '9'.str_pad($trailler->ntitles-1,6,0,STR_PAD_LEFT).str_pad(str_replace($trailler->tvalue,'\,',''),13,0,STR_PAD_LEFT).str_repeat(' ',374).str_pad($trailler->ntitles+1,6,0,STR_PAD_LEFT)."\n";
+        $details    .= 	$lTrailler;
+        foreach($remittanceDetails as $item)
+        {
+            $this->invoices[]  = $item[6];
+        }
+        return $details;
+	}
+}
+?>

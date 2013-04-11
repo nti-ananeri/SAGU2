@@ -1,0 +1,166 @@
+<?php
+
+/**
+ * Professors with daily closed document form
+ *
+ * @author Daniel Afonso Heisler [daniel@isolution.inf.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Daniel Afonso Heisler [daniel@isolution.inf.br]
+ * Giovani Murilo Dantas Corrêa [gmurilo@isolution.inf.br]
+ *
+ * @since
+ * Class created on 22/07/2008
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2008 iSolution \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+
+/**
+ * Form to manipulate a report
+ **/
+class FrmStudentCurricularComponentSituation extends MForm
+{
+    private $home;
+
+    /**
+     * Class constructor
+     **/
+    function __construct($data)
+    {
+        $module = MIOLO::getCurrentModule();
+        $this->home   = $data->home;
+
+        parent::__construct(_M('Student curricular component situation', $module));
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+        $event    = MIOLO::_request('event');
+        $toolBar = new MToolBar('toolBar', $MIOLO->getActionURL($module, $action));
+        $toolBar->hideButton('tbBtnNew');
+        $toolBar->hideButton('tbBtnSave');
+        $toolBar->hideButton('tbBtnSearch');
+        $toolBar->hideButton('tbBtnDelete');
+        $toolBar->enableButton('tbBtnPrint');
+
+        //favoritos
+        $enabledImage  = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-20x20.png');
+        $disabledImage = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-disabled-20x20.png');
+        $url           = $MIOLO->getActionURL($module, $this->home, null, array('function' => 'search', 'event' => 'bookmark'));
+        $toolBar->addButton('tbBtnBookmark', _M('Add to bookmarks', 'basic'), $url, null, true, $enabledImage, $disabledImage);
+
+        if ( MIOLO::_request('event') == 'bookmark' )
+        {
+            $MIOLO->getClass('basic', 'access');
+            access::insert('Student curricular component situation', $this->home, 'studentCurricularComponentSituation-16x16.png', true);
+        }
+        //fim favoritos
+        $fields[]   = $toolBar;
+        $fields[]   = new MSeparator();
+
+        $busPeriod    = $MIOLO->getBusiness($module, 'BusPeriod');
+        $periodValue  = $this->getFormValue('periodId',$this->periodId->value) ? $this->getFormValue('periodId',$this->periodId->value) : CURRENT_PERIOD_ID;
+        $periodId     = new MComboBox('periodId', $periodValue, _M('Period', 'academic'), $busPeriod->listPeriod());
+        $fields[]     = $periodId;
+
+        //Person
+        $personLabel  = new MText('personLabel', _M('Person',$module) . ':');
+        $personLabel->setWidth(FIELD_CONTAINER_SIZE);
+        //$personLabel->setClass('m-caption m-caption-required');
+
+        $personId     = new MLookupTextField('personId', $this->getFormValue('personId', $data->personId), '', FIELD_LOOKUPFIELD_SIZE, null, null, 'personName, limbo, limbo, limbo, limbo, limbo, limbo, limbo, limbo, externalCourseIdHs, externalCourseHsName, institutionIdHs, institutionHsName, cityIdHs, cityHsName, yearHs, limbo, passive', 'basic', 'PhysicalPerson', null, null, true);
+        $personId->setJsHint(_M('Enter the person code', $module));
+        //$validators[] = new MIntegerValidator('personId', _M('Person', $module), 'required');
+
+        $personName   = new MTextField('personName', $this->personName->value, '', FIELD_DESCRIPTION_SIZE);
+        $personName->setReadOnly(true);
+        $personName->setJsHint(_M('Person name',$module));
+
+        $hctPerson    = new MHContainer('hctPerson', array($personLabel, $personId, $personName));
+        $hctPerson->setShowLabel(true);
+        $fields[]     = $hctPerson;
+
+        //Component
+        $curricularComponentLabel = new MText('curricularComponentLabel', _M('Curricular component',$module) . ':');
+        $curricularComponentLabel->setWidth(FIELD_CONTAINER_SIZE);
+        //$curricularComponentLabel->setClass('m-caption m-caption-required');
+        $flds[]                   = $curricularComponentLabel;
+
+        $curricularComponentId = new MLookupTextField('curricularComponentId', $this->getFormValue('curricularComponentId', $data->curricularComponentId), _M('Code',$module), FIELD_LOOKUPFIELD_SIZE, null, null, 'curricularComponentVersion,curricularComponentName', $module, 'CurricularComponent', null, array('curricularComponentId' => 'curricularComponentId', 'curricularComponentVersion' => 'curricularComponentVersion'), true);
+
+        $flds[]                = $curricularComponentId;
+        
+        $curricularComponentVersion = new MTextField('curricularComponentVersion', $this->getFormValue('curricularComponentVersion', $data->curricularComponentVersion), _M('Version',$module), FIELD_ID_SIZE);
+        $flds[]                = $curricularComponentVersion;
+
+        $curricularComponentName = new MTextField('curricularComponentName', $this->getFormValue('curricularComponentName', $data->curricularComponentName), _M('Name',$module), FIELD_DESCRIPTION_SIZE);
+        $curricularComponentName->setReadOnly(true);
+        $flds[]                  = $curricularComponentName;
+
+        $hctCurricularComponent = new MHContainer('hctCurricularComponent', $flds);
+        $hctCurricularComponent->setShowLabel(false);
+        $fields[]  = $hctCurricularComponent;
+        unset($flds);
+
+        //Status
+        $business = $MIOLO->getBusiness($module, 'BusEnroll');
+
+        $statusId = new MComboBox('statusId', $this->getFormValue('statusId', $data->statusId), _M('Status id', $module), $business->listEnrollStatus() );
+        $statusId->setJsHint(_M('Enter here the status', $module));
+        $fields[] = $statusId;
+
+
+        $fields[] = new MSeparator();
+
+        $this->setFields($fields);
+        $this->setValidators($validators);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+        $this->setClose($MIOLO->getActionURL($module,substr($action,0,strrpos($action,':'))));
+    }
+
+    /**
+     * Event triggered when user chooses Search from the toolbar
+     **/
+    public function tbBtnPrint_click($sender = null)
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+
+        $periodId = MIOLO::_request('periodId');
+        $personId = MIOLO::_request('personId');
+        $statusId = MIOLO::_request('statusId');
+        $curricularComponentId = MIOLO::_request('curricularComponentId');
+        $curricularComponentVersion = MIOLO::_request('curricularComponentVersion');
+
+        $MIOLO->getClass($module, 'RptStudentCurricularComponentSituation');
+        $report = new RptStudentCurricularComponentSituation($periodId, $personId, $curricularComponentId, $curricularComponentVersion, $statusId); 
+    }
+}
+
+?>

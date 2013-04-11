@@ -1,0 +1,341 @@
+<?php
+
+/**
+ * Statistic report form
+ *
+ * @author Rafael Luís Spengler [rafael@solis.coop.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ *
+ * @since
+ * Class created on 13/12/2005
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2005 SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+
+/**
+ * Form to manipulate statistic reports
+ **/
+class FrmStatisticReport extends MForm
+{
+    private $home;
+    
+    var $business;
+    
+    /**
+     * Class constructor
+     **/
+    function __construct($data)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $this->home   = $data->home;
+
+        parent::__construct(_M('Statistic report', $module));
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+        
+        $toolBar = new MToolBar('toolBar', $MIOLO->getActionURL($module, $action));
+        $toolBar->disableButton('tbBtnNew');
+        $toolBar->disableButton('tbBtnSave');
+        $toolBar->disableButton('tbBtnDelete');
+        $toolBar->disableButton('tbBtnSearch');
+        $toolBar->disableButton('tbBtnPrint');
+
+        //favoritos
+        $enabledImage  = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-20x20.png');
+        $disabledImage = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-disabled-20x20.png');
+        $url           = $MIOLO->getActionURL($module, $this->home, null, array('event' => 'bookmark'));
+        $toolBar->addButton('tbBtnBookmark', _M('Add to bookmarks', 'basic'), $url, null, true, $enabledImage, $disabledImage);
+
+        if ( MIOLO::_request('event') == 'bookmark' )
+        {
+            $MIOLO->getClass('basic', 'access');
+            access::insert('Statistic', $this->home, 'statistic-16x16.png', true);
+        }
+        //fim favoritos
+
+        $fields[] = $toolBar;
+
+        // Selective process field
+        $business                = $MIOLO->getBusiness($module, 'BusSelectiveProcess');
+        $selectiveProcessIdLabel = new MLabel(_M('Selective process id', $module).':');
+        $selectiveProcessIdLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $selectiveProcessId      = new MSelection('selectiveProcessId', $this->getFormValue('selectiveProcessId', $data->selectiveProcessId), '', $business->listSelectiveProcess());
+        $selectiveProcessId->setJsHint(_M('Enter the selective process code',$module));
+        $validators[]       = new MRequiredValidator('selectiveProcessId');
+        $fields[]           = new MHContainer('hctSelectiveProcess', array($selectiveProcessIdLabel, $selectiveProcessId));
+
+        // Report option
+        $reportOptions = array( array(_M('Statistic by foreign language', $module) . ' ( ' . _M('if the selective process have language enable', $module) . ' ) ', 1),
+                                array(_M('Statistic by high school conclusion', $module), 2),
+                                array(_M('Statistic by age comparative', $module), 3),
+                                array(_M('Statistic by type of ingression', $module), 4),
+                                array(_M('Statistic by special necessity', $module), 5)
+                               );
+        $reportOptionLabel = new MLabel(_M('Report option', $module).':');
+        $reportOptionLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $reportOption = new MRadioButtonGroup('reportOption', '', $reportOptions, $this->getFormValue('reportOption', $data->reportOption));
+        $reportOption->setShowLabel(false);
+        $fields[] = new MHContainer('hctReportOption', array($reportOptionLabel, $reportOption));
+        $validators[] = new MRequiredValidator('reportOption');
+
+        $fields[] = new MSeparator('');
+
+        $divError = new MDiv('divError', null, null, 'align=center');
+        $fields[] = $divError;
+
+        $fields[] = new MSeparator('');
+
+        $sep1 = new MSeparator('<hr>');
+        $sep1->setWidth('99%');
+        $fields[] = $sep1;
+        $fields[] = new MButton('btnGenerate', _M('Generate', $module), 'SUBMIT');
+        $fields[] = new MSeparator('');
+        $this->setFields($fields);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+
+        $this->setShowPostButton(false);
+        $this->setClose($MIOLO->getActionURL($module, substr($action, 0, strrpos($action, ':'))));
+    }
+    
+    /*
+     * Method to generate the listing for selected option on form
+     *
+     * @param $reportOpt (int): Option report
+     *        $periodValue (int): Period id if needed
+     *
+     * @returns null;
+    */
+    public function btnGenerate_click()
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $reportOpt   = $this->getFormValue('reportOption');
+        $periodValue = $this->getFormValue('selectiveProcessId');
+
+        if ( $reportOpt && $periodValue )
+        {
+            if ( $reportOpt == 1 )
+            {
+                $businessSelectiveProcess = $this->manager->getBusiness($module,'BusSelectiveProcess');
+                $getSelectiveProcess = $businessSelectiveProcess->getSelectiveProcess($periodValue);
+
+                if ( $getSelectiveProcess->isLanguage == DB_TRUE )
+                {
+                    $grdResults = $MIOLO->getUI()->getGrid ($module, 'GrdStatisticForLanguage',     $filters);
+                    $business   = $this->manager->getBusiness($module,'BusStatisticReport');
+                    $data       = $business->statisticForLanguage($periodValue);
+                    $grdResults->setData($data);
+                    $grdResults->setClose(null);
+                    $grdResults->setTitle(_M('Statistic by foreign language', $module));
+                }
+                else
+                {
+                    $lblMsg1        = new MText('lblMsg1', _M('This selective process not have language enable. Please, select other option to this selective process os select other selective process', $module).'.');
+                    $lblMsg1->color = 'red';
+
+                    $cntErrors      = new MVContainer('cntErrors', array($lblMsg1));
+                    $this->divError->addControl($cntErrors);
+
+                    $flagNotGrid = true;
+                }
+            }
+            if ( $reportOpt == 2 )
+            {
+                $grdResults = $MIOLO->getUI()->getGrid ($module, 'GrdStatisticForHighSchool', $filters);
+                $business   = $this->manager->getBusiness($module,'BusStatisticReport');
+                $data       = $business->statisticForHighSchool($periodValue);
+                $data       = SAGU::booleanToText($data, 0);
+                $grdResults->setData($data);
+                $grdResults->setClose(null);
+                $grdResults->setTitle(_M('Statistic by high school conclusion', $module));
+
+            }
+            if ( $reportOpt == 3 )
+            {
+                $business = $MIOLO->getBusiness($module, 'BusStatisticReport');
+                $query = $business->statisticForAgeComparative($periodValue);
+                $totalMale = 0;
+                $totalFemale = 0;
+
+                for ( $i = 0; $i < count($query); $i++ )
+                {
+                    $sizeOfGridData = count($gridData);
+                    if ( $tmpUnitId != $query[$i][0] || $tmpCourseId != $query[$i][2] )
+                    {
+                        $gridData[$sizeOfGridData] = $query[$i];
+                        unset($gridData[$sizeOfGridData][5],$gridData[$sizeOfGridData][6]);
+                        $txt1 = new MText('txt1', '<b>'._M('< 25',    $module).'</b>', 'blue');
+                        $txt2 = new MText('txt2', '<b>'._M('25 - 34', $module).'</b>', 'blue');
+                        $txt3 = new MText('txt3', '<b>'._M('> 34',    $module).'</b>', 'blue');
+                        $gridData[$sizeOfGridData++][4] = $txt1->generate();
+                        $gridData[$sizeOfGridData++][4] = $txt2->generate();
+                        $gridData[$sizeOfGridData++][4] = $txt3->generate();
+
+                        $tmpUnitId   = $query[$i][0];
+                        $tmpCourseId = $query[$i][2];
+                    }
+                    if ( ($query[$i][0]) == ($query[$i+1][0]) && ($query[$i][2]) == ($query[$i+1][2]) )
+                    {
+                        if ( ($query[$i][5]) == ($query[$i+1][5]) )
+                        {
+                            $gridData[$sizeOfGridData-(4-$query[$i][5])][5] = $query[$i+1][6];
+                            $totalMale += $query[$i+1][6];
+                            $gridData[$sizeOfGridData-(4-$query[$i][5])][6] = $query[$i][6];
+                            $totalFemale += $query[$i][6];
+                            $i++;
+                        }
+                        elseif (($query[$i][4]) == 'F')
+                        {
+                            $gridData[$sizeOfGridData-(4-$query[$i][5])][6] = $query[$i][6];
+                            $totalFemale += $query[$i][6];
+                        }
+                        elseif (($query[$i][4]) == 'M')
+                        {
+                            $gridData[$sizeOfGridData-(4-$query[$i][5])][5] = $query[$i][6];
+                            $totalMale += $query[$i][6];
+                        }
+                    }
+                    else
+                    {
+                        if (($query[$i][4]) == 'F')
+                        {
+                            $gridData[$sizeOfGridData-(4-$query[$i][5])][6] = $query[$i][6];
+                            $totalFemale += $query[$i][6];
+                        }
+                        elseif (($query[$i][4]) == 'M')
+                        {
+                            $gridData[$sizeOfGridData-(4-$query[$i][5])][5] = $query[$i][6];
+                            $totalMale += $query[$i][6];
+                        }
+                    }
+                }
+                $gridData[$sizeOfGridData][1] = _M('Total', $module);
+                $gridData[$sizeOfGridData][5] = $totalMale;
+                $gridData[$sizeOfGridData][6] = $totalFemale;
+                $grdResults = $MIOLO->getUI()->getGrid ($module, 'GrdStatisticForAgeComparative', $filters);
+                $grdResults->setData($gridData);
+                $grdResults->setClose(null);
+                $grdResults->setTitle(_M('Statistic by age comparative', $module));
+             }
+             if ( $reportOpt == 4 )
+             {
+                 $grdResults = $MIOLO->getUI()->getGrid ($module, 'GrdStatisticForSelectiveProcess', $filters);
+                 $business   = $this->manager->getBusiness($module,'BusStatisticReport');
+                 $data       = $business->statisticForSelectiveProcess($periodValue);
+                 $data       = SAGU::booleanToText($data, 0);
+                 $grdResults->setData($data);
+             }
+             if ( $reportOpt == 5 )
+             {
+                 $grdResults = $MIOLO->getUI()->getGrid ($module, 'GrdStatisticForSpecialNecessity', $filters);
+                 $business   = $this->manager->getBusiness($module,'BusStatisticReport');
+                 $data       = $business->statisticForSpecialNecessity($periodValue);
+                 $grdResults->setData($data);
+             }
+        }
+
+        if ( $flagNotGrid == true )
+        {
+            //caso da lingua estrangeira, sem grid
+        }
+        else
+        {
+            $this->addField($grdResults);
+        }
+
+    }
+    
+    /**
+     * Event triggered when user chooses Delete from the toolbar
+     **/
+    public function tbBtnPrint_click($sender = null)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+        
+        $optionId = $this->getFormValue('reportOption');
+        $selectiveProcessId = $this->getFormValue('selectiveProcessId');
+       
+        $businessPupilListing = $MIOLO->getBusiness($module, 'BusPupilListing');
+       
+        switch ($optionId)
+        {
+            case 1:
+                $pupilListingData = $businessPupilListing->getPupilListingOp1($selectiveProcessId);
+                $gridPupilListingOp1 = $MIOLO->getUI()->getGrid($module, 'GrdPupilListingOp1', $pupilListingData);
+                $this->addField($gridPupilListingOp1);
+                break;
+            case 2:
+                $pupilListingData = $businessPupilListing->getPupilListingOp2($selectiveProcessId);
+                $gridPupilListingOp2 = $MIOLO->getUI()->getGrid($module, 'GrdPupilListingOp2', $pupilListingData);
+                $this->addField($gridPupilListingOp2);
+                break;
+            case 3:
+                $pupilListingData = $businessPupilListing->getPupilListingOp3($selectiveProcessId);
+                $gridPupilListingOp3 = $MIOLO->getUI()->getGrid($module, 'GrdPupilListingOp3', $pupilListingData);
+                $this->addField($gridPupilListingOp3);
+                break;
+            case 4:
+                $pupilListingData = $businessPupilListing->getPupilListingOp4($selectiveProcessId);
+                $gridPupilListingOp4 = $MIOLO->getUI()->getGrid($module, 'GrdPupilListingOp4', $pupilListingData);
+                $this->addField($gridPupilListingOp4);
+                break;
+            case 5:
+                $pupilListingData = $businessPupilListing->getPupilListingOp5($selectiveProcessId);
+                $gridPupilListingOp5 = $MIOLO->getUI()->getGrid($module, 'GrdPupilListingOp5', $pupilListingData);
+                $this->addField($gridPupilListingOp5);
+                break;
+            case 6:
+                $pupilListingData = $businessPupilListing->getPupilListingOp6($selectiveProcessId);
+                $gridPupilListingOp6 = $MIOLO->getUI()->getGrid($module, 'GrdPupilListingOp6', $pupilListingData);
+                $this->addField($gridPupilListingOp6);
+                break;
+            case 7:
+                $pupilListingData = $businessPupilListing->getPupilListingOp7($selectiveProcessId);
+                $gridPupilListingOp7 = $MIOLO->getUI()->getGrid($module, 'GrdPupilListingOp7', $pupilListingData);
+                $this->addField($gridPupilListingOp7);
+                break;
+            case 8:
+                $pupilListingData = $businessPupilListing->getPupilListingOp8($selectiveProcessId);
+                $gridPupilListingOp8 = $MIOLO->getUI()->getGrid($module, 'GrdPupilListingOp8', $pupilListingData);
+                $this->addField($gridPupilListingOp8);
+                break;
+            default:
+                break;
+        }
+        
+    }
+}
+
+?>

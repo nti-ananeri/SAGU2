@@ -1,0 +1,514 @@
+<?
+/**
+*
+* @author Giovani Murilo Dantas Correa [gmurilo@isolution.inf.br]
+*
+* $version: $Id$
+*
+* \b Maintainers \n
+* Daniel Afonso Heisler [daniel@isolution.inf.br]
+*
+* @since
+* Class created on 23/03/2009
+*
+* \b Organization: \n
+* iSolution - Soluções de Internet \n
+* The iSolution TEAM
+*
+* \b CopyLeft: \n
+* CopyLeft (L) 2007 iSolution - Soluções de Internet \n
+*
+* \b License \n
+* Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+*
+* \b History \n
+* See history in CVS repository: http://isolution.inf.br   
+*
+**/
+set_time_limit(0);        
+$MIOLO = MIOLO::getInstance();
+
+define('FPDF_FONTPATH', $MIOLO->getModulePath('basic', '/classes/fpdf/font/'));
+$MIOLO->Uses('classes/fpdf/pdf.php', 'basic');
+
+class RptCallList extends PDF
+{
+    public $module = 'academic';
+
+    public function __construct($filters = NULL)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $this->useUserInfo = false;
+        $this->title = strtoupper(_M('Call list', 'academic'));
+        $this->businessCallList = $MIOLO->getBusiness($this->module, 'BusCallList');
+        $headerData = $this->businessCallList->getHeader($filters);
+        $this->headerData = $headerData;
+        foreach($filters as $item => $value )
+        {
+            if(!$this->headerData->{$item} )
+            {
+                $this->headerData->{$item} = $value;
+            }
+        }
+	    $this->filters->unitId = $this->headerData->unitId;
+        $this->calendar = $this->businessCallList->getCalendars($this->headerData);
+        $this->pupils   = $this->businessCallList->getPupils($this->headerData);
+        $this->degree = $this->businessCallList->getDegreeDescription($this->headerData);
+        parent::__construct();
+        $this->addPage('L', 'mm', 'A4');
+        $this->aliasNbPages();
+        $this->criaReport($filters);
+		$this->output();
+    }
+    
+    public function putHeader()
+    {
+        
+        $this->setFont(DEFAULT_REPORT_FONT, '', $this->fontSizeBody);
+        $this->column[0] = $this->FontSize*2;
+        $this->column[1] = $this->FontSize*4;
+        $this->column[2] = $this->FontSize*4;
+        $this->column[3] = $this->FontSize*22;
+        $this->column[4] = ($this->FontSize*3)*3;
+        $this->column[5] = $this->FontSize*2;
+        $this->ff = $this->FontSize;
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->fontSizeBody);
+        $this->ln($this->lsize/2);
+        $y = $this->y;
+        $this->setY($y+($this->lsize*2));
+        $this->cell($this->column[0], $this->lsize, 'N.', 'BL', null, 'C');
+        $this->cell($this->column[1], $this->lsize, _M('Id', 'academic'), 'B', null, 'C');
+        $this->cell($this->column[2], $this->lsize, _M('Course', 'academic'), 'B', null, 'C');
+        $this->cell($this->column[3], $this->lsize, _M('Name', 'academic'), 'BR', null, 'C');
+        $this->setY($y);
+        $this->cell(array_sum($this->column)-($this->column[4]+$this->column[5]), $this->lsize*2, null, 'LTR', null, 'R');
+        $this->cell($this->psize-(array_sum($this->column)-($this->column[4]+$this->column[5])), $this->lsize, _M('Lesson', 'academic') . '/' . _M('Date', 'academic')  ,1, null, 'C');
+        $this->setY($y+($this->lsize));
+        $this->cell(array_sum($this->column)-($this->column[4]+$this->column[5]), $this->lsize, _M('Month', 'academic'), null, null, 'R');
+        $this->setY($y+($this->lsize*2));
+        $this->cell(array_sum($this->column)-($this->column[4]+$this->column[5]), $this->lsize, _M('Day', 'academic'), null, null, 'R');
+        if( count($this->calendar) == 0 && strlen((string)$this->headerData->degreeNumber) > 0 )
+        {
+	    $degreeNumber = $this->headerData->degreeNumber;
+            unset($this->headerData->degreeNumber);
+            $this->calendar = $this->businessCallList->getCalendars($this->headerData);
+	    $this->headerData->degreeNumber = $degreeNumber;
+        }
+        $this->dn = $this->headerData->degreeNumber % 2;
+        if( count($this->calendar) == 0 ) 
+        {
+            return;
+        }
+        $this->colSize = (( $this->psize-array_sum($this->column) ) / count($this->calendar));
+        $this->setY($y+($this->lsize));
+        $this->setX((array_sum($this->column)-($this->column[4]+$this->column[5]))+$this->lMargin);
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->fontSizeBody-2);
+        foreach( $this->calendar as $col )
+        {
+            $this->cell($this->colSize, $this->lsize, $col->month, 1, null, 'C');
+        }
+        $this->setY($y+($this->lsize*2));
+        $this->setX((array_sum($this->column)-($this->column[4]+$this->column[5]))+$this->lMargin);
+        foreach( $this->calendar as $col )
+        {
+            $this->cell($this->colSize, $this->lsize, $col->day, 1, null, 'C');
+        }
+        $this->setY($y+($this->lsize));
+        $this->setX(($this->psize-(($this->column[4]+$this->column[5]))+$this->lMargin));
+        $this->cell($this->column[4]/3, $this->lsize*2, _M('Aval.', 'academic'), 1, null, 'C');
+        $this->cell($this->column[4]/3, $this->lsize*2, _M('Qual.', 'academic'), 1, null, 'C');
+        $this->cell($this->column[4]/3, $this->lsize*2, _M('Average', 'academic'), 1, null, 'C');
+        $this->cell($this->column[5], $this->lsize*2, _M('F', 'academic'), 1, null, 'C'); 
+        $this->ln();
+    }
+
+    public function criaReport($filters)
+    {
+        $this->PageBreakTrigger = ($this->h-$this->tMargin)-6;
+        $this->putHeader();
+        $x=0;
+        if(count($this->pupils) == 0 )
+        {
+            return;
+        }
+        $contractsIdsForCancel[] = STATE_CONTRACT_ID_EXTERNAL_TRANSFER_TO;
+        $contractsIdsForCancel[] = STATE_CONTRACT_ID_INTERNAL_TRANSFER_TO;
+        $contractsIdsForCancel[] = STATE_CONTRACT_ID_LOCKED;
+        $contractsIdsForCancel[] = STATE_CONTRACT_ID_CANCELLATION;
+        $contractsIdsForCancel[] = STATE_CONTRACT_ID_ABANDONMENT;
+        $contractsIdsForCancel[] = STATE_CONTRACT_ID_ABANDONMENT_CASE;
+
+        foreach($this->pupils as $pupil)
+        {
+            $x++;
+            $this->setFont(DEFAULT_REPORT_FONT, '', $this->fontSizeBody-1);
+            $this->cell($this->column[0], $this->lsize, substr(str_pad($x, 2, 0, STR_PAD_LEFT), 0, $this->column[0]/$this->ff), 1, null, 'C');
+            $this->cell($this->column[1], $this->lsize, substr($pupil->personId, 0, $this->column[1]/$this->ff), 1, null, 'C');
+            $this->cell($this->column[2], $this->lsize, substr($pupil->courseName, 0, $this->column[2]/$this->ff), 1, null, 'C');
+            $this->cell($this->column[3], $this->lsize, substr($pupil->personName, 0, (($this->column[3])/$this->FontSize)+14), 1, null, 'L');
+            if(!defined('ATTENDANCE_PRESENCE_CHAR'))  define('ATTENDANCE_PRESENCE_CHAR', '*');
+            if(!defined('ATTENDANCE_ABSENCE_CHAR')) define('ATTENDANCE_ABSENCE_CHAR', ' ');
+            if(!defined('ATTENDANCE_WITHOUTNOTE_CHAR'))  define('ATTENDANCE_WITHOUTNOTE_CHAR', 'S/N');
+            if(!defined('ATTENDANCE_NOABSENCE_CHAR'))  define('ATTENDANCE_NOABSENCE_CHAR', '-');
+
+            $faltas = 0;
+            if ( count($this->calendar) == 0 )
+            {
+                return;
+            }
+            foreach( $this->calendar as $col )
+            {
+                if( count($pupil->frequenceDate) > 0 && array_key_exists($col->occurrenceDate, $pupil->frequenceDate) )
+                {
+                    $pupil->frequenceDate[$col->occurrenceDate] = ( $pupil->frequenceDate[$col->occurrenceDate] > $col->aulasDia ) ? $col->aulasDias : $pupil->frequenceDate[$col->occurrenceDate]; 
+                    $faltas += ($col->aulasDia-$pupil->frequenceDate[$col->occurrenceDate]);
+                    if( strlen((string)$this->headerData->describeDays) > 0 )
+                    {
+                        $csize = $this->colSize/$col->aulasDia;
+                        $f = $pupil->frequenceDate[$col->occurrenceDate];
+                        $this->setFont(DEFAULT_REPORT_FONT, 'B', $csize+6);
+                        for($cc=0; $cc<$col->aulasDia;$cc++)
+                        {
+                            if( $f > 0 )
+                            {
+                                $this->setTextColor(0,0,255);
+                            }
+                            else
+                            {
+                                $this->setTextColor(255,0,0);
+                            }
+                            $this->cell($csize, $this->lsize, (( $f > 0 ) ? ATTENDANCE_PRESENCE_CHAR : ATTENDANCE_ABSENCE_CHAR), 1, null, 'C');
+                            $f--;
+                        }
+                    }
+                    else
+                    {
+                            if( $pupil->frequenceDate[$col->ocurrenceDate] > 0 )
+                            {
+                                if ( ( $col->aulasDia - $pupil->frequenceDate[$col->ocurrenceDate]) == 0)
+                                {
+                                    $this->setTextColor(0,0,255);
+                                }
+                                else
+                                {
+                                    $this->setTextColor(255-ceil((255/$col->aulasDia)*$pupil->frequenceDate[$col->ocurrenceDate]),0,ceil((255/$col->aulasDia)*$pupil->frequenceDate[$col->ocurrenceDate]));
+                                }
+                                
+                            }
+                            else
+                            {
+                                $this->setTextColor(255,0,0);
+                            }
+                            $this->cell($this->colSize, $this->lsize, $pupil->frequenceDate[$col->ocurrenceDate], 1, null, 'C');
+                    }
+                }
+                else
+                {
+                    if( strlen((string)$this->headerData->describeDays) > 0 )
+                    {
+                        $csize = $this->colSize/$col->aulasDia;
+                        $this->setFont(DEFAULT_REPORT_FONT, '', $csize);
+                        $this->setTextColor(0);
+                        for($cc=0; $cc<$col->aulasDia;$cc++)
+                        {
+                            $this->cell($csize, $this->lsize, ATTENDANCE_NOABSENCE_CHAR, 1, null, 'C');
+                        }
+                    }
+                    else
+                    {
+                        $this->cell($this->colSize, $this->lsize, null, 1, null, 'C');
+                    }
+                }
+            }
+            $this->setTextColor(0,0,0);
+            $this->setFont(DEFAULT_REPORT_FONT, '', $this->fontSizeBody);
+            unset($note);
+            unset($weight);
+            if( count($pupil->degreeNote) > 0 )
+            {
+                if( array_key_exists($this->headerData->degreeNumber, $pupil->degreeNote))
+                {
+                    $note = SAGU::formatNumber($pupil->degreeNote[$this->headerData->degreeNumber]);
+                }
+                else
+                {
+                    foreach($this->degree as $item)
+                    {
+                        if($item->isSubstitutive == DB_FALSE)
+                        {
+                            $note += $pupil->degreeNote[$item->degreeNumber]*$item->weight;
+			    $note = $pupil->degreeNote[$item->degreeNumber];
+                            $weight += $item->weight;
+                        }
+                        else
+                        {
+                            $substitutiveNote = $pupil->degreeNote[$item->degreeNumber]*$item->weight;
+                            $substitutiveWeight = $item->weight;
+                        }
+                    }
+                    if( strlen((string)$substitutiveNote) > 0  && (float)$substitutiveNote > 0 )
+                    {
+                        foreach($this->degree as $item)
+                        {
+                            if($item->isSubstitutive == DB_FALSE)
+                            {
+                                if(!$minimumNote && !$minimumWeight)
+                                {
+                                    $minimumNote = $pupil->degreeNote[$item->degreeNumber]*$item->weight;
+                                    $minimumWeight = $item->weight;
+                                }
+                                else
+                                {
+                                    if ( $minimumNote > ( $pupil->degreeNote[$item->degreeNumber]*$item->weight) )
+                                    {
+                                        $minimumNote = $pupil->degreeNote[$item->degreeNumber]*$item->weight;
+                                        $minimumWeight = $item->weight;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if ( (float)$minimumNote < (float)$substitutiveNote )
+                    {
+                        $note -= $minimumNote;
+                        $note += $substitutiveNote;
+                        $weight -= $minimumWeight;
+                        $weight += $substitutiveWeight;
+                    }
+                    //$note = round($note/$weight,2);
+                    $note = SAGU::formatNumber($note);
+                }
+            }
+            else
+            {
+                $note = ATTENDANCE_WITHOUTNOTE_CHAR;
+            }
+            if(strlen((string)$faltas) == 0 )
+            {
+                $faltas = ATTENDANCE_NOABSENCE_CHAR;
+            }
+            if ( $this->dn == 1 )
+            {
+                $note1 = $pupil->degreeNote[$this->headerData->degreeNumber];
+                $note2 = $pupil->degreeNote[$this->headerData->degreeNumber+1];
+                $notem = $pupil->degreeNote[$this->headerData->degreeNumber] + $pupil->degreeNote[$this->headerData->degreeNumber+1];
+                $notem = SAGU::formatNumber($notem);
+            }
+            else
+            {
+                $note1 = $pupil->degreeNote[$this->headerData->degreeNumber-1];
+                $note2 = $pupil->degreeNote[$this->headerData->degreeNumber];
+                $notem = $pupil->degreeNote[$this->headerData->degreeNumber] + $pupil->degreeNote[$this->headerData->degreeNumber-1];
+                $notem = SAGU::formatNumber($notem);
+            }        
+            $this->cell($this->column[4]/3, $this->lsize, $note1, 1, null, 'C');
+            $this->cell($this->column[4]/3, $this->lsize, $note2, 1, null, 'C');
+            $this->cell($this->column[4]/3, $this->lsize, $notem, 1, null, 'C');
+            $this->cell($this->column[5], $this->lsize, $faltas, 1, null, 'C'); 
+            if(in_array($pupil->stateContractId, $contractsIdsForCancel))
+            {
+                $y = $this->y;
+                $this->setY($y);
+                $this->setTextColor(255,0,0);
+                $this->setFillColor(240,240,240);
+                $this->setFont(DEFAULT_REPORT_FONT, 'BI', $this->fontSizeBody);
+                $this->cell(array_sum($this->column)-($this->column[4]+$this->column[5]), $this->lsize, null, 'LTR', null, 'R');
+                $this->cell($this->psize-((array_sum($this->column))), $this->lsize, strtoupper($pupil->stateContractDescription . ' ' . _M('At', 'academic') .  ' '. $pupil->dateStateContract),null, null, 'C', 1);
+                $this->setTextColor(0,0,0);
+            }
+            $this->ln();
+            $n++; 
+            if ( $this->y+($this->lsize*2) > $this->PageBreakTrigger && $n < count($this->pupils) )
+            {
+                $this->addPage('L', 'mm', 'A4');
+                $this->putHeader();
+            }
+        }
+    }
+
+    public function Header()
+    {
+        parent::Header();
+        if($this->headerData)
+        {
+        $this->module = 'academic';
+        $this->setY($this->y-($this->lsize/2));
+        $this->setFont(DEFAULT_REPORT_FONT, 'IB', $this->fontSizeBody);
+        if( is_array($this->headerData->horarios[$this->headerData->groupId]) )
+        {
+            $horarios = implode(', ', $this->headerData->horarios[$this->headerData->groupId]);
+        }
+        else
+        {
+            $horarios = $this->headerData->horarios[$this->headerData->groupId]; 
+        }
+        $this->multicell($this->psize, $this->lsize, strtoupper(_M('Schedule', $this->module).'s: '.$horarios) , null, 'R');
+        $this->ln();
+        if( strlen((string)$this->headerData->degreeNumber) > 0 )
+        {
+            if( strlen((string)$this->degree[$this->headerData->degreeNumber]->description) > 0 )
+            {
+                $colsizeD = strlen((string)$this->degree[$this->headerData->degreeNumber]->description)*$this->FontSize;
+            }
+            $this->setFont(DEFAULT_REPORT_FONT, 'I', $this->fontSizeBody);
+            $this->cell($this->psize-$colsizeD, $this->lsize, strtoupper(_M('Academic degree', $this->module)). ':', null, null, 'R');
+            $this->setFont(DEFAULT_REPORT_FONT, 'IB', $this->fontSizeBody);
+            $this->cell($colsizeD, $this->lsize, $this->degree[$this->headerData->degreeNumber]->description, null, null, 'R');
+            $this->ln();
+        }
+
+        $this->ln($this->lsize/2);
+
+        $this->setFont(DEFAULT_REPORT_FONT, 'I', $this->fontSizeBody);
+        $this->cell($this->psize*0.06, $this->lsize, _M('Year', $this->module).'/'.  _M('Sem', $this->module) , 1, null, 'C');
+        $this->cell($this->psize*0.06, $this->lsize, 'Cod. Disc.', 1, null, 'C');
+        $this->cell($this->psize*0.20, $this->lsize, _M('Curricular component', $this->module), 1, null, 'C');
+//        $this->cell($this->psize*0.04, $this->lsize, _M('C/H', $this->module), 1, null, 'C');
+        $this->cell($this->psize*0.06, $this->lsize, _M('Period', $this->module), 1, null, 'C');
+        $this->cell($this->psize*0.14, $this->lsize, _M('Class', $this->module), 1, null, 'C');
+        $this->cell($this->psize*0.16, $this->lsize, _M('Course', $this->module), 1, null, 'C');
+        $this->cell($this->psize*0.05, $this->lsize, _M('Turn', $this->module), 1, null, 'C');
+        $this->cell($this->psize*0.27, $this->lsize, _M('Professor', $this->module), 1, null, 'C');
+        $this->ln();
+
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->fontSizeBody);
+        $this->cell($this->psize*0.06, $this->lsize, str_replace('.', '/', $this->headerData->periodId) , 1, null, 'C');
+        $this->cell($this->psize*0.06, $this->lsize, $this->headerData->curricularComponentId , 1, null, 'C');
+        $this->cell($this->psize*0.20, $this->lsize, substr($this->headerData->curricularComponentName, 0, (($this->psize*0.24)/$this->FontSize)+8), 1, null, 'C');
+//        $this->cell($this->psize*0.04, $this->lsize, substr($this->headerData->lessonNumberHours, 0, (($this->psize*0.1)/$this->FontSize)+8), 1, null, 'C');
+        $this->cell($this->psize*0.06, $this->lsize, $this->headerData->serie, 1, null, 'C');
+        $this->cell($this->psize*0.14, $this->lsize, $this->headerData->classId , 1, null, 'C');
+        $this->cell($this->psize*0.16, $this->lsize, substr($this->headerData->courseName, 0, (($this->psize*0.16)/$this->FontSize)+5), 1, null, 'C');
+        $this->cell($this->psize*0.05, $this->lsize, $this->headerData->charId, 1, null, 'C');
+        $this->cell($this->psize*0.27, $this->lsize, substr($this->headerData->professorId . ' - ' . $this->headerData->professorName, 0, (($this->psize*0.27)/$this->FontSize)+10), 1, null, 'C');
+        $this->ln();
+
+        $this->setFont(DEFAULT_REPORT_FONT, 'I', $this->fontSizeBody);
+        $this->cell($this->psize*0.2, $this->lsize, _M('C/H Total', $this->module), 1, null, 'C');
+        $this->cell($this->psize*0.2, $this->lsize, _M('C/H Teórica', $this->module), 1, null, 'C');
+        $this->cell($this->psize*0.2, $this->lsize, _M('C/H Prática', $this->module), 1, null, 'C');
+        $this->cell($this->psize*0.4, $this->lsize, _M('Sala', $this->module), 1, null, 'C');
+        $this->ln();
+
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->fontSizeBody);
+        $this->cell($this->psize*0.2, $this->lsize, $this->headerData->lessonNumberHours, 1, null, 'C');
+        $this->cell($this->psize*0.2, $this->lsize, $this->headerData->academicNumberHours , 1, null, 'C');
+        $this->cell($this->psize*0.2, $this->lsize, $this->headerData->practiceHours, 1, null, 'C');
+        $this->cell($this->psize*0.4, $this->lsize, $this->headerData->room . ' - ' . $this->headerData->physicalResourceDescription, 1, null, 'C');
+        $this->ln();
+
+        }
+    }
+
+    public function Footer()
+    {
+        $this->setY($this->PageBreakTrigger-5);
+        $pn = $this->PageNo().'/{nb}';
+        if( count($this->degree) > 0 )
+        {
+            foreach($this->degree as $item)
+            {
+                if ( $item->isSubstitutive == DB_FALSE )
+                {
+                    $data->mediaFinal = $item->finalAverage;
+                    $data->media      = $item->average;
+                    $data->pesoMedia  = $item->averageWeight;
+                    $data->pesoExam   = $item->examWeight;
+                    $data->weight    += $item->weight;
+                    if($item->weight == 1 )
+                    {
+                        $data->soma[]     = '( ' . $item->description .' )';
+                    }
+                    else
+                    {
+                        $data->soma[]     = '( ' . $item->description .'*'. $item->weight  .' )';
+                    }
+                }
+                else
+                {
+                    $data->substitutive = true;
+                }
+            }
+            $data->descricaoMedia = '( '. implode('+', $data->soma) . ' ) / '.$data->weight;
+            if ( $data->pesoMedia > 1 )
+            {
+                $data->descricaoMediaFinal = '( '. _M('Average', 'academic') . ' * '. $data->pesoMedia.' ) +';
+                $data->pesoFinal = $data->pesoMedia;
+            }
+            else
+            {
+                $data->descricaoMediaFinal = _M('Average','academic').' + ';
+                $data->pesoFinal = 1;
+            }
+            if ( $data->pesoExam > 1 )
+            {
+                $data->descricaoMediaFinal .= '( '. _M('Final examination', 'academic') . ' * ' . $data->pesoExam.' )';
+                $data->pesoFinal += $data->pesoExam;
+            }
+            else
+            {
+                $data->descricaoMediaFinal .= '( '. _M('Final examination', 'academic'). ' )';
+                $data->pesoFinal += 1;
+            }
+            $data->descricaoMediaFinal = '(' . $data->descricaoMediaFinal .') / '.$data->pesoFinal;
+        }
+   		$this->setFont(DEFAULT_REPORT_FONT, 'IB', $this->fontSizeBody-1);
+        $this->cell($this->psize, 1, '', 'B',1, 'C');
+        $this->ln(1); 
+   		$this->setFont(DEFAULT_REPORT_FONT, 'B', $this->fontSizeBody-2);
+        $this->setTextColor(0,0,255);
+        if( strlen((string)$this->headerData->describeDays) > 0)
+        {
+            $this->cell(($this->psize/3), $this->lsize-1, _M('Attendance roster', 'academic') .': '. ATTENDANCE_PRESENCE_CHAR);
+        }
+        else
+        {
+            $this->cell(($this->psize/3), $this->lsize-1, _M('Attendance roster', 'academic'));
+        }
+        $this->setTextColor(0,0,0);
+        $this->cell($this->psize/3, $this->lsize-1, _M('Average','academic'). ': ' . $data->descricaoMedia);
+        $this->ln();
+        $this->setTextColor(255,0,0);
+        if( strlen((string)$this->headerData->describeDays) > 0 ) 
+        {
+            $this->cell(($this->psize/3), $this->lsize-1, _M('Absence roster', 'academic'). ': '. ATTENDANCE_ABSENCE_CHAR);
+        }
+        else
+        {
+            $this->cell(($this->psize/3), $this->lsize-1, _M('Absence roster', 'academic'));
+        }
+        $this->setTextColor(0,0,0);
+        $this->cell($this->psize/3, $this->lsize-1, _M('Final average', 'academic'). ': '. $data->descricaoMediaFinal);
+        $this->ln();
+        $this->setTextColor(255,0,0);
+        $this->setFont(DEFAULT_REPORT_FONT, 'BI', 7);
+        $this->multicell($this->psize, $this->lsize-1, 'Observações: ' . ' ' . $this->headerData->professorObservation);
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', 5);
+        if ( strlen((string)$this->headerData->describeDays) > 0 )
+        {
+            $this->ln();            
+        }
+        else
+        {
+            if(defined('ATTENDANCE_DESCRIBEDAYS_TEXT'))
+            {
+                $this->multicell($this->psize, $this->lsize-1, ATTENDANCE_DESCRIBEDAYS_TEXT);
+            }
+        }
+
+        if( $data->substitutive && defined('ATTENDANCE_SUBSTITUTIVE_TEXT') )
+        {
+            $this->multicell($this->psize, $this->lsize-1, ATTENDANCE_SUBTITUTIVE_TEXT);
+        }
+        $this->setTextColor(0,0,0);
+		$this->setY(-10);
+        $this->setFont(DEFAULT_REPORT_FONT, 'I', 8);
+		$this->cell(($this->psize/6), $this->lsize, $this->title,  0, 0, 'L');
+   		$this->setFont(DEFAULT_REPORT_FONT, 'BI', 8);
+		$this->cell(($this->psize/6)*4, $this->lsize, $this->headerData->professorName , 0, 0, 'C');
+   		$this->setFont(DEFAULT_REPORT_FONT, 'I', 8);
+   		$this->cell(($this->psize/6), $this->lsize, _M('Page @1', $this->module, $pn), 0, 0, 'R');
+        $this->ln();
+    }
+}
+?>

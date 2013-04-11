@@ -1,0 +1,633 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for acdScheduleProfessor table
+ *
+ * @author Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 26/09/2005
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to manipulate the acdScheduleProfessor table
+ **/
+class BusinessAcademicBusScheduleProfessor extends Business
+{
+
+    public $db;
+
+    function __construct()
+    {
+        $this->db = $this->getDatabase();
+    }
+
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module = is_null($module) ? 'academic' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+    /**
+     * List all records from the table handled by the class
+     *
+     * @param: None
+     *
+     * @returns (array): Return an array with the entire table
+     *
+     **/
+    public function listScheduleProfessor($data)
+    {
+        $sql = ' SELECT 
+                    A1.scheduleId,
+                    COALESCE(B.description || \' - \', \'\') || COALESCE ( C.description , \'\' ) as description,
+                    B.turnId
+                 FROM
+                    acdScheduleProfessor A1 INNER JOIN
+                    acdSchedule A2 ON ( A1.scheduleId = A2.scheduleId ) LEFT JOIN
+                    acdScheduleLearningPeriod B ON ( B.scheduleLearningPeriodId = A2.scheduleLearningPeriodId ) LEFT JOIN
+                    basWeekDay C ON ( A2.weekDayId = C.weekDayId )
+                 WHERE
+                    1 = 1 ';
+        if ( strlen((string)$data->groupId) > 0 )
+        {
+            $sql .=' AND A2.groupId = ?::integer';
+            $args[] = $data->groupId;
+        }
+
+        if ( strlen((string)$data->professorId) > 0 )
+        {
+            $sql .=' AND A1.professorId = ?::integer';
+            $args[] = $data->professorId;
+        }
+
+        if ( strlen((string)$data->weekDayId) > 0 )
+        {
+            $sql .=' AND C.weekDayId = ?::integer';
+            $args[] = $data->weekDayId;
+        }
+        $sql .= ' ORDER BY B.beginHour';
+   
+        if ( count($args) > 0 )
+        {
+            $sql = SAGU::prepare($sql, $args);
+            $result = $this->db->query($sql);
+        }
+        return $result;
+    }
+    
+    /**
+     * Return a specific record from the database
+     *
+     * @param $scheduleProfessorId (integer): Primary key of the record to be retrieved
+     *
+     * @return (object): Return an object of the type handled by the class
+     *
+     **/
+    public function getScheduleProfessorByScheduleProfessorId($scheduleProfessorId)
+    {
+        $sql = 'SELECT A.scheduleId,
+                       A.professorId,
+                       B.name AS professorName,
+                       A.isInstitutionalEvaluation,
+                       A.weight,
+                       A.userName,
+                       TO_CHAR(A.dateTime,\'' . MASK_TIMESTAMP . '\'),
+                       A.ipAddress,
+                       A.scheduleProfessorId,
+                       TO_CHAR(A.beginDate, \'' . MASK_DATE . '\'),
+                       TO_CHAR(A.endDate, \'' . MASK_DATE . '\')
+                  FROM acdScheduleProfessor A
+        LEFT JOIN ONLY basPhysicalPersonProfessor B
+                    ON (B.personId = A.professorId)
+                 WHERE A.scheduleProfessorId = ?';
+
+        $pk = array(
+                     $scheduleProfessorId
+                   );
+
+        $result = $this->db->query(SAGU::prepare($sql, $pk));
+
+        $scheduleProfessor = new AcdScheduleProfessor();
+
+        list (
+               $scheduleProfessor->scheduleId,
+               $scheduleProfessor->professorId,
+               $scheduleProfessor->professorName,
+               $scheduleProfessor->isInstitutionalEvaluation,
+               $scheduleProfessor->weight,
+               $scheduleProfessor->userName,
+               $scheduleProfessor->dateTime,
+               $scheduleProfessor->ipAddress,
+               $scheduleProfessor->scheduleProfessorId,
+               $scheduleProfessor->beginDate,
+               $scheduleProfessor->endDate
+             ) = $result[0];
+
+        return $scheduleProfessor; 
+    }
+ 
+    /**
+     * Return a specific record from the database
+     *
+     * @param $scheduleId (integer): Primary key of the record to be retrieved
+     * @param $professorId (integer): Primary key of the record to be retrieved
+     *
+     * @return (object): Return an object of the type handled by the class
+     *
+     **/
+    public function getScheduleProfessor($scheduleId, $professorId)
+    {
+        $sql = 'SELECT A.scheduleId,
+                       A.professorId,
+                       B.name AS professorName,
+                       A.isInstitutionalEvaluation,
+                       A.weight,
+                       A.userName,
+                       TO_CHAR(A.dateTime,\'' . MASK_TIMESTAMP . '\'),
+                       A.ipAddress,
+                       A.scheduleProfessorId,
+                       TO_CHAR(A.beginDate, \'' . MASK_DATE . '\'),
+                       TO_CHAR(A.endDate, \'' . MASK_DATE . '\')
+                  FROM acdScheduleProfessor A
+        LEFT JOIN ONLY basPhysicalPersonProfessor B
+                    ON (B.personId = A.professorId)
+                 WHERE A.scheduleId = ?
+                   AND A.professorId = ?';
+
+        $pk = array(
+                     $scheduleId,
+                     $professorId
+                   );
+
+        $result = $this->db->query(SAGU::prepare($sql, $pk));
+
+        $scheduleProfessor = new AcdScheduleProfessor();
+
+        list (
+               $scheduleProfessor->scheduleId,
+               $scheduleProfessor->professorId,
+               $scheduleProfessor->professorName,
+               $scheduleProfessor->isInstitutionalEvaluation,
+               $scheduleProfessor->weight,
+               $scheduleProfessor->userName,
+               $scheduleProfessor->dateTime,
+               $scheduleProfessor->ipAddress,
+               $scheduleProfessor->scheduleProfessorId,
+               $scheduleProfessor->beginDate,
+               $scheduleProfessor->endDate
+             ) = $result[0];
+
+        return $scheduleProfessor; 
+    }
+    
+    /**
+     * Do a search on the database table handled by the class
+     *
+     * @param $filters (object): Search filters
+     *
+     * @return (array): An array containing the search results
+     **/
+    public function searchScheduleProfessor($filters)
+    {
+        $sql = 'SELECT A.scheduleId,
+                       A.professorId,
+                       B.name AS professorName,
+                       A.isInstitutionalEvaluation,
+                       A.weight,
+                       A.userName,
+                       TO_CHAR(A.dateTime,\'' . MASK_TIMESTAMP . '\'),
+                       A.ipAddress,
+                       A.scheduleProfessorId,
+                       TO_CHAR(A.beginDate, \'' . MASK_DATE . '\'),
+                       TO_CHAR(A.endDate, \'' . MASK_DATE . '\')
+                  FROM acdScheduleProfessor A
+        LEFT JOIN ONLY basPhysicalPersonProfessor B
+                    ON (B.personId = A.professorId)';
+
+        if ( strlen((string)$filters->scheduleId) > 0 )
+        {
+            $where .= ' AND A.scheduleId = ?';
+            $args[] = $filters->scheduleId;
+        }
+        if ( strlen((string)$filters->professorId) > 0 )
+        {
+            $where .= ' AND A.professorId = ?';
+            $args[] = $filters->professorId;
+        }
+        if ( strlen((string)$filters->professorName) > 0 )
+        {
+            $where .= ' AND TO_ASCII(B.name) ILIKE TO_ASCII(?)';
+            $args[] = $filters->professorName . '%';
+        }
+        if ( strlen((string)$filters->isInstitutionalEvaluation) > 0 )
+        {
+            $where .= ' AND A.isInstitutionalEvaluation = ?';
+            $args[] = $filters->isInstitutionalEvaluation;
+        }
+        if ( strlen((string)$filters->weight) > 0 )
+        {
+            $where .= ' AND A.weight = ?';
+            $args[] = $filters->weight;
+        }
+        if ( strlen((string)$filters->scheduleProfessorId) > 0 )
+        {
+            $where .= ' AND A.scheduleProfessorId = ?';
+            $args[] = $filters->scheduleProfessorId;
+        }
+
+        unset($result);
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE ' . substr($where, 4) . '
+                   ORDER BY B.name';
+
+            $result = $this->db->query(SAGU::prepare($sql, $args));
+        }
+
+        return $result;
+    }
+
+    /**
+     * Insert a new record
+     *
+     * @param $data (object): An object of the type handled by the class
+     *
+     * @return True if succed, otherwise False
+     *
+     **/
+    public function insertScheduleProfessor($data)
+    {
+        $sql = 'INSERT INTO acdScheduleProfessor
+                            (scheduleId,
+                             professorId,
+                             isInstitutionalEvaluation,
+                             weight,
+                             beginDate,
+                             endDate)
+                     VALUES (?,
+                             ?,
+                             ?,
+                             ?,
+                             TO_DATE(?, \'' . MASK_DATE . '\'),
+                             TO_DATE(?, \'' . MASK_DATE . '\'))';
+
+        $args = array( 
+                       $data->scheduleId,
+                       $data->professorId,
+                       $data->isInstitutionalEvaluation,
+                       $data->weight,
+                       $data->beginDate,
+                       $data->endDate
+                     );
+
+        $result = $this->db->execute(SAGU::prepare($sql, $args));
+
+        return $result;
+    }
+
+    /**
+     * Update data from a specific record
+     *
+     * @param $data (object): Data which will replace the old record data
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+    public function updateScheduleProfessor($data)
+    {
+        $sql = 'UPDATE acdScheduleProfessor
+                   SET isInstitutionalEvaluation = ?,
+                       weight                    = ?,
+                       scheduleId                = ?::integer,
+                       professorId               = ?::integer,
+                       beginDate                 = TO_DATE(?, \'' . MASK_DATE . '\'),
+                       endDate                   = TO_DATE(?, \'' . MASK_DATE . '\')
+                 WHERE scheduleProfessorId  = ?::integer';
+
+        $args = array( 
+                       $data->isInstitutionalEvaluation,
+                       $data->weight,
+                       $data->scheduleId,
+                       $data->professorId,
+                       $data->beginDate,
+                       $data->endDate,
+                       $data->scheduleProfessorId
+                     );
+
+        $sqls = SAGU::prepare($sql, $args);
+        for ( $i=0; $i<count($sqls); $i++ )
+        {
+            $result = $this->db->execute($sqls[$i]);
+        }
+
+        return $result;
+    }
+
+    /**
+     * Delete a record
+     *
+     * @param $scheduleId (string): Primary key for deletion
+     * @param $professorId (string): Primary key for deletion
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+    public function deleteScheduleProfessor($scheduleProfessorId)
+    {
+        $sql = 'DELETE FROM acdScheduleProfessor
+                      WHERE scheduleProfessorId  = ?';
+
+        $pk = array(
+                     $scheduleProfessorId
+                   );
+
+        $result = $this->db->execute(SAGU::prepare($sql, $pk));
+
+        return $result;
+    }
+
+
+    public function scheduleConflict($professorId, $learningPeriodId, $scheduleIdNew)
+    {
+        $sql1 = 'SELECT A.scheduleId,
+                        C.beginHour,
+                        C.endHour,
+                        C.beginDate,
+                        C.endDate,
+                        C.turnId,
+                        B.weekDayId
+                   FROM acdScheduleProfessor A
+             INNER JOIN acdSchedule B
+                     ON (A.scheduleId = B.scheduleId)
+             INNER JOIN acdScheduleLearningPeriod C
+                     ON (C.scheduleLearningPeriodId = B.scheduleLearningPeriodId)
+                  WHERE A.professorId      = \''.$professorId.'\'
+                    AND C.learningPeriodId = \''.$learningPeriodId.'\'';
+
+        $result1 = $this->db->query($sql1); //Retornar todos os horários do professor
+                                      //em determinado período letivo
+        $sql2 = ' SELECT C.beginHour,
+                         C.endHour,
+                         C.beginDate,
+                         C.endDate,
+                         C.turnId,
+                         B.weekDayId
+                    FROM acdSchedule B
+              INNER JOIN acdScheduleLearningPeriod C
+                      ON (C.scheduleLearningPeriodId = B.scheduleLearningPeriodId)
+                   WHERE B.scheduleId = \''.$scheduleIdNew.'\'';
+
+        $result2 = $this->db->query($sql2); //Retorna os horários deste nova "turma" que
+                                      //queremos inserir
+        list ( $beginHourNew,
+               $endHourNew,
+               $beginDateNew,
+               $endDateNew,
+               $turnIdNew,
+               $weekDayIdNew ) = $result2[0];
+
+        if ( is_Array($result1) )
+        {
+            foreach ( $result1 as $key1 => $resultR1 )
+            {
+                list ( $scheduleId,
+                    $beginHour,
+                    $endHour,
+                    $beginDate,
+                    $endDate,
+                    $turnId,
+                    $weekDayId ) = $resultR1;
+
+                if ( $weekDayId == $weekDayIdNew )
+                {
+                    $sql3 = 'SELECT 
+                        CASE WHEN \''.$beginHourNew.'\' >= \''.$beginHour.'\' 
+                                THEN true
+                                ELSE false
+                            END ';
+                    $resBeginHour1 = $this->db->query($sql3);
+    
+                    $sql4 = 'SELECT 
+                        CASE WHEN \''.$endHour.'\' >= \''.$beginHourNew.'\'
+                                THEN true
+                                ELSE false
+                            END ';
+                    $resBeginHour2 = $this->db->query($sql4);
+    
+                    $sql5 = 'SELECT 
+                        CASE WHEN \''.$beginHour.'\' >= \''.$endHourNew.'\'
+                                THEN true
+                                ELSE false
+                            END ';
+                    $resBeginHour3 = $this->db->query($sql5);
+    
+                    $sql6 = 'SELECT 
+                        CASE WHEN \''.$endHourNew.'\' >= \''.$endHour.'\'
+                                THEN true
+                                ELSE false
+                            END ';
+                    $resBeginHour4 = $this->db->query($sql6);
+    
+                    $sql7 = 'SELECT 
+                        CASE WHEN TO_DATE(\''.$beginDateNew.'\', \''.MASK_DATE.'\') >= TO_DATE(\''.$beginDate.'\', \''.MASK_DATE.'\') 
+                                THEN true
+                                ELSE false
+                            END ';
+                    $resBeginDate1 = $this->db->query($sql7);
+    
+                    $sql8 = 'SELECT 
+                        CASE WHEN TO_DATE(\''.$endDate.'\', \''.MASK_DATE.'\') >= TO_DATE(\''.$beginDateNew.'\', \''.MASK_DATE.'\')
+                                THEN true
+                                ELSE false
+                            END ';
+                    $resBeginDate2 = $this->db->query($sql8);
+    
+                    $sql9 = 'SELECT 
+                        CASE WHEN TO_DATE(\''.$beginDate.'\', \''.MASK_DATE.'\') >= TO_DATE(\''.$endDateNew.'\', \''.MASK_DATE.'\')
+                                THEN true
+                                ELSE false
+                            END ';
+                    $resBeginDate3 = $this->db->query($sql9);
+    
+                    $sql10 = 'SELECT 
+                        CASE WHEN TO_DATE(\''.$endDateNew.'\', \''.MASK_DATE.'\') >= TO_DATE(\''.$endDate.'\', \''.MASK_DATE.'\')
+                                THEN true
+                                ELSE false
+                            END ';
+                    $resBeginDate4 = $this->db->query($sql10);
+    
+                    //Checagem dos horários
+                    $checkSchedule = $this->checkDatas($resBeginHour1[0][0], $resBeginHour2[0][0], $resBeginHour3[0][0], $resBeginHour4[0][0]);
+    
+                    if ( $checkSchedule === false || $checkSchedule === 'ERRO' )
+                    {
+                        //Não tem choque de horário, pode inserir.
+                    }
+                    else
+                    {
+                        unset($checkSchedule);
+    
+                        //Tem choque de horário. Ver se está no mesmo intervalo de data.
+                        $checkSchedule = $this->checkDatas($resBeginDate1[0][0], $resBeginDate2[0][0], $resBeginDate3[0][0], $resBeginDate4[0][0]);
+    
+                        if ( $checkSchedule === true)
+                        {
+                            //Tem choque de data
+                            break;
+                        }
+                    }
+                }
+                else
+                {
+                    $checkSchedule = false;
+                }
+            }
+        }
+        else
+        {
+            $checkSchedule = false;
+        }
+
+        return($checkSchedule);
+    }
+
+    public function checkDatas($var1, $var2, $var3, $var4)
+    {
+        // beginNova > beginVelha   => $var1
+        // endVelha  > beginNova    => $var2
+        // beginVelha > endNova     => $var3
+        // endNova > endVelha       => $var4
+
+        //Tabela verdade das comparações acima, cruzadas entre elas
+        // e abaixo testes relativos a estes resultados
+        //beginNova > beginVelha    endVelha > beginNova    beginVelha > endNova    endNova > endVelha  RETURN
+        //V	V	V	F	T
+        //V	V	F	F	T
+        //V	V		V	T
+        //V	V		V	T
+        //V	F	V		IMPOSSIVEL
+        //V	F	F	F	IMPOSSIVEL
+        //F	V	F		IMPOSSIVEL
+        //F		V		F
+        //F		V		F
+        //F		V		F
+        //F		V		F
+        //F		F	F	T
+        //F		F	F	T
+        //	F		V	F
+        //	F		V	F
+        //	F		V	F
+        //
+        // onde RETURN = T => TEM conflito horário
+        //               F => NÃO conflito horário
+
+        if ( $var1 == DB_TRUE ) // V - X - X - X - X
+        {
+            if ( $var2 == DB_TRUE ) // V - V - X - X - X
+            {
+                // V - V - V - V - T
+                // V - V - V - F - T
+                // V - V - F - V - T
+                // V - V - F - F - T
+                $resultConflict = true;
+            }
+            elseif ( $var2 == DB_FALSE ) // V - F - X - X - X
+            {
+                if ( $var3 == DB_TRUE ) // V - F - V - X - X
+                {
+                    // V - F - V - V - IMPOSSIVEL-ERRO - DATA/HORA IGUAL - T
+                    // V - F - V - F - IMPOSSIVEL-ERRO - DATA/HORA IGUAL - T
+                    $resultConflict = true;
+                }
+                elseif ( $var3 == DB_FALSE ) // V - F - F - X - X
+                {
+                    if ( $var4 == DB_TRUE ) // V - F - F - V - F
+                    {
+                        $resultConflict = false;
+                    }
+                    elseif ( $var4 == DB_FALSE ) // V - F - F - F - IMPOSSIVEL-ERRO - DATA/HORA IGUAL - T
+                    {
+                        $resultConflict = true;
+                    }
+                }
+            }
+        }
+        elseif ( $var1 == DB_FALSE ) // F - X - X - X - X
+        {
+            if ( $var2 == DB_TRUE ) // F - V - X - X - X
+            {
+                if ( $var3 == DB_TRUE ) // F - V - V - X - X
+                {
+                    // F - V - V - V - F
+                    // F - V - V - F - F
+                    $resultConflict = false;
+                    //Verificar data de inicio e fim
+                }
+                elseif ( $var3 == DB_FALSE ) // F - V - F - X - X
+                {
+                    // F - V - F - V - IMPOSSIVEL-ERRO - DATA/HORA IGUAL - T
+                    // F - V - F - F - IMPOSSIVEL-ERRO - DATA/HORA IGUAL - T
+                    $resultConflict = true;
+                }
+            }
+            elseif ( $var2 == DB_FALSE ) // F - F - X - X - X
+            {
+                if ( $var3 == DB_TRUE ) // F - F - V - X - X
+                {
+                    // F - F - V - V - F
+                    // F - F - V - F - F
+                    $resultConflict = false;
+                    //Verificar data de inicio e fim
+                }
+                elseif ( $var3 == DB_FALSE )// F - F - F - X - X
+                {
+                    if ( $var4 == DB_TRUE )// F - F - F - V - F
+                    {
+                        $resultConflict = false;
+                        //Verificar data de inicio e fim
+                    }
+                    elseif ( $var4 == DB_FALSE ) // F - F - F - F - T
+                    {
+                        $resultConflict = true;
+                    }
+                }
+            }
+        }
+        return($resultConflict);
+    }
+}
+
+?>

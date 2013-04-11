@@ -1,0 +1,416 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for sprNote table
+ *
+ * @author Jamiel Spezia [jamiel@solis.coop.br]
+ *
+ * @version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * Rafael Luís Spengler [rafael@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ *
+ * @since
+ * Class created on 28/11/2005
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br
+ *
+ **/
+
+/**
+ * Class to manipulate the sprNote table
+ **/
+class BusinessSelectiveProcessBusNote extends Business
+{
+    public $db;
+    
+    /**
+     * Class constructor
+     **/
+    public function BusinessSelectiveProcessBusNote()
+    {
+        $this->db = $this->getDatabase();
+    }
+    
+    /**
+     * Make a connection to the database
+     *
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module = is_null($module) ? 'selectiveProcess' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+/*    public function listNote()
+    {
+        $db  = $this->getDatabase();
+
+        $sql = 'SELECT noteId,
+                       courseVacantId,
+                       courseId,
+                       courseVersion,
+                       turnId,
+                       unitId,
+                       isAvailable
+                  FROM basCourseOcurrence
+              ORDER BY courseVacantId';
+
+        $ret = $db->query(SAGU::prepare($sql, $args));
+        //$db->close();
+        return $ret;
+    }*/
+
+    /**
+     * Return a specific record from the database
+     *
+     * @param $selectiveProcessId (integer): Primary key of the record to be retrieved
+     *
+     * @return (object): Return an object of the type handled by the class
+     *
+     **/
+    public function getNote($selectiveProcessId)
+    {
+        $sql = 'SELECT A.inscriptionId,
+                       A.examOccurrenceId,
+                       D.description,
+                       A.note,
+                       A.userName,
+                       TO_CHAR(A.dateTime,\'' . MASK_TIMESTAMP . '\'),
+                       A.ipAddress,
+                       E.name AS personName
+                  FROM sprNote A
+             LEFT JOIN sprInscription B
+                    ON ( A.inscriptionId = B.inscriptionId )
+             LEFT JOIN sprExamOccurrence C
+                    ON ( A.examOccurrenceId = C.examOccurrenceId )
+             LEFT JOIN sprExam D
+                    ON ( C.examId = D.examId )
+        LEFT JOIN ONLY basPhysicalPerson E
+                    ON (E.personId = B.personId)
+                 WHERE B.selectiveProcessId = ?
+                   AND C.selectiveProcessTypeId = ?
+              ORDER BY B.selectiveProcessId, E.name, A.inscriptionId, C.numberOrder ASC, D.description';
+
+        $result = $this->db->query(SAGU::prepare($sql, array($selectiveProcessId, DEFAULT_SELECTIVE_PROCESS_TYPE)));
+
+
+        if(is_array($result) )
+        {
+            foreach ( $result as $key1 => $value1 )
+            {
+                if ( $value1[0] == $incriptionOld )
+                {
+                    //e a mesma pessoa ainda
+                    $result1[$value1[0]]["notes"][$value1[1]]["description"] = $value1[2];
+                    $result1[$value1[0]]["notes"][$value1[1]]["note"]        = $value1[3];
+                    //$result1[$value1[0]][$value1[1]]->note        = $value1[3];
+                }
+                else
+                {
+                    //nova pessoa, primeira vez
+                    $result1[$value1[0]]["personName"]    = $value1[7];
+                    $result1[$value1[0]]["userName"]      = $value1[4];
+                    $result1[$value1[0]]["dateTime"]      = $value1[5];
+                    $result1[$value1[0]]["notes"][$value1[1]]["description"] = $value1[2];
+                    $result1[$value1[0]]["notes"][$value1[1]]["note"]        = $value1[3];
+                }
+
+                $incriptionOld = $value1[0];
+            }
+        }
+
+        return $result1;
+    }
+
+    /**
+     * Do a search on the database table handled by the class
+     *
+     * @param $filters (object): Search filters
+     *
+     * @return (array): An array containing the search results
+     **/
+    public function searchNote($filters)
+    {
+        $sql = 'SELECT A.inscriptionId,
+                       A.examOccurrenceId,
+                       B.selectiveProcessId,
+                       E.personId,
+                       E.name,
+                       C.description,
+                       A.note
+                  FROM sprNote A
+             LEFT JOIN sprExamOccurrence B
+                    ON ( A.examOccurrenceId = B.examOccurrenceId )
+             LEFT JOIN sprExam C
+                    ON ( B.examId = C.examId )
+             LEFT JOIN sprInscription D
+                    ON ( D.inscriptionId = A.inscriptionId )
+        LEFT JOIN ONLY basPerson E
+                    ON (E.personId = D.personId)';
+
+        if ( strlen((string)$filters->inscriptionId) > 0 )
+        {
+            $where .= ' AND A.inscriptionId = ? ';
+            $args[] = $filters->inscriptionId;
+        }
+
+        if ( strlen((string)$filters->selectiveProcessId) > 0 )
+        {
+            $where .= ' AND B.selectiveProcessId = ? ';
+            $args[] = $filters->selectiveProcessId;
+        }
+
+        if ( strlen((string)$filters->examOccurrenceId) > 0 )
+        {
+            $where .= ' AND A.examOccurrenceId = ? ';
+            $args[] = $filters->examOccurrenceId;
+        }
+
+        if ( strlen((string)$filters->note) > 0 )
+        {
+            $where .= ' AND A.note = ? ';
+            $args[] = $filters->note;
+        }
+
+        if ( strlen((string)$filters->personId) > 0 )
+        {
+            $where .= ' AND D.personId = ? ';
+            $args[] = $filters->personId;
+        }
+
+        unset($result);
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE ' . substr($where, 4) . ' ORDER BY B.selectiveProcessId, E.name, A.inscriptionId';
+            //$db = $this->getDatabase();
+
+            $result = $this->db->query(SAGU::prepare($sql, $args));
+            //$db->close();
+        }
+
+        return $result;
+    }
+
+    /**
+     * Insert a new record
+     *
+     * @param $data (object): An object of the type handled by the class
+     *
+     * @return True if succed, otherwise False
+     *
+     **/
+    public function insertNote($data)
+    {
+        $sql = 'INSERT INTO sprNote
+                            (inscriptionId,
+                             examOccurrenceId,
+                             note)
+                     VALUES (?,?,?)';
+
+        $args   = array ( 
+                          $data->inscriptionId,
+                          $data->examOccurrenceId,
+                          $data->note
+                        );
+
+        //$db     = $this->getDatabase();
+
+        $result = $this->db->execute(SAGU::prepare($sql, $args));
+        //$db->close();
+
+        return $result;
+    }
+
+    /**
+     * Update data from a specific record
+     *
+     * @param $data (object): Data which will replace the old record data
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+    public function updateNote($data)
+    {
+        $sql = 'UPDATE sprNote
+                   SET note             = ?
+                 WHERE inscriptionId    = ?
+                   AND examOccurrenceId = ? ';
+
+        if ( $data->notes )
+        {
+            foreach( $data->notes as $key => $note )
+            {
+                $args = array( $note->note,
+                               $data->inscriptionId,
+                               $note->examOccurrenceId);
+
+                $sqls = SAGU::prepare($sql, $args);
+
+                for ( $i=0; $i<count($sqls); $i++ )
+                {
+                    $result = $this->db->execute($sqls[$i]);
+                }
+
+            }
+        }
+        //$db->close();
+        return $result;
+    }
+
+    /**
+     * Update data from a specific record
+     *
+     * @param $data (object): Data which will replace the old record data
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+    public function updateOneNote($data)
+    {
+        $sql = 'UPDATE sprNote
+                   SET note             = ?
+                 WHERE inscriptionId    = ?
+                   AND examOccurrenceId = ? ';
+
+        $args = array( $data->note,
+                       $data->inscriptionId,
+                       $data->examOccurrenceId);
+
+        $sqls = SAGU::prepare($sql, $args);
+
+        for ( $i=0; $i<count($sqls); $i++ )
+        {
+            $result = $this->db->execute($sqls[$i]);
+        }
+
+        return $result;
+    }
+
+    /**
+     * Delete a record
+     *
+     * @param $inscriptionId (int): Inscription id
+     *
+     * @return boolean): True if succeed, otherwise False
+     *
+     **/
+    public function deleteNote($inscriptionId)
+    {
+        $sql = 'DELETE FROM sprNote
+                      WHERE inscriptionId = ? ';
+
+        //$db = $this->getDatabase();
+        $result = $this->db->execute(SAGU::prepare($sql, array($inscriptionId)));
+
+        return $result;
+    }
+
+    public function deleteNoteToExamOccurrence($inscriptionId, $examOccurrenceId)
+    {
+        $sql = 'DELETE FROM sprNote
+                      WHERE inscriptionId    = ? 
+                        AND examOccurrenceId = ?';
+
+        //$db = $this->getDatabase();
+        $result = $this->db->execute(SAGU::prepare($sql, array($inscriptionId, $examOccurrenceId)));
+
+        return $result;
+    }
+
+
+    /**
+     * Insert notes for inscriptions
+     *
+     * @param $selectiveProcessId (string): Primary key for selective process
+     * @param $personId (string): Primary key for person
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+    public function insertNotesTable($selectiveProcessId, $personId=null)
+    {
+        $args = array( 
+                       $selectiveProcessId,
+                       DEFAULT_SELECTIVE_PROCESS_TYPE 
+                     );
+
+        $select = ' SELECT B.inscriptionId,
+                           A.examOccurrenceId,
+                           0 AS note
+                      FROM sprExamOccurrence A,
+                           sprInscription B
+                     WHERE A.selectiveProcessId = ?
+                       AND A.selectiveProcessId = B.selectiveProcessId
+                       AND A.selectiveProcessTypeId = ?
+                       AND A.examOccurrenceId NOT IN (SELECT examOccurrenceId
+                                                        FROM sprNote
+                                                       WHERE inscriptionId = B.inscriptionId ) ';
+
+        if ( strlen((string)$personId) > 0 )
+        {
+            $select .= ' AND B.personId = ? ';
+            $args[] = $personId;
+        }
+
+        $result = $this->db->query(SAGU::prepare($select, $args));
+
+        $sql = 'INSERT INTO sprNote
+                            (inscriptionId,
+                             examOccurrenceId,
+                             note)
+                     VALUES (?,?,?) ';
+
+        if ( $result )
+        {
+            foreach( $result as $key=>$r )
+            {
+                $args2 = array( $r[0],
+                                $r[1],
+                                $r[2] );
+
+                $ok = $this->db->execute(SAGU::prepare($sql, $args2));
+            }
+        //$db->close();
+        }
+
+        return $ok;
+    }
+
+
+    public function beginTransaction()
+    {
+        $db = $this->getDatabase('selectiveProcess');
+        $db->execute('BEGIN TRANSACTION');
+    }
+
+    public function commit()
+    {
+        $db = $this->getDatabase('selectiveProcess');
+        $db->execute('COMMIT');
+    }
+
+}
+
+?>

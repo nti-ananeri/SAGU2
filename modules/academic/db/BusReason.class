@@ -1,0 +1,283 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for acdReason table
+ *
+ * @author Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 08/09/2005
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to manipulate the acdReason table
+ **/
+class BusinessAcademicBusReason extends Business
+{
+
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module = is_null($module) ? 'academic' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+    /**
+     * List all records from the table handled by the class
+     *
+     * @param: None
+     *
+     * @returns (array): Return an array with the entire table
+     *
+     **/
+    public function listReason()
+    {
+        $db  = $this->getDatabase();
+        $sql = 'SELECT reasonId,
+                       description
+                  FROM acdReason 
+              ORDER BY description ';
+        $ret = $db->query($sql);
+        //$db->close();
+
+        return $ret;
+    }
+
+    public function listReasonByStateContract($stateContractId)
+    {
+
+        $db  = $this->getDatabase();
+
+        $sql = 'SELECT reasonId,
+                       description
+                  FROM acdReason
+                 WHERE stateContractId = ?
+              ORDER BY description ';
+
+        $pk = array($stateContractId->value ? $stateContractId->value : $stateContractId);
+
+        $db     = $this->getDatabase();
+
+        $result = $db->query(SAGU::prepare($sql, $pk));
+
+        return $result;
+    }
+
+    /**
+     * Return a specific record from the database
+     *
+     * @param $reasonId (integer): Primary key of the record to be retrieved
+     *
+     * @return (object): Return an object of the type handled by the class
+     *
+     **/
+    public function getReason($reasonId)
+    {
+        $sql = 'SELECT A.reasonId,
+                       A.description,
+                       A.stateContractId,
+                       B.description AS stateContractDescription,
+                       A.userName,
+                       TO_CHAR(A.dateTime,\'' . MASK_TIMESTAMP . '\'),
+                       A.ipAddress
+                  FROM acdReason A
+             LEFT JOIN acdStateContract B 
+                    ON (B.stateContractId = A.stateContractId)
+                 WHERE A.reasonId = ?';
+
+        $pk = array(
+                     $reasonId
+                   );
+
+        $db     = $this->getDatabase();
+        $result = $db->query(SAGU::prepare($sql, $pk));
+        //$db->close();
+
+        $reason = new AcdReason();
+
+        list ( $reason->reasonId,
+               $reason->description,
+               $reason->stateContractId,
+               $reason->stateContractDescription,
+               $reason->userName,
+               $reason->dateTime,
+               $reason->ipAddress ) = $result[0];
+
+        return $reason; 
+    }
+    
+    /**
+     * Do a search on the database table handled by the class
+     *
+     * @param $filters (object): Search filters
+     *
+     * @return (array): An array containing the search results
+     **/
+    public function searchReason($filters)
+    {
+        $sql = 'SELECT A.reasonId,
+                       A.description,
+                       A.stateContractId,
+                       B.description AS stateContractDescription,
+                       A.userName,
+                       TO_CHAR(A.dateTime,\'' . MASK_TIMESTAMP . '\'),
+                       A.ipAddress
+                  FROM acdReason A
+             LEFT JOIN acdStateContract B 
+                    ON (B.stateContractId = A.stateContractId)';
+
+        if ( strlen((string)$filters->reasonId) > 0 )
+        {
+            $where .= ' AND A.reasonId = ?';
+            $args[] = $filters->reasonId;
+        }
+        if ( strlen((string)$filters->description) > 0 )
+        {
+            $where .= ' AND TO_ASCII(A.description) ILIKE TO_ASCII(?)';
+            $args[] = $filters->description . '%';
+        }
+        if ( strlen((string)$filters->stateContractId) > 0 )
+        {
+            $where .= ' AND A.stateContractId = ?';
+            $args[] = $filters->stateContractId;
+        }
+        if ( strlen((string)$filters->stateContractDescription) > 0 )
+        {
+            $where .= ' AND TO_ASCII(B.description) ILIKE TO_ASCII(?)';
+            $args[] = $filters->stateContractDescription . '%';
+        }
+
+        unset($result);
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE ' . substr($where, 4) . '
+                   ORDER BY A.description';
+
+            $db = $this->getDatabase();
+            $result = $db->query(SAGU::prepare($sql, $args));
+            //$db->close();
+        }
+
+        return $result;
+    }
+
+    /**
+     * Insert a new record
+     *
+     * @param $data (object): An object of the type handled by the class
+     *
+     * @return True if succed, otherwise False
+     *
+     **/
+    public function insertReason($data)
+    {
+        $sql = 'INSERT INTO acdReason
+                            (description,
+                             stateContractId)
+                     VALUES (?,
+                             ?)';
+
+        $args = array( 
+                       $data->description,
+                       $data->stateContractId
+                     );
+
+        $db     = $this->getDatabase();
+        $result = $db->execute(SAGU::prepare($sql, $args));
+        //$db->close();
+
+        return $result;
+    }
+
+    /**
+     * Update data from a specific record
+     *
+     * @param $data (object): Data which will replace the old record data
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+    public function updateReason($data)
+    {
+        $sql = 'UPDATE acdReason
+                   SET description            = ?,
+                       stateContractId       = ?
+                 WHERE reasonId = ?';
+
+        $args = array( 
+                       $data->description,
+                       $data->stateContractId,
+                       $data->reasonId
+                     );
+                       
+        $db   = $this->getDatabase();
+        $sqls = SAGU::prepare($sql, $args);
+
+        for ( $i=0; $i<count($sqls); $i++ )
+        {
+            $result = $db->execute($sqls[$i]);
+        }
+
+        //$db->close();
+
+        return $result;
+    }
+
+    /**
+     * Delete a record
+     *
+     * @param $reasonId (string): Primary key for deletion
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+    public function deleteReason($reasonId)
+    {
+        $sql = 'DELETE FROM acdReason
+                      WHERE reasonId = ?';
+
+        $pk = array(
+                     $reasonId
+                   );
+
+        $db     = $this->getDatabase();
+        $result = $db->execute(SAGU::prepare($sql, $pk));
+        //$db->close();
+
+        return $result;
+    }
+
+}
+
+?>

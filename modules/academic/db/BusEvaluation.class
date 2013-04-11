@@ -1,0 +1,332 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for acdEvaluation table
+ *
+ * @author Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * Armando Taffarel Neto [taffarel@solis.coop.br]
+ * Rudi Uhrig Neto [rudi@solis.coop.br]
+ * 
+ * @since
+ * Class created on 16/09/2005
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to manipulate the acdEvaluation table
+ **/
+class BusinessAcademicBusEvaluation extends Business
+{
+
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module = is_null($module) ? 'academic' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+    /**
+     * List all records from the table handled by the class
+     *
+     * @param: None
+     *
+     * @returns (array): Return an array with the entire table
+     *
+     **/
+    public function listEvaluation()
+    {
+        return 'Not implemented';
+    }
+    
+    /**
+     * Return a specific record from the database
+     *
+     * @param $evaluationId (integer): Primary key of the record to be retrieved
+     *
+     * @return (object): Return an object of the type handled by the class
+     *
+     **/
+    public function getEvaluation($evaluationId)
+    {
+        $sql = 'SELECT A.evaluationId,
+                       A.scheduleProfessorId,
+                       A.degreeId,
+                       A.description,
+                       TO_CHAR(A.dateForecast,\'' . MASK_DATE . '\') AS dateForecast,
+                       A.weight,
+                       C.groupId,
+                       D.learningPeriodId,
+                       E.courseId,
+                       A.userName,
+                       TO_CHAR(A.dateTime,\'' . MASK_TIMESTAMP . '\'),
+                       A.ipAddress
+                  FROM acdEvaluation A
+            INNER JOIN acdScheduleProfessor B
+                    ON ( A.scheduleProfessorId = B.scheduleProfessorId )
+            INNER JOIN acdSchedule C
+                    ON ( B.scheduleId = C.scheduleId )
+            INNER JOIN acdGroup D
+                    ON ( C.groupId = D.groupId )
+            INNER JOIN acdLearningPeriod E
+                    ON ( D.learningPeriodId = E.learningPeriodId )
+                 WHERE A.evaluationId = ?';
+
+        $pk = array(
+                     $evaluationId
+                   );
+
+        $db     = $this->getDatabase();
+
+        $result = $db->query(SAGU::prepare($sql, $pk));
+        //$db->close();
+
+        $evaluation = new AcdEvaluation();
+
+        list ( $evaluation->evaluationId,
+               $evaluation->scheduleProfessorId,
+               $evaluation->degreeId,
+               $evaluation->description,
+               $evaluation->dateForecast,
+               $evaluation->weight,
+               $evaluation->groupId,
+               $evaluation->learningPeriodId,
+               $evaluation->courseId,
+               $evaluation->userName,
+               $evaluation->dateTime,
+               $evaluation->ipAddress ) = $result[0];
+
+        return $evaluation; 
+    }
+    
+    /**
+     * Do a search on the database table handled by the class
+     *
+     * @param $filters (object): Search filters
+     *
+     * @return (array): An array containing the search results
+     **/
+    public function searchEvaluation($filters)
+    {
+        $sql = ' SELECT H.evaluationId,
+                        C.scheduleProfessorId,
+                        G.periodId,
+                        E.name AS curricularComponentName,
+                        C.professorId,
+                        getpersonname(C.professorId) AS professorName,
+                        H.description AS evaluationDescription,
+                        I.degreeId,
+                        I.description AS degreeDescription,
+                        TO_CHAR(H.dateForecast,\'' . MASK_DATE . '\') AS dateForecast,
+                        H.weight
+                   FROM acdGroup A,
+                        acdSchedule B,
+                        acdScheduleProfessor C,
+                        acdCurriculum D,
+                        acdCurricularComponent E,
+                        acdLearningPeriod F,
+                        acdPeriod G,
+                        acdEvaluation H,
+                        acdDegree I,
+                        basPhysicalPersonProfessor J
+                  WHERE A.groupId = B.groupId
+                    AND B.scheduleId = C.scheduleId
+                    AND A.curriculumId = D.curriculumId
+                    AND D.curricularComponentId = E.curricularComponentId
+                    AND D.curricularComponentVersion = E.curricularComponentVersion
+                    AND A.learningPeriodId = F.learningPeriodId
+                    AND F.periodId = G.periodId
+                    AND H.scheduleProfessorId = C.scheduleProfessorId
+                    AND H.degreeId = I.degreeId
+                    AND J.personId = C.professorId';
+
+        if ( strlen((string)$filters->evaluationId) > 0 )
+        {
+            $where .= ' AND H.evaluationId = ?';
+            $args[] = $filters->evaluationId;
+        }
+        if ( strlen((string)$filters->scheduleProfessorId) > 0 )
+        {
+            $where .= ' AND H.scheduleProfessorId = ?';
+            $args[] = $filters->scheduleProfessorId;
+        }
+        if ( strlen((string)$filters->professorName) > 0 )
+        {
+            $where .= ' AND TO_ASCII(C.name) ILIKE TO_ASCII(?)';
+            $args[] = $filters->professorName . '%';
+        }
+        if ( strlen((string)$filters->degreeId) > 0 )
+        {
+            $where .= ' AND H.degreeId = ?';
+            $args[] = $filters->degreeId;
+        }
+        if ( strlen((string)$filters->description) > 0 )
+        {
+            $where .= ' AND TO_ASCII(H.description) ILIKE TO_ASCII(?)';
+            $args[] = $filters->description . '%';
+        }
+        if ( strlen((string)$filters->degreeDescription) > 0 )
+        {
+            $where .= ' AND TO_ASCII(J.description) ILIKE TO_ASCII(?)';
+            $args[] = $filters->degreeDescription . '%';
+        }
+        if ( strlen((string)$filters->dateForecast) > 0 )
+        {
+            $where .= ' AND H.dateForecast = TO_DATE(?,\'' . MASK_DATE . '\')';
+            $args[] = $filters->dateForecast;
+        }
+        if ( strlen((string)$filters->weight) > 0 )
+        {
+            $where .= ' AND H.weight = ?';
+            $args[] = $filters->weight;
+        }
+
+        unset($result);
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= $where;
+
+            $sql .= ' ORDER BY 2';
+
+            $db = $this->getDatabase();
+
+            $result = $db->query(SAGU::prepare($sql, $args));
+            //$db->close();
+        }
+
+        return $result;
+    }
+
+    /**
+     * Insert a new record
+     *
+     * @param $data (object): An object of the type handled by the class
+     *
+     * @return True if succed, otherwise False
+     *
+     **/
+    public function insertEvaluation($data)
+    {
+        $sql = 'INSERT INTO acdEvaluation
+                            (scheduleProfessorId,
+                             degreeId,
+                             description,
+                             dateForecast,
+                             weight)
+                     VALUES (?,
+                             ?,
+                             ?,
+                             TO_DATE(?,\'' . MASK_DATE . '\'),
+                             ?)';
+
+        $args = array( 
+                       $data->scheduleProfessorId,
+                       $data->degreeId,
+                       $data->description,
+                       $data->dateForecast,
+                       $data->weight
+                     );
+
+        $db     = $this->getDatabase();
+        $result = $db->execute(SAGU::prepare($sql, $args));
+        //$db->close();
+
+        return $result;
+    }
+
+    /**
+     * Update data from a specific record
+     *
+     * @param $data (object): Data which will replace the old record data
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+    public function updateEvaluation($data)
+    {
+        $sql = 'UPDATE acdEvaluation
+                   SET scheduleProfessorId = ?,
+                       degreeId            = ?,
+                       description         = ?,
+                       dateForecast        = TO_DATE(?,\'' . MASK_DATE . '\'),
+                       weight              = ?
+                 WHERE evaluationId        = ?';
+
+        $args = array( 
+                       $data->scheduleProfessorId,
+                       $data->degreeId,
+                       $data->description,
+                       $data->dateForecast,
+                       $data->weight,
+                       $data->evaluationId
+                     );
+                       
+        $db   = $this->getDatabase();
+        $sqls = SAGU::prepare($sql, $args);
+
+        for ( $i=0; $i<count($sqls); $i++ )
+        {
+            $result = $db->execute($sqls[$i]);
+        }
+
+        //$db->close();
+
+        return $result;
+    }
+
+    /**
+     * Delete a record
+     *
+     * @param $evaluationId (string): Primary key for deletion
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+    public function deleteEvaluation($evaluationId)
+    {
+        $sql = 'DELETE FROM acdEvaluation
+                      WHERE evaluationId = ?';
+
+        $pk = array(
+                     $evaluationId
+                   );
+
+        $db     = $this->getDatabase();
+        $result = $db->execute(SAGU::prepare($sql, $pk));
+        //$db->close();
+
+        return $result;
+    }
+
+}
+
+?>

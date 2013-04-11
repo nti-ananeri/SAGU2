@@ -1,0 +1,298 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for insItemPhysicalResource table
+ *
+ * @author Daniel Afonso Heisler [daniel@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 20/12/2005
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to manipulate the insItemPhysicalResource table
+ **/
+class BusinessInstitutionalBusItemPhysicalResource extends Business
+{
+
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module = is_null($module) ? 'institutional' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+    /**
+     * List all records from the table handled by the class
+     *
+     * @param: None
+     *
+     * @returns (array): Return an array with the entire table
+     *
+     **/
+    public function listItemPhysicalResource()
+    {
+        return 'Not implemented';
+    }
+    
+    /**
+     * Return a specific record from the database
+     *
+     * @param $physicalResourceId (integer): Primary key of the record to be retrieved
+     * @param $physicalResourceVersion (integer): Primary key of the record to be retrieved
+     * @param $materialId (integer): Primary key of the record to be retrieved
+     *
+     * @return (object): Return an object of the type handled by the class
+     *
+     **/
+    public function getItemPhysicalResource($physicalResourceId, $physicalResourceVersion, $materialId)
+    {
+        $sql = 'SELECT A.physicalResourceId,
+                       A.physicalResourceVersion,
+                       B.description,
+                       B.room,
+                       B.building,
+                       A.materialId,
+                       C.description AS materialDescription,
+                       A.quantity,
+                       A.userName,
+                       TO_CHAR(A.dateTime,\'' . MASK_TIMESTAMP . '\'),
+                       A.ipAddress
+                  FROM insItemPhysicalResource A
+            INNER JOIN insPhysicalResource B
+                    ON (B.physicalResourceId      = A.physicalResourceId
+                   AND  B.physicalResourceVersion = A.physicalResourceVersion)
+            INNER JOIN insMaterial C
+                    ON (C.materialId = A.materialId)
+                 WHERE A.physicalResourceId      = ?
+                   AND A.physicalResourceVersion = ?
+                   AND A.materialid              = ?';
+
+        $args = array(
+                       $physicalResourceId,
+                       $physicalResourceVersion,
+                       $materialId
+                     );
+
+        $db     = $this->getDatabase();
+        $result = $db->query(SAGU::prepare($sql, $args));
+        //$db->close();
+
+        $itemPhysicalResource = new InsItemPhysicalResource();
+
+        list (
+               $itemPhysicalResource->physicalResourceId,
+               $itemPhysicalResource->physicalResourceVersion,
+               $itemPhysicalResource->physicalResourceDescription,
+               $itemPhysicalResource->room,
+               $itemPhysicalResource->building,
+               $itemPhysicalResource->materialId,
+               $itemPhysicalResource->materialDescription,
+               $itemPhysicalResource->quantity,
+               $itemPhysicalResource->userName,
+               $itemPhysicalResource->dateTime,
+               $itemPhysicalResource->ipAddress
+             ) = $result[0];
+
+        return $itemPhysicalResource; 
+    }
+    
+    /**
+     * Do a search on the database table handled by the class
+     *
+     * @param $filters (object): Search filters
+     *
+     * @return (array): An array containing the search results
+     **/
+    public function searchItemPhysicalResource($filters)
+    {
+        $sql = 'SELECT A.physicalResourceId,
+                       A.physicalResourceVersion,
+                       B.description,
+                       B.room,
+                       B.building,
+                       A.materialId,
+                       C.description AS materialDescription,
+                       A.quantity,
+                       A.userName,
+                       TO_CHAR(A.dateTime,\'' . MASK_TIMESTAMP . '\'),
+                       A.ipAddress
+                  FROM insItemPhysicalResource A
+            INNER JOIN insPhysicalResource B
+                    ON (B.physicalResourceId      = A.physicalResourceId
+                   AND  B.physicalResourceVersion = A.physicalResourceVersion)
+            INNER JOIN insMaterial C
+                    ON (C.materialId = A.materialId)';
+
+        if ( strlen((string)$filters->physicalResourceId) > 0 )
+        {
+            $where .= ' AND A.physicalResourceId = ?';
+            $args[] = $filters->physicalResourceId;
+        }
+        if ( strlen((string)$filters->physicalResourceVersion) > 0 )
+        {
+            $where .= ' AND A.physicalResourceVersion = ?';
+            $args[] = $filters->physicalResourceVersion;
+        }
+        if ( strlen((string)$filters->materialId) > 0 )
+        {
+            $where .= ' AND A.materialId = ?';
+            $args[] = $filters->materialId;
+        }
+        if ( strlen((string)$filters->materialDescription) > 0 )
+        {
+            $where .= ' AND TO_ASCII(C.description) ILIKE TO_ASCII(?)';
+            $args[] = $filters->materialDescription . '%';
+        }
+        if ( strlen((string)$filters->quantity) > 0 )
+        {
+            $where .= ' AND A.quantity = ?';
+            $args[] = $filters->quantity;
+        }
+
+        unset($result);
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE ' . substr($where, 4) . '
+                   ORDER BY B.room, B.building, A.quantity';
+
+            $db = $this->getDatabase();
+            $result = $db->query(SAGU::prepare($sql, $args));
+            //$db->close();
+        }
+
+        return $result;
+    }
+
+    /**
+     * Insert a new record
+     *
+     * @param $data (object): An object of the type handled by the class
+     *
+     * @return True if succed, otherwise False
+     *
+     **/
+    public function insertItemPhysicalResource($data)
+    {
+        $sql = 'INSERT INTO insItemPhysicalResource
+                            (physicalResourceId,
+                             physicalResourceVersion,
+                             materialId,
+                             quantity)
+                     VALUES (?,?,?,?)';
+
+        $args = array( 
+                       $data->physicalResourceId,
+                       $data->physicalResourceVersion,
+                       $data->materialId,
+                       $data->quantity
+                     );
+
+        $db     = $this->getDatabase();
+        $result = $db->execute(SAGU::prepare($sql, $args));
+        //$db->close();
+
+        return $result;
+    }
+
+    /**
+     * Update data from a specific record
+     *
+     * @param $data (object): Data which will replace the old record data
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+    public function updateItemPhysicalResource($data)
+    {
+        $sql = 'UPDATE insItemPhysicalResource
+                   SET quantity                = ?
+                 WHERE physicalResourceId      = ?
+                   AND physicalResourceVersion = ?
+                   AND materialId              = ?';
+
+        $args = array( 
+                       $data->quantity,
+                       $data->physicalResourceId,
+                       $data->physicalResourceVersion,
+                       $data->materialId
+                     );
+                       
+        $db   = $this->getDatabase();
+        $sqls = SAGU::prepare($sql, $args);
+
+        for ( $i=0; $i<count($sqls); $i++ )
+        {
+            $result = $db->execute($sqls[$i]);
+        }
+
+        //$db->close();
+
+        return $result;
+    }
+
+    /**
+     * Delete a record
+     *
+     * @param $itemItemPhysicalResourceId (string): Primary key for deletion
+     * @param $physicalResourceId (integer): Primary key of the record to be retrieved
+     * @param $physicalResourceVersion (integer): Primary key of the record to be retrieved
+     * @param $materialId (integer): Primary key of the record to be retrieved
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+    public function deleteItemPhysicalResource($physicalResourceId, $physicalResourceVersion, $materialId)
+    {
+        $sql = 'DELETE FROM insItemPhysicalResource
+                      WHERE physicalResourceId      = ?
+                        AND physicalResourceVersion = ?
+                        AND materialId              = ?';
+
+        $args = array(
+                       $physicalResourceId,
+                       $physicalResourceVersion,
+                       $materialId
+                      );
+
+        $db     = $this->getDatabase();
+        $result = $db->execute(SAGU::prepare($sql, $args));
+        //$db->close();
+
+        return $result;
+    }
+
+}
+
+?>

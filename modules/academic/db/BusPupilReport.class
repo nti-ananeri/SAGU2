@@ -1,0 +1,194 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for acdGroup table
+ *
+ * @author Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 22/09/2005
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to manipulate the acdGroup table
+ **/
+class BusinessAcademicBusPupilReport extends Business
+{
+    public $db;
+    
+    //Class constructor
+    public function __construct()
+    {
+        $this->db = $this->getDatabase();
+    }
+    
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module = is_null($module) ? 'academic' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+
+    public function getPupilReport ( $filters )
+    {
+        $sql = 
+        'SELECT
+            DISTINCT
+            A.personId,
+            A.name,
+            ( SELECT description FROM acdStateContract WHERE stateContractId = getContractActivationStateContract(B.contractId) ) as stateContract,
+            TO_CHAR(getContractActivationDate(B.contractId), \''.MASK_DATE.'\') as enrollDate, 
+            COALESCE( E.name, A.neighborhood ),
+            F.room,
+            F.building
+        FROM
+            ONLY basPhysicalPerson A INNER JOIN
+            ONLY acdContract B ON ( A.personId = B.personId ) INNER JOIN
+            ONLY acdMovementContract C ON ( C.stateContractId = getContractActivationStateContract(B.contractId) AND C.stateTime = getContractActivationDate(B.contractId) ) INNER JOIN
+            ONLY acdLearningPeriod D ON ( D.learningPeriodId = C.learningPeriodId ) LEFT JOIN
+            basNeighborhood E ON ( E.neighborhoodid = A.neighborhoodid ) LEFT JOIN
+            ( SELECT contractId, learningPeriodId, room, building FROM acdEnroll INNER JOIN acdSchedule USING ( groupId ) INNER JOIN insPhysicalResource USING ( physicalResourceId, physicalResourceVersion ) ) F ON ( F.contractId = B.contractId AND F.learningPeriodId = D.learningPeriodId )
+        WHERE
+            D.periodId IN (\'' . implode('\',\'', $filters->periodId) .'\') ';
+
+        $where = '';
+        if ( strlen((string)$filters->neighborhoodName) > 0 )
+        {
+            $where .= ' AND TO_ASCII(A.neighborhood) ILIKE TO_ASCII(?) ';
+            $args[] = $filters->neighborhoodName;
+        }
+        if ( strlen((string)$filters->courseId) > 0 ) 
+        {
+            $where .= ' AND B.courseId = ? ';
+            $args[] = $filters->courseId;
+        }
+
+        if ( strlen((string)$filters->courseVersion) > 0 ) 
+        {
+            $where .= ' AND B.courseVersion = ?::integer ';
+            $args[] = $filters->courseVersion;
+        }
+
+        if ( strlen((string)$filters->unitId) > 0 ) 
+        {
+            $where .= ' AND B.unitId = ?::integer ';
+            $args[] = $filters->unitId;
+        }
+
+        if ( strlen((string)$filters->turnId) > 0 ) 
+        {
+            $where .= ' AND D.turnId = ?::integer ';
+            $args[] = $filters->turnId;
+        }
+
+        if ( strlen((string)$filters->semester) > 0 ) 
+        {
+            $where .= ' AND F.semester = ?::integer ';
+            $args[] = $filters->semester;
+        }
+
+        if ( strlen((string)$filters->classId) > 0 ) 
+        {
+            $where .= ' AND A.classId = ? ';
+            $args[] = $filters->classId;
+        }
+        if ( isset($filters->formationLevelId) && count($filters->formationLevelId) > 0 && is_array($filters->formationLevelId) )
+        {
+            $where .= ' AND D.formationLevelId IN ( ' . implode(',', $filters->formationLevelId ) . ') ';
+        }
+        
+        if ( isset($filters->stateContractId) && count($filters->stateContractId) > 0 && is_array($filters->stateContractId) )
+        {
+            $where .= ' AND getContractActivationStateContract(B.contractId) IN ( '. implode(',', $filters->stateContractId) .' ) ';
+        }
+
+        $sql .= $where;
+        /*$sql .= ' 
+        GROUP BY';*/
+        switch ( $filters->orderBy )
+        {
+            case 2:
+            $sql .= '
+            ORDER BY
+                3,
+                5';
+                break;
+            case 3:
+            $sql .= '
+            ORDER BY
+                3,
+                4';
+                break;
+            default:
+            $sql .= '
+            ORDER BY
+                3,
+                2
+            ';
+            break;
+        }
+        unset($result);
+       // MIOLO::vd(SAGU::prepare($sql,$args));
+        //die();
+        $result = $this->db->query(SAGU::prepare($sql, $args));
+        if ( count($result) > 0 )
+        {
+            $result2 = $result;
+            unset($result);
+            foreach ( $result2 as $ln => $array )
+            {
+                for( $x =0; $x < count($array); $x++ )
+                {
+                    if ( $x == 13 )
+                    {
+                        unset($implode);
+                        $implode = explode(',', $array[$x]);
+                        $result[$ln][13] = substr($implode[0],1);
+                        $result[$ln][14] = substr($implode[1],0, -1);
+                    }
+                    else
+                    {
+                        $result[$ln][$x] = $array[$x];
+                    }
+                }
+            }
+        }
+        return $result;
+
+    }
+
+}
+
+?>

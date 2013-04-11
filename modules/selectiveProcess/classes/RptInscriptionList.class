@@ -1,0 +1,161 @@
+<?php
+
+/**
+ * Default defines 
+ * To report identification
+ */
+$MIOLO  = MIOLO::getInstance();
+$module = MIOLO::getCurrentModule();
+
+define('REPORT_ID', 'SP001'); 
+define('FPDF_FONTPATH', $MIOLO->getModulePath('basic', '/classes/fpdf/font/'));
+
+$MIOLO->Uses('classes/fpdf/fpdf.php', 'basic');
+
+/**
+ * Create header and footer information
+ */
+class PDF extends FPDF
+{
+    var $type = 0;
+    var $local;
+    /**
+     * Defines the footer for this report
+     */
+    public function Footer()
+    {
+        $module = MIOLO::getCurrentModule();
+        $this->setY(-15);
+        $pn = $this->PageNo().'/{nb}';
+        $this->cell(190, 1, '', 'B', 1);
+        $this->ln();
+
+        $this->setFont(DEFAULT_REPORT_FONT, 'I', 8);
+        $this->cell(50, 4, $text, 0, 0);
+        $this->cell(140, 4, _M('REPORT @1 ', $module, REPORT_ID).' '._M('Page @1', $module, $pn), 0, 0, 'R');
+        $this->ln();
+    }
+
+    /**
+     * Defines the header for this report
+     */
+    public function Header()
+    {
+        $module = MIOLO::getCurrentModule();
+
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', 16);
+        $this->cell(190, 10, _M('Find your room', $module), 0, 0, 'C');
+        $this->ln(6);
+
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', 14);
+        $this->cell(190, 10, _M('City exam', $module) . ' ' . $this->local, 0, 0, 'C');
+        $this->ln(10);
+
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', 12);
+        $this->cell(120, 8, _M('Name', $module), 'BLT', 0, 'L');
+        $this->cell(10,  8, _M('Build', $module),'BT',  0, 'C');
+        $this->cell(20,  8, _M('Room', $module), 'BT',  0, 'C');
+        $this->cell(40,  8, _M('RG', $module),   'BTR', 0, 'C');
+        $this->ln();
+    }
+}
+
+
+/**
+ * PDF extension to generate report
+ */
+class RptInscriptionList 
+{
+    /**
+     * Method to generate the report
+     */
+    public function RptInscriptionList($data = null)
+    {
+        $rdata  = $this->getReportData($data);
+        $module = MIOLO::getCurrentModule();
+
+        // Generating PDF file
+        $this->pdf = new PDF();
+        $this->pdf->aliasNbPages();
+
+        $this->generateContent($rdata);
+
+        $this->pdf->close();
+        $this->pdf->output();
+    }
+
+    /**
+     * Get report data information
+     */
+    private function getReportData($data)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+
+        $rdata->selectiveProcessId = $data->selectiveProcessId;
+        $rdata->cityExamId         = $data->cityExamId;
+        $rdata->buildId            = $data->buildId;
+        $rdata->roomId             = $data->roomId;
+
+        $busInscriptionList              = $MIOLO->getBusiness($module, 'BusInscriptionList');
+        $cityExamSelectiveProcess        = $busInscriptionList->cityExamSelectiveProcess($rdata);
+        $rdata->cityExamSelectiveProcess = $cityExamSelectiveProcess;
+
+        $busCompany  = $MIOLO->getBusiness(basic, 'BusCompany');
+        $company = $busCompany->getCompany(DEFAULT_COMPANY_CONF);
+
+        $rdata->file = SAGUFile::getPhotoPath($company->personId);
+
+        return $rdata;
+    }
+
+    private function generateContent($rdata)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+
+        foreach($rdata->cityExamSelectiveProcess AS $value1)
+        {
+             // First page
+            $this->pdf->local             = $value1[1];
+            $this->pdf->addPage('P', 'mm', 'A4');
+
+            $this->pdf->setFont(DEFAULT_REPORT_FONT, '', 12);
+            $this->pdf->setFillColor(235);
+
+            $filters1->selectiveProcessId = $rdata->selectiveProcessId;
+            $filters1->cityExam           = $value1[0];
+            $filters1->optionNumber       = 1;
+            $filters1->buildId            = $rdata->buildId;
+            $filters1->roomId             = $rdata->roomId;
+
+            $busInscriptionList  = $MIOLO->getBusiness($module, 'BusInscriptionList');
+            $rdata->inscriptions = $busInscriptionList->searchInscription($filters1);
+
+            $x = 1;
+
+            if ( is_array($rdata->inscriptions) && (count($rdata->inscriptions) > 0) )
+            {
+                foreach ($rdata->inscriptions as $inscription)
+                {
+                    if ($x == 1)
+                    {
+                        $x = 0;
+                    }
+                    else
+                    {
+                        $x = 1;
+                    }
+
+                    $this->pdf->cell(120, 10, $inscription[1],  1, 0, 'L', $x);
+                    $this->pdf->cell(10,  10, $inscription[3],  1, 0, 'C', $x);
+                    $this->pdf->cell(20,  10, $inscription[4],  1, 0, 'C', $x);
+                    $this->pdf->cell(40,  10, $inscription[2], 1, 0, 'L', $x);
+                    $this->pdf->ln();
+                }
+            }
+       }
+    }
+}
+
+?>

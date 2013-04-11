@@ -1,0 +1,143 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for sprOtherListings
+ *
+ * @author Rafael Luís Spengler [rafael@solis.coop.br]
+ *
+ * @version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * Rafael Luís Spengler [rafael@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ *
+ * @since
+ * Class created on 26/12/2005
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br
+ *
+ **/
+
+/**
+ * Class to manipulate the sprOtherListings table
+ **/
+class BusinessSelectiveProcessBusFreshmenListReport extends Business
+{
+
+    /**
+     * Make a connection to the database
+     *
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module = is_null($module) ? 'selectiveProcess' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+
+    public function freshmenList ($filters)
+    {
+        $module = MIOLO::getCurrentModule();
+        $args = array($filters->selectiveProcessId);
+
+        $sql = ' SELECT DISTINCT A.inscriptionId,
+                        E.personId,
+                        E.name,
+                        I.shortName,
+                        getTurnDescription(C.Turnid),
+                        CASE WHEN A.isHighSchool = \'t\'
+                             THEN \'' . _M('Yes', $module) . '\'
+                             ELSE \'' . _M('No', $module) . '\'
+                        END,
+                        CASE WHEN A.isClassified = \'f\'
+                             THEN \'' . _M('Desclassified', $module) . '\'
+                             ELSE CASE WHEN B.coursePosition <= D.vacant
+                                       THEN \'' . _M('Classified', $module) . '\'
+                                       ELSE \'' . _M('Surplus', $module) . '\'
+                                  END
+                        END as isClassificated,
+                        B.coursePosition
+                   FROM sprInscription A
+             INNER JOIN sprInscriptionOption B
+                     ON ( A.inscriptionId = B.inscriptionId )
+             INNER JOIN sprCourseOccurrence C
+                     ON ( B.courseOccurrenceId = C.courseOccurrenceId )
+             INNER JOIN sprCourseVacant D
+                     ON ( C.courseVacantId = D.courseVacantId )
+        INNER JOIN ONLY basPhysicalPerson E
+                     ON ( E.personId = A.personId )
+             INNER JOIN acdCourse I
+                     ON ( C.courseId = I.courseId)
+             INNER JOIN sprCourseOccurrence F
+                     ON ( B.courseOccurrenceId = F.courseOccurrenceId )
+             INNER JOIN acdCourse G
+                     ON ( F.courseId = G.courseId )
+              LEFT JOIN sprPlaceRoom H
+                     ON ( A.placeRoomId = H.placeRoomId )
+              LEFT JOIN sprPlace J
+                     ON ( H.placeId = J.placeId )
+              LEFT JOIN basUnit K
+                     ON ( J.cityId = K.cityId )
+                  WHERE A.selectiveProcessId = ?
+                    AND B.optionNumber = 1 ' ;
+
+       if ( strlen((string)$filters->selectiveProcessId) > 0 )
+        {
+            $where .= ' AND A.selectiveProcessId = ? ';
+            $args[] = $filters->selectiveProcessId;
+        }
+
+       if ( strlen((string)$filters->cityId) > 0 )
+        {
+            $where .= ' AND E.cityId = ? ';
+            $args[] = $filters->cityId;
+        }
+
+       if ( strlen((string)$filters->courseId) > 0 )
+        {
+            $where .= ' AND I.courseId = ? ';
+            $args[] = $filters->courseId;
+        }
+
+       if ( strlen((string)$filters->unitId) > 0 )
+        {
+            $where .= ' AND F.unitId = ? ';
+            $args[] = $filters->unitId;
+        }
+
+
+        unset($result);
+        if ( strlen((string)$where) > 0 )
+        {
+            $db = $this->getDatabase();
+            $sql .= $where . ' ORDER BY I.shortName, isClassificated, E.name '/* . ' ORDER BY A.totalPoints '*/;
+
+            $result = $db->query(SAGU::prepare($sql, $args));
+            //$db->close();
+        }
+        return $result;
+
+    }
+}
+
+?>

@@ -1,0 +1,257 @@
+<?php
+/**
+ *
+ * @author Giovani Murilo Dantas Corrêa [gmurilo@isolution.inf.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Daniel Afonso Heisler [daniel@isolution.inf.br]
+ *
+ * @since
+ * Class created on 19/06/2009
+ *
+ * \b Organization: \n
+ * iSolution - Solucoes em TI \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2008 iSolution \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ **/
+
+class FrmCustomizableEntryReport extends MForm
+{
+    private $home;
+    private $module;
+
+    /**
+     * Class constructor
+     */
+    function __construct($data)
+    {
+        $module = MIOLO::getCurrentModule();
+
+        $this->home   = $data->home;
+
+        parent::__construct(_M('Customizable entry report', $module));
+
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+
+    }
+
+    /**
+     *  Default method to define fields
+     */
+    public function createFields()
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $toolBar = new MToolBar('toolBar',$MIOLO->getActionURL($module,$action));
+        $toolBar->hideButton('tbBtnDelete');
+        $toolBar->hideButton('tbBtnSave');
+        $toolBar->hideButton('tbBtnSearch');
+        $toolBar->hideButton('tbBtnNew');
+
+        //favoritos
+        $enabledImage  = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-20x20.png');
+        $disabledImage = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-disabled-20x20.png');
+        $url           = $MIOLO->getActionURL($module, $this->home, null, array('function' => 'search', 'event' => 'bookmark'));
+        $toolBar->addButton('tbBtnBookmark', _M('Add to bookmarks', 'basic'), $url, null, true, $enabledImage, $disabledImage);
+
+        if ( MIOLO::_request('event') == 'bookmark' )
+        {
+            $MIOLO->getClass('basic', 'access');
+            access::insert('Income Report', $this->home, 'incomeReport-16x16.png', true);
+        }
+        //fim favoritos
+       
+        $fields[] = $toolBar;
+
+        $businessPeriod = $MIOLO->getBusiness('academic','BusPeriod');
+        if ( is_null($this->getFormValue('periodId', $data->periodId)) ||
+             strlen((string)$this->getFormValue('periodId', $data->periodId)) == 0 )
+        {
+            $periodIdValue = CURRENT_PERIOD_ID;
+        }
+        else
+        {
+            $periodIdValue = $this->getFormValue('periodId', $data->periodId);
+        }
+
+        $periodIdLabel = new MText('periodIdLabel', _M('Period',$module).':');
+        $periodIdLabel->setWidth(FIELD_CONTAINER_SIZE);
+//        $periodIdLabel->setClass('m-caption m-caption-required');
+
+        $periodId = new MSelection('periodId', $periodIdValue, null , $businessPeriod->listPeriod(), true );
+        $fields[] = new MHContainer('hctPeriod', array ($periodIdLabel, $periodId));
+//        $validators[] = new MRequiredValidator('periodId');
+
+        $businessIncomeSource = $MIOLO->getBusiness($module, 'BusIncomeSource');
+        $dataIncomeSource     = $businessIncomeSource->listIncomeSource();
+        $incomeSourceLabel    = new MText('incomeSourceLabel', _M('Income source', $module).':');
+        //$incomeSourceLabel->setClass('m-caption m-caption-required');
+        $incomeSourceLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $incomeSource         = new MMultiSelection('incomeSourceId', is_array($this->getFormValue('incomeSourceId', $data->incomeSourceId)) ? $this->getFormValue('incomeSourceId', $data->incomeSourceId) : array($this->getFormValue('incomeSourceId', $data->incomeSourceId)), '', $dataIncomeSource, true, null, 5);
+        $fields[] = new MHContainer('hctIncomeSource', array($incomeSourceLabel, $incomeSource));
+        
+        //$validators[]   = new MRequiredValidator('incomeSourceId', _M('Income source', $module), 'required');
+
+        if (MODULE_ACADEMIC_INSTALLED == 'YES')
+        {
+            // Course
+            $courseLabel   = new MText('courseLabel', _M('Course',$module) . ':');
+            $courseLabel->setWidth(FIELD_CONTAINER_SIZE);
+            //$courseLabel->setClass('m-caption m-caption-required');
+            $courseId = new MLookupTextField('courseId', $this->getFormValue('courseId',$data->courseId), _M('Code',$module), FIELD_LOOKUPFIELD_SIZE, null, null, array('limbo', 'courseName'), 'academic', 'CourseOccurrence', null, array('courseId' => 'courseId'), true);
+            $courseId->setJsHint(_M('Enter the course code',$module));
+            $courseName = new MTextField('courseName', $this->getFormValue('courseName',$data->courseName), _M('Name',$module), FIELD_DESCRIPTION_SIZE);
+//            $courseName->setReadOnly(true);
+
+            $hctCourse = new MHContainer('hctCourse', array($courseLabel, $courseId, $courseName));
+            $hctCourse->setShowLabel(false);
+            $fields[]  = $hctCourse;
+        }    
+
+        $userLabel = new MText('userNameLabel',_M('Username', 'admin').':');
+        $userLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $userName = new MTextField('userName', $this->getFormValue('userName',$data->userName), NULL, FIELD_ID_SIZE);
+//        $userName->setReadOnly(true);
+        $miololk     = new MLookupField('miololk', null, null, null, 'userName', 'admin', 'User', null, null, true);
+
+        $hctMiolo    = new MHContainer('hctMiolo', array($userLabel, $userName, $miololk, $btnClean));
+        $hctMiolo->setShowLabel(true);
+        $fields[]      = $hctMiolo;
+
+        $business = $MIOLO->getBusiness($module, 'BusOperation');
+
+        $operationLabel = new MText('operationLabel', _M('Operation', $module));
+ //       $operationLabel->setClass('m-caption m-caption-required');
+        $operationLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $operation = new MMultiSelection('operationId',  is_array($this->getFormValue('operation', $data->operation)) ? $this->getFormValue('operation', $data->operation) : array($this->getFormValue('operation', $data->operation)), '', $business->listOperation(null, true), true, null, 10);
+//        $validators[] = new MRequiredValidator('operationId', _M('Operation', $module), 'required');
+        $fields[] = new MHContainer('hctEndDate', array($operationLabel, $operation));
+
+        // beginDate
+        $beginDateLabel = new MText('beginDateLabel', _M('Begin date', $module).':');
+        $beginDateLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $beginDateLabel->setClass('m-caption m-caption-required');
+        $beginDate      = new MCalendarField('beginDate', $this->getFormValue('beginDate',$data->beginDate), '', FIELD_DATE_SIZE);
+        $beginDate->setJsHint(_M('Enter the begin date',$module));
+        $validators[] = new MDATEDMYValidator('beginDate', _M('Begin date', $module), 'required');
+        $fields[] = new MHContainer('hctBeginDate', array($beginDateLabel, $beginDate));
+
+        // EndDate
+        $endDateLabel = new MText('endDateLabel', _M('End date', $module).':');
+        $endDateLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $endDateLabel->setClass('m-caption m-caption-required');
+        $endDate      = new MCalendarField('endDate', $this->getFormValue('endDate',$data->endDate), '', FIELD_DATE_SIZE);
+        $endDate->setJsHint(_M('Enter the end date',$module));
+        $validators[] = new MDATEDMYValidator('endDate', _M('End date', $module), 'required');
+        $fields[] = new MHContainer('hctEndDate', array($endDateLabel, $endDate));
+
+        // Operation type
+        $business = $MIOLO->getBusiness($module,'BusOperation');
+        $opts = $business->listOperationTypeId(1);
+        $opts[] = array(_M('Undefined', 'basic'), null );
+        $operationTypeIdLabel = new MText('operationTypeLabel', _M('Operation type', $module).':');        
+        $operationTypeIdLabel->setWidth(FIELD_LABEL_SIZE);
+        $operationTypeIdLabel->setClass('m-caption m-caption-required');
+        $operationTypeId = new MRadioButtonGroup('operationTypeId', '', $opts,  $this->getFormValue('operationTypeId', $data->operationTypeId) ? $this->getFormValue('operationTypeId', $data->operationTypeId) : 'C', null, 'horizontal');
+        $operationTypeId->setShowLabel(false);
+        $operationTypeId->setJsHint(_M('Enter the operation type',$module));
+        $fields[] = new MHcontainer('hctOperationType', array($operationTypeIdLabel, $operationTypeId));
+
+        // Operation type
+        $opts = array( array('Manual', 'M'), array('Automático', 'A'), array(_M('Undefined', 'basic'), null) );
+
+        $creationTypeIdLabel = new MText('creationTypeLabel', _M('Creation type', $module).':');        
+        $creationTypeIdLabel->setWidth(FIELD_LABEL_SIZE);
+        $creationTypeIdLabel->setClass('m-caption m-caption-required');
+        $creationTypeId = new MRadioButtonGroup('creationTypeId', '', $opts,  $this->getFormValue('creationTypeId', $data->creationTypeId) ? $this->getFormValue('creationTypeId', $data->creationTypeId) : 'C', null, 'horizontal');
+        $creationTypeId->setShowLabel(false);
+        $creationTypeId->setJsHint(_M('Enter the operation type',$module));
+        $fields[] = new MHcontainer('hctCreationType', array($creationTypeIdLabel, $creationTypeId));
+
+        //is Counter Movement
+        $opts         =  SAGU::listYesNo(1);
+        $opts[] = array(_M('Undefined', 'basic'), null );
+        $isCounterMovementLabel = new MText('isCounterMovementLabel', _M('Counter movement',$module) . '?');
+        $isCounterMovementLabel->setClass('m-caption m-caption-required');
+        $isCounterMovementLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $isCounterMovement      = $this->GetFormValue('isCounterMovement',$data->isCounterMovement) ? $this->GetFormValue('isCounterMovement',$data->isCounterMovement) : DB_TRUE;
+        $isCounterMovement      = new MRadioButtonGroup('isCounterMovement', '', $opts, $isCounterMovement, null, 'horizontal');
+        $isCounterMovement->SetShowLabel(false);
+        $fields[]   = new MHContainer('hctIsCounterMovement', array($isCounterMovementLabel, $isCounterMovement));
+
+        //is Counter Movement
+        $opts         =  SAGU::listYesNo(1);
+        $opts[] = array(_M('Undefined', 'basic'), null );
+        $isBankReturnLabel = new MText('isBankReturnLabel', _M('Retorno bancário',$module) . '?');
+        $isBankReturnLabel->setClass('m-caption m-caption-required');
+        $isBankReturnLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $isBankReturn      = $this->GetFormValue('isBankReturn',$data->isBankReturn) ? $this->GetFormValue('isBankReturn',$data->isBankReturn) : DB_TRUE;
+        $isBankReturn      = new MRadioButtonGroup('isBankReturn', '', $opts, $isBankReturn, null, 'horizontal');
+        $isBankReturn->SetShowLabel(false);
+        $fields[]   = new MHContainer('hctIsBankReturn', array($isBankReturnLabel, $isBankReturn));
+
+
+        $dataFieldsSelect[0] = _M('User', 'sagu2');
+        $dataFieldsSelect[1] = _M('Schedule', 'basic');
+        $dataFieldsSelect[2] = 'Computador "IP"';
+        $dataFieldsSelect[3] = _M('Invoice', 'finance');
+        $dataFieldsSelect[4] = _M('Value', 'finance');
+        $dataFieldsSelect[5] = _M('Operation id', 'finance');
+        $dataFieldsSelect[6] = _M('Operation', 'finance');
+        $dataFieldsSelect[7] = _M('Person id', 'basic');
+        $dataFieldsSelect[8] = _M('Name', 'basic');
+        $dataFieldsSelect[9] = _M('Operation type', 'finance');
+        $dataFieldsSelect[10]= _M('Creation type', 'finance');
+        $dataFieldsSelect[11]= _M('É movimentação de caixa', 'finance');
+        $dataFieldsSelect[12]= _M('É retorno bancário', 'finance');
+
+        $fieldsSelectLabel    = new MText('fieldsSelectLabel', _M('Fields', 'basic').':');
+        $fieldsSelectLabel->setClass('m-caption m-caption-required');
+        $fieldsSelectLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $fieldsSelect   = new MMultiSelection('fieldsSelect', is_array($this->getFormValue('fieldsSelect', $data->fieldsSelect)) ? $this->getFormValue('fieldsSelect', $data->fieldsSelect) : array($this->getFormValue('fieldsSelect', $data->fieldsSelect)), '', $dataFieldsSelect, false, null, 5);
+        $fields[] = new MHContainer('hctFieldsSelect', array($fieldsSelectLabel, $fieldsSelect));
+        
+        $validators[]   = new MRequiredValidator('fieldsSelect', _M('Fields', $module), 'required');
+        
+        $fields[] = new MHiddenField('limbo', $limbo);
+
+
+        $this->setFields($fields);
+        $this->setValidators($validators);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+        $this->setClose($MIOLO->getActionURL($module, substr($action, 0, strrpos($action, ':'))));
+
+    }
+
+    function tbBtnPrint_click($sender = null)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+        $data = $this->getData();
+        $db = $MIOLO->getBusiness('finance', 'BusCustomizableEntryReport');
+        $db->getReport($data);
+
+        $class = 'RptCustomizableEntryReport';
+        $MIOLO->getClass($module, $class);
+        $report = new $class($data);
+
+        $this->page->setAction($MIOLO->getActionURL($module, $action));
+    }
+
+}
+
+?>

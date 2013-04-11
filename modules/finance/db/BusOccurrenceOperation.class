@@ -1,0 +1,511 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for finOccurrenceOperation table
+ *
+ * @author Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * Rafael Luís Spengler [rafael@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * Armando Taffarel Neto [taffarel@solis.coop.br]
+ *
+ * @since
+ * Class created on 13/12/2005
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to manipulate the OccurrenceOperation table
+ **/
+class BusinessFinanceBusOccurrenceOperation extends MBusiness
+{
+    function BusinessFinanceBusOccurrenceOperation()
+    {
+        $this->db = $this->getDatabase();
+    }
+
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module = is_null($module) ? 'finance' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+    /**
+     * List all records from the table handled by the class
+     *
+     * @param: None
+     *
+     * @returns (array): Return an array with the entire table
+     *
+     **/
+    public function listOccurrenceOperation()
+    {
+    }
+
+
+    
+    /**
+     * List all manual records from the table handled by the class by a specific period
+     *
+     * @param: $data (object): Initial and final date 
+     *
+     * @returns (array): Return an array with the entire table
+     *
+     **/
+    public function listManualEntries($data)
+    {
+        $sql = ' SELECT B.personId,
+                        (SELECT name 
+                      FROM ONLY basPerson
+                          WHERE basPerson.personId = B.personId ),
+                        A.invoiceId,
+                        A.operationId,
+                        C.description as operationDescription,
+                        ROUND(A.value, '.REAL_ROUND_VALUE.'),
+                        TO_CHAR(A.occurrenceOperationDate, \''.MASK_DATE.'\'),
+                        TO_CHAR(A.dateTime, \''.MASK_DATE.' '.MASK_TIME.'\'),
+                        A.userName
+                   FROM finOccurrenceOperation A
+             INNER JOIN finInvoice B
+                  USING (invoiceId)
+             INNER JOIN finOperation C
+                  USING (operationId)
+                  WHERE
+                  ( A.occurrenceOperationDate BETWEEN TO_DATE(?, \''.MASK_DATE.'\')
+                                    AND TO_DATE(?, \''.MASK_DATE.'\')
+                  OR
+                    A.dateTime BETWEEN TO_DATE(?, \''.MASK_DATE.'\')
+                                   AND TO_DATE(?, \''.MASK_DATE.'\')
+                  )
+                    AND creationType = \'M\'
+               GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9, occurrenceOperationDate
+               ORDER BY occurrenceOperationDate, 
+                        2 ';
+
+        $args = array($data->beginRegisterDate,
+                      $data->endRegisterDate,
+                      $data->beginRegisterDate,
+                      $data->endRegisterDate
+                      );
+        
+        $db = $this->getDatabase();
+        $return = $db->query(SAGU::prepare($sql, $args));
+
+        return $return;
+    }
+
+    
+
+    /**
+     * Return a specific record from the database
+     *
+     * @param $occurrenceOperationId (integer): Primary key of the record to be retrieved
+     *
+     * @return (object): Return an object of the type handled by the class
+     *
+     **/
+    public function getOccurrenceOperation($occurrenceId, $bankAccountId, $levelSequenceId)
+    {
+        $sql = 'SELECT A.occurrenceOperationId,
+                       A.occurrenceId,
+                       A.bankAccountId,
+                       A.operationId,
+                       A.levelSequenceId
+                  FROM finOccurrenceOperation A
+                 WHERE A.occurrenceId    = ?
+                   AND A.bankAccountId          = ?
+                   AND A.levelSequenceId = ? ';
+
+        $db = $this->getDatabase();
+        $result = $db->query(SAGU::prepare($sql,array($occurrenceId, $bankAccountId, $levelSequenceId)));
+
+        $occurrenceOperation = new FinOccurrenceOperation();
+
+        list ($occurrenceOperation->occurrenceOperationId,
+              $occurrenceOperation->occurrenceId,
+              $occurrenceOperation->bankAccountId,
+              $occurrenceOperation->operationId,
+              $occurrenceOperation->levelSequenceId) = $result[0];
+
+        return $occurrenceOperation;
+    }
+
+    /**
+     * Do a search on the database table handled by the class
+     *
+     * @param $filters (object): Search filters
+     *
+     * @return (array): An array containing the search results
+     **/
+    public function searchOccurrenceOperation($data)
+    {        
+        $sql = 'SELECT A.occurrenceOperationId,
+                        A.invoiceId,
+                        A.operationId,
+                        B.description,
+                        TO_CHAR(A.occurrenceOperationDate,\'' . MASK_DATE . '\'),
+                        ROUND(A.value, \'' . REAL_ROUND_VALUE . '\'),
+                        A.costCenterId,
+                        C.description,
+                        A.bankReturnCode,
+                        isAccounted
+                 FROM finOccurrenceOperation A
+                 INNER JOIN finOperation B
+                     ON (A.operationId = B.operationId)
+                 INNER JOIN accCostCenter C
+                     ON (A.costCenterId = C.costCenterId)
+                 INNER JOIN ( SELECT invoiceId,
+                                     personId 
+                                FROM ONLY finReceivableInvoice) AS D
+                     ON (A.invoiceId = D.invoiceId)
+                 INNER JOIN (SELECT personId,
+                                    name 
+                               FROM ONLY basPerson ) AS E
+                     ON (D.personId = E.personId) ';
+
+        $where = '';
+        unset($args);
+        if ( strlen((string)$data->occurrenceOperationId) > 0 )
+        {
+            $where .= '    AND   A.occurrenceOperationId = ?';
+            $args[] = $data->occurrenceOperationId;
+        }
+        if ( strlen((string)$data->personId) > 0 )
+        {
+            $where .= '    AND   E.personId = ?';
+            $args[] = $data->personId;
+        }
+        if ( strlen((string)$data->personName) > 0 )
+        {
+            $where .= '    AND   E.name ilike ? ';
+            $args[] = $data->personName.'%';
+        }
+        if ( strlen((string)$data->invoiceId) > 0 )
+        {
+            $where .= '    AND   A.invoiceId = ?';
+            $args[] = $data->invoiceId;
+        }
+        if ( strlen((string)$data->operationId) > 0 )
+        {
+            $where .= '    AND   A.operationId = ?';
+            $args[] = $data->operationId;
+        }
+        if ( strlen((string)$data->occurrenceOperationDate) > 0 )
+        {
+            $where .= '    AND   A.occurrenceOperationDate = TO_DATE(?,\'' . MASK_DATE . '\')';
+            $args[] = $data->occurrenceOperationDate;
+        }
+        if ( strlen((string)$data->value) > 0 )
+        {
+            $where .= '    AND   A.value ILIKE ?';
+            $args[] = $data->value;
+        }
+        if ( strlen((string)$data->costCenterId) > 0 )
+        {
+            $where .= '    AND   A.costCenterId = ?';
+            $args[] = $data->costCenterId;
+        }
+        if ( strlen((string)$data->bankReturnCode) > 0 )
+        {
+            $where .= '    AND   A.bankReturnCode ILIKE ?';
+            $args[] = $data->bankReturnCode;
+        }
+        if ( strlen((string)$data->isAccounted) > 0 )
+        {
+            $where .= '    AND   A.isAccounted = ?';
+            $args[] = $data->isAccounted;
+        }
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE ' . substr($where,8) .
+                    ' ORDER BY B.description';
+
+            $db = $this->getDatabase();
+            $result = $db->query(SAGU::prepare($sql,$args));
+          //  $db->close();
+        }
+
+        return $result;
+
+    }
+
+    /**
+     * Insert a new record
+     *
+     * @param $data (object): An object of the type handled by the class
+     *
+     * @return If succed, return the invoice id. Otherwise return FALSE.
+     *
+     **/
+    public function insertOccurrenceOperation($data)
+    {
+        $sql = ' INSERT INTO finOccurrenceOperation
+                            ( invoiceId,
+                              operationId,
+                              occurrenceOperationDate,
+                              value,
+                              costCenterId,
+                              comments,
+                              bankReturnCode,
+                              isAccounted,
+                              creationType
+                            )
+                      VALUES (?, ?, to_date(?, \''.MASK_DATE.'\'), ?, ?, ?, ?, ?, ?) ';
+                      
+        $db = $this->getDatabase();
+        
+        if (is_null($data->isAccounted))
+        {
+            $data->isAccounted = true;    
+        }
+        $args = array( $data->invoiceId,
+                       $data->operationId,
+                       $data->occurrenceOperationDate,
+                       $data->value,
+                       $data->costCenterId,
+                       $data->comments, 
+                       $data->bankReturnCode,
+                       $data->isAccounted,
+                       $data->creationType 
+                     );
+
+         $return = $db->execute(SAGU::prepare($sql, $args));
+     
+         if ($this->db->getErrors())
+         {
+            $return = false;
+         }
+         return $return;
+           
+    }
+
+    /**
+     * Update data from a specific record
+     *
+     * @param $data (object): Data which will replace the old record data
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+    public function updateOccurrenceOperation($data)
+    {
+        $sql = 'UPDATE finOccurrenceOperation
+                   SET invoiceId = ?,
+                       operationId = ?,
+                       occurrenceOperationDate = to_date(?, \''.MASK_DATE.'\'),
+                       value = ?,
+                       costCenterId = ?,
+                       comments = ?,
+                       bankReturnCode = ?,
+                       isAccounted = ?
+                 WHERE occurrenceOperationId  = ?';
+
+        $args = array($data->invoiceId,
+                        $data->operationId,
+                        $data->occurrenceOperationDate,
+                        $data->value,
+                        $data->costCenterId,
+                        $data->comments,
+                        $data->bankReturnCode,
+                        $data->isAccounted,
+                        $data->occurrenceOperationId);
+
+        $db = $this->getDatabase();
+        $sqls = SAGU::prepare($sql,$args);
+        for ( $i=0; $i<count($sqls); $i++ )
+        {
+            $result = $db->execute($sqls[$i]);
+        }
+
+        return $result;
+
+    }
+
+    /**
+     * Delete a record
+     *
+     * @param $invoiceId (integer): Primary key for deletion
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+    public function deleteOccurrenceOperation($occurrenceOperationId)
+    {
+            $sql = 'DELETE FROM finOccurrenceOperation
+                      WHERE occurrenceOperationId = ?';
+
+        $args = array($occurrenceOperationId);
+
+        $db = $this->getDatabase();
+        $result = $db->execute(SAGU::prepare($sql,$args));
+        //$this->checkError($db);
+        //$db->close();
+
+        return $result;
+
+    }
+
+
+    /**
+     * List all entries for a invoice
+     *
+     * @param $invoiceId (int): Primary key for invoice (foreign key for occurrenceOperation)
+     */
+     public function listOccurrenceOperationData($invoiceId)
+     {
+            $sql = '     SELECT A.invoiceId,
+                                A.occurrenceOperationId, 
+                                A.operationId,
+                                B.operationTypeId || \': \' || B.description,
+                                TO_CHAR(A.occurrenceOperationDate, \'' . MASK_DATE . '\'),
+                                creationType,
+                                ROUND(A.value, 2),
+                                isAccounted
+                           FROM finOccurrenceOperation A
+                     INNER JOIN finOperation B
+                          USING (operationId)
+                          WHERE A.invoiceId = ?
+                       ORDER BY A.occurrenceOperationDate ';
+            
+            $args = array($invoiceId);
+            $db   = $this->getDatabase();
+
+            $return = $db->query(SAGU::prepare($sql, $args));
+            return $return;
+     }
+
+
+    /**
+     * List all payments
+     *
+     * @param: $personId (int): Id for person to list the payments
+     *
+     * @return (array): Array containing the payments
+     *
+     */
+    public function listPayments($personId)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $sql = '     SELECT B.invoiceId,
+                            TO_CHAR(B.maturityDate, \'' . MASK_DATE . '\'),
+                            B.courseId,
+                            A.operationId||\' - \'||(SELECT description
+                                                       FROM finOperation
+                                                      WHERE finOperation.operationId=A.operationId),
+                            TO_CHAR(A.occurrenceOperationDate, \'' . MASK_DATE . '\'),
+                            round(A.value, ' . REAL_ROUND_VALUE . '),
+                            (SELECT bankTaxValue
+                               FROM finPolicy
+                              WHERE finPolicy.policyId = B.policyId)
+                       FROM (SELECT invoiceId,
+                                    operationId,
+                                    occurrenceOperationDate,
+                                    value
+                               FROM finOccurrenceOperation 
+                              WHERE operationId IN (' . PUPIL_PAYMENT_OPERATIONS . ')
+                            ) AS A
+                 INNER JOIN (SELECT invoiceId,
+                                    maturityDate,
+                                    courseId,
+                                    policyId
+                          FROM ONLY finReceivableInvoice
+                              WHERE personId = ? ) AS B
+                      USING (invoiceId)
+                   ORDER BY occurrenceOperationDate DESC';
+
+        $db = $this->getDatabase();
+        
+        if (strlen((string)PUPIL_PAYMENT_OPERATIONS)>0)
+        {
+            $args = array($personId);
+            $return = $db->query(SAGU::prepare($sql, $args));
+            return $return;
+        }
+        else
+        {
+            $MIOLO->error(_M('The system constant PUPIL_PAYMENT_OPERATIONS does not exists. Please create correctly to enable this function.', $module));
+            return false;
+        }
+    }
+    
+    /**
+     * Get a sum for all payments
+     *
+     * @param: $personId (int): Id for person to list the payments
+     *
+     * @return (array): Array containing the payments
+     *
+     */
+    public function getTotalPayments($personId)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $sql = '     SELECT round(sum(A.value), ' . REAL_ROUND_VALUE . ')
+                       FROM (SELECT invoiceId,
+                                    value
+                               FROM finOccurrenceOperation 
+                              WHERE operationId IN (' . PUPIL_PAYMENT_OPERATIONS . ')
+                            ) AS A
+                 INNER JOIN (SELECT invoiceId
+                          FROM ONLY finReceivableInvoice
+                              WHERE personId = ? ) AS B
+                      USING (invoiceId) ';
+        $db = $this->getDatabase();
+        
+        if (strlen((string)PUPIL_PAYMENT_OPERATIONS)>0)
+        {
+            $args = array($personId);
+
+            $return = $db->query(SAGU::prepare($sql, $args));
+            if (is_array($return[0]))
+            {
+                return $return[0][0];
+            }
+            else
+            {
+                return SAGU::formatNumber('0');
+            }
+        }
+        else
+        {
+            $MIOLO->error(_M('The system constant PUPIL_PAYMENT_OPERATIONS does not exists. Please create correctly to enable this function.', $module));
+            return false;
+        }
+    }
+}
+?>

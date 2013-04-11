@@ -1,0 +1,476 @@
+<?php
+/**
+ *
+ **/
+
+/**
+ * Class to handle this business
+ **/
+class BusinessServicesBusProfessorFrequencyNew extends Business
+{
+
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    private $db;
+    
+    public function __construct()
+    {
+        global $module;
+        parent::__construct();
+        $this->db = $this->getDatabase( $module );
+    }
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module = is_null($module) ? 'academic' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+    /**
+     * A list containing all pupils from a group
+     *
+     * @param $groupId (integer): Primary key for query
+     *
+     * @return (array): An array containing all pupils from a group
+     *
+     **/
+    public function listGroupPupilsEnrolledFrequency ( $data )
+    {
+        $sql = '
+        SELECT 
+            C.groupId as groupId,
+            C.classId,
+            E.professorId,
+            A.enrollId as enrollId,
+            B.contractId,
+            B.personId as personId,
+            getPersonName(B.personId) as pupilName,
+            TO_CHAR(F.frequencyDate, \''. MASK_DATE .'\') as frequencyDate,
+            sum(F.frequency)
+        FROM 
+            acdEnroll A 
+                INNER JOIN 
+            acdContract B
+                     ON ( A.contractId = B.contractId )
+                INNER JOIN 
+            acdGroup C  
+                     ON ( C.groupId = A.groupId )
+                LEFT JOIN 
+            acdSchedule D  
+                     ON ( D.groupId = C.groupId )
+                LEFT JOIN 
+            (select professorid,scheduleid,max(scheduleprofessorid) as scheduleprofessorid from acdScheduleProfessor group by professorid,scheduleid) E 
+                     ON ( E.scheduleId = D.scheduleId ' . (strlen((string)$data->professorId) > 0 ? " AND E.professorId = $data->professorId" : ""). ' )
+                LEFT JOIN 
+            acdFrequenceEnroll F
+                     ON ( F.enrollId = A.enrollId AND F.scheduleId = D.scheduleId )
+        WHERE 
+            A.groupId IN ('.$data->groupId.') ' . ( strlen((string)$data->enrollId) > 0 ? '' : ' AND A.statusId IN(2, ' . ENROLL_STATUS_ENROLLED . ') AND NOT isContractOut ( A.contractId ) ' ) . '
+        AND NOT A.statusId = ' . ENROLL_STATUS_CANCELLED . '
+        GROUP BY 
+            C.groupId,
+            C.classId,
+            E.professorId,
+            A.enrollId,
+            B.contractId,
+            B.personId,
+            frequencyDate
+        ORDER BY 
+            getPersonName(B.personId)';
+        $result = $this->db->query( $sql );
+        if ( count( $result ) > 0 )
+        {
+            $x = 2;
+            $groupInfo[] = NULL;
+            unset($obj);
+            list ( $obj->groupId,
+            $obj->classId,
+            $obj->professorId ) = $result[0];
+            
+            foreach( $result as $item => $linha )
+            {
+                unset($obj2);
+                
+//                $obj2->scheduleId            = $linha[$x];
+                $obj2->enrollId              = $linha[$x+1];
+                $obj2->contractId            = $linha[$x+2];
+                $obj2->personId              = $linha[$x+3];
+                $obj2->pupilName             = $linha[$x+4];
+                $obj2->frequencyDate         = $linha[$x+5];
+                $obj2->frequency             = $linha[$x+6];
+  //              $obj2->justifiedAbsence      = $linha[$x+8];
+//                $obj2->justifiedAbsenceText  = $linha[$x+9];
+                $obj->enrollFrequence[$obj2->enrollId]['pupilName']     = $obj2->pupilName;
+                $obj->enrollFrequence[$obj2->enrollId]['personId']      = $obj2->personId;
+                $obj->enrollFrequence[$obj2->enrollId]['contractId']    = $obj2->contractId;
+                $obj->enrollFrequence[$obj2->enrollId][$obj2->frequencyDate]['frequency']            = $obj2->frequency;
+//                $obj->enrollFrequence[$obj2->enrollId][$obj2->frequencyDate]['justifiedAbsence']     = $obj2->justifiedAbsence;
+//                $obj->enrollFrequence[$obj2->enrollId][$obj2->frequencyDate]['justifiedAbsenceText'] = $obj2->justifiedAbsenceText;
+                
+            }
+            if ( strlen((string)$data->enrollId) > 0 && count($obj) > 0 )
+            {
+                foreach ( $obj as $keys )
+                {
+                    if ( is_array($keys) )
+                    {
+                        foreach($keys as $key => $k )
+                        {
+                            if ( $key != $data->enrollId )
+                            {
+                                unset($obj->enrollFrequence[$key]);
+                            }
+                        }   
+                    }
+                }
+            }
+            return $obj;
+        }
+    }
+    
+    public function verifyRegisteredFrequency ( $data )
+    {
+        $sql = 
+        'SELECT 
+            CASE WHEN count(*)  > 0 THEN TRUE ELSE FALSE END 
+        FROM 
+            acdFrequenceEnroll INNER JOIN
+            acdScheduleProfessor USING ( scheduleId ) INNER JOIN
+            acdSchedule USING ( scheduleId )
+        WHERE
+            groupId = ?::integer AND 
+            professorId::integer = ? AND
+            frequencydate = TO_DATE(?,\'' . MASK_DATE . '\')::date';
+        $args[] = $data->groupId;
+        $args[] = $data->professorId;
+        $args[] = $data->occurrenceDate;
+        $result = $this->db->query(SAGU::prepare($sql, $args));
+        return $result[0][0];
+    }
+    public function insertFrequence ( $data )
+    {
+        $data->frequency = round($data->frequency);
+        $sql = ' SELECT insertFrequence ( \''.$data->userName.'\'::varchar, \''.$data->ipAddress.'\'::inet,'.$data->enrollId.' ,TO_DATE(\''.$data->frequencyDate.'\', \'' . MASK_DATE . '\'), '.$data->frequency.', '.$data->professorId.' ) ;';
+        //echo '<script>alert('.$sql.');</script>';
+        return $this->db->execute($sql);
+
+    }
+    public function getAcademicCalendar ( $data )
+    {
+        if ( strlen((string)$data->professorId) == 0 )
+        {
+            $sql = '
+            SELECT 
+                A.groupId,
+                (SELECT professorId FROM ONLY acdSchedule INNER JOIN acdScheduleProfessor USING ( scheduleId ) WHERE groupId = A.groupId AND endDate IS NULL ORDER BY acdScheduleProfessor.beginDate DESC LIMIT 1) as professorId,
+                TO_CHAR(A.occurrenceDate, \'DD\') AS day,
+                TO_CHAR(A.occurrenceDate, \'MM\') AS month,
+                TO_CHAR(A.occurrenceDate, \'YYYY\') AS year,
+                SUM(A.numberHoursLessons) as numberHoursLessons,
+                CASE WHEN A.occurrenceDate <= now()::date THEN true ELSE false END as isActive,
+                A.weekDayId,
+                A.lessonNumberHours,
+                getgroupofferedhours(A.groupId) as totalOfferedHours,
+                getDegreeFromGroupDate(A.groupId, A.occurrenceDate) as degreeNumber,
+                A.occurrenceDate,
+                getFrequenceContent ( A.groupId, A.occurrenceDate ) as content
+            FROM 
+                getOccurrenceDatesGroupByGroup ( ' . "{$data->groupId}" . ' ) AS
+                A (occurrenceDate date,
+                 groupId integer,
+                 learningPeriodId integer,
+                 numberhourslessons float,
+                 lessonNumberHours float,
+                 academicNumberHours float,
+                 practiceHours float,
+                 curriculumId integer,
+                 weekDayId integer ) INNER JOIN acdGroup B ON ( A.groupId = B.groupId )
+                 
+            GROUP BY
+                A.groupId,
+                A.occurrenceDate,
+                A.weekDayId,
+                A.lessonNumberHours
+            ORDER BY
+                A.occurrenceDate';
+            $sql = 
+            'SELECT 
+                TO_CHAR(A.occurrenceDate,\''. MASK_DATE . '\') as occurrenceDate,
+                groupId,
+                professorId,
+                CASE WHEN professorId IS NULL THEN \'\' ELSE getPersonName(professorId) END as personName,
+                day,
+                month,
+                year,
+                numberHoursLessons,
+                isActive,
+                weekDayId,
+                lessonNumberHours,
+                degreeNumber,
+                content,
+                totalOfferedHours
+            FROM ( '. $sql .' ) A 
+            ORDER BY
+                A.occurrenceDate ';
+
+        }
+        else
+        {
+            $sql = '
+            SELECT 
+                TO_CHAR(A.occurrenceDate,\''. MASK_DATE . '\'),
+                A.groupId,
+                A.professorId,
+                getPersonName(A.professorId) as personName,
+                TO_CHAR(A.occurrenceDate, \'DD\') AS day,
+                TO_CHAR(A.occurrenceDate, \'MM\') AS month,
+                TO_CHAR(A.occurrenceDate, \'YYYY\') AS year,
+                SUM(A.numberHoursLessons),
+                CASE WHEN A.occurrenceDate <= now()::date THEN true ELSE false END as isActive,
+                A.weekDayId,
+                A.lessonNumberHours,
+                getDegreeFromGroupDate(A.groupId, A.occurrenceDate) as degreeNumber,
+                getFrequenceContent(A.groupId, A.occurrenceDate) as content,
+                getgroupofferedhours(A.groupId)
+            FROM 
+                getOccurrenceDatesProfessor ( ' . "{$data->groupId},{$data->professorId}" . ' ) AS
+                A (occurrenceDate date,
+                 groupId integer,
+                 scheduleLearningPeriodId integer,
+                 learningPeriodId integer,
+                 numberhourslessons float,
+                 lessonNumberHours float,
+                 academicNumberHours float,
+                 practiceHours float,
+                 curriculumId integer,
+                 scheduleId integer,
+                 weekDayId integer,
+                 professorId integer,
+                 weight float )
+            GROUP BY
+                A.groupId,
+                A.professorId,
+                A.occurrenceDate,
+                A.weekDayId,
+                A.lessonNumberHours
+            ORDER BY
+                A.occurrenceDate';
+        }
+        $result = $this->db->query( $sql );
+
+        if ( count( $result ) > 0 )
+        {
+            for ($x = 0; $x < count($result); $x++ )
+            {
+                unset ( $obj );
+                list (  $obj->occurrenceDate,
+                        $obj->groupId,
+                        $obj->professorId,
+                        $obj->professorName,
+                        $obj->day,
+                        $obj->month,
+                        $obj->year,
+                        $obj->lessonNumberHours,
+                        $obj->isActive,
+                        $obj->weekDayId,
+                        $obj->curricularComponentLessonNumberHours,
+                        $obj->degreeNumber,
+                        $obj->content,
+                        $obj->totalOfferedHours ) = $result[$x];
+                $obj->aulasDia = $obj->lessonNumberHours;
+                $objects[$obj->occurrenceDate] = $obj;
+            }
+            return $objects;
+        }
+    }
+    public function getProfessorGroup ( $data )
+    {
+        $sql = '
+        SELECT
+            A.groupId,
+            A.classId,
+            B.curriculumId,
+            getGroupOfferedHours(' . $data->groupId . ') as horasTotaisDisciplia,
+            C.lessonNumberHours,
+            C.academicNumberHours,
+            C.practiceHours,
+            C.name as curricularComponentName,
+            C.curricularComponentId,
+            C.curricularComponentVersion,
+            D.scheduleId,
+            E.professorId,
+            getPersonName(E.professorId) as professorName,
+            F.beginDate,
+            F.endDate,
+            F.beginHour,
+            F.endHour,
+            H.description as physicalResourceDescription,
+            G.description as weekDayDescription,
+            G.weekDayId
+        FROM
+            acdGroup A
+                INNER JOIN
+            acdCurriculum B 
+                ON ( B.curriculumId = A.curriculumId )
+                INNER JOIN
+            acdCurricularComponent C
+                ON ( C.curricularComponentId = B.curricularComponentId 
+                     AND C.curricularComponentVersion = B.curricularComponentVersion )
+                LEFT JOIN
+            acdSchedule D
+                ON ( D.groupId = A.groupId )
+                LEFT JOIN
+            acdScheduleProfessor E
+                ON ( E.scheduleId = D.scheduleId AND E.professorId = '. $data->professorId .' )
+                LEFT JOIN
+            acdScheduleLearningPeriod F 
+                ON ( F.scheduleLearningPeriodId = D.scheduleLearningPeriodId )
+                LEFT JOIN
+            basWeekDay G
+                ON ( G.weekDayId = D.weekDayId )
+                LEFT JOIN
+            insPhysicalResource H 
+                ON ( H.physicalResourceId = D.physicalResourceId
+                     AND H.physicalResourceVersion = D.physicalResourceVersion ) 
+        WHERE 
+            A.groupId = ' . $data->groupId;
+        $result = $this->db->query( $sql );
+        
+        if ( count( $result ) > 0 )
+        {
+            list (  $obj->groupId,
+                    $obj->classId,
+                    $obj->curriculumId,
+                    $obj->horasTotaisDisciplinaCadastrada,
+                    $obj->lessonNumberHours,
+                    $obj->academicNumberHours,
+                    $obj->practiceHours,
+                    $obj->curricularComponentName,
+                    $obj->curricularComponentId,
+                    $obj->curricularComponentVersion ) = $result[0];
+                $y = 10;
+            for ($x = 0; $x < count($result); $x++ )
+            {
+                $obj->schedules[$result[$x][$y]]->professorId               = $result[$x][$y+1];
+                $obj->schedules[$result[$x][$y]]->professorName           = $result[$x][$y+2];
+                $obj->schedules[$result[$x][$y]]->beginDate               = $result[$x][$y+3];
+                $obj->schedules[$result[$x][$y]]->endDate                 = $result[$x][$y+4];
+                $obj->schedules[$result[$x][$y]]->beginHour               = $result[$x][$y+5];
+                $obj->schedules[$result[$x][$y]]->endHour                 = $result[$x][$y+6];
+                $obj->schedules[$result[$x][$y]]->physicalResourceDescription= $result[$x][$y+7];
+                $obj->schedules[$result[$x][$y]]->weekDayDescription      = $result[$x][$y+8];
+                $obj->schedules[$result[$x][$y]]->weekDayId[$result[$x][$y+8]] = $result[$x][$y+9];
+            }
+            return $obj;
+        }
+
+    }
+
+    public function isDateAvaliable($groupId, $date)
+    {
+
+        //pega todas as datas dos bimestres
+        $sql = "SELECT TO_CHAR(B.limitDate,'".MASK_DATE."'),
+                       TO_CHAR(B.finalDate,'".MASK_DATE."'),
+                       B.degreeNumber,
+                       B.degreeId
+                  FROM acdGroup A
+            INNER JOIN acdDegree B
+                 USING ( learningPeriodId )
+                 WHERE A.groupId = ?
+              ORDER BY B.degreeNumber";
+
+        $args = array ( $groupId );
+        $db  = $this->getDatabase();
+        $res = $db->query(SAGU::prepare($sql, $args));
+        if ( count($res)>0 )
+        {
+            foreach ( $res as $datas )
+            {
+                list ( $limitDate,
+                       $finalDate,
+                       $degreeNumber,
+                       $degreeId ) = $datas;
+                //verifica em qual bimestre se enquadra a data que vem por parâmetro
+                $sql  = "SELECT CASE WHEN TO_DATE(?,'".MASK_DATE."')::date <= TO_DATE(?,'".MASK_DATE."')::date THEN true ELSE false END";
+                $res2 = $db->query(SAGU::prepare($sql, array($date, $finalDate) ));
+                //agora verifica se a data já foi fechada (entrega bimestral) ou se a data de hoje é maior que a data limite
+                if ( $res2[0][0] == DB_TRUE )
+                {
+                    //se foi entregue, bloqueia a data
+                    $sql = "SELECT CASE WHEN ( count(*)>0 ) THEN true ELSE false END
+                              FROM acdGroupRelease
+                             WHERE groupId = ?
+                               AND degreeId = ?";
+                    $res3 = $db->query(SAGU::prepare($sql, array($groupId, $degreeId) ));
+                    if ( $res3[0][0] == DB_TRUE )
+                    {
+                        return false;
+                    }
+
+                    //verifica se a data atual é maior que a data limite
+                    else
+                    {
+                        $sql = "SELECT CASE WHEN ( date(now()) <= TO_DATE(?,'".MASK_DATE."')::date ) THEN true ELSE false END";
+                        $res4 = $db->query(SAGU::prepare($sql, array($limitDate) ));
+
+                        if ( $res4[0][0] == DB_TRUE )
+                        {
+                            return true;
+                        }
+                        else
+                        {
+                            return false;
+                        }
+                    }
+                }
+            }
+            return true;
+        }
+        else
+        {
+            return true;
+        }
+
+    }
+    
+    public function getProfessorObservation($groupId)
+    {
+        $db  = $this->getDatabase();
+        $sql = 'SELECT professorObservation FROM acdGroup WHERE groupId = ?';
+        $res = $db->query(SAGU::prepare($sql, $groupId));
+        return $res[0][0];
+    }
+
+    public function updateProfessorObservation($groupId, $professorObservation)
+    {
+        $sql = 'UPDATE acdGroup SET professorObservation = ? WHERE groupId = ?';
+        return $this->db->execute(SAGU::prepare($sql, array($professorObservation, $groupId), false));
+    }
+
+    public function beginTransaction ()
+    {
+        $db = $this->getDatabase();
+        $db->execute('BEGIN TRANSACTION');
+    }
+
+    public function commit()
+    {
+        $db = $this->getDatabase();
+        $db->execute('COMMIT');
+    }
+    
+    public function rollback()
+    {
+        $db = $this->getDatabase();
+        $db->execute('ROLLBACK');
+    }
+
+}

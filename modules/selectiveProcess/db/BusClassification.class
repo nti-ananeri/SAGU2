@@ -1,0 +1,1063 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for sprClassification table
+ *
+ * @author Jamiel Spezia [jamiel@solis.coop.br]
+ *
+ * @version: $Id$
+ * 
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * Rafael Luís Spengler [rafael@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 08/12/2005
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to manipulate the sprClassification table
+ **/
+class BusinessSelectiveProcessBusClassification extends Business
+{
+
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module = is_null($module) ? 'selectiveProcess' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+    /**
+     * Return a specific record from the database
+     *
+     * @param $filters (object): Filters
+     *
+     * @return (object): Return an object of the type handled by the class
+     *
+     **/
+    public function generateClassification($filters)   //Gera a classificação
+    {
+        $MIOLO = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+    }
+
+
+    /**
+     * Generate total points to inscriptions from one selective process
+     *
+     * @param $filters (object): Filters
+     *
+     * @return (array): array with inscription options
+     *
+     **/
+    public function generateTotalPoints($filters)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+
+        $sql = ' SELECT A.inscriptionId,
+                        D.selectiveProcessTypeId,
+                        round( ( SUM((A.note / C.maximumPoints) * I.weight) / (SELECT SUM(AE.weight)
+                                                                  FROM sprInscription AA
+                                                            INNER JOIN sprCourseVacant AB
+                                                                    ON (AB.selectiveProcessId = AA.selectiveProcessId)
+                                                            INNER JOIN sprInscriptionOption AC
+                                                                    ON (AC.inscriptionId = A.inscriptionId AND 
+                                                                        AC.optionNumber = 1)
+                                                            INNER JOIN sprCourseOccurrence AD
+                                                                    ON (AD.courseOccurrenceId = AC.courseOccurrenceId AND
+                                                                        AD.courseVacantId = AB.courseVacantId)
+                                                            INNER JOIN sprExamOccurrence AF
+                                                                    ON (AF.selectiveProcessTypeId = D.selectiveProcessTypeId AND AF.selectiveProcessId = AA.selectiveProcessId)
+                                                            INNER JOIN sprCourseExamBalance AE
+                                                                    ON (AE.courseVacantId = AD.courseVacantId AND
+                                                                        AE.examOccurrenceId = AF.examOccurrenceId)
+                                                                    WHERE (AA.inscriptionId = A.inscriptionId))
+                                                  * (SELECT maximumPoints 
+                                                       FROM sprSelectiveProcess
+                                                      WHERE selectiveProcessId = ?))::numeric, '.ROUND_VALUE_CLASSIFICATION.')
+                   FROM sprNote A
+             INNER JOIN sprInscription B
+                     ON (A.inscriptionId = B.inscriptionId)
+             INNER JOIN sprExamOccurrence C
+                     ON (A.examOccurrenceId = C.examOccurrenceId)
+             INNER JOIN sprSelectiveProcessOccurrence D
+                     ON (D.selectiveProcessTypeId = C.selectiveProcessTypeId AND
+                        D.selectiveProcessId     = C.selectiveProcessId)
+             INNER JOIN sprCourseVacant E
+                     ON (E.selectiveProcessId = C.selectiveProcessId)
+             INNER JOIN sprInscriptionOption F
+                     ON (F.inscriptionId = A.inscriptionId AND 
+                         F.optionNumber = 1)
+             INNER JOIN sprCourseOccurrence H
+                     ON (H.courseOccurrenceId = F.courseOccurrenceId AND
+                         H.courseVacantId = E.courseVacantId)
+             INNER JOIN sprCourseExamBalance I
+                     ON (I.examOccurrenceId = C.examOccurrenceId AND
+                         I.courseVacantId = H.courseVacantId)
+             INNER JOIN sprExam G
+                     ON (C.examId = G.examId)';
+
+// --                        round((sum(A.note * I.weight)  /   (SELECT maximumPoints 
+//   --                                                     FROM sprSelectiveProcess
+//     --                                                  WHERE selectiveProcessId = ?))::numeric, '.ROUND_VALUE_CLASSIFICATION.')
+        $args = array($filters->selectiveProcessId);
+
+        if ( strlen((string)$filters->unitId) > 0 )
+        {
+            $sql .= ' INNER JOIN basUnit J
+                             ON (J.unitId = H.unitId AND 
+                                 H.unitId = \'' . $filters->unitId . '\')';
+        }
+
+        $sql .= ' WHERE C.selectiveProcessId = ? ';
+        $args[] = $filters->selectiveProcessId;
+
+
+        if ( (strlen((string)$filters->courseId) > 0) && (strlen((string)$filters->courseVersion) > 0) && (strlen((string)$filters->unitId) > 0) && (strlen((string)$filters->turnId) > 0) )
+        {
+            $sql .= ' AND H.courseId = \''.$filters->courseId.'\'
+                      AND H.courseversion = '.$filters->courseVersion.'
+                      AND H.unitId = '.$filters->unitId.'
+                      AND H.turnId = '.$filters->turnId.'
+                    ';
+        }
+
+        $sql .= ' GROUP BY A.inscriptionId,
+                            D.selectiveProcessTypeId
+                    ORDER BY A.inscriptionId ';
+
+        $db = $this->getDatabase();
+
+        $totalNotes = $db->query(SAGU::prepare($sql, $args));
+
+        $sql = 'UPDATE sprInscription SET totalPoints = ? WHERE inscriptionId = ?';
+
+        if ( is_array($totalNotes) && ( count($totalNotes) > 0 ) )
+        {
+            foreach ( $totalNotes as $inscriptionNote )
+            {
+                list ( $inscriptionId,
+                    $typeId,
+                    $note ) = $inscriptionNote;
+                $inscriptions[] = $inscriptionId;
+
+                $args = array ( $note, $inscriptionId );
+                if ( $inscriptionId == $inscriptionIdOld )
+                {
+                    if ( $note > $noteOld )
+                    {
+                        $db->execute(SAGU::Prepare($sql, $args));
+                    }
+                }
+                else
+                {
+                    $db->execute(SAGU::Prepare($sql, $args));
+                }
+
+                $inscriptionIdOld = $inscriptionId;
+                $noteOld          = $note;
+            }
+        }
+
+        return $inscriptions;
+    }
+
+    /**
+     * Generate is classified from one selective process
+     * Is classified true if inscription reach minimun note from exams
+     *
+     * @param $filters (object): Filters
+     *
+     * @return (boolean): true or false
+     *
+     **/
+    public function setIsClassified($filters)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+
+        $sql  = 'UPDATE sprInscription 
+                    SET isClassified = \''.DB_FALSE.'\' 
+                  WHERE inscriptionId IN ('.implode(",", $filters->inscriptions) . ')';
+
+        $db = $this->getDatabase();
+
+        $ok = $db->execute(SAGU::prepare($sql, $args));
+
+        if( $ok )
+        {
+            foreach ( $filters->inscriptions as $inscription )
+            {
+                unset($args);
+                $sql = 'SELECT X.inscriptionId, 
+                            X.selectiveProcessTypeId, 
+                            X.isClassified 
+                        FROM (
+                                SELECT A.inscriptionId as inscriptionId,
+                                       D.selectiveProcessTypeId,
+                                       CASE WHEN I.minimumNote IS NULL 
+                                            THEN TRUE
+                                            ELSE CASE WHEN A.note >= I.minimumNote 
+                                                      THEN true
+                                                      ELSE false
+                                                 END
+                                       END AS isClassified
+                                FROM sprNote A
+                          INNER JOIN sprInscription B
+                                  ON (A.inscriptionId = B.inscriptionId)
+                          INNER JOIN sprExamOccurrence C
+                                  ON (A.examOccurrenceId = C.examOccurrenceId)
+                          INNER JOIN sprSelectiveProcessOccurrence D
+                                  ON (D.selectiveProcessTypeId = C.selectiveProcessTypeId AND
+                                      D.selectiveProcessId     = C.selectiveProcessId)
+                          INNER JOIN sprCourseVacant E
+                                  ON (E.selectiveProcessId = C.selectiveProcessId)
+                          INNER JOIN sprInscriptionOption F
+                                  ON (F.inscriptionId = A.inscriptionId AND 
+                                      F.optionNumber = 1)
+                          INNER JOIN sprCourseOccurrence H
+                                  ON (H.courseOccurrenceId = F.courseOccurrenceId AND
+                                      H.courseVacantId = E.courseVacantId)
+                           LEFT JOIN sprCourseExamBalance I
+                                  ON (I.examOccurrenceId = C.examOccurrenceId AND
+                                      I.courseVacantId = H.courseVacantId)
+                          INNER JOIN sprExam G
+                                  ON (C.examId = G.examId)
+                               WHERE C.selectiveProcessId = \'' . $filters->selectiveProcessId . '\' AND
+                                     A.inscriptionId = ' . $inscription . '';
+
+                if ( $filters->onlyHighSchool == 't' )      //Seta somente os isHighSchool
+                {
+                    $sql .= ' AND B.isHighSchool = \''.DB_TRUE.'\'';
+                }
+
+                $sql .= ' ORDER BY A.inscriptionId
+                              ) as X
+                  GROUP BY X.inscriptionId, 
+                           X.selectiveProcessTypeId,
+                           X.isClassified
+                  ORDER BY X.inscriptionId, X.selectiveProcessTypeId';
+
+                $args[] = $filters->selectiveProcessId;
+                $args[] = $inscription;
+
+                $return = $db->query($sql);
+
+                if ( count($return) > 0 )
+                {
+                    unset($args);
+                    unset($selectiveProcessTypeIdOld);
+                    $fl_classified = DB_FALSE;
+
+                    foreach ( $return as $return1 )
+                    {
+                        list( $inscriptionId,
+                              $selectiveProcessTypeId,
+                              $isClassified ) = $return1;
+
+                        if ( $selectiveProcessTypeId == $selectiveProcessTypeIdOld )
+                        {
+                            $fl_classified = DB_FALSE;
+                        }
+                        elseif ( $fl_classified == DB_TRUE && $selectiveProcessTypeId != $selectiveProcessTypeIdOld)
+                        {
+                            break; //sai do foreach
+                        }
+                        elseif ( $isClassified == DB_TRUE )
+                        {
+                            $fl_classified = DB_TRUE;
+                        }
+                        elseif ( $isClassified == DB_FALSE )
+                        {
+                            $fl_classified = DB_FALSE;
+                        }
+                        $selectiveProcessTypeIdOld = $selectiveProcessTypeId;
+
+
+                    }
+
+                    $sql = 'UPDATE sprInscription 
+                               SET isClassified = \'' . $fl_classified . '\' 
+                             WHERE inscriptionId = ?';
+
+                    $db->execute(SAGU::prepare($sql, $inscription));
+                }
+            }
+        }
+        return true;
+    }
+
+
+    /**
+     * Generate the position of inscription in the course
+     *
+     * @param $filters (object): Filters
+     *
+     * @return (boolean): true or false
+     *
+     **/
+    public function generatePosition($filters)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $module                      = MIOLO::getCurrentModule();
+
+        $sql = 'UPDATE sprInscriptionOption 
+                   SET coursePosition = NULL 
+                 WHERE inscriptionId IN ('.implode(",", $filters->inscriptions) . ')';
+
+        $db = $this->getDatabase();
+        $ok = $db->execute($sql);
+
+        unset($sql);
+        unset($args);
+
+        if ( $ok ) //zerou posições
+        {
+            $sql = ' SELECT A.courseOccurrenceId,
+                            B.courseVacantId,
+                            B.vacant,
+                            A.courseId,
+                            A.courseVersion,
+                            A.turnId,
+                            A.unitId,
+                            C.shortName as courseName,
+                            D.description as turnDescription
+                      FROM sprCourseOccurrence A
+                INNER JOIN sprCourseVacant B
+                        ON (A.courseVacantId = B.courseVacantId)
+                INNER JOIN acdCourse C
+                        ON (A.courseId = C.courseId)
+                INNER JOIN basTurn D
+                        ON (D.turnId = A.turnId)
+                     WHERE B.selectiveProcessId =  ? AND
+                           A.unitId = ?';
+
+            if ( (strlen((string)$filters->courseId) > 0) && (strlen((string)$filters->courseVersion) > 0) && (strlen((string)$filters->unitId) > 0) && (strlen((string)$filters->turnId) > 0) )
+            {
+                $sql .= ' AND A.courseId = \''.$filters->courseId.'\'
+                        AND A.courseversion = '.$filters->courseVersion.'
+                        AND A.unitId = '.$filters->unitId.'
+                        AND A.turnId = '.$filters->turnId.'
+                        ';
+            }
+
+            $args = array($filters->selectiveProcessId,
+                          $filters->unitId);
+
+            $db = $this->getDatabase();
+            $coursesOccurrences = $db->query(SAGU::Prepare($sql, $args));
+
+            unset($args);
+            unset($sql);
+
+            foreach ( $coursesOccurrences as $courseOccurrence )
+            {
+                list( $courseOccurrenceId,
+                      $courseVacantId,
+                      $vacant,
+                      $courseId,
+                      $couseVersion,
+                      $turnId,
+                      $unitId,
+                      $courseName,
+                      $turnDescription ) = $courseOccurrence;
+
+                $select = 'SELECT A.inscriptionId,
+                                round(A.totalPoints::numeric, '.ROUND_VALUE_CLASSIFICATION.'),
+                                F.name';
+
+                $from = ' FROM sprInscription A
+                    INNER JOIN sprInscriptionOption B
+                            ON (A.inscriptionId = B.inscriptionId)
+                    INNER JOIN sprCourseOccurrence C
+                            ON (B.courseOccurrenceId = C.courseOccurrenceId)
+                    INNER JOIN sprCourseVacant D 
+                            ON (C.courseVacantId = D.courseVacantId)
+                    INNER JOIN sprNote E
+                            ON (A.inscriptionId = E.inscriptionId)
+               INNER JOIN ONLY basPhysicalPerson F
+                            ON (F.personId = A.personId)';
+
+                $where = 'WHERE A.selectiveProcessId = ? AND
+                                B.optionNumber       = 1 AND
+                                B.courseOccurrenceId = ? AND
+                                A.isClassified       = \''.DB_TRUE.'\'';
+
+                $groupBy = ' GROUP BY 1, 2, 3, B.courseOccurrenceId
+                            ';
+
+                $orderBy = 'ORDER BY B.courseOccurrenceId ASC,
+                                2 DESC';
+
+                $businessSattleOfMatter = $MIOLO->GetBusiness($module, 'BusSattleOfMatter');
+                $sattlesOfMatter = $businessSattleOfMatter->getSattleOfMatterToPriotiry($courseVacantId);
+
+                if ( $sattlesOfMatter === NULL ) //Not sattle of matter to course vacant. Sattle to selective process all
+                {
+                    $sattlesOfMatter = $businessSattleOfMatter->getSattleOfMatterToPriotiry(NULL, $filters->selectiveProcessId);
+                }
+
+                if ( $filters->onlyHighSchool == DB_TRUE )      //Seta somente os isHighSchool
+                {
+                     $where .= ' AND A.isHighSchool = \''.DB_TRUE.'\'';
+                }
+
+                $auxContSattleOfMatter = 0;
+
+                // *************************************
+                // ** Critério de desempate
+                // *************************************
+                // ** Begin
+                if ( is_array($sattlesOfMatter) && (count($sattlesOfMatter) > 0))
+                {
+                    foreach ( $sattlesOfMatter as $prior => $sattleOfMatter )
+                    {
+                        if ( count($sattleOfMatter) > 1 ) //Mais de uma prova p/ mesma prioridade
+                        {
+                            $sumNotes    = 0;
+
+                            for ( $x = 0; $x < count($sattleOfMatter); $x++ )
+                            {
+                                if ( $x == 0 )
+                                {
+                                    $select .= ', getExamNote(A.inscriptionId, '.$sattleOfMatter[$x].') + ';
+                                }
+                                else if ( $x == (count($sattleOfMatter)-1) )
+                                {
+                                    $select .= ' getExamNote(A.inscriptionId, '.$sattleOfMatter[$x].') ';
+    
+                                    $orderBy .= ' , '.($auxContSattleOfMatter + 4).' DESC';
+    
+                                    $groupBy .= ', '.($auxContSattleOfMatter + 4).'';
+                                }
+                                else
+                                {
+                                    $select .= 'getExamNote(A.inscriptionId, '.$sattleOfMatter[$x].') +';
+                                }
+                            }
+                        }
+                        else
+                        {
+                            $select .=  ' , getExamNote(A.inscriptionId, '.$sattleOfMatter[0].') ';
+    
+                            $orderBy .= ' , '.($auxContSattleOfMatter + 4).' DESC';
+    
+                            $groupBy .= ', '.($auxContSattleOfMatter + 4).'';
+                        }
+    
+                        $auxContSattleOfMatter++;
+                    }
+                }
+                // ** End;
+                // *************************************
+
+
+                // *************************************
+                // ** OUTRO critério de desempate
+                // *************************************
+                // ** Begin
+                $busOtherSattleOfMatter       = $MIOLO->GetBusiness($module, 'BusOtherSattleOfMatter');
+
+                $filters3->selectiveProcessId = $filters->selectiveProcessId;
+
+                $otherSattlesOfMatter         = $busOtherSattleOfMatter->searchOtherSattleOfMatter($filters3);
+
+                $auxOtherSattleOfMatter = 1;
+
+                if ( is_array($otherSattlesOfMatter) && ( count($otherSattlesOfMatter) > 0 ) )
+                {
+                    //Existem outros critérios de desempate
+                    foreach ( $otherSattlesOfMatter as $key1 => $value1  )
+                    {
+                        if ( $value1[3] == 'SPRINSCRIPTION' )
+                        {
+                            $orderBy .= ', A.'.$value1[4].' '.$value1[6].'';
+
+                            $auxOtherSattleOfMatter++;
+                        }
+
+                        if ( $value1[3] == 'BASPHYSICALPERSONSTUDENT' )
+                        {
+                            $groupBy .= ', F.'.$value1[4].'';
+                            $orderBy .= ', F.'.$value1[4].' '.$value1[6].'';
+
+                            $auxOtherSattleOfMatter++;
+                        }
+                    }
+                }
+                else
+                {
+                    //NÃO existem outros critérios de desempate
+                }
+
+                // ** End;
+                // *************************************
+
+                $sql = ' ' .$select.' 
+                        ' .$from . '
+                        ' .$where. '
+                        ' .$groupBy. '
+                        ' .$orderBy. ' ';
+
+                $args = array($filters->selectiveProcessId,
+                            $courseOccurrenceId);
+
+                $inscriptionsCourse = $db->query(SAGU::Prepare($sql, $args));
+
+                $returnResult[] = array('', 
+                                        _M('Course id', $module) . ': ' . $courseId . ' '. $courseName .' - ' . $turnDescription . ' ' . _M('with', $module) . ' ' . $vacant . ' ' . _M('Vacants', $module), 
+                                        '');
+                $returnResult[] = array('', '', '');
+
+                if ( count($inscriptionsCourse) > 0 ) 
+                {
+                    //se tem ao menos uma pessoa classificadad
+                    foreach ($inscriptionsCourse as $key => $inscriptionCourse )//Classificados e Excedente
+                    {
+                        unset($sql);
+
+                        $keyUse = $key + 1;
+
+                        $returnResult[] = array($keyUse, 
+                                                $inscriptionCourse[0] . ' - ' . $inscriptionCourse[2], 
+                                                $keyUse <= $vacant ? 'Classificado' : 'Excedente',
+                                                $inscriptionCourse[1]);
+
+                        $sql = 'UPDATE sprInscriptionOption 
+                                SET inscriptionId  = ' . $inscriptionCourse[0] . ' ,
+                                    coursePosition = ' . $keyUse . '
+                                WHERE inscriptionOptionId IN (SELECT A.inscriptionOptionId
+                                                                FROM sprInscriptionOption A
+                                                        INNER JOIN sprInscription B
+                                                                ON (A.inscriptionId = B.inscriptionId)
+                                                                WHERE A.inscriptionId = ' . $inscriptionCourse[0] . ' )';
+                        $ok2 = $db->execute($sql);
+                    }
+
+                    //Laço p/ colocar os desclassificados juntos na lista
+                    $sql1 = 'SELECT A.inscriptionId,
+                                    round(B.totalPoints::numeric, '.ROUND_VALUE_CLASSIFICATION.'),
+                                    D.name as personName
+	                       FROM sprInscriptionOption A
+                         INNER JOIN sprInscription B
+                                 ON (A.inscriptionId = B.inscriptionId)
+                    INNER JOIN ONLY basPhysicalPerson D
+                                 ON (D.personId = B.personId)
+                              WHERE B.selectiveProcessId = \'' . $filters->selectiveProcessId . '\'
+	                        AND A.optionNumber = 1
+                                AND B.isClassified = \''.DB_FALSE.'\' 
+                                AND A.courseOccurrenceId = ' . $courseOccurrenceId . ' 
+                           ORDER BY B.totalPoints DESC';
+
+                    $unclassifieds = $db->query($sql1);
+
+                    if ( count($unclassifieds) > 0 )
+                    {
+                        foreach($unclassifieds as $unclassified )
+                        {
+                            $keyUse++;
+
+                            $returnResult[] = array($keyUse, 
+                                                    $unclassified[0] . ' - ' . $unclassified[2], 
+                                                    'Desclassificado',
+                                                    $unclassified[1]);
+                        }
+                    }
+                }
+                else
+                {
+                    //Se nao tiver nenhum classificado
+                   //Laço p/ colocar os desclassificados juntos na lista
+                    $sql1 = 'SELECT A.inscriptionId,
+                                    round(B.totalPoints::numeric, '.ROUND_VALUE_CLASSIFICATION.'),
+                                    D.name as personName
+	                       FROM sprInscriptionOption A
+                         INNER JOIN sprInscription B
+                                 ON (A.inscriptionId = B.inscriptionId)
+                    INNER JOIN ONLY basPhysicalPerson D
+                                 ON (D.personId = B.personId)
+                              WHERE B.selectiveProcessId = \'' . $filters->selectiveProcessId . '\'
+	                        AND A.optionNumber = 1
+                                AND B.isClassified = \''.DB_FALSE.'\' 
+                                AND A.courseOccurrenceId = ' . $courseOccurrenceId . ' 
+                           ORDER BY B.totalPoints DESC';
+
+                    $unclassifieds = $db->query($sql1);
+
+                    if ( count($unclassifieds) > 0 )
+                    {
+                        foreach($unclassifieds as $unclassified )
+                        {
+                            $keyUse++;
+
+                            $returnResult[] = array($keyUse, 
+                                                    $unclassified[0] . ' - ' . $unclassified[2], 
+                                                    'Desclassificado',
+                                                    $unclassified[1]);
+                        }
+                    }
+                }
+                $returnResult[] = array('', '', '');
+            }
+
+            return $returnResult;
+        }
+}
+    /**
+     * Get the position of inscription in the course
+     *
+     * @param $filters (object): Filters
+     *
+     * @return (array): list positions
+     *
+     **/
+    public function getListPosition($filters)
+    {
+        $MIOLO       = MIOLO::getInstance();
+        $module      = MIOLO::getCurrentModule();
+
+        $sql = 'SELECT A.coursePosition,
+                       A.inscriptionId,
+                       C.name as personName,
+                       round(B.totalPoints::numeric, '.ROUND_VALUE_CLASSIFICATION.'),
+                       CASE WHEN B.isClassified = \'' . DB_FALSE . '\'
+                            THEN \'Desclassificado\'
+                            ELSE CASE WHEN A.coursePosition <= E.vacant
+                                      THEN \'Classificado\'
+                                      ELSE \'Excedente\'
+                                 END
+                       END AS isClassifiedInCourse
+                  FROM sprInscriptionOption A
+            INNER JOIN sprInscription B
+                    ON (A.inscriptionId = B.inscriptionId)
+       INNER JOIN ONLY basPhysicalPerson C
+                    ON (B.personId = C.personId)
+            INNER JOIN sprCourseOccurrence D
+                    ON (A.courseOccurrenceId = D.courseOccurrenceId)
+            INNER JOIN sprCourseVacant E
+                    ON (D.courseVacantId = E.courseVacantId)';
+
+        $args = array ( $filters->selectiveProcessId,
+                        $filters->courseId,
+                        $filters->courseVersion,
+                        $filters->unitId,
+                        $filters->turnId);
+
+        $where = ' WHERE B.selectiveProcessId = ? AND
+                       D.courseId = ? AND
+                       D.courseVersion = ? AND
+                       D.unitId = ? AND
+                       D.turnId = ?';
+
+        if ( $filters->onlyHighSchool == 't' )
+        {
+            $where .= ' AND B.isHighSchool = ?';
+            $args[] = $filters->onlyHighSchool;
+        }
+
+        if ( strlen((string)$filters->orderBy) > 0 )
+        {
+            $where .= ' AND A.optionNumber = 1';
+            $sql   .= $where;
+            $sql   .= ' ORDER BY ' . $filters->orderBy . ' ASC, A.coursePosition ASC';
+        }
+        else
+        {
+            $where .= ' AND A.optionNumber = ' . $filters->optionNumber . '';
+            $sql   .= $where;
+            $sql   .= ' ORDER BY A.coursePosition ASC';
+        }
+
+
+
+        $db = $this->getDatabase();
+        $result = $db->query(SAGU::prepare($sql, $args));
+
+        return $result;
+    }
+
+    /**
+     * Generate the position of inscription in general
+     *
+     * @param $filters (object): Filters
+     *
+     * @return (boolean): true or false
+     *
+     **/
+    public function generatePositionGeneral($filters)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $db     = $this->getDatabase();
+
+        //Colocar NULO em todos os inscriptios de um processo seletivo no campo generalPosition
+        $sql = 'UPDATE sprInscriptionOption 
+                   SET generalposition = NULL
+                 WHERE inscriptionId IN ( SELECT inscriptionId
+                                            FROM sprInscription
+                                           WHERE selectiveProcessId = \'' . $filters->selectiveProcessId . '\')';
+
+        $ok = $db->execute($sql);
+
+        //Gera os pontos totais para o vestibulando. Com estes pontos 
+        //que o vestibulando irá concorrer no processo seletivo
+        //Já pega a maior nota em todos os processos seletivos que o 
+        //vestibulando escolheu para concorrer.
+        //Irá retornar todos as inscrições que foram totalizadas
+        $returnGenerateTotalPoints = $this->generateTotalPoints($filters);
+
+        if ( is_array($returnGenerateTotalPoints) && ( count($returnGenerateTotalPoints) > 0 ) )
+        {
+            //Gerou a totalização de pontos para os vestibulandos
+
+            $filters2->inscriptions       = $returnGenerateTotalPoints;
+            $filters2->selectiveProcessId = $filters->selectiveProcessId;
+
+            //Verifica se os vestibulandos atingiram as notas
+            //mínimas necessárias para serem classificados
+            //senão são desclassificados
+            $this->setIsClassified($filters2);
+
+            if ( $ok ) //If p/ ver se tem colocou NULO na posição geral dos inscritos
+            {
+                $select = 'SELECT A.inscriptionId,
+                                round(A.totalPoints::numeric, '.ROUND_VALUE_CLASSIFICATION.'),
+                                F.name,
+                                B.courseOccurrenceId';
+
+                $from = '   FROM sprInscription A
+                    INNER JOIN sprInscriptionOption B
+                            ON (A.inscriptionId = B.inscriptionId AND
+                                B.optionNumber  = 1)
+                    INNER JOIN sprCourseOccurrence C
+                            ON (B.courseOccurrenceId = C.courseOccurrenceId)
+                    INNER JOIN sprCourseVacant D 
+                            ON (C.courseVacantId = D.courseVacantId)
+                    INNER JOIN sprNote E
+                            ON (A.inscriptionId = E.inscriptionId)
+            INNER JOIN ONLY basPhysicalPerson F
+                            ON (F.personId = A.personId)';
+
+                $where = 'WHERE A.selectiveProcessId = ?';
+
+                $groupBy = ' GROUP BY 1, 2, 3, 4, B.courseOccurrenceId
+                            ';
+
+                $orderBy = 'ORDER BY 2 DESC';
+
+                //Verifica os critérios de desempate, e os coloco no ORDER BY
+
+                $businessSattleOfMatter       = $MIOLO->getBusiness($module, 'BusSattleOfMatter');
+
+                //ESTA NULL DEVIDO A SER PARA A UNIVATES, ONDE O CRITÉRIO É O MESMO P/ TODOS OS CURSOS, AO MENOS NA CLASSIFICAÇÃO GERAL
+
+                $sattlesOfMatter = $businessSattleOfMatter->getSattleOfMatterToPriotiry(NULL, $filters->selectiveProcessId);
+
+                $auxContSattleOfMatter = 0;
+
+                if ( is_array($sattlesOfMatter) && ( count($sattlesOfMatter) > 0 ) )
+                {
+                    $numberOfSattleOfMatter = count($sattlesOfMatter);
+
+                    //Tem critério de desempate
+                    foreach ( $sattlesOfMatter as $prior => $sattleOfMatter ) //Critério de desempate normal
+                    {
+                        if ( count($sattleOfMatter) > 1 ) //Mais de uma prova p/ mesma prioridade
+                        {
+                            $sumNotes    = 0;
+
+                            for ( $x = 0; $x < count($sattleOfMatter); $x++ )
+                            {
+                                if ( $x == 0 )
+                                {
+                                    $select .= ', (getExamNote(A.inscriptionId, '.$sattleOfMatter[$x].') + ';
+                                }
+                                else if ( $x == (count($sattleOfMatter)-1) )
+                                {
+                                    $select .= ' getExamNote(A.inscriptionId, '.$sattleOfMatter[$x].'))/'.count($sattleOfMatter).' ';
+    
+                                    $orderBy .= ' , '.($auxContSattleOfMatter + 5).' DESC';
+    
+                                    $groupBy .= ', '.($auxContSattleOfMatter + 5).'';
+                                }
+                                else
+                                {
+                                    $select .= 'getExamNote(A.inscriptionId, '.$sattleOfMatter[$x].') +';
+                                }
+                            }
+                        }
+                        else
+                        {
+                            $select .=  ' , getExamNote(A.inscriptionId, '.$sattleOfMatter[0].') ';
+
+                            $orderBy .= ' , '.($auxContSattleOfMatter + 5).' DESC';
+
+                            $groupBy .= ', '.($auxContSattleOfMatter + 5).'';
+                        }
+
+                        $auxContSattleOfMatter++;
+                    }
+                }
+                else
+                {
+                    //Não tem critério de desempate
+                }
+
+
+                //Other Sattle of Matter
+                $businessOtherSattleOfMatter  = $MIOLO->GetBusiness($module, 'BusOtherSattleOfMatter');
+
+                $othersSattlesOfMatter = $businessOtherSattleOfMatter->searchOtherSattleOfMatter($filters);
+
+                if ( is_array($othersSattlesOfMatter) && ( count($othersSattlesOfMatter) > 0 ) )
+                {
+                    foreach ( $othersSattlesOfMatter as $keyOther => $otherSattlesOfMatter )
+                    {
+                        if ( $otherSattlesOfMatter[3] == 'SPRINSCRIPTION' )
+                        {
+                            $groupBy .= ', A.'.$otherSattlesOfMatter[4].'';
+                            $orderBy .= ', A.'.$otherSattlesOfMatter[4].' '.$otherSattlesOfMatter[6].'';
+
+                            $auxContSattleOfMatter++;
+                        }
+
+                        if ( $otherSattlesOfMatter[3] == 'BASPHYSICALPERSONSTUDENT' )
+                        {
+                            $groupBy .= ', F.'.$otherSattlesOfMatter[4].'';
+                            $orderBy .= ', F.'.$otherSattlesOfMatter[4].' '.$otherSattlesOfMatter[6].'';
+
+                            $auxOtherSattleOfMatter++;
+                        }
+                    }
+                }
+
+                $sql = ' ' .$select.' 
+                        ' .$from . '
+                        ' .$where. '
+                        ' .$groupBy. '
+                        ' .$orderBy. ' ';
+
+                $args = array($filters->selectiveProcessId);
+
+                $inscriptionsCourse = $db->query(SAGU::Prepare($sql, $args));
+
+                if ( count($inscriptionsCourse) > 0 ) 
+                {
+                    foreach ($inscriptionsCourse as $key => $inscriptionCourse )//Classificados e Excedente
+                    {
+                        $keyUse = $key + 1;
+
+                        $returnResult[] = array($keyUse,                //generalPosition
+                                                $inscriptionCourse[0] . ' - ' . $inscriptionCourse[2],  //inscriptionId - name
+                                                '',
+                                                $inscriptionCourse[1]); //courseOccurrenceId
+
+                        $sql = 'UPDATE sprInscriptionOption 
+                                SET inscriptionId       = ' . $inscriptionCourse[0] . ' ,
+                                    generalPosition     = ' . $keyUse . '
+                                WHERE inscriptionOptionId IN (SELECT A.inscriptionOptionId
+                                                                FROM sprInscriptionOption A
+                                                        INNER JOIN sprInscription B
+                                                                ON (A.inscriptionId = B.inscriptionId)
+                                                            WHERE A.inscriptionId = ' . $inscriptionCourse[0] . ' )';
+                        $ok2 = $db->execute($sql);
+                    }
+                }
+    
+                return $returnResult;
+            }
+        }
+        else
+        {
+            //Nao gerou a totalizaçao de pontos
+            return false;
+        }
+    }
+
+    /**
+     * Get the list of classified in the selective process
+     *
+     * @param $selectiveProcessId (int): Selective process id
+     *
+     * @return (array): An array containing the search results
+     **/
+    public function getClassified($filters)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+
+        $db = $this->getDatabase();
+
+        $sql = ' SELECT A.inscriptionId,
+                        B.generalPosition,
+                        C.name as  personName,
+                        F.shortName as courseName,
+                        G.description as unitDescription,
+                        A.personId,
+                        D.courseId,
+                        D.courseVersion,
+                        D.turnId,
+			I.description,
+                        D.unitId,
+                        H.periodId
+                   FROM sprInscription A
+             INNER JOIN sprInscriptionOption B
+                     ON (A.inscriptionId = B.inscriptionId)
+        INNER JOIN ONLY basPhysicalPerson C
+                     ON (A.personId = C.personId)
+             INNER JOIN sprCourseOccurrence D
+                     ON (B.courseOccurrenceId = D.courseOccurrenceId)
+             INNER JOIN sprCourseVacant E
+                     ON (D.courseVacantId = E.courseVacantId)
+             INNER JOIN acdCourse F
+                     ON (F.courseId = D.courseId)
+             INNER JOIN basUnit G
+                     ON (G.unitId = D.unitId)
+             INNER JOIN sprSelectiveProcess H
+                     ON (H.selectiveProcessId = A.selectiveProcessId)
+	     INNER JOIN basturn I
+		     ON (I.turnid = D.turnid)
+                  WHERE A.selectiveProcessId = \'' . $filters . '\' AND
+                        B.optionNumber = 1 AND
+                        A.isClassified = \'' . DB_TRUE .  '\' AND
+                        B.coursePosition <= E.vacant
+               ORDER BY C.name ASC';
+
+        $result = $db->query($sql);
+
+        return $result;
+    }
+
+    /**
+     * Get the list of excedentes in the selective process
+     *
+     * @param $selectiveProcessId (int): Selective process id
+     *
+     * @return (array): An array containing the search results
+     **/
+    public function getExecedentes($filters)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+
+        $db = $this->getDatabase();
+
+        $sql = ' SELECT A.inscriptionId,
+                        B.generalPosition,
+                        C.name as  personName,
+                        F.shortName as courseName,
+                        G.description as unitDescription
+                   FROM sprInscription A
+             INNER JOIN sprInscriptionOption B
+                     ON (A.inscriptionId = B.inscriptionId)
+        INNER JOIN ONLY basPhysicalPerson C
+                     ON (A.personId = C.personId)
+             INNER JOIN sprCourseOccurrence D
+                     ON (B.courseOccurrenceId = D.courseOccurrenceId)
+             INNER JOIN sprCourseVacant E
+                     ON (D.courseVacantId = E.courseVacantId)
+             INNER JOIN acdCourse F
+                     ON (F.courseId = D.courseId)
+             INNER JOIN basUnit G
+                     ON (G.unitId = D.unitId)
+                  WHERE A.selectiveProcessId = \'' . $filters->selectiveProcessId . '\' AND
+                        B.optionNumber = 1 AND
+                        A.isClassified = \'' . DB_TRUE .  '\' AND
+                        B.coursePosition > E.vacant
+               ORDER BY C.name ASC';
+
+        $result = $db->query($sql);
+
+        return $result;
+    }
+
+    public function getGeneralPosition($selectiveProcessId)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+
+        $db = $this->getDatabase();
+
+        $sql = ' SELECT B.generalPosition,
+                        A.inscriptionId || \' - \' || C.name,
+                        CASE WHEN A.isClassified = \''.DB_TRUE.'\'
+                             THEN \''._M('Classified', $module).'\'
+                             ELSE \''._M('Desclassified', $module).'\'
+                             END,
+                        round(A.totalPoints::numeric, '.ROUND_VALUE_CLASSIFICATION.')
+                   FROM sprInscription A
+             INNER JOIN sprInscriptionOption B
+                     ON (A.inscriptionId = B.inscriptionId AND
+                         B.optionNumber = 1)
+        INNER JOIN ONLY basPhysicalPerson C
+                     ON (C.personId = A.personId)
+                  WHERE A.selectiveProcessId = \''.$selectiveProcessId.'\' 
+               ORDER BY B.generalPosition ASC';
+
+        $result = $db->query($sql);
+
+        return $result;
+    }
+
+
+    /**
+     * Get inscription from one selective process
+     *
+     * @param $filters (object): Filters
+     *
+     * @return (array): array with inscription
+     *
+     **/
+    public function getInscriptions($filters)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+
+        $sql = ' SELECT A.inscriptionId
+                   FROM sprInscription A';
+
+        $args = array($filters->selectiveProcessId);
+
+        $sql .= ' WHERE A.selectiveProcessId = ? ';
+
+        $db = $this->getDatabase();
+
+        $resultInscription = $db->query(SAGU::prepare($sql, $args));
+
+        foreach ( $resultInscription as $inscriptions )
+        {
+            $inscription[] = $inscriptions[0];
+        }
+
+        return $inscription;
+    }
+}
+?>

@@ -1,0 +1,336 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for acdClass table
+ *
+ * @author Flaudizio B. S. Filho [flaudizio@yahoo.com.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ *
+ * @since
+ * Class created on 19/12/2006
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br
+ *
+ **/
+
+/**
+ * Class to manipulate the acdClass table
+ **/
+class BusinessAcademicBusClass extends Business
+{
+
+    /**
+     * Make a connection to the database
+     *
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic', 'sagu');
+        $module = is_null($module) ? 'academic' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+
+    /**
+     * Return a specific record from the database
+     *
+     * @param $professorCurricularComponentId (integer): Primary key of the record to be retrieved
+     *
+     * @return (object): Return an object of the type handled by the class
+     *
+     **/
+    public function getClass($classId)
+    {
+        $sql = 'SELECT A.classId,
+                       A.name,
+                       A.vacant,
+                       A.initialLearningPeriodId,
+                       B.description,
+                       B.courseId,
+                       B.periodId,
+                       A.isDependence,
+                       A.userName,
+                       TO_CHAR(A.dateTime,\'' . MASK_TIMESTAMP . '\'),
+                       A.ipAddress
+                  FROM acdClass A
+            INNER JOIN acdLearningPeriod B
+                    ON (A.initialLearningPeriodId = B.learningPeriodId)
+                 WHERE classId = ? ';
+
+        $db     = $this->getDatabase();
+
+        $result = $db->query(SAGU::prepare($sql, $classId));
+        //$db->close();
+
+        $class = new acdClass();
+        list ( $class->classId,
+               $class->className_,
+               $class->vacant,
+               $class->initialLearningPeriodId,
+               $class->description,
+               $class->courseId,
+               $class->periodId,
+               $class->isDependence,
+               $class->userName,
+               $class->dateTime,
+               $class->ipAddress ) = $result[0];
+
+        return $class;
+    }
+
+    /**
+     * Do a search on the database table handled by the class
+     *
+     * @param $filters (object): Search filters
+     *
+     * @return (array): An array containing the search results
+     **/
+    public function searchClass($filters)
+    {
+        $sql = 'SELECT A.classId,
+                       A.name,
+                       A.vacant,
+                       A.initialLearningPeriodId,
+                       B.courseId || \' / \' || B.courseVersion,
+                       getCourseShortName(B.courseId),
+                       TO_CHAR(B.beginDate,\'' . MASK_DATE . '\'),
+                       B.turnId,
+                       C.description,
+                       A.isDependence
+                  FROM acdClass A
+            INNER JOIN acdLearningPeriod B
+                    ON (A.initialLearningPeriodId = B.learningPeriodId)
+            INNER JOIN basTurn C
+                    ON (B.turnId = C.turnId)';
+
+        if ( strlen((string)$filters->classId) > 0 )
+        {
+            $where .= ' AND A.classId ILIKE ? ';
+            $args[] = $filters->classId;
+        }
+        if ( strlen((string)$filters->className_) > 0 )
+        {
+            $where .= ' AND TO_ASCII(A.name) ILIKE TO_ASCII(?) ';
+            $args[] = $filters->className_.'%';
+        }
+        if ( strlen((string)$filters->vacant) > 0 )
+        {
+            $where .= ' AND A.vacant = ? ';
+            $args[] = $filters->vacant;
+        }
+        if ( strlen((string)$filters->learningPeriodId) > 0 )
+        {
+            $where .= ' AND B.learningPeriodId = ? ';
+            $args[] = $filters->learningPeriodId;
+        }
+        if ( strlen((string)$filters->periodId) > 0 )
+        {
+            $where .= ' AND B.periodId = ? ';
+            $args[] = $filters->periodId;
+        }
+        if ( strlen((string)$filters->courseId) > 0 )
+        {
+            $where .= ' AND B.courseId = ? ';
+            $args[] = $filters->courseId;
+        }
+        if ( strlen((string)$filters->isDependence) > 0 )
+        {
+            $where .= ' AND A.isDependence = ? ';
+            $args[] = $filters->isDependence;
+        }
+
+        unset($result);
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql.= ' WHERE ' . substr($where, 4) . '
+                     ORDER BY A.name,
+                              B.description ';
+            $db = $this->getDatabase();
+
+            $result = $db->query(SAGU::prepare($sql, $args));
+            //$db->close();
+        }
+
+        return $result;
+    }
+
+    /**
+     * Insert a new record
+     *
+     * @param $data (object): An object of the type handled by the class
+     *
+     * @return True if succed, otherwise False
+     *
+     **/
+    public function insertClass($data)
+    {
+        $sql = 'INSERT INTO acdClass
+                            (classId,
+                             name,
+                             vacant,
+                             initialLearningPeriodId,
+                             isDependence)
+                     VALUES (?,?,?,?,?) ';
+
+        $args = array( $data->classId,
+                       $data->className_,
+                       $data->vacant,
+                       $data->initialLearningPeriodId,
+                       $data->isDependence );
+
+        $db     = $this->getDatabase();
+        $result = $db->execute(SAGU::prepare($sql, $args));
+        //$db->close();
+        return $result;
+    }
+
+    /**
+     * Update data from a specific record
+     *
+     * @param $data (object): Data which will replace the old record data
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+    public function updateClass($data)
+    {
+        $sql = 'UPDATE acdClass
+                   SET name                    = ?,
+                       vacant                  = ?,
+                       initialLearningPeriodId = ?,
+                       isDependence            = ?
+                 WHERE classId                 = ? ';
+
+        $args = array( $data->className_,
+                       $data->vacant,
+                       $data->initialLearningPeriodId,
+                       $data->isDependence,
+                       $data->classId );
+
+        $db   = $this->getDatabase();
+        $sqls = SAGU::prepare($sql, $args);
+
+        for ( $i=0; $i<count($sqls); $i++ )
+        {
+            $result = $db->execute($sqls[$i]);
+        }
+
+        //$db->close();
+
+        return $result;
+    }
+
+    /**
+     * Delete a record
+     *
+     * @param $professorCurricularComponentId (string): Primary key for deletion
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+    public function deleteClass($classId)
+    {
+        $sql = 'DELETE FROM acdClass
+                      WHERE classId = ? ';
+
+        $db     = $this->getDatabase();
+        $result = $db->execute(SAGU::prepare($sql, $classId));
+        //$db->close();
+        return $result;
+    }
+    
+    /**
+     * Gets the class current period
+     *
+     * @param $classId (string): the class id
+     *
+     * @param $learningPeriodId (int): the learning period id to be considered in the operation
+     *
+     * @return (int): the class period
+     *
+     **/
+    public function getClassPeriod($classId, $learningPeriodId)
+    {
+        $sql = 'SELECT getClassPeriod(?, ?)';
+        
+        $db     = $this->getDatabase();
+        $result = $db->query(SAGU::prepare($sql, array($classId, $learningPeriodId)));
+        
+        return $result[0][0];
+    }
+
+    public function getClasPupilEnrollFeeStatus($periodId, $classId=null)
+    {
+        $sql    = 'SELECT A.classId,
+                          A.name,
+                          B.contractId,
+                          C.personId,
+                          getPersonName(C.personId),
+                          C.courseId,
+                          getCourseShortName(C.courseId),
+                          C.courseVersion,
+                          C.turnId,
+                          getTurnDescription(C.turnId),
+                          C.unitId,
+                          getUnitDescription(C.unitId),
+                          CASE WHEN balance(D.invoiceId) > 0 THEN true ELSE false END as isOpen,
+                          A.isDependence
+                     FROM acdClass A
+               INNER JOIN acdClassPupil B
+                       ON ( A.classId = B.classId )
+               INNER JOIN acdContract C
+                       ON ( B.contractId = C.contractId )
+               INNER JOIN finReceivableInvoice D
+                       ON (     C.personId = D.personId 
+                            AND C.courseId = D.courseId
+                            AND C.courseVersion = D.courseVersion
+                            AND C.unitId        = D.unitId 
+                            AND D.parcelNumber  = 1 
+                            AND D.invoiceId IN ( SELECT invoiceId
+                                                   FROM finEntry
+                                                  WHERE invoiceId = D.invoiceId
+                                                    AND operationId IN ( SELECT enrollTaxOperation
+                                                                           FROM finDefaultOperations
+                                                                          LIMIT 1 ) )
+                            AND D.maturityDate BETWEEN ( SELECT min(beginDate) 
+                                                           FROM acdLearningPeriod
+                                                          WHERE periodId = ? ) 
+                                                   AND ( SELECT max(endDate) 
+                                                           FROM acdLearningPeriod
+                                                          WHERE periodId = ? ) )
+                 ORDER BY A.classId,
+                          getPersonName(C.personId)';
+
+        $args   = array( $periodId, $periodId);
+        $db     = $this->getDatabase();
+//        vd(SAGU::prepare($sql, $args));
+        $result = $db->query(SAGU::prepare($sql, $args));
+
+        return $result;
+    }
+
+}
+?>

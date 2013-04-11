@@ -1,0 +1,178 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for basPupilListing table
+ *
+ * @author William Prigol Lopes [william] [william@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * Leovan Tavares da Silva [leovan@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 07/08/2005
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to manipulate the basPupilListing table
+ **/
+class BusinessAcademicBusPupilListingNew extends Business
+{
+
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic', 'sagu');
+        $module = is_null($module) ? 'academic' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+    
+    /**
+     *  Return data to pupil listing options by option 1
+     * 
+     * @param $periodId (int): Identification of period
+     *
+     * @return (array): Array containing the results.
+     */
+    public function getPupilListing($filter)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+
+        $db = $this->getDatabase();
+
+        
+        if ( strlen((string)$filter->courseId) > 0 ) 
+        {
+            $where .= '         AND A.courseId = ?';
+            $args[] = $filter->courseId;
+        }
+
+        if ( strlen((string)$filter->courseName) > 0 ) 
+        {
+            //$where .= '         AND CC.name ILIKE TO_ASCII(?)';
+            //$args[] = $filter->courseName.'%';
+        }
+
+        if ( strlen((string)$filter->courseVersion) > 0 ) 
+        {
+            $where .= '         AND A.courseVersion = ?';
+            $args[] = $filter->courseVersion;
+        }
+
+        if ( strlen((string)$filter->turnId) > 0 ) 
+        {
+            $where .= '         AND A.turnId = ?';
+            $args[] = $filter->turnId;
+        }
+
+        if ( strlen((string)$filter->unitId) > 0 ) 
+        {
+            $where .= '         AND A.unitId = ?';
+            $args[] = $filter->unitId;
+        }
+
+
+        if ( strlen((string)$filter->curricularComponentId) > 0 ) 
+        {
+            $where .= '         AND E.curricularComponentId = ?';
+            $args[] = $filter->semester;
+        }
+
+        if ( strlen((string)$filter->classId) > 0 ) 
+        {
+            $where .= '         AND D.classId ILIKE TO_ASCII(?)';
+            $args[] = $filter->classId.'%';
+        }
+
+        if ( strlen((string)$filter->className) > 0 ) 
+        {
+            $where .= '         AND D.name ILIKE TO_ASCII(?)';
+            $args[] = $filter->className.'%';
+        }
+        if ( strlen((string)$filter->stateContractId) > 0 ) 
+        {
+            $where .= '         AND SC.stateContractId = ?::integer';
+            $args[] = $filter->stateContractId;
+        }
+        $sql  = ' FROM 
+                                acdContract A
+				LEFT JOIN acdStateContract SC ON SC.stateContractId = getContractState(A.contractId)
+                                INNER JOIN acdCourse CC ON CC.courseId = A.courseId
+                                INNER JOIN basTurn T USING (turnId)
+                                INNER JOIN ONLY basPhysicalPersonStudent P USING (personId)
+                                LEFT JOIN acdEnroll B USING (contractId)
+                                LEFT JOIN acdGroup C USING (groupId)
+				LEFT JOIN acdLearningPeriod LP ON C.learningPeriodId = LP.learningPeriodId
+                                LEFT JOIN acdClass D ON D.classId = C.classId
+				LEFT JOIN acdClassPupil CP ON CP.classId = D.classId AND CP.contractId = A.contractId
+                                LEFT JOIN acdCurriculum E ON E.curriculumId = C.curriculumId
+                                WHERE CP.endDate IS NULL ';
+ 
+        if($filter->optionId != 1 )
+        {
+            if ( strlen((string)$filter->periodId) > 0 ) 
+            {
+                $where .= '     AND C.learningPeriodId in ( SELECT learningperiodid FROM acdLearningperiod WHERE periodId = ? )';
+                $args[] = $filter->periodId;
+            }
+            if ( strlen((string)$filter->semester) > 0 ) 
+            {
+                $where .= '         AND E.semester = ?::integer';
+                $args[] = $filter->semester;
+            }
+        }
+        switch($filter->optionId)
+        {
+            case 1:
+                $sql .=  " AND C.learningPeriodId in (SELECT learningperiodid FROM acdLearningperiod WHERE periodId = (SELECT value::varchar(10) FROM basConfig WHERE parameter = 'CURRENT_PERIOD_ID') ) AND E.semester = 1 ";
+                $sql = 'SELECT DISTINCT P.personId, P.name, A.courseId, T.description, SC.description, D.classId '.$sql;
+                break;
+            case 2:
+                $sql = 'SELECT DISTINCT P.personId, P.name, A.courseId, T.description, SC.description, D.classId '.$sql;
+                break;
+            case 3:
+                $sql = 'SELECT DISTINCT P.personId, P.name, A.courseId, D.ClassId, T.description, SC.description, D.classId '.$sql;
+                break;
+            case 4:
+                $sql = 'SELECT DISTINCT P.personId, P.name, E.semester, LP.periodId, A.courseId, T.description, getCurricularComponentShortName(E.CurricularComponentId), SC.description, D.classId '.$sql;
+                break;
+	    case 5:
+                $sql = 'SELECT DISTINCT P.personId, P.name, A.courseId, T.description, SC.description, SC.stateContractId'.$sql;
+                break;
+        }
+        $sql = SAGU::prepare($sql.$where,$args);
+	$sql .= ' ORDER BY 2';
+        $result = $db->query($sql);
+
+        return $result;
+    }
+}
+?>

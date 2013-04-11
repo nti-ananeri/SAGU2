@@ -1,0 +1,217 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for basHoliday table
+ *
+ * @author Giovani Murilo Dantas Corrêa [gmurilo@isolution.inf.br] 
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Daniel Afonso Heisler [daniel@isolution.inf.br]
+ *
+ * @since
+ * Class created on 31/03/2008
+ *
+ * \b @organization \n
+ * iSolution - Soluções em TI \n
+ * The iSolution Development Team
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to manipulate Holidays
+ **/
+class BusinessBasicBusHoliday extends Business
+{
+
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module = is_null($module) ? 'basic' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+    /**
+     * Return a specific record from the database
+     *
+     * @param $date (date): Primary key of the record to be retrieved
+     *
+     * @return (object): Return an object of the type handled by the class
+     *
+     **/
+    public function getHoliday($holidayDate)
+    {
+        $sql = 'SELECT TO_CHAR(A.holidayDate,\''.MASK_DATE.'\'),
+                       A.description,
+                       A.cityId,
+                       A.userName,
+                       TO_CHAR(A.dateTime,\'' . MASK_TIMESTAMP . '\'),
+                       A.ipAddress
+                  FROM basHoliday A 
+                 WHERE A.holidayDate = TO_DATE(?,\''.MASK_DATE.'\')';
+ 
+        $db     = $this->getDatabase();
+        $result = $db->query(SAGU::prepare($sql, $holidayDate));
+
+        $holiday  = new BasHoliday();
+        list (  $holiday->holidayDate,
+                $holiday->description,
+                $holiday->cityId,
+                $holiday->userName,
+                $holiday->dateTime,
+                $holiday->ipAddress ) = $result[0];
+
+        return $holiday; 
+    }
+
+    /**
+     * Do a search on the database table handled by the class
+     *
+     * @param $filters (object): Search filters
+     *
+     * @return (array): An array containing the search results
+     **/
+    public function searchHoliday($filters)
+    {
+        $sql = 'SELECT TO_CHAR(A.holidayDate,\''. MASK_DATE .'\'),
+                       A.description,
+                       A.cityId, 
+                       CASE WHEN B.cityId IS NULL THEN \'INDEFINIDO\' ELSE B.name END,
+                       A.userName,
+                       TO_CHAR(A.dateTime,\'' . MASK_TIMESTAMP . '\'),
+                       A.ipAddress
+                  FROM basHoliday A 
+                  LEFT JOIN basCity B ON ( A.cityId = B.cityId ) ';
+
+        if ( strlen((string)$filters->holidayDate) > 0 )
+        {
+            $where .= ' AND A.holidayDate = TO_DATE(?,\''.MASK_DATE.'\')';
+            $args[] = $filters->holidayDate;
+        }
+        if ( strlen((string)$filters->description) > 0 )
+        {
+            $where .= ' AND TO_ASCII(A.description) ILIKE TO_ASCII(?) ';
+            $args[] = $filters->description . '%';
+        }
+
+        if ( strlen((string)$filters->cityId) > 0 )
+        {
+            $where .= ' AND A.cityId =  ? ';
+            $args[] = $filters->cityId ;
+        }
+        
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE ' . substr($where, 4) . ' ';
+
+            $db     = $this->getDatabase();
+
+            $result = $db->query(SAGU::prepare($sql,$args));
+
+        }
+
+        return $result;
+    }
+
+    /**
+     * Insert a new record
+     *
+     * @param $data (object): An object of the type handled by the class
+     *
+     * @return True if succed, otherwise False
+     *
+     **/
+    public function insertHoliday($data)
+    {
+        $db  = $this->getDatabase();
+
+
+
+        $sql = 'INSERT INTO basHoliday
+                            (holidayDate,
+                             description,
+                             cityId)
+                     VALUES (?,?,?)';
+
+        $args = array(  $data->holidayDate,
+                        $data->description,
+                        strlen((string)$data->cityId) > 0 ? $data->cityId : '0');
+
+        $result = $db->execute(SAGU::prepare($sql, $args));
+        return $result;
+    }
+
+    /**
+     * Update data from a specific record
+     *
+     * @param $data (object): Data which will replace the old record data
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+   public function updateHoliday($data)
+   {
+        $sql = 'UPDATE basHoliday
+                   SET description  = ?,
+                       cityId       = ?
+                 WHERE holidayDate    = TO_DATE(?,\''.MASK_DATE.'\') ';
+
+        $args = array(  $data->description,
+                        $data->cityId,
+                        $data->holidayDate);
+        if( strlen((string)$data->cityIdOld) > 0 )
+        {
+            $sql .= ' AND cityId = ? ';
+            $args[] = $data->cityIdOld;
+        }
+
+        $db   = $this->getDatabase();
+        $sql = SAGU::prepare($sql, $args);
+
+        $result = $db->execute($sql);
+        return $result;
+    }
+
+    /**
+     * Delete a record
+     *
+     * @param $holidayDate (date): Primary key for deletion
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+    public function deleteHoliday($data)
+    {
+        $sql = 'DELETE FROM basHoliday
+                      WHERE holidayDate = TO_DATE(?,\''.MASK_DATE.'\')';
+        $args[] = $data->holidayDate;
+        if( strlen((string)$data->cityIdOld) > 0 )
+        {
+            $sql .= ' AND cityId = ? ';
+            $args[] = $data->cityIdOld;
+        }
+
+        $db     = $this->getDatabase();
+        $result = $db->execute(SAGU::prepare($sql, $args));
+        return $result;
+    }
+
+}
+
+?>

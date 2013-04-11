@@ -1,0 +1,232 @@
+<?php
+/**
+ * Professor cost center form
+ *
+ * @author Armando Taffarel Neto [taffarel@solis.coop.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * Armando Taffarel Neto [taffarel@solis.coop.br]
+ *
+ * @since
+ * Class created on 04/04/2006
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2005 SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+
+/**
+ * Form to professor cost center
+ **/
+class FrmProfessorCostCenter extends MForm
+{
+    private $home;
+    private $tables;
+    private $fileContent;
+    
+    /**
+     * Class constructor
+     **/
+    function __construct($data)
+    {
+
+        $module = MIOLO::getCurrentModule();
+
+        $this->home   = $data->home;
+
+        parent::__construct(_M('Professor cost center', $module));
+
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+
+
+        $toolBar = new MToolBar('toolBar',$MIOLO->getActionURL($module,$action));
+
+        $toolBar->disableButton('tbBtnNew');
+        $toolBar->disableButton('tbBtnDelete');
+        $toolBar->disableButton('tbBtnPrint');
+        $toolBar->disableButton('tbBtnSave');
+        $toolBar->disableButton('tbBtnSearch');
+
+        //favoritos
+        $enabledImage  = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-20x20.png');
+        $disabledImage = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-disabled-20x20.png');
+        $url           = $MIOLO->getActionURL($module, $this->home, null, array('function' => 'search', 'event' => 'bookmark'));
+        $toolBar->addButton('tbBtnBookmark', _M('Add to bookmarks', 'basic'), $url, null, true, $enabledImage, $disabledImage);
+
+        if ( MIOLO::_request('event') == 'bookmark' )
+        {
+            $MIOLO->getClass('basic', 'access');
+            access::insert('Professor cost center', $this->home, 'professorCostCenter-16x16.png', true);
+        }
+        //fim favoritos
+
+        $fields[] = $toolBar;
+        
+        if ( ! $this->page->isPostBack() )
+        {
+            $businessPeriod = $MIOLO->getBusiness('academic', 'BusPeriod');
+            $periodId       = new MComboBox('periodId', strlen((string)$this->getFormValue('periodId', $data->periodId))>0 ? $this->getFormValue('periodId', $data->periodId) : CURRENT_PERIOD_ID, _M('Period', 'academic'), $businessPeriod->listPeriod() );
+            $periodId->setJsHint(_M('Select a period', $module));
+            $fields[] = $periodId;
+            $validators[] = new MRequiredValidator('periodId');
+     
+            $btn1     = new MButton('btnNext', _M('Next', $module));
+            $fields[] = $btn1;
+        }
+         
+        $fields[] = new Separator('');
+        
+        $this->setFields($fields);
+        $this->setValidators($validators);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+        $this->setClose($MIOLO->getActionURL($module,substr($action,0,strrpos($action,':'))));
+
+    }
+    
+    public function printTable($data, $total)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        foreach( $data as $value )
+        {
+               $division = $value[5]*$value[6]/$total;
+               $output[] = array(
+                              $value[0],
+                              $value[1],
+                              $value[2],
+                              $value[3],
+                              $value[4],
+                              $value[5],
+                              $value[6],
+                              $division
+                             );
+
+               $this->fileContent[$value[0]][$value[4]] += $division;
+        }
+
+        $title = array(
+                        _M('External id', $module),
+                        _M('Professor', $module),
+                        _M('Curricular component', $module),
+                        _M('Group', $module),
+                        _M('Cost center', $module),
+                        _M('Students', $module),
+                        _M('Credits', $module),
+                        _M('Hours', $module)
+                       );
+
+        $table = new MTableRaw(null, $output, $title);
+        $table->SetAlternate(true);
+
+        $tables[] = $table;
+        $tables[] = new MSeparator(_M('Students total', $module) . ': ' . $total);
+        $tables[] = new MSeparator();
+        $this->addField($tables);
+    }
+
+    /**
+     * Event triggered when user chooses Generate from the toolbar
+     **/
+    public function btnNext_click($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+        
+        $business = $MIOLO->getBusiness($module, 'BusProfessorCostCenter');
+        $data = $business->getCostCenters($this->getFormValue('periodId'));
+        
+        $btn1[]   = new MButton('btnGenerate', _M('Generate text file', $module));
+        $div1     = new MDiv('div1', $btn1, null, 'align=center');
+        $div1->width='97%';
+        $fields[] = $div1;
+        
+        $this->addField($fields);
+
+        $professorId_           = $data[0][1];
+        $curricularComponentId_ = $data[0][3];
+        $lineData = array();
+
+        foreach ( $data as $key => $value )
+        {
+              $professorId = $value[1];
+              $curricularComponentId = $value[3];
+              
+              if ( !($professorId         == $professorId_           &&
+                   $curricularComponentId == $curricularComponentId_ ))
+              {
+                    $this->printTable($lineData, $total);
+                    unset($lineData);
+                    unset($total);
+                    
+                    $professorId_           = $professorId;
+                    $curricularComponentId_ = $curricularComponentId;
+              }
+              $lineData[] = $value;
+              $total     += $value[5];
+
+        }
+        
+        $hiddenData = new MHiddenField('hiddenData', urlencode(serialize($this->fileContent)));
+        $fields[] = $hiddenData;
+        
+        $this->setShowPostButton(false);
+
+        $this->addField($fields);
+    }
+
+    /**
+     * Event triggered when user chooses Generate from the toolbar
+     **/
+    public function btnGenerate_click($sender=NULL)
+    {
+        $fileContent = unserialize(urldecode(stripslashes($this->getFormValue('hiddenData'))));
+
+        foreach ( $fileContent as $key1 => $externalId )
+        {
+            foreach ( $externalId as $key2 => $costCenter )
+            {
+                $file[] = $key1 . ', ' .  $key2 . ', ' . $fileContent[$key1][$key2];
+            }
+        }
+
+        $fileContent  = implode($file, chr(hexdec("\X0D\X0A")));
+        $fileContent .= chr(hexdec("\X0D\X0A"));
+        SAGU::returnAsFile('ccenter-' . date(dmY) . '.txt', $fileContent, 'text/txt-file');
+    }
+
+
+}
+
+?>

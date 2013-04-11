@@ -1,0 +1,236 @@
+<?
+/**
+*
+* @author Giovani Murilo Dantas Correa [gmurilo@isolution.inf.br]
+*
+* $version: $Id$
+*
+* \b Maintainers \n
+* Daniel Afonso Heisler [daniel@isolution.inf.br]
+*
+* @since
+* Class created on 24/09/2008
+*
+* \b Organization: \n
+* iSolution - Soluções de Internet \n
+* The iSolution TEAM
+*
+* \b CopyLeft: \n
+* CopyLeft (L) 2007 iSolution - Soluções de Internet \n
+*
+* \b License \n
+* Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+*
+* \b History \n
+* See history in CVS repository: http://isolution.inf.br   
+*
+**/
+$MIOLO = MIOLO::getInstance();
+$MIOLO->uses('db/BusInvoice.class','finance');
+
+class BusinessFinanceBusDebitForCollection extends BusinessFinanceBusInvoice  
+{
+    public $db;
+
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module = is_null($module) ? 'finance' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+    public function __construct()
+    {
+        $this->db = $this->getDatabase();
+    }
+
+    public function searchDebts($filters = NULL)
+    {
+        $sql = 'SELECT
+                    A.personId,
+                    B.nome,
+                    B.endereco_logradouro,
+                    B.endereco_numero,
+                    B.endereco_bairro,
+                    B.endereco_cidade,
+                    B.endereco_stateId,
+                    B.endereco_cep,
+                    CO.courseId,
+                    getCourseName(CO.courseId) as courseName,
+                    A.invoiceId,
+                    A.bankInvoiceId,
+                    TO_CHAR(A.emissionDate, \''. MASK_DATE .'\'),
+                    TO_CHAR(A.maturityDate, \''. MASK_DATE .'\'),
+                    receitaPrevistaBruta(A.invoiceId), 
+                    balance(A.invoiceId),
+                    balanceWithPolicies(A.invoiceId),
+                    F.description,
+                    CASE WHEN (now()::date-A.maturityDate) > 0 AND balance(invoiceId) > 0 THEN (now()::date-A.maturityDate)::integer ELSE 0 END as daysLate,
+                    B.telefone_residencial,
+                    B.telefone_celular,
+                    B.telefone_trabalho,
+                    B.telefone_para_mensagem,
+                    B.cpf,
+                    C.nome,
+                    C.endereco_logradouro,
+                    C.endereco_numero,
+                    C.endereco_bairro,
+                    C.endereco_cidade,
+                    C.endereco_stateId,
+                    C.endereco_cep,
+                    C.cpf,
+                    C.telefone_residencial,
+                    C.telefone_celular,
+                    C.telefone_trabalho,
+                    C.telefone_para_mensagem,
+                    balanceWithPolicies(A.invoiceId)-balance(A.invoiceId) as juros,
+                    juros(A.invoiceId),
+                    descontos(A.invoiceId),
+                    incentivos(A.invoiceId),
+                    receitaPrevistaLiquida(A.invoiceId)
+                FROM
+                    ONLY acdClassPupil TU INNER JOIN
+                    acdContract CO ON ( TU.contractId = CO.contractId ) INNER JOIN
+                    ONLY finReceivableInvoice A ON ( A.contractId = CO.contractId ) INNER JOIN
+                    informacoes_pessoais B ON ( B.personId = A.personId ) LEFT JOIN
+                    informacoes_pessoais C ON ( C.personId = B.responsablelegalId AND LENGTH(C.cpf) = 11 AND C.personId <> B.personId )
+                    INNER JOIN finIncomeSource F ON (F.incomeSourceId = A.incomeSourceId )
+                WHERE 
+                    A.maturityDate <= now()::date+5
+                AND status IS NULL
+                AND balance(A.invoiceId) > '. MINIMAL_VALUE_TO_PRINT_INVOICE;
+        if( strlen((string) $filters->classId ) > 0 )
+        {
+            $sql   .= '    AND TU.classId = ?';
+            $args[] = $filters->classId;
+        }
+
+        if( strlen((string) $filters->personId ) > 0 )
+        {
+            $sql   .= '    AND A.personId = ?';
+            $args[] = $filters->personId;
+        }
+
+        /*if( strlen((string) $filters->contractId ) > 0 )
+        {
+            $sql   .= '    AND contractId = ?';
+            $args[] = $filters->contractId;
+        }*/
+
+        if( strlen((string) $filters->courseId ) > 0 )
+        {
+            $sql   .= '    AND CO.courseId = ?';
+            $args[] = $filters->courseId;
+        }
+
+        if( strlen((string) $filters->courseVersion ) > 0 )
+        {
+            $sql   .= '    AND CO.courseVersion = ?';
+            $args[] = $filters->courseVersion;
+        }
+
+        if( strlen((string) $filters->turnId ) > 0 )
+        {
+            $sql   .= '    AND CO.turnId = ?';
+            $args[] = $filters->turnId;
+        }
+
+        if( strlen((string) $filters->unitId ) > 0 )
+        {
+            $sql   .= '    AND CO.unitId = ?';
+            $args[] = $filters->unitId;
+        }
+        if( count( $filters->incomeSourceId ) > 0 && strlen((string) $filters->incomeSourceId[0] ) > 0 )
+        {
+            $sql   .= '    AND A.incomeSourceId IN ('.implode(",",$filters->incomeSourceId).')';
+        }
+
+        if( strlen((string) $filters->costCenterId ) > 0 )
+        {
+            $sql   .= '    AND A.costCenterId = ?';
+            $args[] = $filters->costCenterId;
+        }
+        
+        if( strlen((string) $filters->accountSchemeId ) > 0 )
+        {
+            $sql   .= '    AND A.accountSchemeId = ?';
+            $args[] = $filters->accountSchemeId;
+        }
+
+        if( strlen((string) $filters->policyId ) > 0 )
+        {
+            $sql   .= '    AND A.policyId = ?';
+            $args[] = $filters->policyId;
+        }
+        $sql .= ' ORDER BY CO.courseId, B.nome, A.maturityDate';
+        $sql = SAGU::prepare($sql, $args);
+        $result = $this->db->query($sql);
+        for ($x=0; $x < count($result); $x++)
+        {
+            $data[$result[$x][0]]['name']           = $result[$x][1];
+            $data[$result[$x][0]]['location']       = $result[$x][2];
+            $data[$result[$x][0]]['number']         = $result[$x][3];
+            $data[$result[$x][0]]['neighborhood']   = $result[$x][4];
+            $data[$result[$x][0]]['cityName']       = $result[$x][5];
+            $data[$result[$x][0]]['stateId']        = $result[$x][6];
+            $data[$result[$x][0]]['zipCode']        = $result[$x][7];
+            $data[$result[$x][0]]['courseId']       = $result[$x][8];
+            $data[$result[$x][0]]['courseName']     = $result[$x][9];
+            $data[$result[$x][0]]['residentialPhone']     = $result[$x][19];
+            $data[$result[$x][0]]['cellPhone']     = $result[$x][20];
+            $data[$result[$x][0]]['workPhone']     = $result[$x][21];
+            $data[$result[$x][0]]['messagePhone']     = $result[$x][22];
+            $data[$result[$x][0]]['cpf']     = $result[$x][23];
+            $data[$result[$x][0]]['Rname']           = $result[$x][24];
+            $data[$result[$x][0]]['Rlocation']       = $result[$x][25];
+            $data[$result[$x][0]]['Rnumber']         = $result[$x][26];
+            $data[$result[$x][0]]['Rneighborhood']   = $result[$x][27];
+            $data[$result[$x][0]]['RcityName']       = $result[$x][28];
+            $data[$result[$x][0]]['RstateId']        = $result[$x][29];
+            $data[$result[$x][0]]['RzipCode']        = $result[$x][30];
+            $data[$result[$x][0]]['Rcpf']     = $result[$x][31];
+            $data[$result[$x][0]]['RresidentialPhone']     = $result[$x][32];
+            $data[$result[$x][0]]['RcellPhone']     = $result[$x][32];
+            $data[$result[$x][0]]['RworkPhone']     = $result[$x][33];
+            $data[$result[$x][0]]['RmessagePhone']     = $result[$x][34];
+            //Titulos
+            $data[$result[$x][0]]['invoices'][$result[$x][10]]['bankInvoiceId']             = $result[$x][11];
+            $data[$result[$x][0]]['invoices'][$result[$x][10]]['emissionDate']              = $result[$x][12];
+            $data[$result[$x][0]]['invoices'][$result[$x][10]]['maturityDate']              = $result[$x][13];
+            $data[$result[$x][0]]['invoices'][$result[$x][10]]['value']                     = $result[$x][14];
+            $data[$result[$x][0]]['invoices'][$result[$x][10]]['balance']                   = $result[$x][15];
+            $data[$result[$x][0]]['invoices'][$result[$x][10]]['balanceWithPolicies']       = $result[$x][16];
+            $data[$result[$x][0]]['invoices'][$result[$x][10]]['incomeSourceDescription']   = $result[$x][17];
+            $data[$result[$x][0]]['invoices'][$result[$x][10]]['daysLate'] = $result[$x][18];
+            $data[$result[$x][0]]['invoices'][$result[$x][10]]['jurosAtuais'] = $result[$x][36];
+            $data[$result[$x][0]]['invoices'][$result[$x][10]]['juros'] = $result[$x][37];
+            $data[$result[$x][0]]['invoices'][$result[$x][10]]['descontos'] = $result[$x][38];
+            $data[$result[$x][0]]['invoices'][$result[$x][10]]['incentivos'] = $result[$x][39];
+            $data[$result[$x][0]]['invoices'][$result[$x][10]]['receitaPrevistaLiquida'] = $result[$x][40];
+       }
+       return $data;
+    }
+
+    public function getAgreementSector()
+    {
+        $sql = 'SELECT place, phone, fax, email, description FROM basSector WHERE sectorId = '.AGREEMENT_SECTOR_ID;
+        $result = $this->db->query($sql);
+        $basSector = new BasSector();
+        list(   $basSector->place, 
+                $basSector->phone,         
+                $basSector->fax,  
+                $basSector->email, 
+                $basSector->description ) = $result[0];
+        return $basSector;
+        
+    }
+
+    public function searchLetterOfRecovery()
+    {
+        //Not implemented
+        return NULL;
+    }
+}
+?>

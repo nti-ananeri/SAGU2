@@ -1,0 +1,336 @@
+<?php
+
+/**
+ * Payment place form
+ *
+ * @author Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ *
+ * @since
+ * Class created on 18/08/2005
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2005 SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+
+/**
+ * Form to manipulate a payment place
+ **/
+class FrmOperation extends MForm
+{
+
+    /**
+     * Class constructor
+     **/
+    function __construct()
+    {
+
+        $module = MIOLO::getCurrentModule();
+
+        if ( MIOLO::_request('function') == 'insert' )
+        {
+            parent::__construct(_M('Insert', $module));
+        }
+        else
+        {
+            parent::__construct(_M('Update', $module));
+        }
+
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+
+        $toolBar = new MToolBar('toolBar',$MIOLO->getActionURL($module,$action));
+
+        if ( $function == 'insert' )
+        {
+            $toolBar->disableButton('tbBtnDelete');
+            $toolBar->disableButton('tbBtnPrint');
+        }
+        elseif ( $function == 'delete' )
+        {
+            $toolBar->disableButton('tbBtnSave');
+        }
+        $fields[] = $toolBar;
+
+        if ( in_array($function, array('update', 'delete')))
+        {
+            $operationId = $_GET['operationId'] ? $_GET['operationId'] : $_POST['operationId'];
+            $fields[]    = new MHiddenField('operationId', $operationId);
+            $business    = $MIOLO->getBusiness($module, 'BusOperation');
+            $data        = $business->getOperation($operationId);
+        }
+        // Description
+        $descriptionLabel = new MText('descriptionLabel', _M('Description', $module).':');
+        $descriptionLabel->setWidth(FIELD_LABEL_SIZE);
+        $descriptionLabel->setClass('m-caption m-caption-required');
+        $description      = new MTextField('description', $this->getFormValue('description',$data->description), '', FIELD_DESCRIPTION_SIZE);
+        $description->setJsHint(_M('Enter the operation description', $module));
+        $validators[] = new MRequiredValidator('description', _M('Description', $module));
+        $fields[] = new MHContainer('hctDescription', array($descriptionLabel, $description));
+
+        // Operation type
+        $business = $MIOLO->getBusiness($module,'BusOperation');
+        $opts = $business->listOperationTypeId(1);
+        $operationTypeIdLabel = new MText('operationTypeLabel', _M('Operation type', $module).':');        
+        $operationTypeIdLabel->setWidth(FIELD_LABEL_SIZE);
+        $operationTypeIdLabel->setClass('m-caption m-caption-required');
+        $operationTypeId = new MRadioButtonGroup('operationTypeId', '', $opts,  $this->getFormValue('operationTypeId', $data->operationTypeId) ? $this->getFormValue('operationTypeId', $data->operationTypeId) : 'C', null, 'horizontal');
+        $operationTypeId->setShowLabel(false);
+        $operationTypeId->setJsHint(_M('Enter the operation type',$module));
+        $fields[] = new MHcontainer('hctOperationType', array($operationTypeIdLabel, $operationTypeId));
+
+        // Is extinct
+        $opts    =  SAGU::listTrueFalse(1);
+        $isExtinctLabel = new MText('isExtinctLabel', _M('Is extinct', $module).':');
+        $isExtinctLabel->setWidth(FIELD_LABEL_SIZE);
+        $isExtinctLabel->setClass('m-caption m-caption-required');
+        $isExtinct = new MRadioButtonGroup('isExtinct', '', $opts,  $this->getFormValue('isExtinct', $data->isExtinct) ? $this->getFormValue('isExtinct', $data->isExtinct) : DB_FALSE, null, 'horizontal');
+        $isExtinct->setShowLabel(false);
+        $isExtinct->setJsHint(_M('Enter if that operation is extinct', $module));
+        $fields[] = new MHcontainer('hctIsExtinct', array($isExtinctLabel, $isExtinct));
+        // Is counter movement
+        $opts    =  SAGU::listTrueFalse(1);
+        $isCounterMovementLabel = new MText('isCounterMovemetLabel', _M('Is counter movement', $module).':'); 
+        $isCounterMovementLabel->setWidth(FIELD_LABEL_SIZE);
+        $isCounterMovementLabel->setClass('m-caption m-caption-required');
+        $isCounterMovement = new MRadioButtonGroup('isCounterMovement', '', $opts,  $this->getFormValue('isCounterMovement', $data->isCounterMovement) ? $this->getFormValue('isCounterMovement', $data->isCounterMovement) : 'f', null, 'horizontal');
+        $isCounterMovement->setShowLabel(false);
+        $fields[] = new MHcontainer('hctIsCounterMovement', array($isCounterMovementLabel, $isCounterMovement));
+
+        $operationGroupIdLabel = new MText('operationGroupIdLabel', _M('Group', $module).':');
+        $operationGroupIdLabel->setWidth(FIELD_LABEL_SIZE);
+        $operationGroupIdLabel->setClass('m-caption m-caption-required');
+        $business              = $MIOLO->getBusiness($module, 'BusOperationGroup');
+        $operationGroupId      = new MSelection('operationGroupId', $this->GetFormValue('operationGroupId', $data->operationGroupId), NULL, $business->listOperationGroup());
+        $fields[]              = new MHContainer('hctOperationGroup', array($operationGroupIdLabel, $operationGroupId));
+        $validators[]          = new MRequiredValidator('operationGroupId',  _M('Group', $module));
+
+        //conta bancária
+        $businessBankAccount = $MIOLO->getBusiness('finance', 'BusBankAccount');
+        $dataBankAccount     = $businessBankAccount->listBankAccount();
+        $bankAccountIdLabel  = new MText('bankAccountIdLabel', _M('Bank account', 'finance').':');
+        $bankAccountIdLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $bankAccountId       = new Mselection('bankAccountId', $this->getFormValue('bankAccountId', $data->bankAccountId), '', $dataBankAccount, false);
+        $bankAccountId->setAutoSubmit(true);
+        $hctBankAccount      = new MHContainer('hctBankAccountId', array($bankAccountIdLabel, $bankAccountId));
+        $hctBankAccount->setShowLabel(true);
+        $fields[]            = $hctBankAccount;
+        if ( strlen((string)$this->getFormValue('bankAccountId', $data->bankAccountId))>0 )
+        {
+			//contrato
+			$businessBankAccountContract = $MIOLO->getBusiness('finance', 'BusBankAccountContract');
+			$dataBankAccountContract     = $businessBankAccountContract->listBankAccountContract($this->getFormValue('bankAccountId', $data->bankAccountId));
+            $bankContractIdLabel  = new MText('bankContractIdLabel', _M('Bank contract', 'finance').':');
+			$bankContractIdLabel->setWidth(FIELD_CONTAINER_SIZE);
+            $bankContractId       = new Mselection('bankContractId', $this->getFormValue('bankContractId', $data->bankContractId), '', $dataBankAccountContract, false);
+
+            $bankHint = new MHint('bankHint', 'Used only for DEBIT operations to agglutinate the respective values in the same account. Ex: SELECTIVE PROCESS operation should be fall only into one account.');
+
+            $hctBankAccountContract      = new MHContainer('hctBankAccountContract', array($bankContractIdLabel, $bankContractId, $bankHint));
+            $hctBankAccountContract->setShowLabel(true);
+
+             $fields[]                  = $hctBankAccountContract;
+        }
+        
+        // operation is for receivable or payable invoices
+        $receivableOrPayableLabel = new MText('receivableOrPayableLabel', _M('Operation category', $module).':');        
+        $receivableOrPayableLabel->setWidth(FIELD_LABEL_SIZE);
+        $receivableOrPayableLabel->setClass('m-caption m-caption-required');
+        $receivableOrPayable = new MRadioButtonGroup('receivableOrPayable', '', array(array(_M('Receivable invoice', $module),'R'), array(_M('Payable invoice', $module),'P')),  $this->getFormValue('receivableOrPayable', $data->receivableOrPayable) ? $this->getFormValue('receivableOrPayable', $data->receivableOrPayable) : 'R', null, 'horizontal');
+        $receivableOrPayable->setShowLabel(false);
+        $receivableOrPayable->setJsHint(_M('Enter the operation category',$module));
+        $fields[] = new MHcontainer('hctreceivableOrPayable', array($receivableOrPayableLabel, $receivableOrPayable));
+
+        if ( $function == 'update' )
+        {
+            $fields[] = new MTextLabel('lastModification', '[' . $data->userName . ' - ' . $data->dateTime . ']', _M('Last modification',$module));
+
+        }
+        
+        $fields[] = new Separator('');
+
+        $this->setFields($fields);
+        $this->setValidators($validators);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+        $this->setClose($MIOLO->getActionURL($module,substr($action,0,strrpos($action,':'))));
+        $this->page->onLoad('document.' . $this->name . '.description.focus();');
+
+    }
+
+    /**
+     * Event triggered when user chooses New from the toolbar
+     **/
+    public function tbBtnNew_click($sender = NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+/*
+        $data = $this->getTypesData();
+        $vars = get_object_vars($data);
+        foreach ( $vars as $var => $value )
+        {
+            if ( $this->$var )
+            {
+                eval('$this->' . $var . '->value = $this->getFormValue(\'' . $var . 'S\') ? $this->getFormValue(\'' . $var . 'S\') : \'\';');
+            }
+        }
+*/
+    }
+
+    /**
+     * Event triggered when user chooses Delete from the toolbar
+     **/
+    public function tbBtnDelete_click($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $data   = $this->getTypesData();
+        $opts   = array('event'=>'tbBtnDelete_confirm',
+                        'function'=>'delete',
+                        'operationId'=>MIOLO::_request('operationId'));
+
+        $gotoYes = $MIOLO->getActionURL( $module, $action, null, $opts );
+        $goto    = SAGU::getStackBackUrl();
+        $gotoNo  = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+        $msg     = MSG_CONFIRM_RECORD_DELETE;
+        $caption = _M('Question',$module);
+        $MIOLO->question($msg, $gotoYes, $gotoNo);
+    }
+
+    /**
+     * Event triggered when user chooses Yes from the Delete prompt dialog
+     **/
+    public function tbBtnDelete_confirm($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $business = $MIOLO->getBusiness($module, 'BusOperation');
+        $ok = $business->deleteOperation($this->operationId->value);
+
+        if ( $ok )
+        {
+            $msg  = MSG_RECORD_DELETED;
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Information',$module);
+            $MIOLO->information($msg, $goto);
+        }
+        else
+        {
+            $msg  = _M('Error executing requested operation.',$module);
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Error',$module);
+            $MIOLO->error( $msg, $goto, $caption );
+        }
+    }
+
+    /**
+     * Event triggered when user chooses Save from the toolbar
+     **/
+    public function tbBtnSave_click($sender=NULL)
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+
+        $data     = $this->getTypesData();
+        $business = $MIOLO->getBusiness($module, 'BusOperation');
+
+        if ( $function == 'update' )
+        {
+            $ok  = $business->updateOperation($data);
+            $msg = MSG_RECORD_UPDATED;
+        }
+        else
+        {
+            $ok  = $business->insertOperation($data);
+            $msg = MSG_RECORD_INSERTED;
+        }
+
+        if ( $ok )
+        {
+            $opts = array('operationIdS'=>$data->operationId);
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL( $module, $action, null, $opts);
+            if ( $function == 'update' )
+            {
+                $MIOLO->information($msg, $goto);
+            }
+            else
+            {
+                $opts    = array('event'=>'tbBtnNew_click',
+                                 'function'=>'insert');
+
+                $gotoYes = $MIOLO->getActionURL($module, $action, null, $opts);
+                $MIOLO->question($msg, $gotoYes, $goto);
+            }
+        }
+        else
+        {
+            $msg  = _M('Error executing requested operation.',$module);
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Error',$module);
+            $MIOLO->error( $msg, $goto, $caption );
+        }
+    }
+
+    /**
+     * Method to gather all information from the form fields
+     * and put them on a database compatible object
+     **/
+    public function getTypesData()
+    {
+        $data = new FinOperation();
+        $vars = get_object_vars($data);
+        foreach ( $vars as $var => $value )
+        {
+            if ( $this->$var )
+            {
+                eval('$data->' . $var . ' = $this->' . $var . '->value;');
+            }
+        }
+        return $data;
+    }
+}
+
+?>

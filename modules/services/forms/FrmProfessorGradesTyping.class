@@ -1,0 +1,671 @@
+<?php
+/**
+ *
+ * Shows a list of pupils enrolled in the specified group and allow the professor
+ * to register their grades
+ *
+ * @author Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Armando Taffarel Neto [taffarel@solis.coop.br]
+ * 
+ * @since
+ * Class created on 06/09/2007
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Report to show pupils ou employees financial situations
+ */
+class FrmProfessorGradesTyping extends MForm
+{
+    /**
+     * Class constructor
+     */
+    public function __construct()
+    {
+        $MIOLO  = MIOLO::getInstance();
+
+        parent::__construct(_M('Grades typing', 'services'));
+
+        // hide the 'Submit' button
+        $this->setShowPostButton(false);
+
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        if ( ! $this->page->isPostBack() )
+        {
+            $this->defineFields();
+        }
+        $this->eventHandler();
+    }
+
+    /**
+     *  /Default method to define fields
+     */
+    public function defineFields($msg = null, $question = null)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $action = MIOLO::getCurrentAction();
+        $module = MIOLO::getCurrentModule();
+        $uOk = ( $MIOLO->checkAccess('academic', ACD_UPDATE, false, true) && $MIOLO->checkAccess('academic', ACD_INSERT, false, true) && $module == 'academic');
+        
+        // get filters values
+        $groupId    = MIOLO::_request('groupId');
+        $scheduleId = MIOLO::_request('scheduleId');
+        $periodId   = MIOLO::_request('periodId');
+
+        // toolbar definition
+        $opts = array ( 'groupId' => $groupId,
+                        'periodId' => $periodId );
+        $toolBar = new MToolBar('toolBar',$MIOLO->getActionURL($module, $action, null, $opts));
+
+        $busGroup = $MIOLO->getBusiness('academic', 'BusGroup');
+        $group    = $busGroup->getGroup($groupId);
+
+
+        if ( $module == 'services' && $group->isClosed == DB_TRUE )
+        {
+            $toolBar->disableButton('tbBtnSave');
+        }
+
+        $enabledImage  = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'exit-20x20.png' );
+        $disabledImage = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'exit-disabled-20x20.png' );
+        if(!$uOk)
+        {
+            $toolBar->addButton('tbBtnClose', _M('Close', 'miolo'), $MIOLO->getActionURL( 'services', 'main:professor:curricularComponents'), _M('Close', 'miolo'), true, $enabledImage, $disabledImage);
+        }
+
+        $toolBar->hideButton('tbBtnExit');
+        $toolBar->hideButton('tbBtnNew');
+        $toolBar->hideButton('tbBtnDelete');
+        $toolBar->hideButton('tbBtnSearch');
+        $toolBar->hideButton('tbBtnPrint');
+        if(!$uOk)
+        {
+            $toolBar->hideButton('tbBtnBack');
+        }
+        $toolBar->hideButton('tbBtnReset');
+
+        $fields2[] = $toolBar;
+        // load JavaScript functions to calculate notes
+        $this->page->scripts->add( $MIOLO->getActionURL( 'services', 'html:scripts:pupilNotes.js' )); 
+
+        // Gather all data to generate grid
+        $busPerson = $MIOLO->getBusiness('basic', 'BusPerson');
+        $personData = $busPerson->getPersonByMioloUserName(trim($MIOLO->getLogin()->id));
+        $busGradeTyping = $MIOLO->getBusiness('academic', 'BusGradeTyping');
+
+        $group   = $busGradeTyping->getGroupData($groupId);
+        $degrees = $busGradeTyping->getLearningPeriodDegrees($group->learningPeriodId);
+
+        $grdResults = new MTableRaw(null, null);
+
+        /*
+         * Grid columns generation
+         * 
+         * We had to set manually the column class for each column. Basically every grade is
+         * composed of evaluations, so we have <number of evaluations> columns under each
+         * degree plus 1 column where the degree note itself will reside. That's why we do a
+         * colspan of <number of evaluations>+1. Every other columns have a rowspan="2" attribute
+         * set.
+         * For the TableRaw component, the rowspan of a cell means that the corresponding index in
+         * the next row won't exist. Thus, supposing you span the cell at position 0,0, if you want
+         * to address the first position of the next row (row number 1), it will be 1,0. That's why
+         * we had to use an auxiliary index $i to control the evaluations columns.
+         */
+        if ($uOk)
+        {
+            
+            $periodLabel = new MTextLabel('periodLabel', _M('Period id', 'academic'). ':');
+            $periodLabel->setWidth(FIELD_LABEL_SIZE);
+            $periodName  = new MText('periodName', $group->period);
+            $flds[]      = new MHContainer('hctPeriodName', array($periodLabel, $periodName));
+
+            $professorLabel = new MTextLabel('professorLabel', _M('Professor', 'academic'). ':');
+            $professorLabel->setWidth(FIELD_LABEL_SIZE);
+            $professorName  = new MText('professorName', $group->professor);
+            $flds[]         = new MHContainer('hctProfessorName', array($professorLabel, $professorName));
+
+            $curricularLabel = new MTextLabel('curricularLabel', _M('Curricular component', 'academic'). ':');
+            $curricularLabel->setWidth(FIELD_LABEL_SIZE);
+            $curricularName  = new MText('curricularName', $group->curricularComponent);
+            /* $minimumFrequencyLabel    = new MTextLabel('minimumFrequencyLabel', _M('Minimum frequency', 'academic'). ':');
+            $minimumFrequencyLabel->setWidth(FIELD_LABEL_SIZE);
+            $minimumFrequencyName     = new MText('minimunFrequencyName', $group->minimumFrequency);
+            $minimumFrequencyNameHint = new MText('minimunFrequencyNameHint', _M('H/L', 'services'));
+            $minimumFrequencyNameHint->setClass('m-hint');
+            $flds[]                   = new MHContainer('hctCurricularName', array($curricularLabel, $curricularName, $minimumFrequencyLabel, $minimumFrequencyName, $minimumFrequencyNameHint)); */
+            $lessonNumberHoursLabel    = new MTextLabel('lessonNumberHours', _M('Lesson number hour', 'academic'). ':');
+            $lessonNumberHoursLabel->setWidth(FIELD_LABEL_SIZE);
+            $lessonNumberHoursName     = new MText('lessonNumberHoursName', $group->lessonNumberHours);
+            $lessonNumberHoursNameHint = new MText('lessonNumberHoursNameHint', 'H');
+            $lessonNumberHoursNameHint->setClass('m-hint');
+
+            $academicNumberHoursLabel    = new MTextLabel('academicNumberHours', _M('Academic number hours', 'academic'). ':');
+//            $academicNumberHoursLabel->setWidth(FIELD_LABEL_SIZE);
+            $academicNumberHoursName     = new MText('academicNumberHoursName', $group->academicNumberHours);
+            $academicNumberHoursNameHint = new MText('academicNumberHoursNameHint', 'H');
+            $academicNumberHoursNameHint->setClass('m-hint');
+
+            $practiceHoursLabel    = new MTextLabel('practiceHours', _M('Practice number hour', 'academic'). ':');
+//            $practiceHoursLabel->setWidth(FIELD_LABEL_SIZE);
+            $practiceHoursName     = new MText('practiceHoursName', $group->practiceHours);
+            $practiceHoursNameHint = new MText('practiceHoursNameHint', 'H');
+            $practiceHoursNameHint->setClass('m-hint');
+
+            
+            $flds[]                   = new MHContainer('hctCurricularName', array($curricularLabel, $curricularName)); 
+            $flds[]                   = new MHContainer('hctCurricularHours', array($lessonNumberHoursLabel, $lessonNumberHoursName, $lessonNumberHoursNameHint, new MDiv('','&nbsp;'), $academicNumberHoursLabel, $academicNumberHoursName, $academicNumberHoursNameHint,new MDiv('','&nbsp;'), $practiceHoursLabel, $practiceHoursName, $practiceHoursNameHint )); 
+
+            $classLabelS  = new MTextLabel('classLabel', _M('Class', 'academic'). ':');
+            $classLabelS->setWidth(FIELD_LABEL_SIZE);
+            $classNameS   = new MText('classNameS', $group->classId);
+            $flds[]       = new MHContainer('hctClassName', array($classLabelS, $classNameS));
+            
+            $obsLabelS  = new MTextLabel('obsLabel', _M('Observation', 'academic'). ':');
+            $obsLabelS->setWidth(FIELD_LABEL_SIZE);
+            $obsNameS   = new MText('obsNameS', _M('(*) Digite -- para alunos que não tiverem nota', 'academic'));
+            $flds[]     = new MHContainer('hctObsName', array($obsLabelS, $obsNameS));
+            
+            $bsg1       = new BaseGroup('bsg1','Detalhes',$flds,'vertical');
+            $bsg1->showLabel = true;
+            $bsg1->width     = '98%';
+            $fields[] = $bsg1;
+
+            $uOkField  = new MHiddenField('uOkField', $uOk);
+            $fields[] = $uOkField;
+
+        }
+        $colNum = 0;
+        $grdResults->array[0][$colNum] = _M('Id', 'services');
+        $grdResults->setCellAttribute(0, $colNum, 'rowspan', 2);
+        $grdResults->setCellClass(0, $colNum, 'm-tableraw-column-title');
+        $colNum++;
+        $grdResults->array[0][$colNum] = _M('Name', 'services');
+        $grdResults->setCellAttribute(0, $colNum, 'rowspan', 2);
+        $grdResults->setCellClass(0, $colNum, 'm-tableraw-column-title');
+        $colNum++;
+
+        $i=0;
+        for ( $iDegree=0; $iDegree<count($degrees); $iDegree++ )
+        {
+            list ( $degreeId,
+                   $degreeLearningPeriodId,
+                   $degreeDescription,
+                   $degreeFinalDate,
+                   $degreeLimitDate,
+                   $degreeNumber,
+                   $degreeConcept,
+                   $degreeWeight,
+                   $beginDateLessons,
+                   $isSubstitutive) = $degrees[$iDegree];
+
+            if ( $keyDegreeNumber == DB_TRUE )
+            {
+                $beginDateLessons = $lastDegreeFinalDate;
+            }
+
+            $evaluations[$degreeId] = $busGradeTyping->getEvaluationsByGroupId($groupId, $degreeId);
+
+            $grdResults->array[0][$colNum] = array(new MText('txtI' . $degreeId, '<b>' . $degreeDescription . '</b>'), new MText('txtW' . $degreeId, '<b>' . _M('Weight', 'services') . ' <i>' . $degreeWeight . '</i></b>'), new MText('txtD' . $degreeId, '(' . $beginDateLessons . ' - ' . $degreeFinalDate . ')'));
+            $grdResults->setCellAttribute(0, $colNum, 'colspan', count($evaluations[$degreeId])+1);
+            $grdResults->setCellAttribute(0, $colNum, 'align', 'center');
+            $grdResults->setCellClass(0, $colNum, 'm-tableraw-column-title');
+
+            $keyDegreeNumber     = DB_TRUE;
+            $lastDegreeFinalDate = $degreeFinalDate;
+
+            if ( count($evaluations[$degreeId]) > 0 )
+            {
+                foreach ( $evaluations[$degreeId] as $evaluation )
+                {
+                    list ( $evaluationId,
+                           $evaluationDescription,
+                           $evaluationWeight,
+                           $evaluationProfessorId ) = $evaluation;
+
+                    $grdResults->array[1][$i] = '<i>' . $evaluationDescription . '</i>';
+                    $grdResults->setCellClass(1, $i, 'm-tableraw-column-title');
+                    $i++;
+                }
+            }
+
+            $aimage[$degreeId] = $busGradeTyping->isGroupReleaseDefined($groupId, $degreeId);
+            if ( $busGradeTyping->isGroupReleaseDefined($groupId, $degreeId) == DB_FALSE )
+            {
+                $ui    = $MIOLO->GetUi();
+                $str   = _M('To resume @1', 'services', $degreeDescription);
+                $path  = $ui->getImage('services', 'closeDegree-16x16.png');
+                $args  = array('groupId'=>$groupId, 'periodId'=>$periodId, 'event'=>'tbBtnSave_click', 'degreeId'=>$degreeId, 'confirmDegreeId'=>DB_FALSE, 'degreeNumber'=>$degreeNumber, 'groupId' => $groupId, 'degreeDescription' => $degreeDescription);
+                if(!$uOk)
+                {
+                    $dest  = $MIOLO->getActionURL('services', 'main:professor:gradesTyping', null, $args);
+                }
+                else
+                {
+                    $dest  = $MIOLO->getActionURL('academic', 'main:process:gradesTyping2', null, $args);
+                }
+                $image = new MImageButton('img' . $degreeId, $str, $dest, $path);
+            }
+            else
+            {
+                unset($image);
+            }
+            
+            $ui    = $MIOLO->GetUi();
+            if($isSubstitutive != DB_TRUE)
+            {
+                $str   = _M('Attendance @1', 'services', $degreeDescription);
+                $path  = $ui->getImage('services', 'callList-16x16.png');
+                $args  = array('groupId'=>$groupId, 'degreeNumber'=>$degreeNumber, 'describeDays'=>'true');
+                $dest  = $MIOLO->getActionURL('academic', 'main:document:callList', null, $args);
+                $imageAttendance = new MImageButton('imgCallList' . $degreeId, $str, $dest, $path);
+                
+                $str   = _M('Grades and absence roster report for @1', 'academic', $degreeDescription);
+                $path  = $ui->getImage('services', 'gradesType-16x16.png');
+                $args  = array('groupId'=>$groupId, 'degreeNumber'=>$degreeNumber, 'describeDays'=>'true');
+                $dest  = $MIOLO->getActionURL('academic', 'main:document:gradesAndAbsenceRoster', null, $args);
+                $imageGradesType = new MImageButton('imgGradesType' . $degreeId, $str, $dest, $path);
+            }
+            else
+            {
+                $str   = _M('Minutes of evidence replacement', 'academic');
+                $path  = $ui->getImage('services', 'substitutiveNote-16x16.png');
+                $args  = array('groupId'=>$groupId, 'degreeNumber'=>$degreeNumber, 'describeDays'=>'true');
+                $dest  = $MIOLO->getActionURL('academic', 'main:document:replacementNote', null, $args);
+                $imageAttendance = new MImageButton('imgSubstitutiveNote' . $degreeId, $str, $dest, $path);
+                $imageGradesType = null;
+            }
+
+            $string = '&nbsp;<b>' . _M('Degree', 'services') . ' ' . $degreeNumber . '</b>';
+            if ( strlen ($degreeLimitDate) > 0 )
+            {
+                $string .= '&nbsp;(' . _M('limit date', 'services') . ' <i>' . $degreeLimitDate . '</i>)';
+            }
+            $image = new MHContainer('hct2'.$degreeId,array($image, $imageAttendance, $imageGradesType));
+            $image->addStyle('display', 'block');
+            //$image = new MDiv('div2'.$degreeId, $image, null, 'align=center');
+            $hct = new MHContainer('hct' . $degreeId, array(new MText('str'.$degreeId, $string),$image));
+            $hct->setShowLabel(false);
+            $div1     = new MDiv('div1' . $degreeId, $hct, null, 'align=center');
+
+            $grdResults->array[1][$i] = $div1;
+            $grdResults->setCellClass(1, $i, 'm-tableraw-column-title');
+            $grdResults->setCellAttribute(1, $i, 'align', 'center');
+            $i++;
+            $colNum++;
+        }
+
+        $grdResults->array[0][$colNum] = _M('Average', 'services');
+        $grdResults->setCellAttribute(0, $colNum, 'rowspan', 2);
+        $grdResults->setCellClass(0, $colNum, 'm-tableraw-column-title');
+        $colNum++;
+        $grdResults->array[0][$colNum] = _M('Exam', 'services');
+        $grdResults->setCellAttribute(0, $colNum, 'rowspan', 2);
+        $grdResults->setCellClass(0, $colNum, 'm-tableraw-column-title');
+        $colNum++;
+        $grdResults->array[0][$colNum] = _M('Final note', 'services');
+        $grdResults->setCellAttribute(0, $colNum, 'rowspan', 2);
+        $grdResults->setCellClass(0, $colNum, 'm-tableraw-column-title');
+        if ($uOk)
+        {
+            $colNum++;
+            $grdResults->array[0][$colNum] = _M('Frequency', 'academic');
+            $grdResults->setCellAttribute(0, $colNum, 'rowspan', 2);
+            $grdResults->setCellClass(0, $colNum, 'm-tableraw-column-title');
+        }
+        // END OF COLUMNS DEFINITION
+
+        // Display all pupils and the text boxes in which we'll enter
+        // their notes
+        $pupils = $busGradeTyping->listGroupEnrolledPupilsWithNotes($groupId);
+
+        // $jsCode is an array where each position contains one javascript line of code
+        unset($jsCode);
+
+        // images and texts for approval status
+        $approvedImage = $MIOLO->getActionUrl('services', 'html:images:approved.png');
+        $jsCode[] = 'var approvedImage = \'' . $approvedImage . '\'';
+        $jsCode[] = 'var approvedText = \'' . _M('Approved', 'services') . '\'';
+        $reprovedImage = $MIOLO->getActionUrl('services', 'html:images:reproved.png');
+        $jsCode[] = 'var reprovedImage = \'' . $reprovedImage . '\'';
+        $jsCode[] = 'var reprovedText = \'' . _M('Reproved', 'services') . '\'';
+
+        // the javascript array which will contain all enrolls
+        $jsCode[] = 'var enroll = new Array()';
+
+        // get data that user may have entered into the form
+        $evaluationsNotes = $this->getFormValue('evaluation');
+        $degreesNotes = $this->getFormValue('degree');
+        $averages = $this->getFormValue('average');
+        $exams = $this->getFormValue('exam');
+        $finalNotes = $this->getFormValue('finalNote');
+        if ( $uOk )
+        {
+            $frequencys = $this->getFormValue('frequency');
+        }
+
+        // iterate all pupils
+        for ( $iPupil=0; $iPupil<count($pupils); $iPupil++ )
+        {
+            list ( $enrollId,
+                   $personId,
+                   $personName,
+                   $courseId,
+                   $average,
+                   $examNote,
+                   $finalNote,
+                   $statusId,
+                   $frequency ) = $pupils[$iPupil];
+
+            // $row represents each row of the table
+            unset($row);
+            $row[] = $personId;
+            $row[] = str_replace(' ', '&nbsp;', $personName);
+
+            // instantiate a new objEnroll for each enroll entry
+            $jsCode[] = 'enroll[' . $enrollId . '] = new objEnroll(' . $enrollId . ', ' . $group->averageWeight . ', ' . $group->examWeight . ', ' . $group->average . ', ' . $group->finalAverage . ', ' . $group->disapprovationWithoutExam . ', '. $group->minimumFrequency . ', ' .  $group->maxNote .  ')';
+
+            // iterate all degrees of this enroll
+            for ( $iDegree=0; $iDegree<count($degrees); $iDegree++ )
+            {
+                list ( $degreeId,
+                       $degreeLearningPeriodId,
+                       $degreeDescription,
+                       $degreeFinalDate,
+                       $degreeLimitDate,
+                       $degreeNumber,
+                       $degreeConcept,
+                       $degreeWeight,
+                       $degreeBeginDateLessons,
+                       $degreeIsSubstitutive, 
+                       $degreeMaxNote ) = $degrees[$iDegree];
+
+                $degreeNote = $busGradeTyping->getEnrollDegreeIdNote($degreeId, $enrollId);
+
+                // create the text field for this degree and set its onchange
+                // attribute so that the average is updated on each change
+                $txtDegreeName = 'degree[' . $enrollId . '][' . $degreeId . ']';
+                $degreeNote = is_null($degreesNotes) ? $degreeNote : $degreesNotes[$enrollId][$degreeId];
+                $txtDegree = new MTextField($txtDegreeName, ( strlen((string)$degreeNote)>0 && $degreeNote != '--') ? number_format($degreeNote,2) : $degreeNote, null, 5);
+                if($aimage[$degreeId] == DB_TRUE && !$uOk )
+                {
+                    $txtDegree->setReadOnly(true);
+                }
+
+                $txtDegree->addAttribute('onchange','enroll[' . $enrollId . '].updateAverage(\'' . $txtDegreeName . '\')');
+
+                // instantiate the degree javascript object which will be added to the current
+                // javascript enroll object
+                $jsCode[] = 'var degree = new objDegree(' . $degreeId . ', ' . $degreeWeight . ', \'' . $degreeIsSubstitutive . '\',' . $degreeMaxNote . ')';
+
+                // iterate all evaluations of this degree
+                for ( $iEvaluations=0; $iEvaluations<count($evaluations[$degreeId]); $iEvaluations++ )
+                {
+                    list ( $evaluationId,
+                           $evaluationDescription,
+                           $evaluationWeight,
+                           $evaluationProfessorId ) = $evaluations[$degreeId][$iEvaluations];
+
+                    $evaluationNote = $busGradeTyping->getEnrollEvaluationIdNote($evaluationId, $enrollId);
+
+                    // create the text field for this evaluation, setting its onchange attribute
+                    // the same way it was done with the degree field
+                    $grdResults->setCellAttribute(count($grdResults->array), count($row), 'style', 'background-color:#CCCCFF');
+                    $evaluationNote = is_null($evaluationsNotes) ? $evaluationNote : $evaluationsNotes[$enrollId][$degreeId][$evaluationId];
+                    $txtEvaluation = new MTextField('evaluation[' . $enrollId . '][' . $degreeId . '][' . $evaluationId . ']', $evaluationNote ? number_format($evaluationNote,2) : $evaluationNote, null, 5);
+                    $txtEvaluation->addAttribute('onchange','enroll[' . $enrollId . '].updateDegree(' . $degreeId . ', \'' . $evaluationId . '\')');
+
+                    // instantiate the javascript evaluation object and add it to the current degree
+                    $jsCode[] = 'var evaluation = new objEvaluation(' . $evaluationId . ', ' . $evaluationWeight . ')';
+                    $jsCode[] = 'degree.addEvaluation(evaluation)';
+
+                    $row[] = $txtEvaluation;
+                }
+
+                $row[] = $txtDegree;
+
+                // add the current degree (which already contains all evaluations associated to itself)
+                // to the current enroll javascript object
+                $jsCode[] = 'enroll[' . $enrollId . '].addDegree(degree)';
+            }
+
+            // create the average text field, setting the onchange attribute
+            $average = is_null($averages) ? $average : $averages[$enrollId];
+            $txtAverage = new MTextField('average[' . $enrollId . ']', $average ? number_format($average,2) : $average, null, 5);
+            $txtAverage->addAttribute('onchange','enroll[' . $enrollId . '].updateFinalNote()');
+            $txtAverage->setReadOnly(TRUE);
+            $row[] = $txtAverage;
+
+            // create the exam text field, setting the onchange attribute
+            $examNote = is_null($exams) ? $examNote : $exams[$enrollId];
+            $txtExam = new MTextField('exam[' . $enrollId . ']', $examNote ? number_format($examNote,2) : $examNote, null, 5);
+            $txtExam->addAttribute('onchange','enroll[' . $enrollId . '].updateFinalNote()');
+            $row[] = $txtExam;
+
+            // create the final note text field, setting the onchange attribute
+            $finalNote = is_null($finalNotes) ? $finalNote : $finalNotes[$enrollId];
+            $txtFinalNote = new MTextField('finalNote[' . $enrollId . ']', $finalNote ? number_format($finalNote,2) : $finalNote, null, 5);
+            $txtFinalNote->setReadOnly(TRUE);
+            $txtFinalNote->addAttribute('onchange','enroll[' . $enrollId . '].updateApprovalStatus()');
+            // this is used to set the pupil initial state
+            if ( $finalNote >= $group->finalAverage )
+            {
+                $statusImage = $approvedImage;
+                $statusText = _M('Approved', 'services');
+            }
+            else
+            {
+                $statusImage = $reprovedImage;
+                $statusText = _M('Reproved', 'services');
+            }
+            // create the status image
+            $txtApproved = new MImage('status[' . $enrollId . ']', $statusText, $statusImage);
+            $row[] = array($txtFinalNote, $txtApproved);
+
+            if ( $MIOLO->checkAccess('academic', ACD_UPDATE, false, true) && $MIOLO->checkAccess('academic', ACD_INSERT, false, true) )
+            {
+                $frequency = is_null($frequencys) ? $frequency : $frequencys[$enrollId];
+                $txtFrequency = new MTextField('frequency[' . $enrollId . ']', $frequency , null, 5, _M('H/L', 'services'));
+                $txtFrequency->addAttribute('onchange','enroll[' . $enrollId . '].updateApprovalStatus()');
+                $txtLegenda  = new MText('legenda[' . $enrollId . ']', _M('H/L', 'services'));
+                $txtLegenda->setClass('m-hint');
+ 
+                $row[] = array($txtFrequency,$txtLegenda);
+            }
+
+            // add the generated row to the array of rows
+            $grdResults->array[] = $row;
+        }
+
+        $grdResults->setAlternate(true);
+
+        // add all javascript to the page
+        for ( $i=0; $i<count($jsCode); $i++ )
+        {
+            $this->page->addJsCode($jsCode[$i]);
+        }
+
+        $fields[] = $grdResults;
+
+//        $lblCounter = new MLabel(_M('@1 records found.', 'services', count($grdResults->array)-2));
+//        $fields[] = $lblCounter;
+
+        $fields[] = new MSeparator();
+
+        $this->setFields($fields2);
+        if ( isset($msg) )
+        {
+            if ( $question == 1 )
+            {
+                $ui      = $MIOLO->GetUi();
+                $degreeNumber      = MIOLO::_request('degreeNumber');
+                $degreeDescription = MIOLO::_request('degreeDescription');
+                $degreeId = MIOLO::_request('degreeId');
+
+                $str   = _M('To resume @1', 'services', $degreeDescription);
+                $path  = $ui->getImage('services', 'approved.png');
+                $args  = array('groupId'=>$groupId, 'periodId'=>$periodId, 'event'=>'tbBtnSave_click', 'degreeId'=>$degreeId, 'confirmDegreeId'=>DB_TRUE, 'degreeNumber'=>$degreeNumber, 'groupId' => $groupId);
+                if(!$uOk)
+                {
+                    $dest  = $MIOLO->getActionURL('services', 'main:professor:gradesTyping', null, $args);
+                }
+                else
+                {
+                    $dest  = $MIOLO->getActionURL('academic', 'main:process:gradesTyping2', null, $args);
+                }
+                //$dest  = $MIOLO->getActionURL('services', 'main:professor:gradesTyping', null, $args);
+                $image = new MImageButton('img' . $degreeId, $str, $dest, $path);
+                $btnSim = $image;
+
+                $hct = new MHContainer('hct_' . $degreeId, array(new Separator(), new MTextLabel('labelInfo', '<font color=blue>' . $msg . '</font>'), $btnSim));
+                $hct->setShowLabel(false);
+                $div1     = new MDiv('div1_' . $degreeId, array($hct, new Separator()), null, 'align=center');
+
+                $this->addField($div1);
+            }
+            else
+            {
+                $fld33[]  = new MTextLabel('labelInfo', '<br><font color=red>' . $msg . '!</font><br>&nbsp;');
+                $this->addField(new MDiv('divInfo', $fld33, null, 'align=center'));
+            }
+            unset($fld33);
+
+            $jsCode =
+<<< HERE
+
+function hideInfo()
+{
+    var info = document.getElementById('pbm323');
+    if ( info )
+    {
+        info.style.display = 'none';
+    }
+}
+setTimeout(hideInfo, 5000)
+
+HERE;
+
+            $this->page->addJsCode($jsCode);
+        }
+        $this->addFields($fields);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+    }
+
+    public function tbBtnSave_click($args)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $action = MIOLO::getCurrentAction();
+
+        $evaluations = $this->getFormValue('evaluation');
+        $degrees     = $this->getFormValue('degree');
+        $averages    = $this->getFormValue('average');
+        $exams       = $this->getFormValue('exam');
+        $finalNotes  = $this->getFormValue('finalNote');
+        $frequencys  = $this->getFormValue('frequency');
+        $degreeId          = MIOLO::_request('degreeId');
+        $groupId           = $this->getFormValue('groupId');
+        $degreeNumber      = MIOLO::_request('degreeNumber');
+        $degreeDescription = MIOLO::_request('degreeDescription');
+        $confirmDegreeId   = $this->getFormValue('confirmDegreeId');
+        $question          = $this->getFormValue('question');
+        $uOk = MIOLO::_request('uOkField');
+
+        $busGroup = $MIOLO->getBusiness('academic', 'BusGroup');
+        $group    = $busGroup->getGroup($groupId);
+
+        if ( $group->isClosed == DB_TRUE && !$uOk )
+        {
+            $msg = _M('Curricular component is closed!', 'academic');
+            $this->defineFields($msg, 0);
+        }
+        else
+        {
+
+        if ( strlen((string)$degreeId)>0 && $confirmDegreeId == DB_FALSE )
+        {
+            //checagem se todas notas foram digitadas
+            $keyDegree = false;
+            if ( count($degrees)>0 )
+            {
+                foreach ( $degrees as $degree )
+                {
+                    if ( strlen((string)$degree[$degreeId]) == 0 )
+                    {
+                        $keyDegree = true;
+                        break;
+                    }
+                }
+            }
+            if ( $keyDegree == true )
+            {
+                $msg = _M('There is one or more students without a note, so it is not possible to supply', 'services');
+                $this->defineFields($msg, 0);
+            }
+            //checagem da frequencia
+            else
+            {
+                $bus   = $MIOLO->getBusiness('academic', 'BusGradeTyping');
+                $check = $bus->validateFrequencies($groupId, $degreeId);
+
+                if ( $check == false )
+                {
+                    $msg = _M('Not all lessons were recorded to complete the academic degree', 'services');
+                    $this->defineFields($msg, 0);
+                }
+                else
+                {
+                    $msg = _M('Are you right that desires releases the degrees and frequencies from the degree @1? To save and release click in the image bellow:', 'services', $degreeNumber);
+                    $this->defineFields($msg, 1);
+                }
+            }
+        }
+        elseif ( ( strlen((string)$degreeId)>0 && $confirmDegreeId == DB_TRUE )  || ( strlen((string)$degreeId) == 0 && strlen((string)$confirmDegreeId) == 0 ) )
+        {
+            $bus = $MIOLO->getBusiness('academic', 'BusGradeTyping');
+            try
+            {
+                if ( $bus->setGrades($evaluations, $degrees, $averages, $exams, $finalNotes, $frequencys) )
+                {
+                    if ( strlen((string)$degreeId)>0 && $confirmDegreeId == DB_TRUE )
+                    {
+                        $groupRelease = new AcdGroupRelease(); 
+                        $groupRelease->degreeId = $degreeId;
+                        $groupRelease->groupId  = $groupId;
+
+                        $bus = $MIOLO->getBusiness('academic', 'BusGroupRelease');
+                        $bus->insertGroupRelease($groupRelease);
+                    }
+                    $msg = _M('Data saved successfully', 'services');
+                    $this->defineFields($msg);
+                }
+            }
+            catch ( Exception $e )
+            {
+                $MIOLO->Error(_M('Error while trying to insert grades: @1', 'services', $e->getMessage()));
+            }
+        }
+
+        }
+
+    }
+}
+
+?>

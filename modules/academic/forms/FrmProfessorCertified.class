@@ -1,0 +1,344 @@
+<?php
+
+/**
+ * Course enroll certified form
+ *
+ * @author Daniel Afonso Heisler [daniel@solis.coop.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * Leovan Tavares da Silva [leovan@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ *
+ * @since
+ * Class created on 25/05/2006
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2005 SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+
+/**
+ * Form to manipulate a contract document
+ **/
+class FrmProfessorCertified extends MForm
+{
+    private $home;
+
+    /**
+     * Class constructor
+     **/
+    function __construct($data)
+    {
+        $module = MIOLO::getCurrentModule();
+        $this->home   = $data->home;
+
+        parent::__construct(_M('Professor certified', $module));
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+        $event    = MIOLO::_request('event');
+        
+        $toolBar = new MToolBar('toolBar', $MIOLO->getActionURL($module, $action));
+        $toolBar->hideButton('tbBtnNew');
+        $toolBar->hideButton('tbBtnSave');        
+        $toolBar->hideButton('tbBtnSearch');
+        $toolBar->hideButton('tbBtnDelete');
+        $toolBar->enableButton('tbBtnPrint');
+
+        //favoritos
+        $enabledImage  = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-20x20.png');
+        $disabledImage = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-disabled-20x20.png');
+        $url           = $MIOLO->getActionURL($module, $this->home, null, array('function' => 'search', 'event' => 'bookmark'));
+        $toolBar->addButton('tbBtnBookmark', _M('Add to bookmarks', 'basic'), $url, null, true, $enabledImage, $disabledImage);
+
+        if ( MIOLO::_request('event') == 'bookmark' )
+        {
+            $MIOLO->getClass('basic', 'access');
+            access::insert('Professor certified', $this->home, 'certified-16x16.png', true);
+        }
+        //fim favoritos
+
+        $fields[] = $toolBar;
+
+        $fields[] = new MSeparator();
+        $fields[] = new MHiddenField('limbo', '');
+
+//         $contractId = new MHiddenField('contractId', $this->contractId->value);
+//         $fields2[]  = $contractId;
+
+        $fields[] = new MSeparator();
+
+        $personLabel  = new MText('personLabel', _M('Professor',$module) . ':');
+        $personLabel->setClass('m-caption m-caption-required');
+        $personLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $flds[]       = $personLabel;
+
+        $personId     = new MLookupTextField('personId', $this->getFormValue('personId', $this->personId), null, FIELD_LOOKUPFIELD_SIZE, null, null, array('personName'), 'basic', 'PhysicalPersonProfessor', null, array('personId' => 'personId'), true);
+        $validators[] = new MIntegerValidator('personId', _M('Professor',$module), 'required');
+        $flds[]       = $personId;
+
+        $personName   = new MTextField('personName', $this->getFormValue('personName', $data->personName), _M('Person name',$module), FIELD_DESCRIPTION_SIZE);
+        $personName->setJsHint(_M('Enter the person name',$module));
+        $personName->setReadOnly(true);
+        $flds[]       = $personName;
+
+        $hctPerson    = new MHContainer('hctPerson', $flds);
+        $hctPerson->setShowLabel(false);
+        $fields[]     = $hctPerson;
+        unset($flds);
+
+        $business = $MIOLO->getBusiness($module,'BusPeriod');
+        $periodId = new MComboBox('periodId', strlen((string)$this->getFormValue('periodId', $data->periodId))>0 ? $this->getFormValue('periodId', $data->periodId) : CURRENT_PERIOD_ID, _M('Period',$module), $business->listPeriod());
+        $validators[] = new MRequiredValidator('periodId','', 'required');
+        $fields[] = $periodId;
+        $fields[] = new Separator('');
+
+        $opts[] = new MOption('optGraduation', 'G', _M('Graduation', $module), true);
+//        $opts[] = new MOption('optTechnician', 'T', _M('Technician', $module), false);
+
+        $radOptionLabel = new MText('radOptionLabel', _M('Certified type', $module) . ':');
+        $radOptionLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $radOptionLabel->setClass('m-caption m-caption-required');
+        $flds[]         = $radOptionLabel;
+
+        $radOption = new MRadioButtonGroup('radOption', '', $opts, $this->getFormValue('radOption', $this->radOption->value), '', 'vertical');
+        $radOption->setShowLabel(false);
+        $flds[]    = $radOption;
+        unset($opts);
+
+        $hctOption = new MHContainer('hctOption', $flds);
+        $hctOption->setShowLabel(false);
+        unset($flds);
+        $fields[] = $hctOption;
+
+        $opts[] = new MOption('optIsProfessor', 'Y', _M('It is professor', $module), true);
+        $opts[] = new MOption('optItWasProfessor', 'N', _M('It was professor', $module), false);
+
+        $radOptionLabel2 = new MText('radOptionLabel2', 'Status:');
+        $radOptionLabel2->setWidth(FIELD_CONTAINER_SIZE);
+        $radOptionLabel2->setClass('m-caption m-caption-required');
+        $flds[]         = $radOptionLabel2;
+
+        $radOption2 = new MRadioButtonGroup('radOption2', '', $opts, $this->getFormValue('radOption2', $this->radOption2->value), '', 'horizontal');
+        $radOption2->setShowLabel(false);
+        $flds[]    = $radOption2;
+        unset($opts);
+
+        $hctOption2 = new MHContainer('hctOption2', $flds);
+        $hctOption2->setShowLabel(false);
+        unset($flds);
+        $fields[] = $hctOption2;
+
+        $stampLabel          = new MText('stampLabel', _M('Stamp',$module) . ':');
+        $stampLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $flds[]              = $stampLabel;
+ 
+        $employeeId         = new MLookupTextField('employeeId', $this->getFormValue('employeeId', $this->employeeId), null, 10, null, null, array('employeeId', 'employeeName', 'functionDescription', 'sector'), 'basic', 'Stamp', null, null, true);
+        $employeeId->setJsHint(_M('Enter the employee id',$module));
+        $flds[]              = $employeeId;
+
+        $employeeName = new MTextField('employeeName', $this->getFormValue('employeeName', $data->employeeName), null, 20);
+        $employeeName->setJsHint(_M('Employee function',$module));
+        $employeeName->setReadOnly(true);
+        $flds[]              = $employeeName;
+
+        $functionDescription = new MTextField('functionDescription', $this->getFormValue('functionDescription', $data->functionDescription), null, 20);
+        $functionDescription->setJsHint(_M('Employee function',$module));
+        $flds[]              = $functionDescription;
+        $functionDescription->setReadOnly(true);
+
+        $sector              = new MTextField('sector', $this->getFormValue('sector', $data->sector), null, 20);
+        $sector->setJsHint(_M('Employee sector',$module));
+        $sector->setReadOnly(true);
+        $flds[]              = $sector;
+ 
+        $hctStamp            = new MHContainer('hctStamp', $flds);
+        $hctStamp->setShowLabel(false);
+        $fields[]            = $hctStamp;
+        unset($flds);
+
+        $opts[] = new MOption('optPdf', 'pdf', 'pdf', true);
+        $opts[] = new MOption('optSxw', 'sxw', 'sxw', false);
+
+        $radFileTypeLabel = new MText('radFileTypeLabel', _M('File type',$module) . ':');
+        $radFileTypeLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $radFileTypeLabel->setClass('m-caption m-caption-required');
+
+        $radFileType = new MRadioButtonGroup('radFileType', '', $opts, 2, '', 'horizontal', '');
+        $radFileType->setShowLabel(false);
+
+        $hctFileType = new MHContainer('hctFileType', array($radFileTypeLabel, $radFileType));
+        $hctFileType->setShowLabel(false);
+        $fields[]    = $hctFileType;
+
+        $emissionDate = new MCalendarField('emissionDate', strlen((string)$this->getFormValue('emissionDate'))>0 ? $this->getFormValue('emissionDate') : date(MASK_DATE_PHP), _M('Emission date', $module), FIELD_DATE_SIZE);
+        $validators[] = new DateDMYValidator('emissionDate', null, 'required');
+        $fields[]     = $emissionDate;
+
+        $divError = new MDiv('divError', null, null, 'align=center');
+        $fields[] = $divError;
+
+        $fields[] = new MSeparator();
+
+        $this->setFields($fields);
+        $this->setValidators($validators);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+        $this->setClose($MIOLO->getActionURL($module,substr($action,0,strrpos($action,':'))));
+    }
+
+    /**
+     * Event triggered when user chooses Search from the toolbar
+     **/
+    public function tbBtnPrint_click($sender = null)
+    {
+
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+//        $cd->contractId              = MIOLO::_request('contractId');
+        $cd->personId                = MIOLO::_request('personId');
+        $cd->courseId                = MIOLO::_request('courseId');
+        $cd->courseVersion           = MIOLO::_request('courseVersion');
+        $cd->fileType                = MIOLO::_request('radFileType');
+        $cd->certifiedType           = MIOLO::_request('radOption');
+        $cd->professorType           = MIOLO::_request('radOption2');
+        $cd->periodId                = MIOLO::_request('periodId');
+        $cd->stampName               = MIOLO::_request('employeeName');
+        $cd->functionDescription     = MIOLO::_request('functionDescription');
+        $cd->sector                  = MIOLO::_request('sector');
+        $cd->emissionDate            = MIOLO::_request('emissionDate');
+
+        if ( strlen((string)$cd->personId) == 0 || strlen((string)$cd->emissionDate) == 0 || strlen((string)$cd->periodId) == 0)
+        {
+            $lblMsg1        = new MText('lblMsg1', '');
+            $lblMsg1->color = 'red';
+            $cntErrors      = new MVContainer('cntErrors', array($lblMsg1));
+            $this->divError->addControl($cntErrors);
+        }
+        else
+        {
+                //pega os dados da instituicao
+                $businessCompany = $MIOLO->getBusiness('basic', 'BusCompany');
+                $company         = $businessCompany->getCompany(DEFAULT_COMPANY_CONF);
+
+                $businessLegalPerson = $MIOLO->getBusiness('basic', 'BusLegalPerson');
+                $legalPerson         = $businessLegalPerson->getLegalPerson($company->personId);
+
+                $businessCity = $MIOLO->getBusiness('basic', 'BusCity');
+                $city         = $businessCity->getCity($legalPerson->cityId);
+
+                //pega os dados do professor
+                $businessPhysicalPersonProfessor = $MIOLO->getBusiness('basic',         'BusPhysicalPersonProfessor');
+                $physicalPersonProfessor         = $businessPhysicalPersonProfessor->getPhysicalPersonProfessor($cd->personId);
+                
+                //pega a sequencia de atestados
+                $cd->dateIssue       = $cd->emissionDate;
+                $cd->certifiedTypeId = CERTIFIED_PROFESSOR;
+
+                $businessCertified = $MIOLO->getBusiness($module, 'BusCertified');
+                $certifiedNumber   = $businessCertified->getSequence($cd);
+
+                $MIOLO->uses('/core/AgataAPI.class');
+
+                $api = new AgataAPI;
+               
+
+                $api->setParameter('$certifiedNumber', $certifiedNumber);
+                if ( $cd->certifiedType == 'G' )
+                {
+                    $api->setParameter('$departament', 'PROEN');
+                    $api->setParameter('$companySector', strtoupper($company->companyTypeDescription) . ' ' . strtoupper($legalPerson->fakeName));
+                }
+                $api->setParameter('$institution', $legalPerson->name);
+                $api->setParameter('$personId', $physicalPersonProfessor->personId);
+                $api->setParameter('$name', $physicalPersonProfessor->name);
+                $api->setParameter('$companyName', $company->companyTypeDescription . ' ' . $legalPerson->fakeName);
+                $api->setParameter('$courseName', $contract->courseName);
+                $api->setParameter('$periodId', $cd->periodId);
+                $api->setParameter('$cityName', SAGU::getCapitulatetString($city->name));
+                $api->setParameter('$stateId', $city->stateId);
+                $api->setParameter('$stampName', SAGU::getCapitulatetString($cd->stampName));
+                $api->setParameter('$functionDescription', SAGU::getCapitulatetString($cd->functionDescription));
+                $api->setParameter('$sector', SAGU::getCapitulatetString($cd->sector));
+                $api->setParameter('$emissionDate', SAGU::getDateByExtense($cd->emissionDate));
+
+                $api->setLanguage($MIOLO->getConf('i18n.language'));
+                $api->setOutputPath(TEMP_DIR . '/certified.sxw');
+                $api->setDataArray($null);
+
+                $businessProfessorCertified = $MIOLO->getBusiness($module, 'BusProfessorCertified');
+                $data           = $businessProfessorCertified->getProfessorCertified($cd->periodId, $cd->personId);
+ 
+                if ( strtoupper($cd->professorType) == 'N' )
+                {
+                    $contractResource = 'itWasProfessorCertified.sxw';
+                }
+                elseif ( strtoupper($cd->professorType) == 'Y' ) 
+                {
+                    $contractResource = 'isProfessorCertified.sxw';
+                }
+                $array[0][1] = $data;
+
+                $api->setSubDataArray($array);
+
+                $ok = $api->parseOpenOffice($MIOLO->getModulePath('basic', '/documents/') . $contractResource);
+
+                if ( $ok && $cd->fileType == 'pdf' )
+                {
+                    $api->setOutputPath(TEMP_DIR . '/certified.pdf');
+                    $ok = $api->openOffice2pdf(TEMP_DIR . '/certified.sxw');
+                }
+
+                //se não conseguiu gerar o arquivo
+                if ( !$ok )
+                {
+                    $lblAgataError        = new MText('lblMsg1', $api->getError());
+                    $lblAgataError->color = 'red';
+                    $sep1                 = new Separator('');
+                    $cntErrors            = new MVContainer('cntErrors', array($lblAgataError,$sep));
+                    $this->divError->addControl($cntErrors);
+                }
+                else
+                {
+                    //insere a sequencia nos atestados
+                    $ok = $businessCertified->insertCertified($cd);
+
+                    //se inseriu o registro
+                    if ( $ok )
+                    {
+                        $api->fileDialog();
+                    }
+                }
+            
+        }
+    }
+}
+
+?>

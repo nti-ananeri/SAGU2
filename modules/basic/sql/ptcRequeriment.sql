@@ -1,0 +1,17 @@
+INSERT INTO ptcrequeriment (username, datetime, ipaddress, description, tax, alert) VALUES ('admin', '2006-07-07 16:38:47.289237-03', '127.0.0.1', 'REINGRESSO', 4.00, NULL);
+INSERT INTO ptcrequeriment (username, datetime, ipaddress, description, tax, alert) VALUES ('admin', '2006-09-14 15:48:51.76304-03', '127.0.0.1', 'TRANSFERÊNCIA INTERNA DE CURSO', 4.00, NULL);
+INSERT INTO ptcrequeriment (username, datetime, ipaddress, description, tax, alert) VALUES ('admin', '2006-09-14 15:07:47.799183-03', '127.0.0.1', 'REINGRESSO COM TRANSF. INTERNA', 4.00, NULL);
+INSERT INTO ptcrequeriment (username, datetime, ipaddress, description, tax, alert) VALUES ('admin', '2006-12-04 20:20:41.623474-02', '127.0.0.1', 'ALUNO OUVINTE', 4.00, NULL);
+INSERT INTO ptcrequeriment (username, datetime, ipaddress, description, tax, alert) VALUES ('admin', '2006-12-04 22:23:13.620734-02', '127.0.0.1', 'DESCONTO EM DISCIPLINA REPROVADA', 4.00, NULL);
+INSERT INTO ptcrequeriment (username, datetime, ipaddress, description, tax, alert) VALUES ('admin', '2006-12-04 22:00:07.047605-02', '127.0.0.1', 'ÉPOCA ESPECIAL DE PROVA', 4.00, 'ANEXAR COMPROVANTES (ATESTADO,...)');
+INSERT INTO ptcrequeriment (username, datetime, ipaddress, description, tax, alert) VALUES ('admin', '2006-12-04 22:41:45.014444-02', '127.0.0.1', 'REVISÃO DE EXAME', 4.00, NULL);
+INSERT INTO ptcrequeriment (username, datetime, ipaddress, description, tax, alert) VALUES ('admin', '2006-10-02 09:49:53.504674-03', '127.0.0.1', 'REGIME ESPECIAL DE ESTUDOS', 4.00, NULL);
+INSERT INTO ptcrequeriment (username, datetime, ipaddress, description, tax, alert) VALUES ('admin', '2006-12-04 22:43:24.670382-02', '127.0.0.1', 'TRANCAMENTO DE DISCIPLINAS', 4.00, NULL);
+INSERT INTO ptcrequeriment (username, datetime, ipaddress, description, tax, alert) VALUES ('admin', '2006-12-06 10:08:26.33791-02', '127.0.0.1', 'TRANCAMENTO DE MATRÍCULA', 4.00, NULL);
+INSERT INTO ptcrequeriment (username, datetime, ipaddress, description, tax, alert) VALUES ('admin', '2006-10-02 10:04:13.864059-03', '127.0.0.1', 'TRANCAMENTO DE MATRÍCULA - PÓS GRADUAÇÃO', 4.00, NULL);
+INSERT INTO ptcrequeriment (username, datetime, ipaddress, description, tax, alert) VALUES ('admin', '2006-12-04 20:30:06.478498-02', '127.0.0.1', 'APROVEITAMENTO DE DISCIPLINAS', 0.00, NULL);
+INSERT INTO ptcrequeriment (username, datetime, ipaddress, description, tax, alert) VALUES ('admin', '2006-10-02 10:12:00.459974-03', '127.0.0.1', 'ATIVIDADES COMPLEMENTARES', 0.00, NULL);
+INSERT INTO ptcrequeriment (username, datetime, ipaddress, description, tax, alert) VALUES ('admin', '2006-10-02 14:59:49.416775-03', '127.0.0.1', 'CURSAR MENOS DE OITO CRÉDITOS', 4.00, NULL);
+INSERT INTO ptcrequeriment (username, datetime, ipaddress, description, tax, alert) VALUES ('admin', '2006-10-02 15:08:14.417107-03', '127.0.0.1', 'DESCONTO PARA DEPENDENTES', 0.00, NULL);
+INSERT INTO ptcrequeriment (username, datetime, ipaddress, description, tax, alert) VALUES ('admin', '2006-10-02 15:10:08.257405-03', '127.0.0.1', 'COLAÇÃO DE GRAU', 4.00, NULL);
+INSERT INTO ptcrequeriment (username, datetime, ipaddress, description, tax, alert) VALUES ('admin', '2006-10-02 15:45:57.343148-03', '127.0.0.1', 'BANCA FECHADA', 4.00, NULL);

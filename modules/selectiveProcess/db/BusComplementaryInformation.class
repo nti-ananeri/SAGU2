@@ -1,0 +1,195 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for sprOtherListings
+ *
+ * @author Rafael Luís Spengler [rafael@solis.coop.br]
+ *
+ * @version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * Rafael Luís Spengler [rafael@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ *
+ * @since
+ * Class created on 26/12/2005
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br
+ *
+ **/
+
+/**
+ * Class to manipulate the sprOtherListings table
+ **/
+class BusinessSelectiveProcessBusComplementaryInformation extends Business
+{
+
+    /**
+     * Make a connection to the database
+     *
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module = is_null($module) ? 'selectiveProcess' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+    /**
+     * Report of inscriptions for general location
+     *
+     * @param $selectiveProcessId (int): Selective process id
+     *
+     * @return (array): An array containing the search results
+     **/
+    public function origin ($selectiveProcessId, $cityId=null)
+    {
+       $args = array($selectiveProcessId);
+
+       $sql = 'SELECT DISTINCT B.cityId,
+                               C.name,
+                               count(A.inscriptionId)
+                          FROM sprInscription A
+                LEFT JOIN ONLY basPerson B
+                            ON ( A.personId = B.personId )
+                     LEFT JOIN basCity C
+                            ON ( B.cityId = C.cityId )
+                         WHERE A.selectiveProcessId = ? ';
+
+        if ( strlen((string)$cityId) > 0 )
+        {
+            $sql .= ' AND B.cityId = ? ';
+            $args[] = $cityId;
+        }
+
+        $sql .= '              GROUP BY B.cityId, C.name
+                      ORDER BY C.name ';
+
+        $db = $this->getDatabase();
+
+        $result = $db->query(SAGU::prepare($sql, $args));
+
+        return $result;
+    }
+
+    public function enrolled ($selectiveProcessId, $cityId)
+    {
+       $args = array($selectiveProcessId, $cityId);
+
+       $sql = 'SELECT DISTINCT A.inscriptionId,
+                               B.name
+                          FROM sprInscription A
+                LEFT JOIN ONLY basPerson B
+                            ON ( A.personId = B.personId )
+                     LEFT JOIN basCity C
+                            ON ( B.cityId = C.cityId )
+                         WHERE A.selectiveProcessId = ?
+                           AND C.cityId = ?
+                      GROUP BY B.name, A.inscriptionId
+                      ORDER BY B.name ';
+
+        $db = $this->getDatabase();
+
+        $result = $db->query(SAGU::prepare($sql, $args));
+        
+        return $result;
+    }    
+
+    public function ageOfCandidates ($selectiveProcessId, $cityId=null)
+    {
+        $args = array($selectiveProcessId);
+
+        $sql = ' SELECT ( (G.beginDate - F.datebirth)/365 ) as age,
+                         count(A.inscriptionId)
+                    FROM sprInscription A
+          LEFT JOIN ONLY basPhysicalPersonStudent F
+                      ON (F.personId = A.personId)
+               LEFT JOIN sprSelectiveProcess G
+                      ON (G.selectiveProcessId = A.selectiveProcessId)
+                   WHERE A.selectiveProcessId = ? ';
+
+        if ( strlen((string)$cityId) > 0 )
+        {
+            $sql .= ' AND F.cityId = ? ';
+            $args[] = $cityId;
+        }
+
+        $sql .= 'GROUP BY age
+                 ORDER BY age ';
+
+        $db = $this->getDatabase();
+
+        $result = $db->query(SAGU::prepare($sql, $args));
+
+        return $result;
+    }
+
+    public function classified ($selectiveProcessId, $cityId)
+    {
+        $args = array($selectiveProcessId, $cityId);
+
+        $sql = ' SELECT A.inscriptionId,
+                        E.name,
+                        G.courseId,
+                        G.shortname,
+                        H.unitId,
+                        CASE WHEN A.isClassified = \''.DB_FALSE.'\'
+                             THEN 3
+                             ELSE CASE WHEN B.coursePosition <= D.vacant
+                                       THEN 1
+                                       ELSE 2
+                                  END
+                        END AS classified
+                   FROM sprInscription A
+             INNER JOIN sprInscriptionOption B
+                     ON ( A.inscriptionId = B.inscriptionId )
+             INNER JOIN sprCourseOccurrence C
+                     ON ( B.courseOccurrenceId = C.courseOccurrenceId )
+             INNER JOIN sprCourseVacant D
+                     ON ( C.courseVacantId = D.courseVacantId )
+             INNER JOIN basUnit H
+                     ON ( C.unitId = H.unitId )
+             INNER JOIN basPhysicalPersonStudent E
+                     ON ( E.personId = A.personId )
+              LEFT JOIN sprCourseOccurrence F
+                     ON ( B.courseOccurrenceId = F.courseOccurrenceId )
+              LEFT JOIN acdCourse G
+                     ON ( F.courseId = G.courseId )
+              LEFT JOIN basCity I
+                     ON ( E.cityId = I.cityId )
+                  WHERE A.selectiveProcessId = ?
+                    AND B.optionNumber = 1
+                    AND I.cityId = ?
+               ORDER BY classified, E.name ' ;
+
+        $db = $this->getDatabase();
+
+        $result = $db->query(SAGU::prepare($sql, $args));
+
+        return $result;
+    }
+
+
+    
+}
+
+?>

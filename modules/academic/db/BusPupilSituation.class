@@ -1,0 +1,265 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for basCenter table
+ *
+ * @author Hélio H. R. Guimarães [helio@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 08/11/2006
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to manipulate the basCenter table
+ **/
+class BusinessAcademicBusPupilSituation extends Business
+{
+
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic', 'sagu');
+        $module = is_null($module) ? 'academic' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+    /**
+     * Make a connection to gnuteca database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabaseLibrary($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic', 'sagu');
+        $module = 'gnuteca';
+
+        return $MIOLO->getDatabase($module);
+    }
+
+    /**
+     * Invoice from person
+     *
+     * @param $centerId (string): Primary key for deletion
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+    public function invoiceFromPerson($personId)
+    {
+                        
+        $sql = 'SELECT DISTINCT A.InvoiceId,
+                                TO_CHAR(A.emissionDate, \''.MASK_DATE.'\'),
+                                TO_CHAR(A.maturityDate, \''.MASK_DATE.'\'),
+                                ROUND(A.value, ' . REAL_ROUND_VALUE . ' ),
+                                ROUND(balance(A.invoiceId), ' . REAL_ROUND_VALUE . ' ),
+                                ROUND(balanceWithPolicies(A.invoiceId), ' . REAL_ROUND_VALUE . ' ),
+                                C.periodId,
+                                A.maturityDate,
+                                A.personId
+                      FROM ONLY finReceivableInvoice A
+                      INNER JOIN ONLY acdLearningPeriod C
+                             ON (C.courseId = A.courseId AND
+                                 C.courseVersion = A.courseVersion AND
+                                 C.unitId = A.unitId)
+                           WHERE A.personId = ? AND
+                                 A.maturityDate BETWEEN C.beginDate AND C.endDate
+                        ORDER BY A.maturityDate DESC';
+
+
+        $db     = $this->getDatabase();
+        $result = $db->query(SAGU::prepare($sql, $personId));
+
+        //$db->close();
+        return $result;
+    }
+
+    /**
+     * Payment
+     *
+     * @param $centerId (string): Primary key for deletion
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+    public function paymentsFromPerson($personId)
+    {
+        $sql = 'SELECT DISTINCT A.invoiceId,
+                                TO_CHAR(B.maturityDate,\'' . MASK_DATE . '\'),
+                                B.courseId || \' - \' || (SELECT shortName from acdCourse where courseId = B.courseId),
+                                C.operationId || \' - \' ||C.description,
+                                TO_CHAR(A.entryDate,\'' . MASK_DATE . '\'),
+                                ROUND(A.value, ' . REAL_ROUND_VALUE . '),
+                                ROUND((SELECT bankTaxValue FROM finPolicy WHERE policyId = B.policyId ), ' . REAL_ROUND_VALUE . '),
+                                A.entryDate,
+                                A.operationId
+                      FROM ONLY finEntry A
+                INNER JOIN ONLY  finReceivableInvoice B
+                             ON (A.invoiceId = B.invoiceId)
+                INNER JOIN ONLY finOperation C
+                             ON (C.operationId = A.operationId)
+                          WHERE B.personId = ? AND
+                                C.operationId IN (' . PUPIL_PAYMENT_OPERATIONS . ')
+                       ORDER BY A.entryDate DESC';
+
+        $db     = $this->getDatabase();
+        $result = $db->query(SAGU::prepare($sql, $personId));
+
+        return $result;
+    }
+
+    /**
+     * Incentives
+     *
+     * @param $centerId (string): Primary key for deletion
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+    public function incentivesFromPerson($personId)
+    {
+        $sql = 'SELECT DISTINCT A.incentiveId,
+                                A.contractId,
+                                TO_CHAR(A.startDate,\'' . MASK_DATE . '\'),
+                                TO_CHAR(A.endDate,\'' . MASK_DATE . '\'),
+                                C.description,
+                                ROUND(A.value, ' . REAL_ROUND_VALUE . '),
+                                A.endDate
+                           FROM finIncentive A
+                     INNER JOIN acdContract B
+                             ON (A.contractId = B.contractId)
+                     INNER JOIN finIncentiveType C
+                             ON (C.incentiveTypeId = A.incentiveTypeId)
+                          WHERE B.personId = ?
+                          ORDER BY A.endDate DESC';
+
+        $db     = $this->getDatabase();
+        $result = $db->query(SAGU::prepare($sql, $personId));
+
+        return $result;
+    }
+
+
+    /**
+     * Trainning
+     *
+     * @param $centerId (string): Primary key for deletion
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+    public function trainingFromPerson($personId)
+    {
+        $sql = 'SELECT B.professionalActivityPeopleId,
+                       B.beginDate,
+                       B.endDate,
+                       C.name,
+                       D.professionalActivityAgentId || \' - \' || D.description
+                  FROM basEmployee A
+            INNER JOIN basProfessionalActivityPeople B
+                    ON (A.personId = B.personId)
+       INNER JOIN ONLY basLegalPerson C
+                    ON (C.personId = B.legalPersonId)
+            INNER JOIN basProfessionalActivityAgent D
+                    ON (D.professionalActivityAgentId = B.professionalActivityAgentId)
+                 WHERE A.personId = ? AND
+                       A.employeeTypeId = '.EMPLOYEE_TYPE_ID_TRAINNING.'';
+
+        $db     = $this->getDatabase();
+        $result = $db->query(SAGU::prepare($sql, $personId));
+
+        return $result;
+    }
+
+
+    /**
+     * Penalty
+     *
+     * @param $personId (string): person id
+     *
+     * @return (boolean): An array with data
+     *
+     **/
+    public function penaltiesFromPerson($personId)
+    {
+        $sql = 'SELECT codigodamulta, 
+                       codigodoemprestimo, 
+                       TO_CHAR(datahora,\'' . MASK_DATE . '\'),
+                       foipaga,
+                       ROUND(valor, ' . REAL_ROUND_VALUE . ')
+                FROM gtc_multa 
+                WHERE codigodapessoa = ? and 
+                      foipaga is false and 
+                      foiabonada is false and 
+                      valor < 1000000';
+
+        $db     = $this->getDatabaseLibrary();
+        $result = $db->query(SAGU::prepare($sql, $personId));
+        
+        return $result;
+    }
+
+
+    /**
+     * Loan
+     *
+     * @param $personId (string): person id
+     *
+     * @return (boolean): An array with data
+     *
+     **/
+    public function loansFromPerson($personId)
+    {
+        $sql = 'SELECT A.numeroDoTombo, 
+                       get_etiqueta(B.numeroDeControle, \'245\', \'a\'), 
+                       get_etiqueta(B.numeroDeControle, \'100\', \'a\'), 
+                       TO_CHAR(a.datahoraprevisaodevolucao, \'' . MASK_DATE . '\')
+               FROM gtc_emprestimo A
+               INNER JOIN gtc_exemplar B
+                       ON (B.numeroDoTombo = A.numeroDoTombo)
+               WHERE A.codigoDaPessoa = ? AND
+                     A.dataHoraDaDevolucao IS NULL
+               ORDER BY date(a.datahoraprevisaodevolucao)';
+
+        $db     = $this->getDatabaseLibrary();
+        $result = $db->query(SAGU::prepare($sql, $personId));
+
+        return $result;
+    }
+
+
+
+}
+?>

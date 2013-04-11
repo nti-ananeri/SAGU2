@@ -1,0 +1,611 @@
+<?php
+
+/**
+*
+* This file handles the connection and actions for finBank table
+*
+* @author Giovani Murilo Dantas Correa [gmurilo@gmail.com]
+*
+* $version: $Id$
+*
+* \b Maintainers \n
+* Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+* Daniel Afonso Heisler [daniel@solis.coop.br]
+* Jamiel Spezia [jamiel@solis.coop.br]
+* Rafael Luís Spengler [rafael@solis.coop.br]
+* William Prigol Lopes [william@solis.coop.br]
+* Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+*
+* @since
+* Class created on 18/10/2007
+*
+* \b Organization: \n
+* iSolution - Soluções de Internet \n
+* The iSolution TEAM
+*
+* \b CopyLeft: \n
+* CopyLeft (L) 2007 iSolution - Soluções de Internet \n
+*
+* \b License \n
+* Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+*
+* \b History \n
+* See history in CVS repository: http://isolution.inf.br   
+*
+**/
+
+define('REPORT_ID', 'AC001');
+define('FPDF_FONTPATH', $MIOLO->getModulePath('basic', '/classes/fpdf/font/'));
+
+$MIOLO = MIOLO::getInstance();
+$module = 'finance';
+
+$MIOLO->getClass( 'basic', 'barCode' );
+
+class boletoFunctions
+{
+    public function modulo_11($num, $base=9, $r = 0)  
+    {
+        $fator = 2;
+        $soma = array();
+        /* Separacao dos numeros */
+        for ($i = strlen((string)$num); $i > 0; $i--) 
+        {
+            // pega cada numero isoladamente
+            // Efetua multiplicacao do numero pelo falor
+            $soma[] = substr($num,$i-1,1) * $fator;
+            if ($fator == $base) 
+            {
+                // restaura fator de multiplicacao para 2 
+                $fator = 1;
+            }
+            $fator++;
+        }
+        if ( $r == 0 )
+        {
+            $soma2 = array_sum($soma)*10;
+            $digito = $soma2 % 11;
+            if ( $digito == 10 )
+            {
+                $digito = 0;
+            }
+        }
+        else if ( $r == 1 )
+        {
+            $digito = array_sum($soma) % 11;
+        }
+        return $digito;
+    }
+
+    public function geraCodigoBanco($numero) 
+    {
+        $parte1 = substr($numero, 0, 3);
+        $parte2 = $this->modulo_11($parte1);
+        if ( $parte2 > 9 ) 
+        {
+            $parte2 = 0;
+        }
+        return $parte1 . "-" . $parte2;
+    }
+
+    public function digitoVerificador_barra($numero) 
+    {
+	    $digito = $this->modulo_11($numero, 9, 1);
+        
+        if ($digito == 0 || $digito == 1 || $digito == 10) 
+        {
+            $digito = 1;
+        }
+        else
+        {
+            $digito = 11 - $digito;
+        }
+	    return $digito;
+    }
+    public function fator_vencimento($data) 
+    {
+    	$data = split("/",$data);
+    	$ano = $data[2];
+    	$mes = $data[1];
+    	$dia = $data[0];
+        return(abs(($this->_dateToDays("1997","10","07")) - ($this->_dateToDays($ano, $mes, $dia))));
+    }
+
+    public function _dateToDays($year,$month,$day) 
+    {
+        $century = substr($year, 0, 2);
+        $year = substr($year, 2, 2);
+        if ($month > 2) 
+        {
+            $month -= 3;
+        } 
+        else 
+        {
+            $month += 9;
+            if ($year) 
+            {
+                $year--;
+            } 
+            else 
+            {
+                $year = 99;
+                $century --;
+            }
+        }
+        return ( 
+            floor((  146097 * $century)    /  4 ) +
+            floor(( 1461 * $year)        /  4 ) +
+            floor(( 153 * $month +  2) /  5 ) +
+            $day +  1721119
+            );
+    }
+
+    public function modulo_10($num) 
+    { 
+	    $soma = array();
+        $fator = 2;
+
+        // Separacao dos numeros
+        for ($i = strlen((string)$num); $i > 0; $i--) 
+        {
+            // Efetua multiplicacao do numero pelo (falor 10)
+            $result = substr($num, $i-1, 1) * $fator;
+            if ( $result > 9 )
+            {
+                $result = (string)$result;
+                $res = 0;
+                for ( $x =0; $x < strlen((string)$result); $x++)
+                {
+                    $res += substr($result,$x,1);
+                }
+            }
+            else
+            {
+                $res = $result;
+            }
+            $soma[] = $res;
+            $fator = ( $fator == 2 ? 1 : 2 );
+        }
+        $resto = array_sum($soma) % 10;
+
+        if ( $resto == 0 )
+        {
+            $digito = 0;
+        }
+        else
+        {
+            $digito = 10 - $resto; 
+        }
+        
+        return $digito;
+    }
+
+    public function formata_numero($numero,$loop,$insert,$tipo = "geral") 
+    {
+	    if ($tipo == "geral" || $tipo == "valor") 
+        {
+            $numero = ereg_replace('[^0-9]','', $numero);		    
+		    while(strlen((string)$numero)<$loop)
+            {
+			    $numero = $insert . $numero;
+		    }
+	    }
+	    if ($tipo = "convenio") 
+        {
+		    while(strlen((string)$numero)<$loop)
+            {
+			    $numero = $numero . $insert;
+		    }
+	    }
+	    return $numero;
+    }
+    public function monta_linha_digitavel($codigo)
+    {
+		
+		// Posição 	Conteúdo
+        // 1 a 3    Número do banco
+        // 4        Código da Moeda - 9 para Real
+        // 5        Digito verificador do Código de Barras
+        // 6 a 9   Fator de Vencimento
+		// 10 a 19 Valor (8 inteiros e 2 decimais)
+        // 20 a 44 Campo Livre definido por cada banco (25 caracteres)
+
+        // 1. Campo - composto pelo código do banco, código da moéda, as cinco primeiras posições
+        // do campo livre e DV (modulo10) deste campo
+        $p1 = substr($codigo, 0, 4);
+        $p2 = substr($codigo, 19, 5);
+        $p3 = $this->modulo_10("$p1$p2");
+        $p4 = "$p1$p2$p3";
+        $p5 = substr($p4, 0, 5);
+        $p6 = substr($p4, 5);
+        $campo1 = "$p5.$p6";
+
+        // 2. Campo - composto pelas posiçoes 6 a 15 do campo livre
+        // e livre e DV (modulo10) deste campo
+        $p1 = substr($codigo, 24, 10);
+        $p2 = $this->modulo_10($p1);
+        $p3 = "$p1$p2";
+        $p4 = substr($p3, 0, 5);
+        $p5 = substr($p3, 5);
+        $campo2 = "$p4.$p5";
+
+        // 3. Campo composto pelas posicoes 16 a 25 do campo livre
+        // e livre e DV (modulo10) deste campo
+        $p1 = substr($codigo, 34, 10);
+        $p2 = $this->modulo_10($p1);
+        $p3 = "$p1$p2";
+        $p4 = substr($p3, 0, 5);
+        $p5 = substr($p3, 5);
+        $campo3 = "$p4.$p5";
+
+        // 4. Campo - digito verificador do codigo de barras
+        $campo4 = substr($codigo, 4, 1);
+
+        // 5. Campo composto pelo fator vencimento e valor nominal do documento, sem
+        // indicacao de zeros a esquerda e sem edicao (sem ponto e virgula). Quando se
+        // tratar de valor zerado, a representacao deve ser 000 (tres zeros).
+		$p1 = substr($codigo, 5, 4);
+		$p2 = substr($codigo, 9, 10);
+		$campo5 = "$p1$p2";
+
+        return "$campo1 $campo2 $campo3 $campo4 $campo5";
+    }
+}
+/**
+* Create header and footer information
+*/
+class boletoInfo
+{
+    var $codigoBanco;
+    var $dvBanco;
+    var $linhaDigitavel;
+    var $localDePagamento;
+    var $vencimento;
+    var $cedente;
+    var $agencia;
+    var $codigoCedente;
+    var $digitoCodigoCedente;
+    var $agenciaCodigoCedente;
+    var $dataDocumento;
+    var $numeroDocumento;
+    var $especieDocumento;
+    var $aceite;
+    var $dataProcessamento;
+    var $nossoNumero;
+    var $cip;
+    var $carteira;
+    var $especieMoeda;
+    var $quantidadeMoeda;
+    var $valorMoeda;
+    var $valorDocumento;
+    var $instrucoes;
+    var $sacado;
+    var $sacadoEndereco;
+    var $avalista;
+    var $logo;
+    var $codigoBarras;
+
+    public function __construct( $data = null )
+    {
+        if ( count($data) > 0 )
+        {
+            $objVars = get_class_vars(get_class($this));
+            foreach ( $data as $item => $value )
+            {
+                if ( array_key_exists($item, $objVars) )
+                {
+                    $this->$item = $value;
+                }
+            }
+        }
+    }
+
+}
+
+class RptPrintInvoice extends barCode
+{
+
+    public function __construct($filters = null)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        parent::__construct();
+        if ( strlen((string)$filters->invoiceId) == 0 )
+        {
+            return null;
+        }
+        $this->invoiceId = $filters->invoiceId;
+        $this->generatePDF($filters);
+    }
+
+    public function messageReplace($info, &$db)
+    {
+        $from =	array('X_DIAS_MULTA',
+					  'MULTA_VALOR',
+					  'MULTA_DATA',
+					  'X_DIAS_JUROS',
+					  'JUROS_VALOR',
+					  'JUROS_DATA',
+					  'X_DIAS_DESCONTO',
+					  'DESCONTO_VALOR',
+					  'DESCONTO_DATA',
+					  'X_DIAS_PROTESTO',
+					  'PROTESTO_DATA');
+        $to = array($info->daysToFine,
+					$info->currencySymbol .' '. (($info->isFineInPercent == DB_TRUE ) ? $db->calcPercent($info->invoiceValue,$info->fine) /*' AO DIA'*/: SAGU::formatNumber($info->fine)),
+					$info->fineDate,
+					$info->daysToInterest,
+					$info->currencySymbol .' '. (($info->isMonthlyInterestInPercent == DB_TRUE ) ? $db->calcMora($info->invoiceValue,$info->monthlyInterest) .' AO DIA': SAGU::formatNumber($info->monthlyInterest)),
+					$info->monthlyInterestDate,
+					$info->daysToDiscount,
+					$info->currencySymbol .' '. (($info->isDiscountInPercent == DB_TRUE ) ? $db->calcPercent($info->invoiceValue,$info->discount) : SAGU::formatNumber($info->discount)),
+					$info->discountDate,
+					$info->daysToProtest,
+					$info->protestDate);
+        if(count($this->boletoInfo->instrucoes) > 0)
+        {	
+            foreach ( $this->boletoInfo->instrucoes as $item => $value )
+            {
+                $instrucoes[] = strtoupper(str_replace($from,$to,$value));
+            }
+        }
+        $this->boletoInfo->instrucoes = $instrucoes;
+    }
+
+    public function mountBarCode($invoiceId = NULL)
+    {
+        $this->getTitleInformation($invoiceId);
+        $this->barCodeDv = $this->getBarCodeDv();
+        $this->barCode = "$this->bankId$this->currencyCode$this->barCodeDv$this->factorMaturityDate$this->value$this->freeField";
+    }
+    
+    public function generatePDF($filters)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $module = 'finance';
+        $filters->invoiceId = $this->invoiceId;
+        if ( !$this->db )
+        {
+            $this->db = $MIOLO->getBusiness('finance','BusPrintInvoice'); 
+        }
+        $info = $this->db->getPrintInvoice($filters);
+        $this->boletoInfo = new boletoInfo();
+        $this->boletoInfo->instrucoes = $this->db->getMessageInvoice($filters->invoiceId);        
+        $this->boletoInfo->codigoBanco = $info->bankId;
+        $this->boletoInfo->dvBanco = $info->bankIdDv;
+        $this->boletoInfo->localDePagamento = $this->boletoInfo->instrucoes[3];
+        unset($this->boletoInfo->instrucoes[3]);
+        $this->messageReplace($info, $this->db);
+        $this->boletoInfo->vencimento = $info->maturityDate;
+        $this->boletoInfo->cedente = $info->companyName . ' - ' . $info->acronym . '  -  CNPJ: ' . $info->cnpj;
+        $this->boletoInfo->agenciaCodigoCedente = '';
+        $this->boletoInfo->dataDocumento = $info->emissionDate;
+        $this->boletoInfo->numeroDocumento = $this->invoiceId;
+        $this->boletoInfo->aceite = 'NÃO';
+        $this->boletoInfo->dataProcessamento = date('d/m/Y');
+        $this->boletoInfo->especieMoeda = '9 -' . $info->currencySymbol;
+        $this->boletoInfo->valorDocumento = $info->currencySymbol . ' ' . $info->invoiceValue;
+        $this->boletoInfo->sacado = $info->personId . ' - ' . $info->name;
+        $this->boletoInfo->sacadoEndereco = $info->location . ', ' . $info->neighborhood . ' (' . $info->complement . ') - ' . $info->cep . ' - ' . $info->city . '/' . $info->state;
+        $this->boletoInfo->sacadoAvalista = $info->responsable;
+        if ( strlen((string)$info->cpf_responsable) == 14 )
+        {
+            $this->boletoInfo->sacadoAvalistaCpf = SAGU::formatCNPJ($info->cpf_responsable);
+        }
+        else
+        {
+            $this->boletoInfo->sacadoAvalistaCpf = SAGU::convertInCPFFormat($info->cpf_responsable);
+        }
+        /* Informações que deverão ser preenchidas pela classe de boletos como include */
+        $bankId = $info->bankId;
+        //$bankId = '104';
+        if (file_exists($MIOLO->getModulePath('finance', 'classes/includes/include'.$bankId.'.class')))
+        {
+            include_once $MIOLO->getModulePath('finance', 'classes/includes/include'.$bankId.'.class');
+            $className = "bank$bankId";
+            $info2 = new $className($info);
+            $vars = get_object_vars($info2);
+            if ( count($vars) > 0 )
+            {
+                foreach ( $vars as $item => $value )
+                {
+                    if ( strlen((string)$info2->$item) > 0 )
+                    {
+                        $this->boletoInfo->$item = $info2->$item;
+                    }
+                }
+            }
+        }
+
+        $this->AddPage('P', 'A4');
+        $this->SetAutoPageBreak(true, 0);
+        $this->setMargins('10','10');
+        $this->setFillColor(181, 181, 181);
+        $areaUtil = $this->w - ( $this->lMargin + $this->rMargin );
+        $imgProp = $MIOLO->getUI()->GetImage('finance' , 'propaganda.jpg');
+        $imgLogo = $MIOLO->getUI()->GetImage('finance' , 'imgBank'.$this->boletoInfo->codigoBanco.'.jpg');
+        $this->image($imgProp, $this->lMargin, $this->tMargin, $areaUtil, '64');
+        $this->setY($this->tMargin+66);
+        
+        for ( $x = 0; $x < 2; $x++ )
+        {
+            //Linha 1
+            $this->image($imgLogo, $this->lMargin, $this->y, 30, 8);
+            $this->Line($this->lMargin, $this->y+8, $areaUtil+$this->rMargin, $this->y+8);
+            $this->setX($this->lMargin+30);
+            $this->setFont(DEFAULT_REPORT_FONT, 'B', 16);
+            $this->Line($this->x, $this->y+8, $this->x, $this->y);
+            $this->cell($this->GetStringWidth("{$this->boletoInfo->codigoBanco}-{$this->boletoInfo->dvBanco}")+2, 8, "{$this->boletoInfo->codigoBanco}-{$this->boletoInfo->dvBanco}");
+            $this->Line($this->x, $this->y+8, $this->x, $this->y);
+            $this->setFont(DEFAULT_REPORT_FONT, 'B', 12);
+            $this->setX($this->x+2);
+            $this->cell($this->GetStringWidth("{$this->linhaDigitavel}")+2, 8, "{$this->boletoInfo->linhaDigitavel}");
+            $this->ln();
+        
+            //Linha 2
+            $this->setFont(DEFAULT_REPORT_FONT, '', 6);
+            $this->cell($areaUtil-40, 3, 'Local de Pagamento', 'LR');
+            $this->cell(40, 3, 'Vencimento', 'LRT', null, null, 1);
+            $this->ln();
+            $this->setFont(DEFAULT_REPORT_FONT, 'B', 8);
+            $this->cell($areaUtil-40, 3, $this->boletoInfo->localDePagamento, 'LRB');
+            $this->cell(40, 3, $this->boletoInfo->vencimento, 'LRB', null, 'R', 1);
+            $this->ln();
+    
+            //Linha 3
+            $this->setFont(DEFAULT_REPORT_FONT, '', 6);
+            $this->cell($areaUtil-40, 3, 'Cedente', 'LR');
+            $this->cell(40, 3, 'Agência/Código Cedente', 'LR');
+            $this->ln();
+            $this->setFont(DEFAULT_REPORT_FONT, 'B', 8);
+            $this->cell($areaUtil-40, 3, $this->boletoInfo->cedente, 'LRB');
+            $this->cell(40, 3, $this->boletoInfo->agenciaCodigoCedente, 'LRB', null, 'R');
+            $this->ln();
+    
+            //Linha 4
+            $this->setFont(DEFAULT_REPORT_FONT, '', 6);
+            $this->cell((($areaUtil-40)/14)*3.2, 3, 'Data do Documento', 'LR');
+            $this->cell((($areaUtil-40)/14)*3.8, 3, 'Número do Documento', 'LR');
+            $this->cell((($areaUtil-40)/14)*2.5, 3, 'Espécie Doc.', 'LR');
+            $this->cell((($areaUtil-40)/14)*1.5, 3, 'Aceite', 'LR');
+            $this->cell((($areaUtil-40)/14)*3, 3, 'Data Processamento', 'LR');
+            $this->cell(40, 3, 'Nosso Número', 'LRT', null, null, 1);
+            $this->ln();
+            $this->setFont(DEFAULT_REPORT_FONT, 'B', 8);
+            $this->cell((($areaUtil-40)/14)*3.2, 3, $this->boletoInfo->dataDocumento, 'LRB', null, 'R');
+            $this->cell((($areaUtil-40)/14)*3.8, 3, $this->boletoInfo->numeroDocumento, 'LRB', null, 'C');
+            $this->cell((($areaUtil-40)/14)*2.5, 3, $this->boletoInfo->especieDocumento, 'LRB');
+            $this->cell((($areaUtil-40)/14)*1.5, 3, $this->boletoInfo->aceite, 'LRB', null, 'C');
+            $this->cell((($areaUtil-40)/14)*3, 3, $this->boletoInfo->dataProcessamento, 'LRB', null, 'R');
+            $this->cell(40, 3, $this->boletoInfo->nossoNumero, 'LRB', null, 'R', 1);
+            $this->ln();
+    
+            //Linha 5
+            $this->setFont(DEFAULT_REPORT_FONT, '', 6);
+            $this->cell((($areaUtil-40)/14)*1.4, 3, 'Uso Banco', 'LR');
+            $this->cell((($areaUtil-40)/14)*0.6, 3, 'CIP', 'LR');
+            $this->cell((($areaUtil-40)/14)*1.2, 3, 'Carteira', 'LR');
+            $this->cell((($areaUtil-40)/14)*3.8, 3, 'Espécie Moeda', 'LR');
+            $this->cell((($areaUtil-40)/14)*2.5, 3, 'Quantidade', 'LR');
+            $this->cell((($areaUtil-40)/14)*4.5, 3, 'Valor Moeda', 'LR');
+            $this->cell(40, 3, '(=) Valor do Documento', 'LRT', null, null, 1);
+            $this->ln();
+            $fs = 8;
+            $this->setFont(DEFAULT_REPORT_FONT, 'B', 8);
+            while ( $this->getStringWidth($this->boletoInfo->usoBanco)+2 >= (($areaUtil-40)/14)*1.4 )
+            {
+                $fs -= 0.01;
+                $this->setFont(DEFAULT_REPORT_FONT, 'B', $fs);
+            }
+            $this->cell((($areaUtil-40)/14)*1.4, 3, $this->boletoInfo->usoBanco, 'LRB', null, 'C');
+            $this->setFont(DEFAULT_REPORT_FONT, 'B', 8);
+            $this->cell((($areaUtil-40)/14)*0.6, 3, $this->boletoInfo->cip, 'LRB', null, 'R');
+            $this->cell((($areaUtil-40)/14)*1.2, 3, $this->boletoInfo->carteira, 'LRB', null, 'R');
+            $this->cell((($areaUtil-40)/14)*3.8, 3, $this->boletoInfo->especieMoeda, 'LRB', null, 'C');
+            $this->cell((($areaUtil-40)/14)*2.5, 3, $this->boletoInfo->quantidadeMoeda, 'LRB');
+            $this->cell((($areaUtil-40)/14)*4.5, 3, $this->boletoInfo->valorMoeda, 'LRB', null, 'R');
+            $this->cell(40, 3, $this->boletoInfo->valorDocumento, 'LRB', null, 'R', 1);
+            $this->ln();
+    
+
+            $this->setFont(DEFAULT_REPORT_FONT, '', 6);
+            //Linha 6 inicializa a posicao do inicio das instrucoes
+            $this->cell(($areaUtil-40), 3, 'Instruções', 'LR');
+            $this->cell(40, 3, '(+) Outros/Acréscimos', 'LR', null, null);
+            $this->ln();
+            $this->cell(($areaUtil-40), 3, null, 'LR');
+            $this->cell(40, 3, '', 'LRB', null, null);
+            $this->ln();
+
+            $this->cell(($areaUtil-40), 3, '', 'LR');
+            $this->cell(40, 3, '(-) Desconto/Abatimento', 'LR', null, null);
+            $this->ln();
+            $this->cell(($areaUtil-40), 3, $this->boletoInfo->instrucoes[0], 'LR');
+            $this->cell(40, 3, '', 'LRB', null, null);
+            $this->ln();
+    
+            $this->cell(($areaUtil-40), 3, '', 'LR');
+            $this->cell(40, 3, '(-) Outras Deduções', 'LR', null, null);
+            $this->ln();
+            $this->cell(($areaUtil-40), 3, $this->boletoInfo->instrucoes[1], 'LR');
+            $this->cell(40, 3, '', 'LRB', null, null);
+            $this->ln();
+
+            $this->cell(($areaUtil-40), 3, '', 'LR');
+            $this->cell(40, 3, '(+) Mora/Multa', 'LR', null, null);
+            $this->ln();
+            $this->cell(($areaUtil-40), 3, $this->boletoInfo->instrucoes[2], 'LR');
+            $this->cell(40, 3, '', 'LRB', null, null);
+            $this->ln();
+    
+            $this->cell(($areaUtil-40), 3, '', 'LR');
+            $this->cell(40, 3, '(=) Valor Cobrado', 'LRT', null, null, 1);
+            $this->ln();
+            $this->cell(($areaUtil-40), 3, $this->boletoInfo->instrucoes[3], 'LRB');
+            $this->cell(40, 3, '', 'LRB', null, null, 1);
+            $this->ln();
+
+            //7 Linha sacado
+            $this->cell($areaUtil, 3, 'Sacado', 'TLR');
+            $this->ln();
+            $this->setFont(DEFAULT_REPORT_FONT, 'B', 8);
+            $this->cell($areaUtil, 3, $this->boletoInfo->sacado, 'LR');
+            $this->ln();
+            $this->cell($areaUtil, 3, $this->boletoInfo->sacadoEndereco, 'LR');
+            $this->ln();
+            $this->setFont(DEFAULT_REPORT_FONT, '', 5);
+            $ts = $this->getStringWidth('Sacado / Avalista:')+1;
+            $this->cell($ts, 3, 'Sacado / Avalista:', 'LB');
+            $this->setFont(DEFAULT_REPORT_FONT, 'B', 6);
+            $ts = $this->getStringWidth($this->boletoInfo->sacadoAvalista)+2;
+            $this->cell($ts, 3, $this->boletoInfo->sacadoAvalista, 'B');
+            $this->setFont(DEFAULT_REPORT_FONT, '', 5);
+            $ts = $this->getStringWidth('CPF/CNPJ:')+1;
+            $this->cell($ts, 3, 'CPF/CNPJ:', 'B');
+            $this->setFont(DEFAULT_REPORT_FONT, 'B', 6);
+            $ts = $this->getStringWidth($this->boletoInfo->sacadoAvalistaCpf)+1;
+            $this->cell($ts, 3, $this->boletoInfo->sacadoAvalistaCpf, 'B');
+            $this->cell(($areaUtil-($this->x-$this->lMargin))-40, 3, '', 'B');
+            $this->cell(40, 3, 'Código de Baixa:', 'BR');
+            $this->ln();
+            $this->setFont(DEFAULT_REPORT_FONT, '', 6);
+            $this->setX(($areaUtil+$this->lMargin)-88);
+            $this->cell(88, '2.8', 'Autenticação Mecânica',  '' ,'','L','');
+            $yPos = $this->y;
+            $this->ln();
+            if ( $x == 0 )
+            {
+                $y1 = $this->y-($this->tMargin+66);
+                $c = ($this->h-($this->tMargin+66))/2;
+                $c2= ($c+($this->tMargin+66))-13;
+                $this->setY($c2);
+                $s = 0;
+                $str = '';
+                while($s < ($areaUtil) )
+                {
+                    $str2 = ( $str2 == '-' ? ' ' : '-' );
+                    $str .= $str2;
+                    $s = $this->getStringWidth($str);
+                }
+                $this->cell($areaUtil, '2.8', $str, '' ,'', 'C','');
+                $this->setY($c2+26);
+            }
+            else
+            {
+                $this->setY($this->y-2.8);
+                $this->setX((($areaUtil+$this->lMargin)-88)+$this->getStringWidth('Autenticação Mecânica')+1);
+                $this->setFont(DEFAULT_REPORT_FONT, 'BI', 6);
+                $this->cell(88-$this->getStringWidth('Autenticação Mecânica'), 2.8, 'Ficha de Compensação', null, null, 'R');
+                $this->ln();
+            }
+    
+        }
+
+        $this->setFillColor('#000000');
+        $this->i25($this->lMargin+2, $this->y+3, $this->boletoInfo->codigoBarras , 0.8, '13');
+        if(!$this->printInvoicesInLot)
+        {
+            $this->outPut();
+        }
+    }
+}
+?>

@@ -1,0 +1,290 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for finCheck table
+ *
+ * @author Daniel Afonso Heisler [daniel@hsti.inf.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * Armando Taffarel Neto [taffarel@solis.coop.br]
+ * 
+ * @since
+ * Class created on 30/10/2007
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to manipulate the finCheck table
+ **/
+class BusinessFinanceBusBranch extends MBusiness
+{
+
+    private $db;
+
+    public function BusinessFinanceBusBranch()
+    {
+        $this->db = $this->getDatabase();
+    }
+
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module = is_null($module) ? 'finance' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+    /**
+     * Return a specific record from the database
+     *
+     * @param $checkId (integer): Primary key of the record to be retrieved
+     *
+     * @return (object): Return an object of the type handled by the class
+     *
+     **/
+    public function listBranch()
+    {
+        $sql = 'SELECT A.bankid || \'/\' || A.branchNumber,
+                       C.description || \' - \' || B.name || \' - \' || A.branchNumber || \'/\' || CASE WHEN A.branchNumberDigit IS NULL THEN \'\' ELSE A.branchNumber END
+                  FROM finBranch A
+            INNER JOIN basCity B
+                    ON ( A.cityId = B.cityId )
+            INNER JOIN finBank C
+                    ON ( A.bankId = C.bankId )
+              ORDER BY C.description,
+                       B.name';
+
+        $result = $this->db->query(SAGU::prepare($sql,$checkId));
+
+        return $result; 
+    }
+
+    /**
+     * Return a specific record from the database
+     *
+     * @param $bankId (integer): Primary key of the record to be retrieved
+     * @param $branchNumber (integer): Primary key of the record to be retrieved
+     *
+     * @return (object): Return an object of the type handled by the class
+     *
+     **/
+
+    public function getBranch($bankId, $branchNumber)
+    {
+        $sql = 'SELECT A.bankId,
+                       B.description,
+                       A.branchNumber,
+                       A.branchNumberDigit,
+                       A.cityId,
+                       C.name,
+                       A.userName,
+                       TO_CHAR(A.dateTime,\'' . MASK_TIMESTAMP . '\')
+                  FROM finBranch A
+            INNER JOIN finBank B
+                    ON (B.bankId = A.bankId)
+            INNER JOIN basCity C
+                    ON (C.cityId = A.cityId)
+                 WHERE A.bankId = ?
+                   AND A.branchNumber = ?';
+
+        $db = $this->getDatabase();
+        
+        $args = array ( $bankId,
+                        $branchNumber );
+
+        $sqls = SAGU::prepare($sql,$args);
+
+        $result = $db->query($sqls);
+
+        //$db->close();
+
+        $branch = new finBranch();
+
+        list ( $branch->bankId,
+               $branch->description,
+               $branch->branchNumber,
+               $branch->branchNumberDigit,
+               $branch->cityId,
+               $branch->cityName,
+               $branch->userName,
+               $branch->dateTime ) = $result[0];
+
+        return $branch;
+   }
+
+    /**
+     * Do a search on the database table handled by the class
+     *
+     * @param $filters (object): Search filters
+     *
+     * @last modification: William Prigol Lopes [william@solis.coop.br]
+     *                     Make the search capable to get partial words with % in varchar fields
+     *
+     * @return (array): An array containing the search results
+     **/
+    public function searchBranch($data)
+    {
+        $sql = 'SELECT A.bankid,
+                       B.description,
+                       A.branchNumber,
+                       A.branchNumberDigit,
+                       A.cityId,
+                       C.name
+                  FROM finBranch A
+            INNER JOIN finBank B
+                    ON (B.bankId = A.bankId)
+            INNER JOIN basCity C
+                    ON (C.cityId = A.cityId)';
+
+        $where = '';
+        unset($args);
+
+        if ( strlen((string)$data->bankId) > 0 )
+        {
+            $where .= '    AND   A.bankId = ?';
+            $args[] = $data->bankId;
+        }
+          if ( strlen((string)$data->branchNumber) > 0 )
+        {
+            $where .= '    AND   A.branchNumber ILIKE ?';
+            $args[] = $data->branchNumber;
+        }
+        if ( strlen((string)$data->branchNumberDigit) > 0 )
+        {
+            $where .= '    AND   A.branchNumberDigit ILIKE ?';
+            $args[] = $data->branchNumberDigit;
+        }
+        if ( strlen((string)$data->cityId) > 0 )
+        {
+            $where .= '    AND   A.city ILIKE ?';
+            $args[] = $data->cityId;
+        }
+
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE ' . substr($where,8) .
+                    ' ORDER BY A.bankId';
+
+            $db = $this->getDatabase();
+            $sqls = SAGU::prepare($sql,$args);
+
+            $result = $db->query($sqls);
+            //$db->close();
+        }
+
+        return $result;
+    }
+
+    /**
+     * Insert a new record
+     *
+     * @param $data (object): An object of the type handled by the class
+     *
+     * @return True if succed, otherwise False
+     *
+     **/
+    public function insertBranch($data)
+    {
+        $db = $this->getDatabase();
+
+        $sql = 'INSERT INTO finBranch
+                            (bankId,
+                             branchNumber,
+                             branchNumberDigit,
+                             cityId)
+                     VALUES (?,?,?,?)';
+
+        $args = array($data->bankId,
+                      $data->branchNumber,
+                      $data->branchNumberDigit,
+                      $data->cityId);
+
+        $ok = $db->execute(SAGU::prepare($sql,$args));
+
+        return $ok;
+
+    }
+
+    /**
+     * Update data from a specific record
+     *
+     * @param $data (object): Data which will replace the old record data
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+    public function updateBranch($data)
+    {
+        $sql = 'UPDATE finBranch
+                   SET branchNumberDigit  = ?,
+                       cityId             = ?
+                 WHERE bankId             = ?
+                   AND branchNumber       = ?';
+
+        $args = array($data->branchNumberDigit,
+                      $data->cityId,
+                      $data->bankId,
+                      $data->branchNumber);
+
+        $db = $this->getDatabase();
+        $result = $db->execute(SAGU::prepare($sql, $args));
+        return $result;
+    }
+
+    /**
+     * Delete a record
+     *
+     * @param $bankId(string): Primary key for deletion
+     * @param $branchNumber(string): Primary key for deletion
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+    public function deleteBranch($bankId, $branchNumber)
+    {
+        $sql = 'DELETE FROM finBranch
+                      WHERE bankId       = ?
+                        AND branchNumber = ?';
+
+        $args = array ( $bankId,
+                        $branchNumber );
+
+        $db = $this->getDatabase();
+        $result = $db->execute(SAGU::prepare($sql, $args));
+        //$this->checkError($db);
+        //$db->close();
+
+        return $result;
+    }
+
+}
+
+?>

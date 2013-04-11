@@ -1,0 +1,394 @@
+<?php
+
+/**
+ * Default defines 
+ * To report identification
+ */
+define('REPORT_ID', 'AC003'); 
+define('FPDF_FONTPATH', $MIOLO->getModulePath('basic', '/classes/fpdf/font/'));
+
+$MIOLO = MIOLO::getInstance();
+$module = MIOLO::getCurrentModule();
+$MIOLO->Uses('classes/fpdf/fpdf.php', 'basic');
+
+/**
+ * Create header and footer information
+ */
+class PDF extends FPDF
+{
+    var $type = 0;
+    var $B;
+    var $I;
+    var $U;
+    var $HREF;
+    /**
+     * Defines the footer for this report
+     */
+    public function Footer()
+    {
+
+    }
+
+    /**
+     * Defines the header for this report
+     */
+    public function Header()
+    {
+
+    }
+
+    function WriteHTML($html)
+    {
+        //HTML parser
+        $html=str_replace("\n",' ',$html);
+        $a=preg_split('/<(.*)>/U',$html,-1,PREG_SPLIT_DELIM_CAPTURE);
+        foreach($a as $i=>$e)
+        {
+            if($i%2==0)
+            {
+                //Text
+                if($this->HREF)
+                    $this->PutLink($this->HREF,$e);
+                else
+                    $this->Write(5,$e);
+            }
+            else
+            {
+                //Tag
+                if($e{0}=='/')
+                    $this->CloseTag(strtoupper(substr($e,1)));
+                else
+                {
+                    //Extract attributes
+                    $a2=explode(' ',$e);
+                    $tag=strtoupper(array_shift($a2));
+                    $attr=array();
+                    foreach($a2 as $v)
+                        if(ereg('^([^=]*)=["\']?([^"\']*)["\']?$',$v,$a3))
+                            $attr[strtoupper($a3[1])]=$a3[2];
+                    $this->OpenTag($tag,$attr);
+                }
+            }
+        }
+    }
+
+    function OpenTag($tag,$attr)
+    {
+        //Opening tag
+        if($tag=='B' or $tag=='I' or $tag=='U')
+            $this->SetStyle($tag,true);
+        if($tag=='A')
+            $this->HREF=$attr['HREF'];
+        if($tag=='BR')
+            $this->Ln(5);
+    }
+    
+    function CloseTag($tag)
+    {
+        //Closing tag
+        if($tag=='B' or $tag=='I' or $tag=='U')
+            $this->SetStyle($tag,false);
+        if($tag=='A')
+            $this->HREF='';
+    }
+    
+    function SetStyle($tag,$enable)
+    {
+        //Modify style and select corresponding font
+        $this->$tag+=($enable ? 1 : -1);
+        $style='';
+        foreach(array('B','I','U') as $s)
+            if($this->$s>0)
+                $style.=$s;
+        $this->SetFont('',$style);
+    }
+    
+    function PutLink($URL,$txt)
+    {
+        //Put a hyperlink
+        $this->SetTextColor(0,0,255);
+        $this->SetStyle('U',true);
+        $this->Write(5,$txt,$URL);
+        $this->SetStyle('U',false);
+        $this->SetTextColor(0);
+    }
+}
+
+
+/**
+ * PDF extension to generate report
+ */
+class RptContentProgrammarian 
+{
+    /**
+     * Method to generate the report data
+     */
+    public function getReportData($data)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+
+        $busGroup                = $MIOLO->getBusiness($module, 'BusGroup');
+        $busSchedule             = $MIOLO->getBusiness($module, 'BusSchedule');
+        $busScheduleProfessor    = $MIOLO->getBusiness($module, 'BusScheduleProfessor');
+        $busCurriculum           = $MIOLO->getBusiness($module, 'BusCurriculum');
+        $busCurricularComponent  = $MIOLO->getBusiness($module, 'BusCurricularComponent');
+        $busLearningPeriod       = $MIOLO->getBusiness($module, 'BusLearningPeriod');
+
+        $groupData               = $busGroup->getGroup($data->groupId);
+        $curriculumData          = $busCurriculum->getCurriculum($groupData->curriculumId);
+        $curricularComponentData = $busCurricularComponent->getCurricularComponent($groupData->curriculumCurricularComponentId, $groupData->curriculumCurricularComponentVersion);
+        $learningPeriodData      = $busLearningPeriod->getLearningPeriod($groupData->learningPeriodId);
+
+        $scheduleData = $busSchedule->searchSchedule($data);
+
+        unset($professorData);
+        unset($unitData);
+        if (count($scheduleData) > 0)
+        {
+            foreach ($scheduleData as $schedule)
+            {
+                $filters->scheduleId = $schedule[0];
+                $professors = $busScheduleProfessor->searchScheduleProfessor($filters);
+
+                if (count($professors) > 0)
+                {
+                    foreach ($professors as $prof)
+                    {
+                        if (strlen((string)$professorData) > 0)
+                        {
+                            $professorData .= ', ' . $prof[2];
+                        }
+                        else
+                        {
+                            $professorData = $prof[2];
+                        }
+                    }
+                }
+                if (strlen((string)$unitData) > 0)
+                {
+                    $unitData .= ', ' . $schedule[6];
+                }
+                else
+                {
+                    $unitData = $schedule[6];
+                }
+            }
+        }
+
+        if ( strlen((string)$professorData) > 0 )
+        {
+            $pos           = strripos($professorData, ',');
+            if ( $pos )
+                $professorData = substr_replace($professorData, ' ' . _M('and', $module), $pos);
+        }
+
+        if (strlen((string)$unitData) > 0)
+        {
+            $pos      = strripos($unitData, ',');
+            if ( $pos )
+                $unitData = substr_replace($unitData, ' ' . _M('and', $module), $pos);
+        } 
+
+        //Basic bibliography
+        //$basicBookCodes = str_replace('{', '', $groupData->basicBibliography);  
+        //$basicBookCodes = str_replace('}', '', $basicBookCodes);
+        //$basicBookCodes = explode(',', $basicBookCodes);
+        $basicBookCodes = $groupData->basicBibliography;
+
+        if ( count($basicBookCodes) > 0 )
+        {
+            $busGnuteca = $MIOLO->getBusiness('gnuteca', 'BusGnutecaToSagu2');
+            foreach ($basicBookCodes as $filter->controlNumber)
+            {
+                $rowData = $busGnuteca->searchBibliographyData($filter, 'get');
+
+                $rowData = $rowData[$filter->controlNumber];
+                $rowString = $rowData->author . '. <B>' . $rowData->title . '</B>. ' . $rowData->issue . '. ' . $rowData->local . ': ' . $rowData->publisher . ', ' . $rowData->year . '.<BR>';
+                $basicBibliography .= $rowString;
+            }
+        }
+
+        //Complementary bibliography
+
+        /*$complementaryBookCodes = str_replace('{', '', $groupData->complementaryBibliography);  
+        $complementaryBookCodes = str_replace('}', '', $complementaryBookCodes);
+        $complementaryBookCodes = explode(',', $complementaryBookCodes);*/
+        $complementaryBookCodes = $groupData->complementaryBibliography;
+
+        if (count($complementaryBookCodes) > 0)
+        {
+            $busGnuteca = $MIOLO->getBusiness('gnuteca', 'BusGnutecaToSagu2');
+
+            foreach ($complementaryBookCodes as $filter->controlNumber)
+            {
+                $rowData = $busGnuteca->searchBibliographyData($filter, 'get');
+
+                $rowData = $rowData[$filter->controlNumber];
+
+                $rowString = $rowData->author . '. <B>' . $rowData->title . '</B>. ' . $rowData->issue . '. ' . $rowData->local . ': ' . $rowData->publisher . ', ' . $rowData->year . '.<BR>';
+
+                $complementaryBookCodes1 .= $rowString;
+            }
+        }
+
+        $year = explode('/', $learningPeriodData->beginDate);
+
+        $rdata->course                    = strtoupper($groupData->curriculumCourseId . '(' . $groupData->curriculumCourseVersion . ') - ' . $groupData->curriculumCourseName);
+        $rdata->unit                      = strtoupper($unitData);
+        $rdata->curricularComponent       = strtoupper($groupData->curriculumCurricularComponentId . '(' . $groupData->curriculumCurricularComponentVersion . ') - ' . $groupData->curriculumCurricularComponentName);
+        $rdata->professor                 = strtoupper($professorData);
+        $rdata->credits                   = $curricularComponentData->academicCredits;
+        $rdata->numberHours               = $curricularComponentData->academicNumberHours;
+        $rdata->semester                  = $busLearningPeriod->getSemesterChar($learningPeriodData->beginDate);
+        $rdata->year                      = $year[2];
+        $rdata->summary                   = $curricularComponentData->summary;
+        $rdata->objectives                = $groupData->objectives;
+        $rdata->content                   = $groupData->content;
+        $rdata->methodology               = $groupData->methodology;
+        $rdata->evaluation                = $groupData->evaluation;
+        $rdata->basicBibliography         = $basicBibliography;
+//         $rdata->complementaryBibliography = $groupData->complementaryBibliography;
+        $rdata->complementaryBibliography = $complementaryBookCodes1;
+        $rdata->observation               = $groupData->observation;
+        $rdata->bibliographyDescription   = $groupData->bibliographyDescription;
+
+        return $rdata;
+    }
+    /**
+     * Method to generate the report
+     */
+    public function RptContentProgrammarian($data = null)
+    {
+        $MIOLO       = MIOLO::getInstance();
+        $module      = MIOLO::getCurrentModule();
+
+        $rdata = $this->getReportData($data);
+
+        $busCompany  = $MIOLO->getBusiness('basic', 'BusCompany');
+        $company     = $busCompany->getCompany(DEFAULT_COMPANY_CONF);
+
+        $busPerson   = $MIOLO->getBusiness('basic', 'BusPerson');
+        $dataPerson  = $busPerson->getPerson($company->personId);
+
+        // Generating PDF file
+        $pdf = new PDF();
+        $pdf->aliasNbPages();
+        $pdf->setMargins(25, 30, 20);
+        //$pdf->personName = $rdata->name;
+        // First page
+        $pdf->addPage('P', 'mm', 'A4');
+
+        $pdf->setFont(DEFAULT_REPORT_FONT, 'B', 12);
+        $pdf->cell(165, 5, $dataPerson->name . ' - ' . $company->companyTypeDescription, 0, 1, 'L');
+        $pdf->ln(2);
+        $pdf->setFont(DEFAULT_REPORT_FONT, '', 12);
+
+        $pdf->multiCell(165, 5, _M('COURSE', $module) . ': ' . $rdata->course, 0, 'L');
+        $pdf->ln(2);
+
+        $pdf->multiCell(165, 5, _M('UNIT', $module) . ': ' . $rdata->unit, 0, 'L');
+        $pdf->ln(2);
+
+        $pdf->multiCell(165, 5, _M('CURRICULAR COMPONENT', $module) . ': ' . $rdata->curricularComponent, 0, 'L');
+        $pdf->ln(2);
+
+        $pdf->multiCell(165, 5, _M('PROFESSOR', $module) . '(S): ' . $rdata->professor, 0, 'L');
+        $pdf->ln(2);
+
+        $pdf->cell(80, 5, _M('CREDITS', $module) . ': ' . $rdata->credits, 0, 0, 'L');
+        $pdf->cell(85, 5, _M('NUMBER HOURS', $module) . ': ' . $rdata->numberHours, 0, 1, 'L');
+        $pdf->ln(2);
+
+        $pdf->cell(80, 5, _M('SEMESTER', $module) . ': ' . $rdata->semester, 0, 0, 'L');
+        $pdf->cell(85, 5, _M('YEAR', $module) . ': ' . $rdata->year, 0, 1, 'L');
+        $pdf->ln(10);
+
+        $pdf->setFont(DEFAULT_REPORT_FONT, 'B', 12);
+        $pdf->cell(0, 5, '            ' . _M('SUMMARY', $module), 0, 0, 'L');
+        $pdf->ln(8);
+        $pdf->setFont(DEFAULT_REPORT_FONT, '', 12);
+        $pdf->multiCell(0, 5, '      ' . $rdata->summary, 0, 'J');
+        $pdf->ln(10);
+
+        $pdf->setFont(DEFAULT_REPORT_FONT, 'B', 12);
+        $pdf->cell(0, 5, '            ' . _M('OBJECTIVES', $module), 0, 0, 'L');
+        $pdf->ln(8);
+        $pdf->setFont(DEFAULT_REPORT_FONT, '', 12);
+        $pdf->multiCell(0, 5, $rdata->objectives, 0, 'J');
+        $pdf->ln(10);
+
+        $pdf->setFont(DEFAULT_REPORT_FONT, 'B', 12);
+        $pdf->cell(0, 5, '            ' . _M('CONTENT', $module), 0, 0, 'L');
+        $pdf->ln(8);
+        $pdf->setFont(DEFAULT_REPORT_FONT, '', 12);
+        $pdf->multiCell(0, 5, $rdata->content, 0, 'J');
+        $pdf->ln(10);
+
+        $pdf->setFont(DEFAULT_REPORT_FONT, 'B', 12);
+        $pdf->cell(0, 5,  '            ' . _M('METHODOLOGY', $module), 0, 0, 'L');
+        $pdf->ln(8);
+        $pdf->setFont(DEFAULT_REPORT_FONT, '', 12);
+        $pdf->multiCell(165, 5, '      ' . $rdata->methodology, 0, 'J');
+        $pdf->ln(10);
+
+        $pdf->setFont(DEFAULT_REPORT_FONT, 'B', 12);
+        $pdf->cell(0, 5, '            ' . _M('EVALUATION', $module), 0, 0, 'L');
+        $pdf->ln(8);
+        $pdf->setFont(DEFAULT_REPORT_FONT, '', 12);
+        $pdf->multiCell(165, 5, '      ' . $rdata->evaluation, 0, 'J');       
+        $pdf->ln(10);
+
+        $pdf->setFont(DEFAULT_REPORT_FONT, 'B', 12);
+        $pdf->cell(0, 5, '      ' . _M('BIBLIOGRAPHY', $module), 0, 0, 'L');
+        $pdf->ln(8);
+        $pdf->setFont(DEFAULT_REPORT_FONT, '', 12);
+        $pdf->ln(10);
+
+        if (strlen((string)$rdata->basicBibliography) > 0)
+        {
+            $pdf->setFont(DEFAULT_REPORT_FONT, 'B', 12);
+            $pdf->cell(0, 5, '      ' . _M('BASIC', $module), 0, 0, 'L');
+            $pdf->ln(8);
+            $pdf->setFont(DEFAULT_REPORT_FONT, '', 12);
+
+            //$rowString = $rowData->author . '. <b>' . $rowData->title . '</b>. ' . $rowData->issue . '. ' . $rowData->local . ': ' . $rowData->publisher . ', ' . $rowData->year . '.<br>';
+
+//             foreach( $rdata->basicBibliography as $basicBibliography)
+//             {
+//                 $pdf->cell(strlen((string)$basicBibliography->author), 5, $basicBibliography->author, 0, 0, 'L');
+//                 $pdf->setFont(DEFAULT_REPORT_FONT, 'B', 12);
+//                 $pdf->cell(strlen((string)$basicBibliography->title), 5, $basicBibliography->title, 0, 0, 'L');
+//                 $pdf->setFont(DEFAULT_REPORT_FONT, '', 12);
+//                 $pdf->cell(strlen((string)$basicBibliography->issue), 5, $basicBibliography->issue, 0, 0, 'L');
+//                 $pdf->cell(strlen((string)$basicBibliography->local), 5, $basicBibliography->local, 0, 0, 'L');
+//                 $pdf->cell(strlen((string)$basicBibliography->publisher), 5, $basicBibliography->publisher, 0, 0, 'L');
+//                 $pdf->cell(strlen((string)$basicBibliography->year), 5, $basicBibliography->year, 0, 0, 'L');
+//                 $pdf->ln(10);
+//             }
+            $pdf->multiCell(165, 5, $pdf->WriteHTML($rdata->basicBibliography), 0, 'L');
+            $pdf->ln(10);
+            $hasBib = true;
+        }
+        if (strlen((string)$rdata->complementaryBibliography) > 0)
+        {
+            $pdf->setFont(DEFAULT_REPORT_FONT, 'B', 12);
+            $pdf->cell(0, 5, '      ' .  _M('COMPLEMENTARY', $module), 0, 0, 'L');
+            $pdf->ln(8);
+            $pdf->setFont(DEFAULT_REPORT_FONT, '', 12);
+            $pdf->multiCell(0, 5, $pdf->WriteHTML($rdata->complementaryBibliography), 0, 'L');
+            $pdf->ln(10);
+            $hasBib = true;
+        }
+        if (!$hasBib)
+        {
+            //$pdf->ln();
+            $pdf->multiCell(165, 5, '      ' . $rdata->bibliographyDescription, 0, 'L');
+        }
+
+        $pdf->close();
+        $pdf->output();
+    }
+}
+
+?>

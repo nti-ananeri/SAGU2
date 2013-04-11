@@ -1,0 +1,291 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for sprSelectiveProcessOccurrence table
+ *
+ * @author Daniel Afonso Heisler [daniel@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 13/09/2005
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to manipulate the sprSelectiveProcessOccurrence table
+ **/
+class BusinessSelectiveProcessBusSelectiveProcessOccurrence extends Business
+{
+
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module = is_null($module) ? 'selectiveProcess' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+    /**
+     * List all records from the table handled by the class
+     *
+     * @param $selectiveProcessId (integer): Primary key of the record to be retrieved
+     *
+     * @returns (array): Return an array with the entire table
+     *
+     **/
+    public function listSelectiveProcessOccurrenceType($selectiveProcessId)
+    {
+        $db  = $this->getDatabase();
+        $sql = 'SELECT A.selectiveProcessTypeId,
+                       A.description
+                  FROM sprSelectiveProcessType A
+            INNER JOIN sprSelectiveProcessOccurrence B
+                    ON ( A.selectiveProcessTypeId = B.selectiveProcessTypeId )
+                   AND B.selectiveProcessId = ?
+              ORDER BY A.selectiveProcessTypeId, A.description';
+
+        if ( strlen((string)$selectiveProcessId)>0 )
+        {
+            $result = $db->query(SAGU::prepare($sql, $selectiveProcessId));
+        }
+
+        if ( !$result )
+        {
+            $result = array();
+        }
+
+        //$db->close();
+        return $result;
+    }
+
+    /**
+     * Return a specific record from the database
+     *
+     * @param $selectiveProcessTypeId (integer): Primary key of the record to be retrieved
+     * @param $selectiveProcessId (integer): Primary key of the record to be retrieved
+     *
+     * @return (object): Return an object of the type handled by the class
+     *
+     **/
+    public function getSelectiveProcessOccurrence($selectiveProcessId, $selectiveProcessTypeId)
+    {
+
+        $sql = 'SELECT A.selectiveProcessId,
+                       C.description,
+                       A.selectiveProcessTypeId,
+                       B.description,
+                       A.isMain,
+                       A.priority,
+                       A.userName,
+                       TO_CHAR(A.dateTime,\'' . MASK_TIMESTAMP . '\'),
+                       A.ipAddress
+                  FROM sprSelectiveProcessOccurrence A
+             LEFT JOIN sprSelectiveProcessType B
+                    ON (A.selectiveProcessTypeId = B.selectiveProcessTypeId)
+             LEFT JOIN sprSelectiveProcess C
+                    ON (A.selectiveProcessId     = C.selectiveProcessId)
+                 WHERE A.selectiveProcessId      = ?
+                   AND A.selectiveProcessTypeId  = ?';
+
+        $args = array( $selectiveProcessId,
+                       $selectiveProcessTypeId );
+
+        $db     = $this->getDatabase();
+
+        $result = $db->query(SAGU::prepare($sql, $args));
+        //$db->close();
+
+        $selectiveProcessOccurrence = new SprSelectiveProcessOccurrence();
+
+        list ( $selectiveProcessOccurrence->selectiveProcessId,
+               $selectiveProcessOccurrence->selectiveProcessDescription,
+               $selectiveProcessOccurrence->selectiveProcessTypeId,
+               $selectiveProcessOccurrence->selectiveProcessTypeDescription,
+               $selectiveProcessOccurrence->isMain,
+               $selectiveProcessOccurrence->priority,
+               $selectiveProcessOccurrence->userName,
+               $selectiveProcessOccurrence->dateTime,
+               $selectiveProcessOccurrence->ipAddress ) = $result[0];
+
+        return $selectiveProcessOccurrence; 
+    }
+
+    /**
+     * Do a search on the database table handled by the class
+     *
+     * @param $filters (object): Search filters
+     *
+     * @return (array): An array containing the search results
+     **/
+    public function searchSelectiveProcessOccurrence($filters)
+    {
+        $sql = 'SELECT A.selectiveProcessId,
+                       C.description,
+                       A.selectiveProcessTypeId,
+                       B.description,
+                       A.isMain,
+                       A.priority,
+                       A.userName,
+                       TO_CHAR(A.dateTime,\'' . MASK_TIMESTAMP . '\'),
+                       A.ipAddress
+                  FROM sprSelectiveProcessOccurrence A
+             LEFT JOIN sprSelectiveProcessType B
+                    ON (A.selectiveProcessTypeId = B.selectiveProcessTypeId)
+             LEFT JOIN sprSelectiveProcess C
+                    ON (A.selectiveProcessId     = C.selectiveProcessId) ';
+
+        if ( strlen((string)$filters->selectiveProcessId) > 0 )
+        {
+            $where .= ' AND A.selectiveProcessId ILIKE ?';
+            $args[] = $filters->selectiveProcessId;
+        }
+        if ( strlen((string)$filters->selectiveProcessTypeId) > 0 )
+        {
+            $where .= ' AND A.selectiveProcessTypeId ILIKE ?';
+            $args[] = $filters->selectiveProcessTypeId;
+        }
+        if ( $filters->isOtherSelectiveProcess == true )
+        {
+            $where .= ' AND A.selectiveProcessTypeId <> ?';
+            $args[] = DEFAULT_SELECTIVE_PROCESS_TYPE;
+        }
+
+        unset($result);
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE ' . substr($where, 4) . '
+                   ORDER BY C.description';
+
+            $db = $this->getDatabase();
+
+            $result = $db->query(SAGU::prepare($sql, $args));
+
+            //$db->close();
+        }
+
+        return $result;
+    }
+
+    /**
+     * Insert a new record
+     *
+     * @param $data (object): An object of the type handled by the class
+     *
+     * @return True if succed, otherwise False
+     *
+     **/
+    public function insertSelectiveProcessOccurrence($data)
+    {
+        $sql = 'INSERT INTO sprSelectiveProcessOccurrence
+                            (selectiveProcessId,
+                             selectiveProcessTypeId,
+                             isMain,
+                             priority)
+                     VALUES (?,?,?,?)';
+
+        $args = array( $data->selectiveProcessId,
+                       $data->selectiveProcessTypeId,
+                       $data->isMain,
+                       $data->priority );
+
+        $db     = $this->getDatabase();
+        $result = $db->execute(SAGU::prepare($sql, $args));
+        //$db->close();
+
+        return $result;
+    }
+
+    /**
+     * Update data from a specific record
+     *
+     * @param $data (object): Data which will replace the old record data
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+    public function updateSelectiveProcessOccurrence($data)
+    {
+        $sql = 'UPDATE sprSelectiveProcessOccurrence
+                   SET selectiveProcessId     = ?,
+                       selectiveProcessTypeId = ?,
+                       isMain                 = ?,
+                       priority               = ?
+                 WHERE selectiveProcessId     = ?
+                   AND selectiveProcessTypeId = ?';
+
+        $args = array( $data->selectiveProcessId,
+                       $data->selectiveProcessTypeId,
+                       $data->isMain,
+                       $data->priority,
+                       $data->selectiveProcessIdOld,
+                       $data->selectiveProcessTypeIdOld );
+
+        $db   = $this->getDatabase();
+        $sqls = SAGU::prepare($sql, $args);
+
+        for ( $i=0; $i<count($sqls); $i++ )
+        {
+            $result = $db->execute($sqls[$i]);
+        }
+
+        //$db->close();
+
+        return $result;
+    }
+
+    /**
+     * Delete a record
+     *
+     * @param $selectiveProcessTypeId (integer): Primary key of the record to be retrieved
+     * @param $selectiveProcessId (integer): Primary key of the record to be retrieved
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+    public function deleteSelectiveProcessOccurrence($selectiveProcessId, $selectiveProcessTypeId)
+    {
+        $sql = 'DELETE FROM sprSelectiveProcessOccurrence
+                      WHERE selectiveProcessId     = ?
+                        AND selectiveProcessTypeId = ?';
+
+        $args = array( $selectiveProcessId,
+                       $selectiveProcessTypeId );
+
+        $db     = $this->getDatabase();
+        $result = $db->execute(SAGU::prepare($sql, $args));
+        //$db->close();
+
+        return $result;
+    }
+
+}
+
+?>

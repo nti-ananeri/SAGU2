@@ -1,0 +1,810 @@
+<?php
+set_time_limit(0);
+/**
+ * Default defines 
+ * To report identification
+ */
+define('REPORT_ID', 'AC003'); 
+define('FPDF_FONTPATH', $MIOLO->getModulePath('basic', '/classes/fpdf/font/'));
+
+$MIOLO = MIOLO::getInstance();
+$module = 'academic';
+$MIOLO->Uses('classes/fpdf/fpdf.php', 'basic');
+
+/**
+ * Create header and footer information
+ */
+class PDF extends FPDF
+{
+    var $type = 0;
+    var $frequencies = array();
+
+    public function attendanceHeader($reportData, $reg=0)
+    {
+        $MIOLO       = MIOLO::getInstance();
+        $module      = 'academic';
+
+        $busCompany  = $MIOLO->getBusiness('basic', 'BusCompany');
+        $busCourse   = $MIOLO->getBusiness($module, 'BusCourse');
+        $busClass    = $MIOLO->getBusiness('academic', 'BusClass');
+        $company     = $busCompany->getCompany(DEFAULT_COMPANY_CONF);
+
+        $this->setLineWidth(0.5);
+        $this->cell(277, 5, '', 'B', 0);
+        $this->ln(6);
+
+        $this->Image(SAGUFile::getPhotoPath($company->personId),250, 13, '', 17, PHOTO_FORMAT);
+
+        //Este if abaixo ira verificar se o curso e seriado
+        //e incluira descricao da turma e do curso da turma
+        //na pauta
+        $isSerial = false;
+
+        if ( is_array($reportData->pupils[$reg]) && (count($reportData->pupils[0]) > 0) )
+        {
+            if ( in_array($reportData->pupils[0][7], explode(",",SERIAL_ENROLL_TYPE_IDS)) )
+            {
+                $isSerial = true;
+            }
+        }
+
+        if ( $isSerial == true )
+        {
+            $this->setFont(DEFAULT_REPORT_FONT, 'B', 12);
+            $this->cell(50, 5, _M('Attendance list', $module), 0, 0);
+
+            $getSerialCourse = $busCourse->getSerialCourse($reportData->pupils[$reg][3], $reportData->pupils[$reg][8], $reportData->pupils[$reg][7], $reportData->pupils[$reg][1]);
+
+            $this->setFont(DEFAULT_REPORT_FONT, 'B', 10);
+
+            if ( $reportData->classId )
+            {
+                $class = $busClass->getClass($reportData->classId);
+                $lenghtString = strlen((string)$class->classId . ' - ' . $class->description);
+                $this->cell(175, 5, $class->classId . ' - ' . $class->description, 0, 0, 'C');
+            }
+            else
+            {
+                $this->cell(175, 5, ' ', 0, 0, 'C');
+            }
+
+            $this->cell(50, 5, _M('Emission date', $module) . ': ' . $reportData->emissionDate, 0, 0);
+        }
+        else
+        {
+            $this->setFont(DEFAULT_REPORT_FONT, 'B', 12);
+            $this->cell(225, 5, _M('Attendance list', $module), 0, 0);
+            $this->setFont(DEFAULT_REPORT_FONT, '', 10);
+            $this->cell(50, 5, _M('Emission date', $module) . ': ' . $reportData->emissionDate, 0, 0);
+        }
+
+        $this->ln();
+
+        //First data line
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', 10);
+        $this->cell(30, 5, _M('Curricular component', $module) . ':', 0, 0);
+        $this->setFont(DEFAULT_REPORT_FONT, '', 8);
+        $this->cell(170, 5, $reportData->curricularComponent, 0, 0);
+        $this->ln();
+
+        //Second data line
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', 10);
+        $this->cell(30, 5, _M('Center', $module) . ':', 0, 0);
+        $this->setFont(DEFAULT_REPORT_FONT, '', 8);
+        $this->cell(80, 5, $reportData->center, 0, 0);
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', 10);
+        $this->cell(20, 5, _M('Unit', $module) . ':', 0, 0);
+        $this->setFont(DEFAULT_REPORT_FONT, '', 8);
+        $this->cell(30, 5, $reportData->unit, 0, 0);
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', 10);
+        $this->cell(20, 5, _M('Period', $module) . ':', 0, 0);
+        $this->setFont(DEFAULT_REPORT_FONT, '', 8);
+        $this->cell(20, 5, $reportData->periodId, 0, 0);
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', 10);
+        $this->cell(10, 5, _M('Room', $module) . ':', 0, 0);
+        if ( count($reportData->result) == 1 )
+        {
+            $this->setFont(DEFAULT_REPORT_FONT, '', 8);
+            $this->cell(20, 5, $reportData->room, 0, 0);
+        }
+        elseif ( count($reportData->result) > 1 )
+        {
+            $this->setFont(DEFAULT_REPORT_FONT, '', 8);
+            unset($reportData->room);
+            $room = array();
+            foreach ( $reportData->result as $reportDataRow )
+            {
+                if ( !in_array($reportDataRow[8], $room) )
+                {
+                    $room[] = $reportDataRow[8];
+                    $reportData->room .= str_replace(' ', '', $reportDataRow[8]) . ', ';
+                }
+            }
+            $this->cell(20, 5, substr($reportData->room, 0, -2), 0, 0);
+        }
+        
+        $this->ln();
+
+        //Third data line
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', 10);
+        $this->cell(30, 5, _M('Day', $module) . ':', 0, 0);
+
+        if ( count($reportData->result) == 1 )
+        {
+            $this->setFont(DEFAULT_REPORT_FONT, '', 8);
+            $this->cell(80, 5, $reportData->weekDay, 0, 0);
+        }
+        elseif ( count($reportData->result) > 1 )
+        {
+            $this->setFont(DEFAULT_REPORT_FONT, '', 8);
+            unset($reportData->weekDay);
+            $weekDay = array();
+            foreach ( $reportData->result as $reportDataRow )
+            {
+                if ( !in_array($reportDataRow[9], $weekDay) )
+                {
+                    $weekDay[] = $reportDataRow[9];
+                    $reportData->weekDay .= str_replace(' ', '', $reportDataRow[9]) . ', ';
+                }
+            }
+            $this->cell(80, 5, substr($reportData->weekDay, 0, -2), 0, 0);
+        }
+
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', 10);
+        $this->cell(20, 5, _M('Turn', $module) . ':', 0, 0);
+
+        if ( count($reportData->result) == 1 )
+        {
+            $this->setFont(DEFAULT_REPORT_FONT, '', 8);
+            $this->cell(30, 5, $reportData->turn, 0, 0);
+        }
+        elseif ( count($reportData->result) > 1 )
+        {
+            $this->setFont(DEFAULT_REPORT_FONT, '', 8);
+            unset($reportData->turn);
+            $turn = array();
+            foreach ( $reportData->result as $reportDataRow )
+            {
+                if ( !in_array($reportDataRow[5], $turn) )
+                {
+                    $turn[] = $reportDataRow[5];
+                    $reportData->turn .= str_replace(' ', '', $reportDataRow[5]) . ', ';
+                }
+            }
+            $this->cell(30, 5, substr($reportData->turn, 0, -2), 0, 0);
+        }
+
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', 10);
+        $this->cell(20, 5, _M('Total H/L', $module) . ':', 0, 0);
+        $this->setFont(DEFAULT_REPORT_FONT, '', 8);
+        $this->cell(20, 5, $reportData->numberHours, 0, 0);
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', 10);
+        //$this->cell(20, 5, _M('Foreseen H/L', $module) . ':', 0, 0);
+        $this->setFont(DEFAULT_REPORT_FONT, '', 8);
+        $this->cell(40, 5, '', 0, 0);
+        $this->ln();
+
+        //Fourth data line
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', 10);
+        $this->cell(30, 5, _M('Professor', $module) . ':', 0, 0);
+
+        if ( count($reportData->result) == 1 )
+        {
+            $this->setFont(DEFAULT_REPORT_FONT, '', 8);
+            $this->cell(80, 5, $reportData->professor, 0, 0);
+        }
+        elseif ( count($reportData->result) > 1 )
+        {
+            $this->setFont(DEFAULT_REPORT_FONT, '', 8);
+            unset($reportData->professor);
+            $professor = array();
+            foreach ( $reportData->result as $reportDataRow )
+            {
+                if ( !in_array($reportDataRow[2], $professor) )
+                {
+                    $professor[] = $reportDataRow[2];
+                    $reportData->professor .= str_replace(' ', '', $reportDataRow[2]) . ', ';
+                }
+            }
+            $this->cell(80, 5, substr($reportData->professor, 0, -2), 0, 0);
+        }
+
+        //$this->cell(40, 5, '*' . _M('Minimum frequency', $module) . ':', 0, 0);
+        //$this->cell(50, 5, $reportData->minimumNumberHours . ' ' . _M('H/L', $module), 0, 0);
+        $this->cell(90, 5, '', 0, 0);
+        $this->ln();
+
+        $this->cell(265, 5, '', 'B', 0);
+        $this->cell(12, 5, $reportData->groupId, 'B', 0);
+        $this->ln(6);
+        $this->setLineWidth(0.1);   
+    }
+
+    public function attendanceFooter()
+    {
+        $module = 'academic';
+
+        $this->setLineWidth(0.5);
+
+        $this->cell(277,5, '', 'B', 0);
+        $this->ln(5);
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', 9);
+        $this->cell(35, 5, _M('Attendance register', $module) . ':', 0, 0);
+        $this->setFont(DEFAULT_REPORT_FONT, '', 9);
+        $this->cell(5, 5, '*', 0, 0);
+        $this->cell(105, 5, '', 0, 0);
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', 9);
+        $this->cell(6, 5, _M('Fr', $module) . ': ', 0, 0);
+        $this->setFont(DEFAULT_REPORT_FONT, '', 9);
+        $this->cell(50, 5, _M('Frequency', $module), 0, 0);
+        $this->cell(10, 5, _M('Obs.', $module) . ':', 0, 0);
+
+        $this->ln();
+
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', 9);
+        $this->cell(35, 5, _M('Absence register', $module) . ':', 0, 0);
+        $this->setFont(DEFAULT_REPORT_FONT, '', 9);
+        $this->cell(5, 5, 'X', 0, 0);
+        $this->cell(105, 5, '', 0, 0);
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', 9);
+        $this->cell(6, 5, _M('G', $module) . ': ', 0, 0);
+        $this->setFont(DEFAULT_REPORT_FONT, '', 9);
+        $this->cell(50, 5, _M('Evaluation grades', $module) . ' (1 ' . _M('and', $module) . ' 2)', 0, 0);
+
+        $this->ln();
+
+        $this->cell(145, 5, '*: ' . _M('Locking as process directed by Protocol', $module) . '.', 0, 0);
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', 9);
+        $this->cell(6, 5, _M('Av', $module) . ': ', 0, 0);
+        $this->setFont(DEFAULT_REPORT_FONT, '', 9);
+        $this->cell(50, 5, _M('Average', $module) . ' => ' . _M('(G1+G2)/2', $module), 0, 0);
+
+        $this->ln();
+
+        $this->cell(145, 5, _M('Only the General Secretariat is authorized to add pupils in attendance list', $module) . '.', 0, 0);
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', 9);
+        $this->cell(6, 5, _M('Ex', $module) . ': ', 0, 0);
+        $this->setFont(DEFAULT_REPORT_FONT, '', 9);
+        $this->cell(50, 5, _M('Exam grade', $module), 0, 0);
+
+        $this->ln();
+
+        $this->cell(17, 5, _M('Professor', $module) . ':', 0, 0);
+        $this->setLineWidth(0.1);
+        $this->cell(45, 5, '', 'B', 0);
+        $this->cell(5, 5, '', 0, 0);
+        $this->cell(28, 5, _M('Hours/lesson given', $module) . ': ', 0, 0);
+        $this->cell(25, 5, '', 'B', 0);
+        $this->cell(25, 5, '', 0, 0);
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', 9);
+        $this->cell(6, 5, _M('Fg', $module) . ': ', 0, 0);
+        $this->setFont(DEFAULT_REPORT_FONT, '', 9);
+        $this->cell(50, 5, _M('Final grade', $module) . ' => ' . _M('(Av+Ex)/2', $module), 0, 0);
+        $this->ln();
+        $this->setLineWidth(0.5);
+        $this->cell(277, 2, '', 'B', 0);   
+        $this->setLineWidth(0.1);
+    }
+
+    public function attendanceColumns($data, $n=1)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = 'academic';
+
+        $this->setLineWidth(0.1);        
+        $this->setFont(DEFAULT_REPORT_FONT, '', 6);
+        $this->cell(5, 5, '', 'LTR', 0);
+        $this->cell(15, 5, '', 'LTR', 0);
+        $this->cell(80 ,5, '', 'LTR', 0);
+        $this->cell(10, 5, '', 'LTR', 0);
+        $this->cell(8, 5, _M('Lesson', $module), 'LTR', 0);
+
+        $n_   = ( ($n-1) * 32 );
+
+        $cont = $n_;
+        for ($x = $n_; $x < (32*$n); $x++)
+        {
+            $this->cell(5, 5, ++$cont, 1, 0);
+        }
+
+        $this->ln();
+
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', 9);
+        $this->cell(5, 5, '', 'LR', 0);
+        $this->cell(15, 5, _M('Code', $module), 'LR', 0);
+        $this->cell(80 ,5, _M('Name', $module), 'LR', 0);
+        $this->cell(10, 5, _M('Cour', $module), 'LR', 0);
+        $this->setFont(DEFAULT_REPORT_FONT, '', 6);
+        $this->cell(8, 5, _M('Month', $module), 'LR', 0);
+
+        $cont = $n_;
+        for ($x = $n_; $x < (32*$n); $x++)
+        {
+            $this->cell(5, 5, $data[$cont++][2], 1, 0);
+        }
+
+        $this->ln();
+
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', 9);
+        $this->cell(5, 5, '', 'LBR', 0);
+        $this->cell(15, 5, '', 'LBR', 0);
+        $this->cell(80 ,5, '', 'LBR', 0);
+        $this->cell(10, 5, '', 'LBR', 0);
+        $this->setFont(DEFAULT_REPORT_FONT, '', 6);
+        $this->cell(8, 5, _M('Day', $module), 'LBR', 0);
+
+        $cont = $n_;
+        for ($x = $n_; $x < (32*$n); $x++)
+        {
+            $this->cell(5, 5, $data[$cont++][1], 1, 0);
+        }
+
+        $this->ln();
+    }
+
+    public function attendancePupilLine($count, $personId, $personName, $courseId, $dateCancellation = null, $data, $n, $enrollId, $scheduleId)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = 'academic';
+
+        $bussinessFreq  = $MIOLO->getBusiness($module, 'BusFrequenceEnroll');
+        $bussinessSched = $MIOLO->getBusiness($module, 'BusScheduleLearningPeriod');
+
+        $this->setLineWidth(0.1);
+        $this->setFont(DEFAULT_REPORT_FONT, '', 9);
+        $this->cell(5, 5, $count, 1, 0);
+        $this->cell(15, 5, $personId, 1, 0);
+        $this->cell(80 ,5, $personName, 1, 0);
+        $this->cell(18, 5, $courseId, 1, 0, 'C');
+        $n_   = ( ($n-1) * 32 );
+
+        $cont = $n_;
+        //percorre as colunas
+        for ($x = $n_; $x < (32*$n); $x++)
+        {
+            $this->cell(5, 5, $this->frequencies[$enrollId][$x], 1, 0);
+
+            if ( $x == 10 )
+            {
+                $cx = $this->getX();
+                $cy = $this->getY();
+            }
+        }
+
+
+        if ( $dateCancellation != null )
+        {
+            //$this->setXY($cx, $cy);
+            $this->setX(200);
+            $this->setFont(DEFAULT_REPORT_FONT, '', 7);
+            $this->cell(100, 5, _M('Locked in', $module) . ' ' . $dateCancellation, 0, 0);
+        }
+
+        $this->ln();
+
+    }
+
+    public function attendanceColumnsNotes($scheduleId, $scheduleProfessorId)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = 'academic';
+
+        $this->setLineWidth(0.1);
+        $this->setFont(DEFAULT_REPORT_FONT, '', 6);
+        $this->cell(5, 5, '', 'LTR', 0);
+        $this->cell(15, 5, '', 'LTR', 0);
+        $this->cell(80 ,5, '', 'LTR', 0);
+        $this->cell(10, 5, '', 'LTR', 0);
+        $this->cell(8, 5, '', 'LTR', 0);
+
+        $bussiness     = $MIOLO->getBusiness($module, 'BusAttendance');
+        $bussinessEval = $MIOLO->getBusiness($module, 'BusEvaluation');
+        $notes         = $bussiness->getAcademicNotes($scheduleId);
+
+        //notas        
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', 8);
+        if ( count($notes)>0 )
+        {
+            $filter = new AcdEvaluation();
+            foreach ( $notes as $row )
+            {
+                $filter->degreeId            = $row[0];
+                $filter->scheduleProfessorId = $scheduleProfessorId;
+                $evaluations = $bussinessEval->searchEvaluation($filter);
+                $i           = (count($evaluations)+1);
+                $this->cell((15*$i), 5, $row[1], 'LRTB', 0, 'C');
+            }
+        }
+        $this->cell(15, 5, _M('Note', $module), 'LRT', 0, 'C');
+        $this->cell(15, 5, _M('Note', $module), 'LRT', 0, 'C');
+        $this->cell(15, 5, _M('Note', $module), 'LRT', 0, 'C');
+        $this->cell(20, 5, _M('Status', $module), 'LRT', 0, 'C');
+
+        $this->ln();
+
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', 8);
+        $this->cell(5, 5, '', 'LR', 0);
+        $this->cell(15, 5, _M('Code', $module), 'LR', 0);
+        $this->cell(80 ,5, _M('Name', $module), 'LR', 0);
+        $this->cell(10, 5, _M('Cour', $module), 'LR', 0);
+        $this->setFont(DEFAULT_REPORT_FONT, '', 6);
+        $this->cell(8, 5, '', 'LR', 0);
+
+        //avaliacoes
+        $this->setFont(DEFAULT_REPORT_FONT, '', 8);
+        if ( count($notes)>0 )
+        {
+            $filter = new AcdEvaluation();
+            foreach ( $notes as $row )
+            {
+                $filter->degreeId            = $row[0];
+                $filter->scheduleProfessorId = $scheduleProfessorId;
+                $evaluations = $bussinessEval->searchEvaluation($filter);
+                $i           = (count($evaluations)+1);
+                $i_          = 1;
+                while ( $i_++ < $i )
+                {
+                    $this->cell(15, 5, $evaluations[$i_-2][11], 'LRTB', 0, 'C');
+                }
+                $this->cell(15, 5, _M('Average', $module), 'LRTB', 0, 'C');
+            }
+        }
+
+        //médias e notas finais
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', 8);
+        $this->cell(15, 5, _M('Average', $module), 'LRB', 0, 'C');
+        $this->cell(15, 5, _M('Exam', $module), 'LRB', 0, 'C');
+        $this->cell(15, 5, _M('Final', $module), 'LRB', 0, 'C');
+        $this->cell(20, 5, '', 'LRB', 0, 'C');
+        
+        $this->ln();
+    }
+
+    public function attendancePupilLineNotes($count, $personId, $personName, $courseId, $scheduleId, $scheduleProfessorId, $enrollId)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = 'academic';
+
+        $this->setLineWidth(0.1);
+        $this->setFont(DEFAULT_REPORT_FONT, '', 9);
+        $this->cell(5, 5, $count, 1, 0);
+        $this->cell(15, 5, $personId, 1, 0);
+        $this->cell(80 ,5, $personName, 1, 0);
+        $this->cell(18, 5, $courseId, 1, 0, 'C');
+
+        $bussiness           = $MIOLO->getBusiness($module, 'BusAttendance');
+        $bussinessEval       = $MIOLO->getBusiness($module, 'BusEvaluation');
+        $bussinessEvalEnroll = $MIOLO->getBusiness($module, 'BusEvaluationEnroll');
+        $notes               = $bussiness->getAcademicNotes($scheduleId, $enrollId);
+
+        //avaliacoes
+        $this->setFont(DEFAULT_REPORT_FONT, '', 8);
+        if ( count($notes)>0 )
+        {
+            $filter = new AcdEvaluation();
+            foreach ( $notes as $row )
+            {
+                $filter->degreeId            = $row[0];
+                $filter->scheduleProfessorId = $scheduleProfessorId;
+                $evaluations = $bussinessEval->searchEvaluation($filter);
+                $i           = (count($evaluations)+1);
+                $i_          = 1;
+                while ( $i_++ < $i )
+                {
+                    $note = $bussinessEvalEnroll->getEvaluationEnroll($evaluations[$i_-2][0], $enrollId);
+                    $this->cell(15, 5, $note->note, 'LRTB', 0, 'C');
+                }
+                $this->cell(15, 5, $row[2], 'LRTB', 0, 'C');
+            }
+        }
+
+        //médias e notas finais
+        $finalNotes = $bussiness->getFinalNotes($enrollId);
+        $this->setFont(DEFAULT_REPORT_FONT, '', 8);
+        $this->cell(15, 5, $finalNotes[0][0], 'LRB', 0, 'C');
+        $this->cell(15, 5, $finalNotes[0][1], 'LRB', 0, 'C');
+        $this->cell(15, 5, $finalNotes[0][2], 'LRB', 0, 'C');
+        $this->setFont(DEFAULT_REPORT_FONT, '', 7);
+        $this->cell(20, 5, $finalNotes[0][3], 'LRB', 0, 'C');
+
+        $this->ln();
+    }
+
+    public function getFrequencies($enrollId, $scheduleId, &$data)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = 'academic';
+
+        $bussinessFreq  = $MIOLO->getBusiness($module, 'BusFrequenceEnroll');
+        $bussinessSched = $MIOLO->getBusiness($module, 'BusScheduleLearningPeriod');
+
+        if ( count($this->frequencies[$enrollId]) == 0 )
+        {
+            //percorre todas as datas deste aluno pegando as frequencias e ausncias
+            for ( $x=0; $x<count($data); $x++ )
+            {
+                $frequencyDate            = $data[$x][0];
+                $scheduleId               = strlen((string)$data[$x][5])>0 ? $data[$x][5] : $scheduleId;
+                $sched                    = $bussinessSched->getScheduleInformations($scheduleId);
+                $turnId                   = $sched->turnId;
+                $numberHoursLessons       = $sched->numberHoursLessons;
+                $scheduleLearningPeriodId = $sched->scheduleLearningPeriodId;
+
+                // [0] occurrenceDate,
+                // [1] day,
+                // [2] month,
+                // [3] year,
+                // [4] numberhourslessons
+                // [5] scheduleId
+
+                if ( $frequencyDate == $oldFrequencyDate && $scheduleLearningPeriodId == $oldScheduleLearningPeriodId)
+                {
+                    $freq->frequency--;
+                }
+                else
+                {
+                    $oldFrequencyDate            = $frequencyDate;
+                    $oldScheduleLearningPeriodId = $scheduleLearningPeriodId;
+                    $freq = $bussinessFreq->getFrquenceEnroll($enrollId, $scheduleId, $frequencyDate, $turnId);
+                }
+//if ( $enrollId == 222550 )
+//{
+//  echo "EnrollId = " . $enrollId . ", scheduleId = " . $scheduleId . ", date = " . $frequencyDate . ", turnId = " . $turnId . "<br>";
+//  echo "Frequence = " . $freq->frequency . "<br>";
+//  vd($this->frequencies[222550]);
+//}
+
+                //se nao tiver aula registrada deixa em branco
+                if ( strlen((string)$freq->enrollId) == 0 )
+                {
+                    $this->frequencies[$enrollId][$x] = '';
+                }
+                //se as horas forem maiores que 0, informa a presença
+                elseif ( $freq->frequency > 0 )
+                {
+                    $this->frequencies[$enrollId][$x] = '*';
+                }
+               //se as aulas estiverem menores ou iguais a zero, registra ausência
+                else
+                {
+                    $this->frequencies[$enrollId][$x] = 'X';
+                }
+            }
+        }
+    }
+
+}
+
+
+/**
+ * PDF extension to generate report
+ */
+class RptAttendanceList 
+{
+    var $listSpace;
+
+    public function RptAttendanceList($data = null)
+    {
+        $MIOLO       = MIOLO::getInstance();
+        $module      = 'academic';
+
+        $business    = $MIOLO->getBusiness($module, 'BusAttendance');
+
+        // Generating PDF file
+        $pdf = new PDF();
+        $pdf->aliasNbPages();
+        $pdf->setTopMargin(1);
+
+        if ( !is_array($data->groupId) )
+        {
+            $data->groupId = array(array($data->groupId));
+        }
+
+        $reg = 0;
+        if ( count($data->groupId) > 0 )
+        {
+            foreach ( $data->groupId as $group )
+            {
+                $groupId = $group[0];
+                if ( ACADEMIC_REGISTER_LAYER_INDIVIDUAL == 'YES' )
+                {
+                    $reportData = $business->getGroupData($groupId, $data->scheduleId, $data->scheduleProfessorId);
+                }
+                elseif ( ACADEMIC_REGISTER_LAYER_INDIVIDUAL == 'NO' )
+                {
+                    $reportData = $business->getGroupData($groupId);
+                }
+
+                $reportData->emissionDate = $data->emissionDate;
+                $scheduleId               = strlen((string)$reportData->scheduleId)>0 ? $reportData->scheduleId : $data->scheduleId;
+                $scheduleProfessorId      = $data->scheduleProfessorId;
+
+                $reportData->pupils       = $business->listGroupEnrolledPupils($groupId);
+
+                $business  = $MIOLO->getBusiness($module, 'BusAttendance');
+
+                if ( ACADEMIC_REGISTER_LAYER_INDIVIDUAL == 'YES' )
+                {
+                    $dataC = $business->getScheduleAcademicCalendar($scheduleId);
+                }
+                elseif ( ACADEMIC_REGISTER_LAYER_INDIVIDUAL == 'NO' )
+                {
+                    $dataC = $business->getGroupAcademicCalendar($groupId);
+                }
+
+                //coloca uma data para cada hora de aula
+                if ( count($dataC)>0 )
+                {
+                    $t2 = 0;
+                    foreach ( $dataC as $validDates )
+                    {
+                        // [0] occurrenceDate,
+                        // [1] day,
+                        // [2] month,
+                        // [3] year,
+                        // [4] numberhourslessons
+                        // [5] scheduleId
+                        for ( $t=0; $t<(int)$validDates[4]; $t++ )
+                        {
+                            $dataD[$t2] = $validDates;
+                            $t2++;
+                        }
+                    }
+                    $dataC = $dataD;
+                }
+
+                /* TEM QUER A FUNCAO QUE ARREDONDA PRA CIMA NO PHP */
+                if ( (float)(count($dataC)/32) <= (float)1 )
+                    $n_page = 1;
+                elseif ( (float)(count($dataC)/32) <= (float)2 )
+                    $n_page = 2;
+                elseif ( (float)(count($dataC)/32) <= (float)3 )
+                    $n_page = 3;
+                elseif ( (float)(count($dataC)/32) <= (float)4 )
+                    $n_page = 4;
+                elseif ( (float)(count($dataC)/32) <= (float)5 )
+                    $n_page = 5;
+                elseif ( (float)(count($dataC)/32) <= (float)6 )
+                    $n_page = 6;
+                elseif ( (float)(count($dataC)/32) <= (float)7 )
+                    $n_page = 7;
+                elseif ( (float)(count($dataC)/32) <= (float)8 )
+                    $n_page = 8;
+                elseif ( (float)(count($dataC)/32) <= (float)9 )
+                    $n_page = 9;
+                elseif ( (float)(count($dataC)/32) <= (float)10 )
+                    $n_page = 10;
+                elseif ( (float)(count($dataC)/32) <= (float)11 )
+                    $n_page = 11;
+                elseif ( (float)(count($dataC)/32) <= (float)12 )
+                    $n_page = 12;
+                elseif ( (float)(count($dataC)/32) <= (float)13 )
+                    $n_page = 13;
+                elseif ( (float)(count($dataC)/32) <= (float)14 )
+                    $n_page = 14;
+                elseif ( (float)(count($dataC)/32) <= (float)15 )
+                    $n_page = 15;
+                elseif ( (float)(count($dataC)/32) <= (float)16 )
+                    $n_page = 16;
+                elseif ( (float)(count($dataC)/32) <= (float)17 )
+                    $n_page = 17;
+                elseif ( (float)(count($dataC)/32) <= (float)18 )
+                    $n_page = 18;
+                elseif ( (float)(count($dataC)/32) <= (float)19 )
+                    $n_page = 19;
+                elseif ( (float)(count($dataC)/32) <= (float)20 )
+                    $n_page = 20;
+
+                while ( $n_page-- > 0 )
+                {
+                    ++$c;
+                    $this->listSpace = 100;
+                    $pdf->addPage('L', 'mm', 'A4');
+                    $pdf->attendanceHeader($reportData, $reg);
+                    //$pdf->SetY(38);
+                    $pdf->attendanceColumns($dataC, $c);
+                    //$pdf->SetY(54);
+
+                    //Pupils listing
+                    if (count($reportData->pupils) > 0)
+                    {
+                        $count = 1;
+                        $reg2  = 0;
+                        foreach ($reportData->pupils as $key => $pupil)
+                        {
+                            list ($enrollId,
+                                  $personId,
+                                  $personName,
+                                  $courseId,
+                                  $statusId,
+                                  $dateCancellation) = $pupil;
+
+                            //adiciona todas as frequencias do aluno em &$dataC (referencia)
+                            $pdf->getFrequencies($enrollId, $scheduleId, $dataC);
+
+                            if (($this->listSpace < 5) || ($courseId != $oldCourseId) && ($key != 0))
+                            {
+                                $pdf->attendanceFooter();
+                                $pdf->addPage('L', 'mm', 'A4');
+                                $pdf->attendanceHeader($reportData, $reg2);
+                                //$pdf->SetY(38);
+                                $pdf->attendanceColumns($dataC, $c);
+                                //$pdf->SetY(54);
+                                $this->listSpace = 100;
+                            }
+
+                            if ($statusId == ENROLL_STATUS_CANCELLED ||
+                                $statusId == ENROLL_STATUS_DESISTING )
+                            {
+                                $pdf->attendancePupilLine('*', $personId, $personName, $courseId, $dateCancellation, $dataC, $c, $enrollId, $scheduleId);
+                            }
+                            else
+                            {
+                                $pdf->attendancePupilLine($count, $personId, $personName, $courseId, null, $dataC, $c, $enrollId, $scheduleId);
+                                $count++;
+                            }
+                            $this->listSpace = $this->listSpace - 5;
+
+                            $oldCourseId = $courseId;
+                            $reg2++;
+                        }
+                    }
+                    $pdf->attendanceFooter();
+                }
+                $reg++;
+            } //foreach
+            
+            //pagina adicional com as notas
+            if ( count($reportData->pupils) > 0 )
+            {
+
+                $count = 1;
+                $reg2  = 0;
+                $this->listSpace = 100;
+                $pdf->addPage('L', 'mm', 'A4');
+                $pdf->attendanceHeader($reportData, $reg);
+                $pdf->attendanceColumnsNotes($scheduleId, $scheduleProfessorId);
+
+                foreach ($reportData->pupils as $key => $pupil)
+                {
+                    list ($enrollId,
+                          $personId,
+                          $personName,
+                          $courseId,
+                          $statusId,
+                          $dateCancellation) = $pupil;
+
+                    if (($this->listSpace < 5) || ($courseId != $oldCourseId) && ($key != 0))
+                    {
+                        $pdf->attendanceFooter();
+                        $this->listSpace = 100;
+                        $pdf->addPage('L', 'mm', 'A4');
+                        $pdf->attendanceHeader($reportData, $reg2);
+                        $pdf->attendanceColumnsNotes($scheduleId, $scheduleProfessorId);
+                    }
+
+                    if ($statusId == ENROLL_STATUS_CANCELLED ||
+                        $statusId == ENROLL_STATUS_DESISTING )
+                    {
+                        $pdf->attendancePupilLineNotes('*', $personId, $personName, $courseId, $scheduleId, $scheduleProfessorId, $enrollId);
+                    }
+                    else
+                    {
+                        $pdf->attendancePupilLineNotes($count, $personId, $personName, $courseId, $scheduleId, $scheduleProfessorId, $enrollId);
+                        $count++;
+                    }
+                    $this->listSpace = $this->listSpace - 5;
+
+                    $oldCourseId = $courseId;
+                    $reg2++;
+                }
+                $pdf->attendanceFooter();
+            } //if pupil enrolled
+        }
+
+        $pdf->close();
+        $pdf->output();
+    }
+}
+
+?>

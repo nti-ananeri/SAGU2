@@ -1,0 +1,318 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for finSpecies table
+ *
+ * @author William Prigol Lopes [william@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 20/12/2005
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to manipulate the finSpecies table
+ **/
+class BusinessFinanceBusRemittanceInvoice041 extends Business
+{
+    private $db;
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $this->db = $MIOLO->getDatabase($module, 'finance');
+    }
+        
+
+    /**
+    *
+    * @author: Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+    *
+    * @param: $invoiceId (int): invoiceId data to get target for remittance.
+    *
+    * @return (object) PhysicalTarget.
+    *
+    */
+    public function getEntriesFromInvoice($invoiceId)
+    {
+
+        $sql =    ' SELECT entryid, 
+                           invoiceId, 
+                           operationId,
+                           (SELECT description 
+                              FROM finOperation 
+                             WHERE finOperation.operationid = A.operationId ) AS description,
+                           ROUND(value, \''. REAL_ROUND_VALUE . '\' )
+                      FROM finEntry A
+                     WHERE invoiceId = ?';
+        
+        $args = array($invoiceId);
+        $return = $this->db->query(SAGU::prepare($sql, $args) );
+        return $return;
+
+    }
+
+
+  /**
+    *
+    * @author: William Prigol Lopes [william@solis.coop.br]
+    *
+    * @param: $data (object): object containing data to begin a process for titles
+    *
+    * @return (boolean): true if succeed, otherwise false
+    *
+    */
+//     public function listReceivableInvoiceToBankRemittance($data)
+    public function listDetails($data)
+    {
+
+        $sql ='       SELECT A.invoiceId,
+                             A.personId,
+                             personType,
+                             CASE WHEN personType = \'f\' then personName
+                                  ELSE (select name from only baslegalperson where personId = A.personId)
+                                  END AS personName,
+                             A.incomeSourceId,
+                             assignorCode,
+                             TO_CHAR(A.maturityDate, \''.MASK_DATE.'\'),
+                             ROUND(balance(A.invoiceId), \'' . REAL_ROUND_VALUE . '\'),
+                             B.cityId,
+                             B.square,
+                             TO_CHAR(A.emissionDate, \''.MASK_DATE.'\'),
+                             A.bankInvoiceId,
+                             D.fine,
+                             D.daysToFine,
+                             D.monthlyInterest,
+                             D.discount,
+                             D.daysToDiscount,
+                             E.wallet
+                   FROM ONLY finReceivableInvoice A
+                  INNER JOIN (SELECT personId,
+                                     basPhysicalPerson.name as personName,
+                                     case when basPhysicalPerson.name is null then \'j\'
+                                          else \'f\'
+                                          end AS personType,
+                                     basPerson.cityId,
+                                     square,
+                                     dateDeath
+                           FROM ONLY basPerson
+                           LEFT JOIN basCitySquare
+                                  ON (basPerson.cityId = basCitySquare.cityId)
+                      LEFT JOIN ONLY basPhysicalPerson
+                               USING (personId)) AS B
+                       USING (personId)
+                  INNER JOIN finPolicy D
+                       USING (policyId)
+                  INNER JOIN finBankAccount E
+                          ON (A.bankAccountId = E.bankAccountId)
+                       WHERE A.maturityDate
+                     BETWEEN TO_DATE(?, \''.MASK_DATE.'\')
+                         AND TO_DATE(?, \''.MASK_DATE.'\')
+                         AND automaticDebit = \''.DB_FALSE.'\' ';
+        if($data->instruction == 2)
+        {
+            $sql .=    ' AND balance(A.invoiceId) > 0 ';
+        }
+        else
+        {
+            $sql .=    ' AND balance(A.invoiceId) > '.MINIMAL_VALUE_TO_PRINT_INVOICE.' ';
+        }
+            $sql .=    ' AND A.bankAccountId = 5
+                         AND D.collectionTypeId = 2
+                         AND A.bankInvoiceId IS NULL
+                         AND B.dateDeath IS NULL ';
+
+        $db = $this->getDatabase();
+
+        $args = array( $data->beginMaturityDate,
+                       $data->endMaturityDate );
+
+        if ( (strlen((string)$data->beginEmissionDate)>0) && (strlen((string)$data->endEmissionDate)>0) )
+        {
+            $args[] = $data->beginEmissionDate;
+            $args[] = $data->endEmissionDate;
+
+            $sql.= '     AND A.emissionDate
+                     BETWEEN to_date(?, \''.MASK_DATE .'\')
+                         AND to_date(?, \''.MASK_DATE .'\') ';
+        }
+
+        if ($data->resendInvoices == 0)
+        {
+            $sql.= ' AND A.bankInvoiceId IS NULL ';
+        }
+
+        if (is_array($data->incomeSourceId))
+        {
+            $sql.=' AND A.incomeSourceId IN ('.implode(',', $data->incomeSourceId).') ';
+        }
+        if (is_array($data->policyId))
+        {
+            $sql.=' AND A.policyId IN ('.implode(',', $data->policyId).') ';
+        }
+        $return = $this->db->query(SAGU::prepare($sql, $args) );
+        return $return;
+    }
+
+
+  /**
+    *
+    * @author: Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+    *
+    * @param: $invoiceId (int): invoiceId data to get target for remittance.
+    *
+    * @return (object) PhysicalTarget.
+    *
+    */
+    public function getPhysicalTargetFromInvoice($invoiceId)
+    {
+
+        $sql = '     SELECT contractid,
+                            isactive,
+                            cityid,
+                            (SELECT name FROM basCity WHERE basCity.cityId = A.cityId ) AS cityName,
+                            zipcode,
+                            location,
+                            number,
+                            complement,
+                            neighborhood,
+                            name,
+                            documentnumber,
+                            (SELECT stateId FROM basCity WHERE basCity.cityId = A.cityId) AS stateId
+                       FROM finPhysicalTarget A
+                      WHERE contractId IN ( SELECT contractId 
+                                              FROM finReceivableInvoice A 
+                                        INNER JOIN acdContract AS B
+                                                ON (A.courseId = B.courseId 
+                                                    AND A.courseVersion = B.courseVersion 
+                                                    AND A.personId = B.personId) 
+                                             WHERE A.invoiceId = ? )
+                        AND isActive = \''. DB_TRUE .'\' ';
+
+        $args = array($invoiceId);
+
+        $result = $this->db->query(SAGU::prepare($sql, $args));
+
+        if(is_array($result))
+        {
+            $bankTarget = new finPhysicalTarget();
+    
+            list (  $bankTarget->contractId,
+                    $bankTarget->isActive,
+                    $bankTarget->cityId,
+                    $bankTarget->cityName,
+                    $bankTarget->zipCode,
+                    $bankTarget->location,
+                    $bankTarget->number,
+                    $bankTarget->complement,
+                    $bankTarget->neighborhood,
+                    $bankTarget->personName,
+                    $bankTarget->documentNumber,
+                    $bankTarget->stateId ) = $result[0];
+    
+            return $bankTarget;
+        }
+        return false;
+    }
+
+   /**
+    * Function to initiate a transaction
+    *
+    * @param: No parameters needed
+    *
+    * @return: null
+    *
+    */
+    function beginTransaction()
+    {
+        $this->db->execute('BEGIN TRANSACTION');
+    }
+
+   /**
+    * Function to close the transaction
+    *
+    * @param $commit (boolean): True if commit or false to roolback
+    *
+    * @return: null
+    */
+    function endTransaction($commit = true)
+    {
+        $this->db->execute($commit == true ? 'COMMIT' : 'ROOLBACK');
+    }
+
+   /**
+    * Get the company information needed for invoices
+    *
+    * @param: $companyId (int): Object containing the company identification
+    *
+    * @return: Return an object with information.
+    *
+    */
+    function getCompanyData($companyId)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+
+        $sql = ' SELECT name
+                   FROM basCompanyConf
+                  WHERE companyId = ? ';
+
+        $args = array($companyId);
+
+        $ret = $this->db->query(SAGU::prepare($sql, $args));
+        
+        $return->name = $ret[0][0];
+        return $return;
+    }
+
+   /** 
+    * Bank account information
+    * 
+    * @param $bankAccountId (int): Primary key for bank account information
+    *
+    * @return: Return the bank account information
+    *
+    */
+    public function getBankAccountData($bankAccountId)
+    {
+        $sql = ' SELECT assignorCode
+                   FROM finBankAccount
+                  WHERE bankAccountId = ? ';
+        
+        $args = array($bankAccountId);
+
+        $ret = $this->db->query(SAGU::prepare($sql, $args));
+        $return->assignorCode = $ret[0][0];
+        return $return;
+    }
+
+}
+?>

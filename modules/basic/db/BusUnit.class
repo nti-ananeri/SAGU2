@@ -1,0 +1,331 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for basUnit table
+ *
+ * @author William Prigol Lopes [william] [william@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 07/08/2005
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to manipulate the basUnit table
+ *
+**/
+class BusinessBasicBusUnit extends MBusiness
+{
+    private $userName;
+    private $dateTime;
+    private $ipAddress;
+    private $unitId;
+    private $cityId;
+    private $description;
+    private $accountingCode;
+    private $color;
+    private $zipCode;
+    private $location;
+    private $number;
+    private $complement;
+    private $neighborhood;
+    private $companyId;
+    private $inep;
+
+   /**
+    * 
+    */
+    public function setData($data = null)
+    {
+        $this->userName       = $data[0][0];
+        $this->dateTime       = $data[0][1];
+        $this->ipAddress      = $data[0][2];
+        $this->unitId         = $data[0][3];
+        $this->cityId         = $data[0][4];
+        $this->description    = $data[0][5];
+        $this->accountingCode = $data[0][6];
+        $this->color          = $data[0][7];
+        $this->zipCode        = $data[0][8];
+        $this->location       = $data[0][9];
+        $this->number         = $data[0][10];
+        $this->complement     = $data[0][11];
+        $this->neighborhood   = $data[0][12];
+        $this->companyId      = $data[0][13];
+        $this->inep           = $data[0][14];
+    }
+
+   /**
+    * Get a database connection
+    * 
+    * @param: No parameters
+    *
+    * @return (object): MIOLO Database connection
+   **/
+    public function getDatabase()
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module = is_null($module) ? 'basic' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+   /**
+    * Generate a array with all units basic information
+    *
+    * @param: No parameters
+    *
+    * @return (array): Return a array with all units registered on database
+    *
+   **/
+    public function listUnit()
+    {
+        $db  = $this->getDatabase();
+        $sql = '   SELECT unitId,
+                          description as unitDescription
+                     FROM basUnit   
+                 ORDER BY description ';
+        $ret = $db->query($sql);
+        //$db->close();
+        return $ret;
+    }
+
+   /**
+    * get a specific unit by your id
+    *
+    * @param $unitId (integer): Primary key for unit
+    *
+    * @return (object): Unit object containing data for a specific record
+    *
+   **/
+    public function getUnit($unitId)
+    {
+        $db = $this->getDatabase();
+
+        $sql = ' SELECT A.unitId,
+                        A.description,
+                        A.accountingCode,
+                        A.cityId,
+                        A.color,
+                        B.name,
+                        A.zipCode,
+                        A.location,
+                        A.number,
+                        A.complement,
+                        A.neighborhood,
+                        A.companyId,
+                        C.acronym,
+                        A.inep,
+                        A.userName,
+                        TO_CHAR(A.dateTime,\'' . MASK_TIMESTAMP . '\'),
+                        A.ipAddress
+                   FROM basUnit A
+              LEFT JOIN basCity B
+                  USING (cityId)
+             INNER JOIN basCompanyConf C
+                     ON ( A.companyId = C.companyId )
+                  WHERE A.unitId = ? ';
+        $args = array($unitId);
+        $ret  = $db->query(SAGU::prepare($sql, $args));
+        
+        $return = new basUnit;
+        list ( $return->unitId,
+               $return->description,
+               $return->accountingCode,
+               $return->cityId,
+               $return->color,
+               $return->cityName,
+               $return->zipCode,
+               $return->location,
+               $return->number,
+               $return->complement,
+               $return->neighborhood,
+               $return->companyId,
+               $return->acronym,
+               $return->inep,
+               $return->userName,
+               $return->dateTime,
+               $return->ipAddress ) = $ret[0];
+
+        return $return;
+    }
+
+   /**
+    * Search a unit by predefined filters
+    *
+    * @param $range (object): MIOLO PageNavigator Objec
+    * @param $filter (object): Default object containing the filter values 
+    *
+    * @return (array): Return a array with units registered on database with filters
+    *
+   **/
+   public function searchUnit($filters)
+   {
+        
+        $sql = 'SELECT unitId,
+                       description,
+                       inep
+                  FROM basUnit ';
+        if (strlen((string)$filters->unitDescription)>0 )
+        {
+            $where  = ' AND TO_ASCII(description) ilike TO_ASCII(?) ';
+            $args[] = $filters->unitDescription.'%';
+        }
+        if (strlen((string)$filters->unitId)>0 )
+        {
+            $where .= ' AND unitId = ? ';
+            $args[] = $filters->unitId;
+        }
+        if (strlen((string)$filters->companyId)>0 )
+        {
+            $where .= ' AND companyId = ? ';
+            $args[] = $filters->companyId;
+        }
+
+        if (strlen((string)$where)>0)
+        {
+            $sql .= ' WHERE '.substr($where, 4, strlen((string)$where)).'   ORDER BY description ';
+
+            $db   = $this->getDatabase();
+            $data = $db->query(SAGU::prepare($sql, $args));
+            //$db->close();
+
+            return $data;
+        }
+        return null;
+   }
+
+   /**
+    * Generate a array with all units basic information
+    *
+    * @param $data (object): Unit object containing data to insert a record on database
+    *
+    * @return (array): Return a array with all units registered on database
+    *
+   **/
+    public function insertUnit($data)
+    {
+
+       $db = $this->getDatabase();
+
+       $sql = ' INSERT INTO basUnit
+                            (description,
+                             accountingCode,
+                             cityId,
+                             color,
+                             zipCode,
+                             location,
+                             number,
+                             complement,
+                             neighborhood,
+                             companyId,
+                             inep
+                            )
+                     VALUES (?,?,?,?,?,?,?,?,?,?,?) ';
+
+        $args = array($data->description,
+                      $data->accountingCode,
+                      $data->cityId,
+                      $data->color,
+                      $data->zipCode,
+                      $data->location,
+                      $data->number,
+                      $data->complement,
+                      $data->neighborhood,
+                      $data->companyId,
+                      $data->inep);
+
+       $ret = $db->execute(SAGU::prepare($sql, $args));
+
+       return $ret;
+    }
+   
+   /**
+    * update a specific unit
+    *
+    * @param $data (object): basUnit object
+    *
+    * @return (boolean): True if succed otherwise fails
+    *
+   **/
+    public function updateUnit($data)
+    {
+        $sql = ' UPDATE basUnit
+                    SET description    = ?,
+                        accountingCode = ?,
+                        cityId         = ?,
+                        color          = ?,
+                        zipCode        = ?,
+                        location       = ?,
+                        number         = ?,
+                        complement     = ?,
+                        neighborhood   = ?,
+                        companyId      = ?,
+                        inep           = ?
+                  WHERE unitId         = ? ';
+        $args = array($data->description,
+                      $data->accountingCode,
+                      $data->cityId,
+                      $data->color,
+                      $data->zipCode,
+                      $data->location,
+                      $data->number,
+                      $data->complement,
+                      $data->neighborhood,
+                      $data->companyId,
+                      $data->inep,
+                      $data->unitId );
+        $db = $this->getDatabase();
+        $sqls = SAGU::prepare($sql, $args);
+
+        for ( $i=0; $i<count($sqls); $i++ )
+        {
+            $ret = $db->execute($sqls[$i]);
+        }
+        //$db->close();
+        return $ret;
+    }
+
+   /**
+    * delete a specific unit
+    *
+    * @param $unitId (integer): Primary key for unit
+    *
+    * @return (boolean): True if succed otherwise fails
+    *
+   **/
+    public function deleteUnit($unitId)
+    {
+        $db = $this->getDatabase();
+        $sql = ' DELETE FROM basUnit
+                       WHERE unitId = ? ';
+        $args = array($unitId);
+        $ret = $db->execute(SAGU::prepare($sql, $args));
+        //$db->close();
+        return $ret;
+        
+    }
+  
+}    
+?>

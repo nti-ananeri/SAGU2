@@ -1,0 +1,279 @@
+<?php
+
+/**
+ * GenerateMultipleLearningPeriod form
+ *
+ * @author Armando Taffarel Neto [taffarel@solis.coop.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * Armando Taffarel Neto [taffarel@solis.coop.br]
+ *
+ * @since
+ * Class created on 11/01/2006
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2005 SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+
+/**
+ * Form to generate Multiple Learning Period
+ **/
+class FrmGenerateMultipleLearningPeriodCourse extends MForm
+{
+    private $home;
+    public $filters;
+    /**
+     * Class constructor
+     **/
+    function __construct($data)
+    {
+
+        $module = MIOLO::getCurrentModule();
+
+        $this->home   = $data->home;
+
+        parent::__construct(_M('Generate multiple learning period', $module));
+
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+
+
+        $toolBar = new MToolBar('toolBar',$MIOLO->getActionURL($module,$action));
+
+        $toolBar->disableButton('tbBtnNew');
+        $toolBar->disableButton('tbBtnDelete');
+        $toolBar->disableButton('tbBtnPrint');
+        $toolBar->disableButton('tbBtnSave');
+        $toolBar->disableButton('tbBtnSearch');
+
+        //favoritos
+        $enabledImage  = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-20x20.png');
+        $disabledImage = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-disabled-20x20.png');
+        $url           = $MIOLO->getActionURL($module, $this->home, null, array('function' => 'search', 'event' => 'bookmark'));
+        $toolBar->addButton('tbBtnBookmark', _M('Add to bookmarks', 'basic'), $url, null, true, $enabledImage, $disabledImage);
+
+        if ( MIOLO::_request('event') == 'bookmark' )
+        {
+            $MIOLO->getClass('basic', 'access');
+            access::insert('Generate multiple learning period', $this->home, 'generateMultipleLearningPeriodCourse-16x16.png', true);
+        }
+        //fim favoritos
+
+        $fields[] = $toolBar;
+
+        $business = $MIOLO->getBusiness($module, 'BusFormationLevel');
+        $formationLevelId = new MComboBox('formationLevelId',
+                                $this->getFormValue('formationLevelId',$data->formationLevelId),
+                                _M('Formation level id',$module),
+                                $business->listFormationLevel());
+        $flds[] = $formationLevelId;
+
+        $businessPeriod = $MIOLO->getBusiness($module, 'BusPeriod');
+        $periodId       = new MComboBox('periodId', strlen((string)$this->getFormValue('periodId', $data->periodId))>0 ? $this->getFormValue('periodId', $data->periodId) : CURRENT_PERIOD_ID, _M('Period',$module), $businessPeriod->listPeriod() );
+        $validators[]   = new MRequiredValidator('periodId');
+        $flds[]         = $periodId;
+
+        $fields[] = new MSeparator('');
+
+        $btn1     = new MButton('btnFilter', _M('Filter', $module));
+        $flds[] = $btn1;
+
+        $hctFormationLevel = new MHContainer('hctFormationLevel', $flds);
+        $hctFormationLevel->setShowLabel(true);
+        $fields[]  = $hctFormationLevel;
+        unset($flds);
+
+        $fields[] = new MSeparator('');
+
+        $this->setFields($fields);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+        $this->setClose($MIOLO->getActionURL($module,substr($action,0,strrpos($action,':'))));
+
+        $this->filters->formationLevelId = $this->formationLevelId->value;
+        $this->filters->periodId         = $this->periodId->value;
+    }
+
+    /**
+     * Event triggered when user chooses Generate from the toolbar
+     **/
+    public function btnFilter_click($sender=NULL)
+    {
+        $MIOLO                 = MIOLO::getInstance();
+        $module                = MIOLO::getCurrentModule();
+        $action                = MIOLO::getCurrentAction();
+
+//         $btn2     = new MButton('btnInvertSelection', _M('Invert selection', $module), 'invertSelection()');
+//         //$btn2->addAttribute('onClick','invertSelection()');
+//         $fields[] = $btn2;
+//         $this->addField($fields);
+//
+        //$grdResults = $MIOLO->getUI()->getGrid($module,'GrdGenerateMultipleLearningPeriod',$this->filters);
+
+        $business              = $MIOLO->getBusiness($module,'BusGenerateMultipleLearningPeriod');
+        $this->filters->status = 't';
+
+        $courses2              = $business->getCourses($this->filters);
+
+        $data1 = array();
+        $flagCanLearningPeriodCourse = 0;
+
+        $data2 = array();
+        $flagDontCanLearningPeriodCourse = 0;
+
+        foreach ( $courses2 AS $courses1 )
+        {
+            list($courseId, $courseVersion, $turnId, $unitId) = explode(";", $courses1[0]);
+
+            $return = $business->alreadyExists($courseId, $courseVersion, $turnId, $unitId, $this->periodId->value);
+
+            if ( $return )
+            {
+                $data2[] = $courses1;/*array_merge($data2, $return);*/
+                $flagDontCanLearningPeriodCourse = 1;
+            }
+            else
+            {
+                $data1[] = $courses1;/*array_merge($data1, $return1);*/
+                $flagCanLearningPeriodCourse = 1;
+            }
+        }
+
+        if($flagCanLearningPeriodCourse == 1)
+        {
+            $btn2     = new MButton('btnInvertSelection1', _M('Invert selection', $module), 'invertSelection1()');
+            //$btn2->addAttribute('onClick','invertSelection()');
+            $this->addField($btn2);
+
+            $grdResults1 = $MIOLO->getUI()->getGrid($module,'GrdGenerateMultipleScheduleLearningPeriod', $data1);
+            $grdResults1->setData($data1);
+
+            //###GRID///is_array($data1) ? $grdResults1->SetScrollHeight(GRID_SCROLL_HEIGHT) : false;
+
+            $grdResults1->setTitle(_M('Courses that NOT HAVE learning period in this period', $module));
+            $grdResults1->name = "grd1";
+            $this->addField($grdResults1);
+        }
+
+        if($flagDontCanLearningPeriodCourse == 1)
+        {
+            $btn3     = new MButton('btnInvertSelection2', _M('Invert selection', $module), 'invertSelection2()');
+            //$btn2->addAttribute('onClick','invertSelection()');
+//             $fields[] = $btn3;
+            $this->addField($btn3);
+
+            $grdResults2 = $MIOLO->getUI()->getGrid($module,'GrdGenerateMultipleScheduleLearningPeriod', $data2);
+            $grdResults2->setData($data2);
+
+            //###GRID///is_array($data2) ? $grdResults2->SetScrollHeight(GRID_SCROLL_HEIGHT) : false;
+
+            $grdResults2->setTitle(_M('Courses that already HAVE learning period in this period ', $module));
+            $grdResults2->name = "grd2";
+            $this->addField($grdResults2);
+        }
+
+
+        $script1 .= "    function invertSelection1()\n    {\n";
+        $x1 = 0;
+
+        foreach ( $data1 as $row1 )
+        {
+            $script1 .= '        if ( document.' . $this->name . '[\'selectgrd1[' . $x1 . ']\'].checked == true )' . "\n        {\n";
+            $script1 .= '            document.' . $this->name . '[\'selectgrd1[' . $x1 . ']\'].checked = false;' . "\n";
+            $script1 .= '        }' . "\n        else\n        {\n";
+            $script1 .= '            document.' . $this->name . '[\'selectgrd1[' . $x1 . ']\'].checked = true;' . "\n";
+            $script1 .= '        }' . "\n";
+            $x1++;
+        }
+        $script1 .= "    }\n";
+        $script1 .= "    invertSelection1();";
+        $this->page->addJsCode($script1);
+        //unset($fields);
+
+
+        $script2 .= "    function invertSelection2()\n    {\n";
+        $x2 = 0;
+        foreach ( $data2 as $row2 )
+        {
+            $script2 .= '        if ( document.' . $this->name . '[\'selectgrd2[' . $x2 . ']\'].checked == true )' . "\n        {\n";
+            $script2 .= '            document.' . $this->name . '[\'selectgrd2[' . $x2 . ']\'].checked = false;' . "\n";
+            $script2 .= '        }' . "\n        else\n        {\n";
+            $script2 .= '            document.' . $this->name . '[\'selectgrd2[' . $x2 . ']\'].checked = true;' . "\n";
+            $script2 .= '        }' . "\n";
+            $x2++;
+        }
+        $script2 .= "    }\n";
+        //$script2 .= "    invertSelection2();";
+        $this->page->addJsCode($script2);
+
+        $btn1[]     = new MButton('btnNext', _M('Next', $module) . ' >>');
+        $div1       = new MDiv('div1', $btn1, null, 'align=center');
+
+        $fields[] = $div1;
+        $fields[] = new Separator('');
+
+        $this->addField($fields);
+    }
+
+    /**
+     * Event triggered when user chooses Generate from the toolbar
+     **/
+    public function btnNext_click($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $coursesResult = array();
+
+        $courses1 = $this->getFormValue('selectgrd1',$this->selectgrd1) ? $this->getFormValue('selectgrd1',$this->selectgrd1) : array() ;
+        $courses2 = $this->getFormValue('selectgrd2',$this->selectgrd2) ? $this->getFormValue('selectgrd2',$this->selectgrd2) : array() ;
+
+        $coursesResult = array_merge($coursesResult, $courses1, $courses2);
+
+        if ( count($coursesResult) > 0 )
+        {
+            foreach ( $coursesResult as $id => $value )
+            {
+                $coursesVar[$id] = $value;
+            }
+        }
+
+        $vars['courses']          = urlencode(serialize($coursesVar));
+        $vars['periodId']         = $this->filters->periodId;
+        $vars['formationLevelId'] = $this->filters->formationLevelId;
+
+        $postAction = substr($action,0,strrpos($action,':')) . ':generateMultipleLearningPeriod';
+        $this->page->mGoto($MIOLO->getActionURL($module, $postAction, null, $vars));
+    }
+}
+
+?>

@@ -1,0 +1,584 @@
+<?
+/**
+ *
+ * @author Giovani Murilo Dantas Correa [gmurilo@isolution.inf.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Daniel Afonso Heisler [daniel@isolution.inf.br]
+ * Walter Gon�alves [pozzguo@gmail.com]
+ *
+ * @since
+ * Class created on 23/03/2009
+ *
+ * \b Organization: \n
+ * iSolution - Soluções de Internet \n
+ * The iSolution TEAM
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2007 iSolution - Soluções de Internet \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://isolution.inf.br
+ *
+ **/
+class BusinessAcademicBusCallList  extends Business
+{
+  public $db;
+
+  public function getDatabase($module = null)
+  {
+    $MIOLO = MIOLO::getInstance();
+    $MIOLO->getClass('basic','sagu');
+    $module = is_null($module) ? 'academic' : $module;
+
+    return $MIOLO->getDatabase($module);
+  }
+
+  public function __construct()
+  {
+    parent::__construct();
+    $this->db = $this->getDatabase();
+  }
+
+  public function getHeader($data)
+  {
+    $sql = 'SELECT
+                    A.groupId,
+                    D.periodId,
+                    C.curricularComponentId,
+                    C.shortName,
+                    C.lessonNumberHours,
+                    A.classId,
+                    B.semester,
+                    E.charId,
+                    H.personId,
+                    H.name,
+                    getCourseShortName(B.courseId),
+                    F.scheduleId,
+                    COALESCE(J.description, \'\') || \' - \' || COALESCE(I.description, \'\'),
+                    F.scheduleLearningPeriodId,
+                    D.learningPeriodId,
+                    E.description,
+                    I.beginHour,
+                    C.name,
+                    getPersonName(K.coordinatorId),
+                    C.academicNumberHours,
+                    C.practiceHours,
+                    L.room,
+                    L.description,
+                    A.professorobservation,
+                    D.average,
+                    D.finalAverage,
+                    D.disapprovationWithoutExam,
+		    B.unitId
+                FROM 
+                    acdGroup A INNER JOIN 
+                    acdCurriculum B ON ( A.curriculumId = B.curriculumId ) INNER JOIN
+                    acdCurricularComponent C ON ( C.curricularComponentId = B.curricularComponentId AND C.curricularComponentVersion = B.curricularComponentVersion ) INNER JOIN
+                    acdLearningPeriod D ON ( A.learningPeriodId = D.learningPeriodId ) INNER JOIN
+                    basTurn E ON (B.turnId = E.turnId) LEFT JOIN
+                    acdSchedule F ON ( F.groupId = A.groupId ) LEFT JOIN
+                    acdScheduleProfessor G ON ( G.scheduleId = F.scheduleId ) LEFT JOIN
+                    basPhysicalPersonProfessor H ON ( H.personId = G.professorId ) LEFT JOIN
+                    acdScheduleLearningPeriod I ON ( I.scheduleLearningPeriodId = F.scheduleLearningPeriodId ) LEFT JOIN
+                    basWeekDay J ON (J.weekDayId = F.weekDayId ) LEFT JOIN
+                    acdCourseCoordinator K ON ( K.courseId = B.courseId AND K.courseVersion = B.courseVersion AND K.turnId = B.turnId AND K.unitId = B.unitId AND K.endDate IS NULL ) LEFT JOIN
+                    insPhysicalResource L ON ( L.physicalResourceId = F.physicalResourceId AND
+                                               L.physicalResourceVersion = F.physicalResourceVersion ) ';
+
+    if ( strlen((string)$data->groupId)  > 0 )
+    {
+      $where .= '    AND A.groupId = ?::integer';
+      $args[] = is_array($data->groupId) ? $data->groupId[0][0] : $data->groupId;
+    }
+
+    if ( strlen((string)$data->professorId) > 0 )
+    {
+      $where .= '    AND G.professorId = ?::integer';
+      $args[] = $data->professorId;
+    }
+
+    if ( strlen((string)$data->professorName) > 0 )
+    {
+      $where .= '    AND TO_ASCII(H.name) ILIKE TO_ASCII(?) ';
+      $args[] = $data->professorName . '%';
+    }
+
+    /*        if( strlen((string)$data->className) > 0 )
+     {
+     $where .= '    AND className ILIKE TO_ASCII(?) ';
+     $args[] = $data->className . '%';
+     }*/
+    if ( strlen((string)$data->classId) > 0 )
+    {
+      $where .= '    AND A.classId = ? ';
+      $args[] = $data->classId;
+    }
+
+    if ( strlen((string)$data->scheduleId) > 0 )
+    {
+      $where .= '    AND F.scheduleId = ?::integer';
+      $args[] = $data->scheduleId;
+    }
+
+    if ( strlen((string)$data->learningPeriodId) > 0 )
+    {
+      $where .= '    AND D.learningPeriodId = ?::integer';
+      $args[] = $data->learningPeriodId;
+    }
+
+    if( strlen((string)$where) > 0 )
+    {
+      $sql .= ' WHERE '.substr($where,8);
+      $sql .= ' GROUP BY 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28';
+      $sql .= ' ORDER BY 2,4,6, I.beginHour ';
+      $result = $this->db->query(SAGU::prepare($sql,$args));
+      if ( count($result) > 0 )
+      {
+        foreach ($result as $resultado)
+        {
+          $obj->groupId                   = $resultado[0];
+          $obj->periodId                  = $resultado[1];
+          $obj->curricularComponentId     = $resultado[2];
+          $obj->curricularComponentName   = $resultado[3];
+          $obj->lessonNumberHours         = $resultado[4];
+          $obj->classId                   = $resultado[5];
+          $obj->serie                     = $resultado[6];
+          $obj->charId                    = $resultado[7];
+          $obj->professorId               = $resultado[8];
+          $obj->curricularFullName        = $resultado[17];
+          $obj->coordinatorName           = $resultado[18];
+          if( strlen((string)$resultado[11]) > 0 )
+          {
+            $obj->scheduleId[$resultado[0]][] = $resultado[11];
+          }
+
+          if( strlen((string)$resultado[12]) > 0 )
+          {
+            $obj->horarios[$resultado[0]][] = $resultado[12];
+          }
+
+          if( strlen((string)$resultado[13]) > 0 )
+          {
+            $obj->scheduleLearningPeriodId[$resultado[0]][] = $resultado[13];
+          }
+
+          $obj->professorName             = $resultado[9];
+          $obj->courseName                = $resultado[10];
+          $obj->learningPeriodId          = $resultado[14];
+          $obj->turnDescription           = $resultado[15];
+          $obj->academicNumberHours       = $resultado[19];
+          $obj->practiceHours             = $resultado[20];
+          $obj->room                      = $resultado[21];
+          $obj->physicalResourceDescription   = $resultado[22];
+          $obj->professorObservation      = $resultado[23];
+          $obj->learningPeriodAverage     = $resultado[24];
+          $obj->learningPeriodFinalAverage= $resultado[25];
+          $obj->learningPeriodDisapprovationWithoutExam = $resultado[26];
+          $obj->unitId = $resultado[27];
+          $result2 = $obj;
+
+          //unset($obj);
+        }
+        unset($result);
+        $result = $result2;
+      }
+      return $result;
+    }
+  }
+
+  public function getCalendars($data)
+  {
+    $MIOLO = MIOLO::getInstance();
+    $busProfessorFrequencyNew = $MIOLO->getBusiness('services', 'BusProfessorFrequencyNew');
+    $result = $busProfessorFrequencyNew->getAcademicCalendar($data);
+    if( strlen((string)$data->degreeNumber) > 0 && count($result) > 0 )
+    {
+      foreach($result as $item => $value )
+      {
+        if ( $value->degreeNumber != $data->degreeNumber )
+        {
+          unset($result[$item]);
+        }
+      }
+    }
+    return $result;
+  }
+
+  public function getDegreeDescription($data)
+  {
+    $sql = ' SELECT
+                    A.degreeNumber,
+                    A.description,
+                    B.finalAverage,
+                    B.minimumFrequency,
+                    B.average,
+                    B.averageWeight,
+                    B.examWeight,
+                    B.disapprovationWithoutExam,
+                    A.weight,
+                    A.isSubstitutive,
+                    A.finalDate
+                FROM 
+                    acdDegree A INNER JOIN
+                    acdLearningPeriod B ON ( A.learningPeriodId = B.learningPeriodId )
+                WHERE
+                    A.learningPeriodId = ?::integer
+                ORDER BY degreeNumber ';
+    $args[] = $data->learningPeriodId;
+    //$args[] = $data->degreeNumber;
+    $result = $this->db->query(SAGU::prepare($sql, $args));
+    for($x=0;$x < count($result); $x++)
+    {
+      unset($obj);
+      list(   $obj->degreeNumber,
+      $obj->description,
+      $obj->finalAverage,
+      $obj->minimumFrequency,
+      $obj->average,
+      $obj->averageWeight,
+      $obj->examWeight,
+      $obj->disapprovationWithouExam,
+      $obj->weight,
+      $obj->isSubstitutive,
+      $obj->finalDate) = $result[$x];
+      $result2[$obj->degreeNumber] = $obj;
+    }
+    return $result2;
+  }
+
+  public function getDegreeDescriptionNoQuality($data)
+  {
+    $sql = ' SELECT
+                    A.degreeNumber,
+                    A.description,
+                    B.finalAverage,
+                    B.minimumFrequency,
+                    B.average,
+                    B.averageWeight,
+                    B.examWeight,
+                    B.disapprovationWithoutExam,
+                    A.weight,
+                    A.isSubstitutive,
+                    A.finalDate
+                FROM 
+                    acdDegree A INNER JOIN
+                    acdLearningPeriod B ON ( A.learningPeriodId = B.learningPeriodId )
+                WHERE
+                    A.learningPeriodId = ?::integer and mod(A.degreeNumber,2) <> 0 
+                ORDER BY degreeNumber ';
+    $args[] = $data->learningPeriodId;
+    //$args[] = $data->degreeNumber;
+    $result = $this->db->query(SAGU::prepare($sql, $args));
+    for($x=0;$x < count($result); $x++)
+    {
+      unset($obj);
+      list(   $obj->degreeNumber,
+      $obj->description,
+      $obj->finalAverage,
+      $obj->minimumFrequency,
+      $obj->average,
+      $obj->averageWeight,
+      $obj->examWeight,
+      $obj->disapprovationWithouExam,
+      $obj->weight,
+      $obj->isSubstitutive,
+      $obj->finalDate) = $result[$x];
+      $result2[$obj->degreeNumber] = $obj;
+    }
+    return $result2;
+  }
+
+  public function getPupils($data)
+  {
+  	$sql = 'SELECT DISTINCT
+                        C.contractId,
+                        C.courseId,
+                        C.courseVersion,
+                        C.turnId,
+                        C.unitId,
+                        C.personId,
+                        D.name as personName,
+                        getTurnDescription(C.turnId) as turnDescription,
+                        getUnitDescription(C.unitId) as unitDescription,
+                        C.courseId as courseName,
+                        J.stateContractId,
+                        TO_ASCII(J.description),
+                        TO_CHAR( amc.statetime, \'dd/mm/yyyy\') as dateTimeStateContract,
+                        B.examNote,
+                        B.finalNote,
+                        B.note,
+                        B.enrollId,
+                        verifyEnrollAbsence(B.enrollId) as frequency
+                FROM 
+                    acdGroup A INNER JOIN
+                    acdEnroll B ON ( A.groupId = B.groupId ) INNER JOIN
+                    acdContract C ON ( C.contractId = B.contractId ) INNER JOIN
+                    ONLY basPhysicalPersonStudent D ON ( D.personId = C.personId ) LEFT JOIN
+                    acdLearningPeriod I ON ( I.learningPeriodId = A.learningPeriodId ) LEFT JOIN 
+                    acdStateContract J ON ( J.stateContractId =  getContractStateBetweenDates(B.contractId, I.beginDate, I.endDate) ) 
+                    LEFT JOIN (select contractid,statecontractid,max(statetime) as statetime from acdmovementcontract group by contractid,statecontractid) amc on amc.contractid=c.contractid and amc.stateContractId = getContractStateBetweenDates(B.contractId, I.beginDate, I.endDate)';
+    $sql  .= ' WHERE NOT B.statusId IN ('. ENROLL_STATUS_CANCELLED .') ';
+
+    if ( strlen((string)$data->classId) > 0 )
+    {
+      $where .= '    AND A.classId = ? ';
+      $args[] = $data->classId;
+    }
+
+    if( strlen((string)$data->courseId) > 0 )
+    {
+      $where .= '    AND C.courseId = ?';
+      $args[] = $data->courseId;
+    }
+
+    if( strlen((string)$data->courseVersion) > 0 )
+    {
+      $where .= '    AND C.courseVersion = ?::integer';
+      $args[] = $data->courseVersion;
+    }
+/*
+    if( strlen((string)$data->unitId) > 0 )
+    {
+      $where .= '    AND C.unitId = ?::integer';
+      $args[] = $data->unitId;
+    }
+
+    if( strlen((string)$data->turnId) > 0 )
+    {
+      $where .= '    AND C.turnId = ?::integer';
+      $args[] = $data->turnId;
+    }
+*/
+    if( strlen((string)$data->groupId) > 0 )
+    {
+      $where .= '    AND A.groupId = ?::integer';
+      $args[] = is_array($data->groupId) ? $data->groupId[0][0] : $data->groupId;
+    }
+
+    if ( strlen((string)$where) > 0 )
+    {
+      $sql .= $where;
+      $sql .= ' ORDER BY D.name';
+      $result = $this->db->query(SAGU::prepare($sql, $args));
+    }
+    if ( count($result) > 0 )
+    {
+      foreach ( $result as $resultado  )
+      {
+        unset($obj);
+        $obj->contractId        = $resultado[0];
+        $obj->courseId          = $resultado[1];
+        $obj->courseVersion     = $resultado[2];
+        $obj->turnId            = $resultado[3];
+        $obj->unitId            = $resultado[4];
+        $obj->personId          = $resultado[5];
+        $obj->personName        = $resultado[6];
+        $obj->turnDescription   = $resultado[7];
+        $obj->unitDescription   = $resultado[8];
+        $obj->courseName        = $resultado[9];
+        $obj->stateContractId   = $resultado[10];
+        $obj->stateContractDescription = $resultado[11];
+        $obj->dateStateContract = $resultado[12];
+        $obj->examNote          = $resultado[13];
+        $obj->finalNote         = $resultado[14];
+        $obj->enrollNote        = $resultado[15];
+        $obj->enrollId          = $resultado[16];
+        $obj->absence           = $resultado[17];
+        $enrollIds[] = $resultado[16];
+        $result2[$resultado[0]] = $obj;
+      }
+      if ( count($enrollIds) > 0 )
+      {
+        $sql =
+                'SELECT 
+                    contractId,
+                    ROUND(A.note::numeric(14,2),2),
+                    degreeNumber,
+                    degreeId,
+                    isNotPresent
+                FROM 
+                    acdDegreeEnroll A INNER JOIN
+                    acdDegree B USING ( degreeId ) INNER JOIN
+                    acdEnroll C USING ( enrollId ) INNER JOIN
+                    acdGroup D USING ( groupId ) INNER JOIN
+                    acdLearningPeriod E ON ( B.learningPeriodId = D.learningPeriodId AND D.learningPeriodId = E.learningPeriodId )
+                WHERE
+                    enrollId IN ( '.implode(',',$enrollIds).' )
+                ORDER BY
+                    1, 3 ';
+        $result = $this->db->query($sql);
+        if ( count ($result ) > 0 )
+        {
+          foreach( $result as $resultado )
+          {
+            $result2[$resultado[0]]->degreeNote[$resultado[2]] = $resultado[1];
+          }
+
+        }
+        $sql =
+                'SELECT distinct
+                    contractId,
+                    TO_CHAR(frequencyDate, \'dd/mm/yyyy\'),
+                    A.frequency,
+                    A.scheduleId
+                FROM
+                    acdFrequenceEnroll A INNER JOIN
+                    acdEnroll B ON ( A.enrollId = B.enrollId ) INNER JOIN
+                    acdScheduleProfessor C ON ( C.scheduleId = A.scheduleId )
+                WHERE
+                    A.enrollId IN ( '.implode(',',$enrollIds).' ) ';
+        if ( strlen((string)$data->professorId) > 0 )
+        {
+          $sql .= ' AND C.professorId = ' . $data->professorId;
+        }
+        $sql .= '
+                ORDER BY
+                    1, 2';
+        $result = $this->db->query($sql);
+        if ( count($result) > 0 )
+        {
+          foreach( $result as $resultado )
+          {
+            $result2[$resultado[0]]->frequenceDate[$resultado[1]] += $resultado[2];
+          }
+        }
+      }
+      return $result2;
+    }
+    //MIOLO::vd($result);
+    return $result;
+  }
+
+  public function getGroups($filters)
+  {
+    $sql = 'SELECT DISTINCT
+                    C.periodId, 
+                    A.groupId, 
+                    A.classId, 
+                    B.courseId, 
+                    B.courseVersion, 
+                    B.turnId,
+                    G.degreeId,
+                    G.degreeNumber
+                FROM
+                    acdGroup A INNER JOIN 
+                    acdCurriculum B ON ( B.curriculumId = A.curriculumId ) INNER JOIN
+                    acdLearningPeriod C ON ( C.learningPeriodId = A.learningPeriodId ) INNER JOIN
+                    acdClass D ON ( D.classId = A.classId ) LEFT JOIN
+                    acdSchedule E ON ( E.groupId = A.groupId ) LEFT JOIN
+                    acdScheduleProfessor F ON ( F.scheduleId = E.scheduleId ) LEFT JOIN
+                    acdDegree G ON ( G.learningPeriodId = A.learningPeriodId  AND G.issubstitutive IS FALSE )
+                WHERE 1 = 1';
+
+    if ( strlen((string)$filters->classId) > 0 )
+    {
+      $sql .= ' AND A.classId = ? ';
+      $args[] = $filters->classId;
+    }
+
+    if ( strlen((string)$filters->className) > 0 )
+    {
+      $sql .= ' AND TO_ASCII(D.name) ILIKE TO_ASCII(?) ';
+      $args[] = $filters->className.'%';
+    }
+
+    if ( strlen((string)$filters->professorId) > 0 )
+    {
+      $sql .= ' AND F.professorId = ?::integer ';
+      $args[] = $filters->professorId;
+    }
+
+    if ( strlen((string)$filters->professorName) > 0 )
+    {
+      $sql .= ' AND TO_ASCII(getPersonName(F.professorId)) ILIKE TO_ASCII(?) ';
+      $args[] = $filters->professorName . '%';
+    }
+
+    if ( strlen((string)$filters->courseId) > 0 )
+    {
+      $sql .= ' AND B.courseId = ? ';
+      $args[] = $filters->courseId;
+    }
+
+    if ( strlen((string)$filters->courseVersion) > 0 )
+    {
+      $sql .= ' AND B.courseVersion = ?::integer ';
+      $args[] = $filters->courseVersion;
+    }
+
+    if ( strlen((string)$filters->turnId) > 0 )
+    {
+      $sql .= ' AND B.turnId = ?::integer ';
+      $args[] = $filters->turnId;
+    }
+
+    if ( strlen((string)$filters->weekDayId) > 0 )
+    {
+      $sql .= ' AND E.weekDayId = ?::integer ';
+      $args[] = $filters->weekDayId;
+    }
+
+    if ( strlen((string)$filters->degreeNumber ) > 0 )
+    {
+      $sql .= ' AND G.degreeNumber = ?::integer ';
+      $args[] = $filters->degreeNumber;
+    }
+
+    if ( is_array($filters->periodId) && count($filters->periodId) > 0 )
+    {
+      $sql .= ' AND C.periodId IN (\''.implode('\',\'' , $filters->periodId ) .'\') ';
+    }
+    else if ( strlen((string)$filters->periodId) > 0 AND !is_array($filters->periodId) )
+    {
+      $sql .= ' AND C.periodId = ? ';
+      $args[] = $filters->periodId;
+    }
+
+    if ( is_array($filters->groupId) && count($filters->groupId) > 0 )
+    {
+      $sql .= ' AND A.groupId IN ( ' . implode(',', $filters->groupId) . ' )';
+    }
+    else if ( strlen((string)$filters->groupId) > 0 )
+    {
+      $sql .= ' AND A.groupId = ?::integer ';
+      $args[] = $filters->groupId;
+    }
+    
+    $sql .= '  ORDER BY     
+    				C.periodId, 
+                    A.groupId, 
+                    A.classId, 
+                    B.courseId, 
+                    B.courseVersion, 
+                    B.turnId,
+                    G.degreeId,
+                    G.degreeNumber ';
+
+    $sqlx = SAGU::prepare($sql, $args);
+    $result = $this->db->query($sqlx);
+    if ( count($result) > 0 )
+    {
+      foreach( $result as $linha => $values )
+      {
+        unset($obj);
+        $obj->groupId = $values[1];
+        $obj->degreeNumber = $values[7];
+        $data[] = $obj;
+      }
+      return $data;
+    }
+  }
+  public function listDegree()
+  {
+    $sql = 'SELECT distinct degreeNumber, description FROM acdDegree WHERE length(description) > 0 GROUP BY 1, 2 ORDER BY 1,2';
+    $result = $this->db->query($sql);
+    return $result;
+  }
+}
+?>

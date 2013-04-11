@@ -1,0 +1,410 @@
+<?php
+
+/**
+ * Selective process form
+ *
+ * @author Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ *
+ * @since
+ * Class created on 05/09/2005
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2005 SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+
+/**
+ * Form to manipulate a selective process
+ **/
+class FrmSelectiveProcess extends MForm
+{
+
+    /**
+     * Class constructor
+     **/
+    function __construct()
+    {
+
+        $module = MIOLO::getCurrentModule();
+
+        if ( MIOLO::_request('function') == 'insert' )
+        {
+            parent::__construct(_M('Insert', $module));
+        }
+        else
+        {
+            parent::__construct(_M('Update', $module));
+        }
+
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+
+        $toolBar = new MToolBar('toolBar',$MIOLO->getActionURL($module,$action));
+
+        if ( $function == 'insert' )
+        {
+            $toolBar->disableButton('tbBtnDelete');
+            $toolBar->disableButton('tbBtnPrint');
+        }
+        elseif ( $function == 'delete' )
+        {
+            $toolBar->disableButton('tbBtnSave');
+        }
+        $fields[] = $toolBar;
+
+        if ( in_array($function,array('update','delete')) )
+        {
+            $selectiveProcessId = $_GET['selectiveProcessId'] ? $_GET['selectiveProcessId'] : $_POST['selectiveProcessId'];
+            $fields[] = new MTextLabel('selectiveProcessId', $selectiveProcessId, _M('Selective process id',$module));
+            $fields[] = new MHiddenField('selectiveProcessId', $selectiveProcessId);
+
+            $business = $MIOLO->getBusiness($module,'BusSelectiveProcess');
+            $data = $business->getSelectiveProcess($selectiveProcessId);
+
+            $this->page->onLoad('document.' . $this->name . '.companyId.focus();');
+        }
+        else
+        {
+            $selectiveProcessId = new MTextField('selectiveProcessId', $this->getFormValue('selectiveProcessId', $data->selectiveProcessId), _M('Selective process id',$module), FIELD_ID_SIZE);
+            $selectiveProcessId->setJsHint(_M('Enter the selective process id',$module));
+            $fields[] = $selectiveProcessId;
+            $validators[] = new MRequiredValidator('selectiveProcessId');
+
+            $this->page->onLoad('document.' . $this->name . '.selectiveProcessId.focus();');
+        }
+
+        /*
+         * MLookupTextField class constructor prototype:
+         *
+         * function __construct($name = '', $value     = '',       $label   = '', $size         = 10,
+         *                      $hint = '', $validator = null,     $related = '', $module       = '',
+         *                      $item = '', $event     = 'filler', $filter  = '', $autocomplete = false)
+         */
+
+        $companyLabel = new MText('companyLabel', _M('Company',$module) . ':');
+        $companyLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $companyLabel->setClass('m-caption m-caption-required');
+
+        $companyId = new MLookupTextField('companyId', $this->getFormValue('companyId', $data->companyId), '', FIELD_LOOKUPFIELD_SIZE, null, null, 'companyName', 'basic', 'Company', null, null, true);
+        $companyId->setJsHint(_M('Enter the company id',$module));
+        //$validators[] = new MRequiredValidator('companyId');
+        $validators[] = new MIntegerValidator('companyId', _M('Company',$module), 'required');
+
+        $companyName = new MTextField('companyName', $this->getFormValue('companyName', $data->companyName), '', FIELD_DESCRIPTION_SIZE);
+        $companyName->setReadOnly(true);
+        $companyName->setJsHint(_M('Company name',$module));
+
+        $hctCompany = new MHContainer('hctCompany', array( $companyLabel, $companyId, $companyName) );
+        $hctCompany->setShowLabel(true);
+        $fields[]  = $hctCompany;
+
+
+        $institutionLabel = new MText('institutionLabel', _M('Institution',$module) . ':');
+        $institutionLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $institutionLabel->setClass('m-caption m-caption-required');
+
+        $institutionId = new MLookupTextField('institutionId', $this->getFormValue('institutionId', $data->institutionId), '', FIELD_LOOKUPFIELD_SIZE, null, null, 'institutionName', 'basic', 'LegalPerson', null, null, true);
+        $institutionId->setJsHint(_M('Enter the institution id',$module));
+        //$validators[] = new MRequiredValidator('companyId');
+        $validators[] = new MIntegerValidator('institutionId', _M('Institution',$module), 'required');
+
+        $institutionName = new MTextField('institutionName', $this->getFormValue('institutionName', $data->institutionName), '', FIELD_DESCRIPTION_SIZE);
+        $institutionName->setReadOnly(true);
+        $institutionName->setJsHint(_M('Instituion name',$module));
+
+        $hctInstitution = new MHContainer('hctInstitution', array($institutionLabel, $institutionId, $institutionName));
+        $hctInstitution->setShowLabel(true);
+        $fields[]  = $hctInstitution;
+
+        $business     = $MIOLO->getBusiness('academic', 'BusPeriod');
+        $periodId     = new MComboBox('periodId', strlen((string)$this->getFormValue('periodId', $data->periodId))>0 ? $this->getFormValue('periodId', $data->periodId) : CURRENT_PERIOD_ID, _M('Period',$module), $business->listPeriod() );
+        $periodId->setJsHint(_M('Select a period', $module));
+        $fields[]     = $periodId;
+        $validators[] = new MRequiredValidator('periodId');
+
+        $description = new MTextField('description', $this->getFormValue('description', $data->description), _M('Description',$module), FIELD_DESCRIPTION_SIZE);
+        $description->setJsHint(_M('Enter the description',$module));
+        $fields[] = $description;
+        $validators[] = new MRequiredValidator('description', _M('Description',$module));
+
+        $beginDate = new MCalendarField('beginDate', $this->getFormValue('beginDate', $data->beginDate), _M('Date',$module), FIELD_DATE_SIZE);
+        $beginDate->setJsHint(_M('Enter the begin date',$module));
+//         $validators[] = new MDATEDMYValidator('beginDate', _M('Date',$module), 'required');
+        $beginDate->setValidator(new MDATEDMYValidator('beginDate', _M('Date',$module), 'required'));
+        $fields[] = $beginDate;
+
+        $optionsNumber = new MTextField('optionsNumber', $this->getFormValue('optionsNumber', $data->optionsNumber), _M('Options number of course',$module), 8, _M('Options number that will be possible in the inscription of candidate', $module));
+        $optionsNumber->setJsHint(_M('Enter the options number of course',$module));
+        $validators[] = new MIntegerValidator('optionsNumber', '', 'required');
+        $fields[] = $optionsNumber;
+
+        $optionsNumberRequired = new MTextField('optionsNumberRequired', $this->getFormValue('optionsNumberRequired', $data->optionsNumberRequired), _M('Options number required in inscription',$module), 8, _M('Options number that will be required in the inscription of candidate', $module));
+        $optionsNumberRequired->setJsHint(_M('Enter the options number required of course',$module));
+        $validators[] = new MIntegerValidator('optionsNumberRequired', '', 'required');
+        $fields[] = $optionsNumberRequired;
+
+        //isLanguage
+        $isLanguageOptions  = array( array(_M('Yes', $module), 't'),
+                                     array(_M('No', $module), 'f')
+                                    );
+
+        $isLanguageLabel = new MText('isLanguageLabel', _M('Language',$module) . ':');
+        $isLanguageLabel->setWidth(FIELD_CONTAINER_SIZE);
+
+        $isLanguage = $this->GetFormValue('isLanguage',$data->isLanguage);
+        if (! isset($isLanguage) )
+        {
+            //default true
+            $isLanguage= 't';
+        }
+        $isLanguage = new MRadioButtonGroup('isLanguage', '', $isLanguageOptions, $isLanguage, null, 'horizontal');
+        $isLanguage->SetShowLabel(false);
+
+        $hctIsLanguage = new MHContainer('hctIsLanguage', array($isLanguageLabel, $isLanguage));
+        $fields[]  = $hctIsLanguage;
+
+
+        //isHighSchool
+        $isHighSchoolOptions  = array( array(_M('Yes', $module), 't'),
+                                     array(_M('No', $module), 'f')
+                                    );
+
+        $isHighSchool = $this->GetFormValue('isHighSchool', $data->isHighSchool);
+        if (! isset($isHighSchool) )
+        {
+            //default false
+            $isHighSchool= 'f';
+        }
+
+        $isHighSchoolLabel = new MText('isHighSchoolLabel', _M('Is high school',$module) . ':');
+        $isHighSchoolLabel->setWidth(FIELD_CONTAINER_SIZE);
+
+        $isHighSchool = new MRadioButtonGroup('isHighSchool', '', $isHighSchoolOptions, $isHighSchool, null, 'horizontal');
+        $isHighSchool->SetShowLabel(false);
+
+        $hctIsHighSchool = new MHContainer('hctIsHighSchool', array($isHighSchoolLabel, $isHighSchool));
+        $fields[]  = $hctIsHighSchool;
+
+        $minimumPoints = new MTextField('minimumPoints', $this->getFormValue('minimumPoints', $data->minimumPoints), _M('Minimum points',$module), 8);
+        $minimumPoints->setJsHint(_M('Enter the minimum points',$module));
+        $fields[] = $minimumPoints;
+        $validators[] = new MFloatValidator('minimumPoints', _M('Minimum points',$module), FLOAT_SEPARATOR, REAL_ROUND_VALUE , 'required');
+
+
+        $maximumPoints = new MTextField('maximumPoints', $this->getFormValue('maximumPoints', $data->maximumPoints), _M('Maximum points',$module), 8);
+        $maximumPoints->setJsHint(_M('Enter the maximum points',$module));
+        $fields[] = $maximumPoints;
+        $validators[] = new MFloatValidator('maximumPoints', _M('Maximum points',$module), FLOAT_SEPARATOR, REAL_ROUND_VALUE , 'required');
+
+        if ( $function == 'update' )
+        {
+            $fields[] = new MTextLabel('lastModification', '[' . $data->userName . ' - ' . $data->dateTime . ']', _M('Last modification',$module));
+        }
+
+        $fields[] = new Separator('');
+
+        $this->setFields($fields);
+        if ( isset($validators) )
+        {
+            $this->setValidators($validators);
+        }
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+        $this->setClose($MIOLO->getActionURL($module,substr($action,0,strrpos($action,':'))));
+
+    }
+
+    /**
+     * Event triggered when user chooses New from the toolbar
+     **/
+    public function tbBtnNew_click($sender=NULL)
+    {
+        /*
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $data = $this->getTypesData();
+        $vars = get_object_vars($data);
+
+        foreach ( $vars as $var => $value )
+        {
+            $this->$var->value = $this->getFormValue($var . 'S','');
+        }
+        */
+    }
+
+    /**
+     * Event triggered when user chooses Delete from the toolbar
+     **/
+    public function tbBtnDelete_click($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $data   = $this->getTypesData();
+        $opts   = array('event'              => 'tbBtnDelete_confirm',
+                        'function'           => 'delete',
+                        'selectiveProcessId' => MIOLO::_request('selectiveProcessId'));
+
+        $gotoYes = $MIOLO->getActionURL( $module, $action, null, $opts );
+
+        // This return the primary key to the search form so that user
+        // can see the record he would delete
+        $opts    = array('selectiveProcessIdS' => MIOLO::_request('selectiveProcessId'));
+        $goto    = SAGU::getStackBackUrl();
+        $gotoNo  = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+
+        $caption = _M('Question',$module);
+        $MIOLO->question(MSG_CONFIRM_RECORD_DELETE, $gotoYes, $gotoNo);
+    }
+
+    /**
+     * Event triggered when user chooses Yes from the Delete prompt dialog
+     **/
+    public function tbBtnDelete_confirm($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $business = $MIOLO->getBusiness($module, 'BusSelectiveProcess');
+        $ok = $business->deleteSelectiveProcess($this->selectiveProcessId->value);
+
+        if ( $ok )
+        {
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Information',$module);
+            $MIOLO->information(MSG_RECORD_DELETED, $goto);
+        }
+        else
+        {
+            $msg  = _M('Error executing requested operation.',$module);
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Error',$module);
+            $MIOLO->error( $msg, $goto, $caption );
+        }
+    }
+
+    /**
+     * Event triggered when user chooses Save from the toolbar
+     **/
+    public function tbBtnSave_click($sender=NULL)
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+
+        $data     = $this->getTypesData();
+        $business = $MIOLO->getBusiness($module, 'BusSelectiveProcess');
+
+        if ( $data->optionsNumberRequired > $data->optionsNumber )
+        {
+            //Número de opçoes requeridas é maior que o número de opções possíveis
+            $this->addError(_M('Options number required greater that options number', $module));
+        }
+        else
+        {
+            if ( $function == 'update' )
+            {
+                $ok  = $business->updateSelectiveProcess($data);
+                $msg = MSG_RECORD_UPDATED;
+            }
+            else
+            {
+                $ok  = $business->insertSelectiveProcess($data);
+                $msg = MSG_RECORD_INSERTED;
+            }
+
+            if ( $ok )
+            {
+                // This returns the primary key data to the search form
+                // so that the user can see the inserted/updated record.
+                //$opts = array('courseIdS'      => $data->courseId,
+                //              'courseVersionS' => $data->courseVersion,
+                //              'turnIdS'        => $data->turnId,
+                //              'unitIdS'        => $data->unitId,
+                //              'coordinatorIdS' => $data->coordinatorId);
+                $opts = array('selectiveProcessIdS'      => $data->selectiveProcessId,);
+
+                if ( $function == 'update' )
+                {
+                    $caption = _M('Information', $module);
+                    $MIOLO->information($msg, $MIOLO->getActionURL( $module, $action, null, $opts));
+                }
+                else
+                {
+                    unset($opts);
+                    $goto = SAGU::getStackBackUrl();
+                    $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL( $module, $action, null, $opts);
+                    $opts = array('function'=>'insert');
+
+                    $gotoYes = $MIOLO->getActionURL($module, $action, null, $opts);
+                    $caption = _M('Question',$module);
+                    $MIOLO->question($msg, $gotoYes, $goto);
+                }
+            }
+            else
+            {
+                $msg  = _M('Error executing requested operation.',$module);
+                $goto = SAGU::getStackBackUrl();
+                $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action, null, $opts);
+                $caption = _M('Error',$module);
+                $MIOLO->error( $msg, $goto, $caption );
+            }
+        }
+    }
+
+    /**
+     * Method to gather all information from the form fields
+     * and put them on a database compatible object
+     **/
+    public function getTypesData()
+    {
+        $data = new SprSelectiveProcess();
+        $vars = get_object_vars($data);
+        foreach ( $vars as $var => $value )
+        {
+            $data->$var = $this->$var->value;
+        }
+
+        return $data;
+    }
+
+}
+
+?>

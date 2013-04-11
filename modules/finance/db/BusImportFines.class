@@ -1,0 +1,262 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for accAccountScheme table
+ *
+ * @author Marcus Vinicius Magalhaes Machado [mvmmachado@gmail.com]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Armando Taffarel Neto [taffarel@solis.coopb.br]
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * Marcus Vinicius Magalhaes Machado [mvmmachado@gmail.com]
+ * 
+ * @since
+ * Class created on 02/12/2005
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to manipulate the accAccountScheme table
+ **/
+class BusinessFinanceBusImportFines extends MBusiness
+{
+
+    public $db;
+
+    /**
+     * Class constructor
+     **/
+    public function BusinessAccountancyBusAccountScheme()
+    {
+        $this->db = $this->getDatabase();
+    }
+
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+
+        $module = is_null($module) ? 'finance' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+    /**
+     * Import account scheme from Siga system
+     *
+     * @return On succeed, returns true. Otherwise, false.
+     *
+     */
+    function importFines($personId = null)
+    {
+
+        $MIOLO  = MIOLO::getInstance();
+
+        //trazer os parametros do contabil
+        $business  = $MIOLO->getBusiness('basic','BusConfig');
+        $constants = $business->getModuleValues('accountancy');
+        foreach ( $constants as $cnt )
+        {
+            define($cnt[0],$cnt[1]);
+        }
+
+        $db  = $this->getDatabase('gnuteca');
+
+        $sql = '  SELECT codigodapessoa,
+                         datahora,
+                         valor,
+                         foipaga,
+                         foiabonada
+                    FROM gtc_multa
+                   WHERE datahora::date <= date(now())
+                     AND foiabonada = false
+                     AND viaboleto = true
+                     AND foipaga = false';
+
+        if ( strlen((string)$personId)>0 )
+        {
+            $sql .= ' AND codigodapessoa = \'' . $personId . '\' ';
+        }
+
+        $result = $db->query($sql);
+
+        if ( count($result) > 0 )
+        {
+
+            $db2  = $this->getDatabase('finance');
+            $db2->execute('BEGIN TRANSACTION');
+
+            foreach ( $result as $row )
+            {
+                list ( $data->codigodapessoa,
+                       $data->datahora,
+                       $data->valor,
+                       $data->foipaga,
+                       $data->foiabonada ) = $row;
+
+                //pega o curso da pessoa
+                $sql = 'SELECT courseId,
+                               courseVersion,
+                               unitId
+                          FROM acdContract
+                         WHERE personId = ?
+                           AND getContractDisactivationDate(contractId) IS NULL';
+                $args = array ( $data->codigodapessoa );
+                $contrato = $db2->query(SAGU::prepare($sql, $args));
+
+                list ( $courseId,
+                       $courseVersion,
+                       $unitId ) = $contrato[0];
+
+                //pega um invoiceId
+                $sql       = "select nextval('seq_invoiceid')";
+                $invoiceId = $db2->query($sql);
+                $invoiceId = $invoiceId[0][0];
+
+                //inserir o titulo
+                $sql = 'INSERT INTO finInvoice
+                                    (invoiceId,
+                                     personId,
+                                     accountSchemeId,
+                                     costCenterId,
+                                     parcelNumber,
+                                     emissionDate,
+                                     maturityDate,
+                                     value,
+                                     policyId,
+                                     comments,
+                                     incomeSourceId,
+                                     bankAccountId,
+                                     bankContractId,
+                                     courseId,
+                                     courseVersion,
+                                     unitId )
+                             VALUES (?,?,?,?,?,date(now()),?,?,?,?,?,?,?,?,?,?)';
+
+                $args = array ( $invoiceId,
+                                $data->codigodapessoa,
+                                LIBRARY_FINE_ACCOUNT_SCHEME,
+                                LIBRARY_FINE_COST_CENTER,
+                                1,
+                                $data->datahora,
+                                $data->valor,
+                                LIBRARY_FINE_POLICY_ID,
+                                _M('Library fine', 'finance'),
+                                LIBRARY_FINE_INCOME_SOURCE_ID,
+                                DEFAULT_BANK_ACCOUNT_ID,
+                                DEFAULT_BANK_CONTRACT_ID,
+                                $courseId,
+                                $courseVersion,
+                                $unitId
+                              );
+
+                $db2->execute(SAGU::prepare($sql, $args));
+
+                //inserir o titulo a receber
+                $sql = 'INSERT INTO finReceivableInvoice
+                                    (invoiceId,
+                                     personId,
+                                     accountSchemeId,
+                                     costCenterId,
+                                     parcelNumber,
+                                     emissionDate,
+                                     maturityDate,
+                                     value,
+                                     policyId,
+                                     comments,
+                                     incomeSourceId,
+                                     bankAccountId,
+                                     bankContractId,
+                                     courseId,
+                                     courseVersion,
+                                     unitId )
+                             VALUES (?,?,?,?,?,date(now()),?,?,?,?,?,?,?,?,?,?)';
+
+                $args = array ( $invoiceId,
+                                $data->codigodapessoa,
+                                LIBRARY_FINE_ACCOUNT_SCHEME,
+                                LIBRARY_FINE_COST_CENTER,
+                                1,
+                                $data->datahora,
+                                $data->valor,
+                                LIBRARY_FINE_POLICY_ID,
+                                _M('Library fine', 'finance'),
+                                LIBRARY_FINE_INCOME_SOURCE_ID,
+                                DEFAULT_BANK_ACCOUNT_ID,
+                                DEFAULT_BANK_CONTRACT_ID,
+                                $courseId,
+                                $courseVersion,
+                                $unitId
+                              );
+
+                $db2->execute(SAGU::prepare($sql, $args));
+
+                //pega a operacao padrao de multas da biblioteca
+                $sql = 'SELECT libraryFineOperation
+                          FROM finDefaultOperations'; 
+                $operationId = $db2->query($sql);
+                $operationId = $operationId[0][0];
+
+                //inserir um lancamento
+                $sql = 'INSERT INTO finEntry
+                                    (invoiceId,
+                                     operationId,
+                                     entryDate,
+                                     value,
+                                     costCenterid,
+                                     comments)
+                             VALUES (?,?,date(now()),?,?,?)';
+
+                $args = array ( $invoiceId,
+                                $operationId,
+                                $data->valor,
+                                LIBRARY_FINE_COST_CENTER,
+                                _M('Library fine', 'finance')
+                              );
+                $db2->execute(SAGU::prepare($sql, $args));
+
+            }
+
+            $ok = $db2->execute('COMMIT');
+
+            //atualiza multas do gnuteca (fechar no gnuteca)
+            $sql = 'UPDATE gtc_multa
+                       SET foipaga = true
+                     WHERE datahora <= date(now())
+                       AND foiabonada = false
+                       AND viaboleto = true
+                       AND foipaga = false';
+            $db->execute($sql);
+
+        }
+
+        return $ok;
+    }
+
+}
+?>

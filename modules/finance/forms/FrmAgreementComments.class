@@ -1,0 +1,256 @@
+<?php
+
+/**
+ * Agreement Comments Form
+ *
+ * @author William Prigol Lopes [william@solis.coop.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ *
+ * @since
+ * Class created on 22/12/2005
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2005 SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+
+/**
+ * Form to manipulate a bank account
+ **/
+class FrmAgreementComments extends MForm
+{
+
+    /**
+     * Class constructor
+     **/
+    function __construct()
+    {
+
+        $module = MIOLO::getCurrentModule();
+
+        if ( MIOLO::_request('function') == 'insert' )
+        {
+            parent::__construct(_M('Insert', $module));
+        }
+        else
+        {
+            parent::__construct(_M('Update', $module));
+        }
+
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+
+        $toolBar = new MToolBar('toolBar',$MIOLO->getActionURL($module, $action));
+        $toolBar->disableButton('tbBtnPrint');
+        $toolBar->disableButton('tbBtnNew');
+        $toolBar->disableButton('tbBtnSearch');
+        $toolBar->disableButton('tbBtnDelete');        
+        $goto     = MIOLO::_request('goto') ? MIOLO::_request('goto') : MIOLO::_request('goto', 'GET');
+        $personId = MIOLO::_request('personId') ? MIOLO::_request('personId') : MIOLO::_request('personId', 'GET');
+        
+        $fields[] = $toolBar;
+        
+        $fields[] = new MHiddenField('goto', $goto);
+        if ( in_array($function,array('update','delete')) )
+        {
+            $data->agreementCommentsId = $this->getFormValue('agreementCommentsId', MIOLO::_request('agreementCommentsId') ? MIOLO::_request('agreementCommentsId') : MIOLO::_request('agreementCommentsId', 'GET'));
+            $agreementCommentsIdHidden = new MHiddenField('agreementCommentsId', $this->getFormValue('agreementCommentsId', $data->agreementCommentsId));
+            $fields[] = $agreementCommentsIdHidden;
+            $businessAgreementComments = $MIOLO->getBusiness($module, 'BusAgreementComments');
+            $data = $businessAgreementComments->getAgreementComments($data->agreementCommentsId);
+        }
+        // If personId comes from URL that was setted on that variable else personId comes 
+        // from business connection, so replace here to continue on the right form
+        $personId = strlen((string)$personId)>0 ? $personId : $data->personId;
+        // Person
+        $businessPerson = $MIOLO->getBusiness('basic', 'BusPerson');
+        $personName = $businessPerson->getPersonName($personId);
+        $personLabel = new MText('personLabel', _M('Person id', $module).':');
+        $personLabel->setWidth(FIELD_LABEL_SIZE);
+        $person      = new MTextLabel('person', $personId.' - '.$personName);
+        $fields[]    = new MHContainer('hctPerson', array($personLabel, $person));
+        $fields[]    = new MHiddenField('personId', $this->getFormValue('personId', $personId));
+        
+        // Agreement
+        $agreementTitleLabel = new MText('agreementTitleLabel', _M('Title', $module).':');
+        $agreementTitleLabel->setWidth(FIELD_LABEL_SIZE);
+        $agreementTitle      = new MTextField('agreementTitle', $this->getFormValue('agreementTitle', $data->agreementTitle), '', FIELD_DESCRIPTION_SIZE);
+        $fields[]   = new MHContainer('hctAgreementTitle', array($agreementTitleLabel, $agreementTitle));
+
+        if ( $function == 'update')
+        {
+            $dateTimeLabel = new MText('dateTimeLabel', _M('Date and time register', $module));
+            $dateTime      = new MTextLabel('dateTime', $this->getFormValue('dateTime', $data->dateTime));
+        }          
+          
+        $commentsLabel = new MText('commentsLabel', _M('Comments', $module).':');
+        $commentsLabel->setWidth(FIELD_LABEL_SIZE);
+        $commentsLabel->setClass('m-caption m-caption-required');
+        $comments = new MMultiLineField('comments', $this->getFormValue('comments', $data->comments), '', 60, 4, 60);
+        $comments->setJsHint(_M('Enter the comments', $module));
+        $fields[] = new MHContainer('hctcomments', array($commentsLabel, $comments));
+        $validators[] = new MRequiredValidator('comments', _M('Comments', $module));
+
+        if ( $function == 'update' )
+        {
+            $fields[] = new MTextLabel('lastModification', '[' . $data->userName . ' - ' . $data->dateTime . ']', _M('Last modification',$module));
+            $fields[] = new MSeparator('');
+        }
+
+        $sep = new MSeparator('');
+        $sep->setWidth('99%');
+        $fields[] = $sep;
+
+        $this->setFields($fields);
+        if ($validators)
+        {
+            $this->setValidators($validators);
+        }
+  
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+        $this->setClose($MIOLO->getActionURL($module,substr($action,0,strrpos($action,':'))));
+        $this->page->onLoad('document.' . $this->name . '.agreementComments.focus();');
+
+    }
+
+    /**
+     * Event triggered when user chooses Delete from the toolbar
+     **/
+    public function tbBtnDelete_click($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+        $goto   = MIOLO::_request('goto') ? MIOLO::_request('goto') : MIOLO::_request('goto', 'GET');
+        
+        $data   = $this->getTypesData();
+        $opts   = array('event'=>'tbBtnDelete_confirm',
+                        'function'=>'delete',
+                        'agreementCommentsId'=>MIOLO::_request('agreementCommentsId'), 'goto'=>urlencode($goto));
+
+        $gotoYes = $MIOLO->getActionURL( $module, $action, null, $opts );
+        $goto    = SAGU::getStackBackUrl();
+        $gotoNo  = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+        $msg     = MSG_CONFIRM_RECORD_DELETE;
+        $caption = _M('Question', $module);
+        $MIOLO->question($msg, $gotoYes, $gotoNo);
+    }
+
+    /**
+     * Event triggered when user chooses Yes from the Delete prompt dialog
+     **/
+    public function tbBtnDelete_confirm($sender = NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+        $goto   = MIOLO::_request('goto') ? MIOLO::_request('goto') : MIOLO::_request('goto', 'GET');
+        $agreementCommentsId =  MIOLO::_request('agreementCommentsId') ? MIOLO::_request('agreementCommentsId') : MIOLO::_request('agreementCommentsId', 'GET');
+        $business = $MIOLO->getBusiness($module, 'BusAgreementComments');
+        $ok       = $business->deleteAgreementComments($agreementCommentsId);
+
+        if ( $ok )
+        {
+            $goto    = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $msg     = MSG_RECORD_DELETED;
+            $caption = _M('Information', $module);
+            $MIOLO->information($msg, $goto);
+        }
+        else
+        {
+            $msg  = _M('Error executing requested operation.', $module);
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Error', $module);
+            $MIOLO->error( $msg, $goto, $caption );
+        }
+    }
+
+    /**
+     * Event triggered when user chooses Save from the toolbar
+     **/
+    public function tbBtnSave_click($sender=NULL)
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+        $goto     = MIOLO::_request('goto') ? MIOLO::_request('goto') : MIOLO::_request('goto', 'GET');
+        $data     = $this->getTypesData();
+        $business = $MIOLO->getBusiness($module, 'BusAgreementComments');
+
+        if ( $function == 'update' )
+        {
+            $ok  = $business->updateAgreementComments($data);
+            $msg = MSG_RECORD_UPDATED;
+        }
+        else
+        {
+            $ok  = $business->insertAgreementComments($data);
+            $msg = MSG_RECORD_INSERTED_INFO;
+        }
+        if ( $ok )
+        {
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, 'main');
+            $MIOLO->information($msg, $goto);
+        }
+        else
+        {
+            $msg     = _M('Error executing requested operation.', $module);
+            $goto    = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Error', $module);
+            $MIOLO->error( $msg, $goto, $caption );
+        }
+    }
+
+    /**
+     * Method to gather all information from the form fields
+     * and put them on a database compatible object
+     **/
+    public function getTypesData()
+    {
+        $data = new FinAgreementComments();
+        $vars = get_object_vars($data);
+
+        foreach ( $vars as $var => $value )
+        {
+            if ( $this->$var )
+            {
+                eval('$data->' . $var . ' = $this->' . $var . '->value;');
+            }
+        }
+        return $data;
+    }
+}
+
+?>

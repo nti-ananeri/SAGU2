@@ -1,0 +1,1721 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for basPupilListing table
+ *
+ * @author William Prigol Lopes [william] [william@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * Leovan Tavares da Silva [leovan@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 07/08/2005
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to manipulate the basPupilListing table
+ **/
+class BusinessAcademicBusPupilListing extends Business
+{
+
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic', 'sagu');
+        $module = is_null($module) ? 'academic' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+    
+    /**
+     *  Return data to pupil listing options by option 1
+     * 
+     * @param $periodId (int): Identification of period
+     *
+     * @return (array): Array containing the results.
+     */
+    public function getPupilListingOp1($periodId, $filter)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+
+        $db = $this->getDatabase();
+
+        $sql = " SELECT periodId,
+                        courseId,
+                        courseVersion,
+                        shortName,
+                        turnId,
+                        turnDescription,
+                        unitId,
+                        unitDescription, '".
+                        _M('AGE', $module) . "',
+                        count(personId)
+                   FROM
+                        (SELECT D.periodId,
+                                C.courseId,
+                                C.courseVersion,
+                                C.turnId,
+                                getTurnDescription(C.turnId) as turnDescription,
+                                C.unitId,
+                                getUnitDescription(C.unitId) as unitDescription,
+                                F.shortName,
+                                C.personId
+                           FROM acdEnroll A 
+                     INNER JOIN acdcontract C 
+                             ON (A.contractId = C.contractId) 
+                     INNER JOIN acdCourse F 
+                             ON (C.courseId = F.courseId) 
+                      LEFT JOIN acdgroup B 
+                             ON (A.groupId = B.groupId) 
+                      LEFT JOIN acdlearningperiod D 
+                             ON (B.learningPeriodId = D.learningPeriodId AND D.periodId = ?)
+                          WHERE D.periodId = ?
+                            AND getContractDisactivationDate(C.contractId) IS NULL
+                            AND C.isListener = '" . DB_FALSE . "'
+                            AND A.statusId NOT IN (" . ENROLL_STATUS_CANCELLED . ", " . ENROLL_STATUS_DESISTING . ")";
+
+        if ( strlen((string)$filter) > 0 )
+        {
+            if ( is_array($filter) )
+            {
+                $sql .= ' AND F.formationLevelId IN (' . implode(',', $filter) . ')';
+            }
+            else
+            {
+                $sql .= ' AND F.formationLevelId = \'' . $filter . '\'';
+            }
+        } 
+                            
+        $sql .= "      GROUP BY D.periodId, C.courseId, C.courseVersion, F.shortName, C.turnId, turnDescription, 
+                                 C.unitId, unitDescription, C.personId)
+                  AS A GROUP BY 1, 2, 3, 4, 5, 6, 7, 8
+                       ORDER BY 3 DESC, 2, 6";
+
+        $result = $db->query(SAGU::prepare($sql, array($periodId, $periodId)));
+
+        return $result;
+    }
+    
+    /**
+     *  Return all person email from pupil listing options by option 1
+     * 
+     * @param $periodId (int): Identification of period
+     *
+     * @return (array): Array containing the results.
+     */
+    public function getPupilEmailListingOp1($periodId, $filter)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+
+        $db = $this->getDatabase();
+
+        $sql = " SELECT DISTINCT getEmail(personId)
+                   FROM
+                        (SELECT D.periodId,
+                                C.courseId,
+                                C.courseVersion,
+                                C.turnId,
+                                getTurnDescription(C.turnId) as turnDescription,
+                                C.unitId,
+                                getUnitDescription(C.unitId) as unitDescription,
+                                F.shortName,
+                                C.personId
+                           FROM acdEnroll A 
+                     INNER JOIN acdcontract C 
+                             ON (A.contractId = C.contractId) 
+                     INNER JOIN acdCourse F 
+                             ON (C.courseId = F.courseId) 
+                      LEFT JOIN acdgroup B 
+                             ON (A.groupId = B.groupId) 
+                      LEFT JOIN acdlearningperiod D 
+                             ON (B.learningPeriodId = D.learningPeriodId AND D.periodId = ?)
+                          WHERE D.periodId = ?
+                            AND getContractDisactivationDate(C.contractId) IS NULL
+                            AND C.isListener = '" . DB_FALSE . "'
+                            AND A.statusId NOT IN (" . ENROLL_STATUS_CANCELLED . ", " . ENROLL_STATUS_DESISTING . ")";
+
+        if ( strlen((string)$filter) > 0 )
+        {
+            if ( is_array($filter) )
+            {
+                $sql .= ' AND F.formationLevelId IN (' . implode(',', $filter) . ')';
+            }
+            else
+            {
+                $sql .= ' AND F.formationLevelId = \'' . $filter . '\'';
+            }
+        } 
+
+        $sql .= "      GROUP BY D.periodId, C.courseId, C.courseVersion, F.shortName, C.turnId, turnDescription,C.unitId, unitDescription, C.personId) AS A
+                       ORDER BY 1";
+
+        $result = $db->query(SAGU::prepare($sql, array($periodId, $periodId)));
+
+        return $result;
+    }
+    
+    /**
+     *  Return data to pupil listing options by option 2
+     * 
+     * @param $periodId (int): Identification of period
+     *
+     * @return (array): Array containing the results.
+     */
+    public function getPupilListingOp2($periodId, $filter)
+    {
+        $MIOLO = MIOLO::getInstance();
+
+        $db = $this->getDatabase();
+echo 1;
+        $sql1 = "SELECT DISTINCT A.courseId, 
+                                 A.courseVersion, 
+                                 A.turnId, 
+                                 A.unitId,
+                                 B.shortName,
+                                 getTurnDescription(A.turnId)
+                            FROM acdContract A 
+                      INNER JOIN acdCourse B 
+                              ON (B.courseId = A.courseId)";
+
+        if ( strlen((string)$filter) > 0 )
+        {
+            if ( is_array($filter) )
+            {
+                $sql1 .= ' AND B.formationLevelId IN (' . implode(',', $filter) . ')';
+            }
+            else
+            {
+                $sql1 .= ' AND B.formationLevelId = \'' . $filter . '\'';
+            }
+        }
+                              
+        $sql1 .= " ORDER BY 2 DESC, 1, 5";
+                              
+        $courses = $db->query($sql1);
+
+        if (count($courses > 0))
+        {
+            foreach ( $courses as $course )
+            {
+                $courseId      = $course[0];
+                $courseVersion = $course[1];
+                $turnId = $course[2];
+                $unitId = $course[3];
+
+                $sql2 = "   SELECT periodId,
+                                   courseId,
+                                   courseVersion,
+                                   shortName,
+                                   turnId,
+                                   turnDescription,
+                                   unitId,
+                                   unitDescription,
+                                   count(personId)
+                              FROM
+                                   (SELECT F.periodId,
+                                           A.courseId,
+                                           A.courseVersion,
+                                           B.shortName,
+                                           A.turnId,
+                                           getTurnDescription(A.turnId) as turnDescription,
+                                           A.unitId,
+                                           getUnitDescription(A.unitId) as unitDescription,
+                                           A.personId
+                                      FROM acdContract A
+                                INNER JOIN acdCourse B
+                                        ON (A.courseId = B.courseId)
+                                INNER JOIN acdMovementContract E 
+                                        ON (A.contractId = E.contractId)
+                                INNER JOIN acdLearningPeriod F
+                                        ON (E.learningPeriodId = F.learningPeriodId)
+                                     WHERE A.courseId = " . $courseId . "
+                                       AND A.courseVersion = " . $courseVersion . "
+                                       AND A.turnId = " . $turnId . "
+                                       AND A.unitId = " . $unitId ."
+                                       AND F.periodId = (SELECT A.periodId
+                                                           FROM acdLearningPeriod A,
+                                                                acdPeriod B
+                                                          WHERE A.periodId = B.periodId
+                                                            AND A.learningPeriodId = ( SELECT previousLearningPeriodId
+                                                                                         FROM acdLearningPeriod
+                                                                                        WHERE courseId = " . $courseId . "
+                                                                                          AND courseVersion = " . $courseVersion . "
+                                                                                          AND turnId = " . $turnId . "
+                                                                                          AND unitId = " . $unitId ."
+                                                                                          AND periodId = '" . $periodId . "'
+                                                                                        LIMIT 1 ))
+                                       AND E.statecontractid NOT IN (" . CONTRACT_STATUSCONTRACTID_OUT . ")
+                                       AND A.contractId NOT IN (SELECT A.contractId
+                                                                  FROM acdenroll A
+                                                            INNER JOIN acdcontract D
+                                                                    ON (A.contractId = D.contractId)
+                                                             LEFT JOIN acdgroup B
+                                                                    ON (A.groupId = B.groupId)
+                                                             LEFT JOIN acdLearningPeriod C
+                                                                    ON (B.learningPeriodId = C.learningPeriodId AND C.periodId = '" . $periodId . "')
+                                                                 WHERE D.courseId = " . $courseId . "
+                                                                   AND D.courseVersion = " . $courseVersion . "
+                                                                   AND D.turnId = " . $turnId . "
+                                                                   AND D.unitId = " . $unitId . "
+                                                                   AND C.periodId = '" . $periodId . "'
+                                                              GROUP BY 1)";
+
+                if (strlen((string)$filter) > 0)
+                {
+                    if ( is_array($filter) )
+                    {
+                        $sql2 .= ' AND B.formationLevelId IN (' . implode(',', $filter) . ')';
+                    }
+                    else
+                    {
+                        $sql2 .= ' AND B.formationLevelId = \'' . $filter . '\'';
+                    }
+                }
+                                   
+                $sql2 .= " GROUP BY 1, 2, 3, 4, 5, 6, 7, 8,9) AS XX 
+                           GROUP BY 1, 2, 3, 4, 5, 6, 7, 8
+                           ORDER BY 3 DESC, 2, 6";
+
+                $result = $db->query($sql2);
+                
+                if (is_array($result))
+                {
+                    $return[] = $result[0];
+                }
+            }
+        }
+
+        return $return;
+    }
+
+    public function getNotEnrolled($periodId, $formationsLevel)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $db = $this->getDatabase();
+
+        $sqlCourses = 'SELECT DISTINCT AC.courseId,
+                                       AC.courseVersion,
+                                       AC.turnId,
+                                       AC.unitId,
+                                       B.shortName as courseName,
+                                       C.description as turnDescription,
+                                       D.description as unitDescription
+                                  FROM acdContract AC
+                            INNER JOIN acdCourse B
+                                    ON (B.courseId = AC.courseId)
+                            INNER JOIN basTurn C
+                                    ON (C.turnId = AC.turnId)
+                            INNER JOIN basUnit D
+                                    ON (D.unitId = AC.unitId)
+                       INNER JOIN ONLY basPhysicalPerson E
+                                    ON (E.personId = AC.personId)
+                            INNER JOIN basCity F
+                                    ON (F.cityId = E.cityId)
+                            INNER JOIN acdLearningPeriod G
+                                    ON (G.courseId = AC.courseId AND
+                                        G.courseVersion = AC.courseVersion AND
+                                        G.unitId = AC.unitId AND
+                                        G.turnId = AC.turnId)
+                                  WHERE G.periodId = \'' . $periodId . '\'';
+                                  
+        if (strlen((string)$formationsLevel) > 0)
+        {
+            if (is_array($formationsLevel))
+            {
+                $sqlCourses .= ' AND B.formationLevelId IN ('.implode(',', $formationsLevel).')';
+            }
+            else
+            {
+                $sqlCourses .= ' AND B.formationLevelId = \'' . $formationsLevel .'\'';
+            }
+        }
+        
+        $resultCourses = $db->query($sqlCourses);
+
+        if ( is_array($resultCourses) ) //have courses in the formationLevel and period
+        {
+            $key = 0 ;
+
+            foreach ( $resultCourses as $resultCourse )
+            {
+                list(   $courseId,
+                        $courseVersion,
+                        $turnId,
+                        $unitId,
+                        $courseName,
+                        $turnDescription,
+                        $unitDescription ) = $resultCourse;
+
+                $sqlCounts = ' SELECT DISTINCT count(AC.contractId)
+                                          FROM acdContract AC
+                                    INNER JOIN acdCourse B
+                                            ON (B.courseId = AC.courseId)
+                                    INNER JOIN basTurn C
+                                            ON (C.turnId = AC.turnId)
+                                    INNER JOIN basUnit D
+                                            ON (D.unitId = AC.unitId)
+                               INNER JOIN ONLY basPhysicalPerson E
+                                            ON (E.personId = AC.personId)
+                                    INNER JOIN basCity F
+                                            ON (F.cityId = E.cityId)
+                                         WHERE AC.personId IN 
+                                       (SELECT DISTINCT D.personId
+                                                   FROM acdEnroll A
+                                             INNER JOIN acdGroup B
+                                                     ON (A.groupId = B.groupId)
+                                             INNER JOIN acdLearningPeriod C
+                                                     ON (B.learningPeriodId = C.learningPeriodId)
+                                             INNER JOIN acdContract D
+                                                     ON (D.contractId = A.contractId)
+	                                          WHERE C.periodId NOT IN (\''.$periodId.'\') 
+                                                    AND A.dateCancellation IS NULL
+                                                    AND C.periodId = 
+                                                    (SELECT A.periodId
+                                                       FROM acdLearningPeriod A
+                                                      WHERE A.periodId <> \''.$periodId.'\'
+                                                        AND A.periodId < \''.$periodId.'\'
+                                                   ORDER BY A.periodId DESC LIMIT 1)
+                                                   AND D.personId NOT IN 
+                                                   (SELECT DISTINCT D.personId
+                                                               FROM acdEnroll A
+                                                         INNER JOIN acdGroup B
+                                                                 ON (A.groupId = B.groupId)
+                                                         INNER JOIN acdLearningPeriod C
+                                                                 ON (C.learningPeriodId = B.learningPeriodId)
+                                                         INNER JOIN acdContract D
+                                                                 ON (D.contractId = A.contractId)
+                                                              WHERE C.periodId = \''.$periodId.'\'
+                                                                AND D.courseId = \''.$courseId.'\'
+                                                                AND D.courseVersion = \''.$courseVersion.'\'
+                                                                AND D.unitId = \''.$unitId.'\'
+                                                                AND D.turnId = \''.$turnId.'\'
+                                                                AND getContractState(D.contractId) NOT IN ('.CONTRACT_STATUSCONTRACTID_OUT.', '.STATE_CONTRACT_ID_LOCKED.', '.STATE_CONTRACT_ID_INTERNAL_TRANSFER_TO.')
+                                                           ORDER BY D.personId)
+                                                   AND D.courseId = \''.$courseId.'\'
+                                                   AND D.courseVersion = \''.$courseVersion.'\'
+                                                   AND D.turnId = \''.$turnId.'\'
+                                                   AND D.unitId = \''.$unitId.'\'
+                                              ORDER BY D.personId ASC)
+                                       AND AC.courseId = \''.$courseId.'\'
+                                       AND AC.courseVersion = \''.$courseVersion.'\'
+                                       AND AC.turnId = \''.$turnId.'\'
+                                       AND AC.unitId = \''.$unitId.'\'';
+
+                $resultCounts = $db->query($sqlCounts);
+
+                if ( $resultCounts[0][0] > 0 )
+                {
+                    $generalCounts[$key][] = $periodId;
+                    $generalCounts[$key][] = $courseId;
+                    $generalCounts[$key][] = $courseVersion;
+                    $generalCounts[$key][] = $courseName;
+                    $generalCounts[$key][] = $turnId;
+                    $generalCounts[$key][] = $turnDescription;
+                    $generalCounts[$key][] = $unitId;
+                    $generalCounts[$key][] = $unitDescription;
+
+                    $generalCounts[$key][] = $resultCounts[0][0];
+                    $key++;
+                }
+            }
+
+        }
+
+        return $generalCounts;
+
+    }
+
+    /**
+     *  Return data to pupil listing options by option 3
+     * 
+     * @param $periodId (int): Identification of period
+     *
+     * @return (array): Array containing the results.
+     */
+    public function getPupilListingOp3($filter)
+    {
+        $MIOLO = MIOLO::getInstance();
+
+        $db = $this->getDatabase();
+
+        $sql = " SELECT A.courseId,
+                        A.courseVersion,
+                        B.name,
+                        A.turnId,
+                        C.description as turnDescription,
+                        A.unitId,
+                        D.description as unitDescription,
+                        count(*)
+                   FROM acdContract A
+              LEFT JOIN acdCourse B
+                     ON ( A.courseId = B.courseId )
+              LEFT JOIN basTurn C
+                     ON ( A.turnId = C.turnId )
+              LEFT JOIN basUnit D
+                     ON ( A.unitId = D.unitId )
+                  WHERE A.contractId > 0 ";
+
+        if ( is_array($filter) )
+        {
+            if ( count($filter) > 0 )
+            {
+                $sql .= ' AND B.formationLevelId IN (' . implode(',', $filter) . ')';
+            }
+        }
+        elseif ( strlen((string)$filter) > 0 )
+        {
+            $sql .= ' AND B.formationLevelId = \'' . $filter . '\'';
+        }
+
+        $sql .= "       GROUP BY 1, 2, 3, 4, 5, 6, 7
+                        ORDER BY 2 DESC, 1, 4";
+
+        $result = $db->query($sql);
+
+        return $result;
+    }
+
+    /**
+     *  Return data to pupil listing options by option 4 
+     * 
+     * @param $periodId (int): Identification of period
+     *
+     * @return (array): Array containing the results.
+     */
+    public function getPupilListingOp4($periodId, $filter)
+    {
+        $MIOLO = MIOLO::getInstance();
+
+        $args = array($periodId, $periodId);
+
+        $db = $this->getDatabase();
+
+        $sql = "SELECT courseId,
+                       courseVersion,
+                       shortName,
+                       turnId,
+                       turnDescription,
+                       unitId,
+                       unitDescription,
+                       academicCredits,
+                       count(personId)
+                  FROM 
+                       (SELECT C.courseId,
+                               C.courseVersion,
+                               D.shortName,
+                               C.turnId,
+                               E.description as turnDescription,
+                               C.unitId,
+                               F.description as unitDescription,
+                               sum(I.academicCredits) as academicCredits,
+                               C.personId
+                          FROM acdEnroll A
+                     LEFT JOIN acdGroup B
+                            ON (A.groupId = B.groupId)
+                    INNER JOIN acdContract C
+                            ON (A.contractId = C.contractId)
+                    INNER JOIN acdCourse D
+                            ON (C.courseId = D.courseId )
+                    INNER JOIN basTurn E
+                            ON (C.turnId = E.turnId)
+                    INNER JOIN basUnit F
+                            ON (C.unitId = F.unitId)
+                    INNER JOIN acdLearningPeriod G
+                            ON (B.learningPeriodId = G.learningPeriodId AND G.periodId = ?)
+                    INNER JOIN acdCurriculum H
+                            ON (B.curriculumId = H.curriculumId)
+                    INNER JOIN acdCurricularComponent I
+                            ON (H.curricularComponentId = I.curricularComponentId AND
+                                H.curricularComponentVersion = I.curricularComponentVersion)
+                          WHERE G.periodId = ? 
+                            AND A.statusId NOT IN (". ENROLL_STATUS_CANCELLED .")
+                            AND H.curriculumTypeId NOT IN (".ACD_CURRICULUM_TYPE_COMPLEMENTARY_ACTIVITY.", ". ACD_CURRICULUM_TYPE_PROFICIENCY.", ".ACD_CURRICULUM_TYPE_COMPLEMENT_LESSON_HOUR.")";
+
+        if ( is_array($filter) )
+        {
+            $sql .= ' AND D.formationLevelId IN (' . implode(',', $filter) . ')';
+        }
+        else
+        {
+            if (strlen((string)$filter) > 0)
+            {
+                $sql .= ' AND D.formationLevelId = \'' . $filter . '\'';
+            }
+        }
+
+        $sql .= "        GROUP BY 1,2,3,4,5,6,7,9
+                         ) AS A
+                  GROUP BY 1,2,3,4,5,6,7,8
+                  ORDER BY shortName, courseId, unitId, academicCredits";
+
+        $result = $db->query(SAGU::prepare($sql, $args));
+
+        return $result;
+    }
+
+    /**
+     *  Return data to pupil listing options by option 5
+     * 
+     * @param $periodId (int): Identification of period
+     *
+     * @return (array): Array containing the results.
+     */
+    public function getPupilListingOp5($periodId, $filter)
+    {
+        $MIOLO = MIOLO::getInstance();
+
+        $db = $this->getDatabase();
+
+        $args = array($periodId, $periodId);
+
+        $sql = '    SELECT AC.courseId,
+                           AC.courseVersion,
+                           AE.name as courseName,
+                           AC.turnId,
+                           AF.description,
+                           AC.unitId,
+                           AG.description,
+                           AK.curricularComponentId,
+                           AK.name as curricularComponentName,
+                           count(AA.contractId)
+                      FROM acdEnroll AA
+                INNER JOIN acdGroup AB
+                        ON (AB.groupId = AA.groupId)
+                INNER JOIN acdCurriculum AC
+                        ON (AA.curriculumId = AC.curriculumId)
+                INNER JOIN acdLearningPeriod AD
+                        ON (AD.learningPeriodId = AB.learningPeriodId)
+                INNER JOIN acdCourse AE
+                        ON (AE.courseId = AC.courseId)
+                INNER JOIN basTurn AF
+                        ON (AF.turnId = AC.turnId)
+                INNER JOIN basUnit AG
+                        ON (AG.unitId = AC.unitId)
+                INNER JOIN acdScheduleLearningPeriod AI
+                        ON (AI.learningPeriodId = AB.learningPeriodId)
+                INNER JOIN acdSchedule AH
+                        ON (AH.groupId = AB.groupId AND
+                            AI.scheduleLearningPeriodId = AH.scheduleLearningPeriodId)
+                INNER JOIN basWeekDay AJ
+                        ON (AJ.weekDayId = AH.weekDayId)
+                INNER JOIN acdCurricularComponent AK
+                        ON (AK.curricularComponentId = AC.curricularComponentId)
+                INNER JOIN acdContract AL
+                        ON (AL.contractId    = AA.contractId AND
+                            AL.courseId      = AC.courseId   AND
+                            AL.courseVersion = AC.courseVersion)
+                     WHERE AD.periodId = \''.$periodId.'\'
+                       AND AA.statusId NOT IN ('.ENROLL_STATUS_CANCELLED.')
+                       AND getContractDisactivationDate(AL.contractId) IS NULL
+                       AND AL.isListener = \''.DB_FALSE.'\'';
+
+//         $sql = "SELECT courseId,
+//                    courseVersion,
+//                    shortName,
+//                    turnId,
+//                    turnDescription,
+//                    unitId,
+//                    unitDescription,
+//                    curricularComponentId,
+//                    name,
+//                    count(personId)
+//               FROM 
+//                    (SELECT C.courseId,
+//                               C.courseVersion,
+//                               D.shortName,
+//                               C.turnId,
+//                               E.description as turnDescription,
+//                               C.unitId,
+//                               F.description as unitDescription,
+//                               I.curricularComponentId,
+//                               I.name,
+//                               C.personId
+//                          FROM acdEnroll A
+//                 INNER JOIN acdGroup B
+//                            ON (A.groupId = B.groupId)
+//                 INNER JOIN acdContract C
+//                            ON (A.contractId = C.contractId)
+//                 INNER JOIN acdCourse D
+//                            ON (C.courseId = D.courseId)
+//                  LEFT JOIN basTurn E
+//                            ON (C.turnId = E.turnId)
+//                  LEFT JOIN basUnit F
+//                            ON (C.unitId = F.unitId)
+//                 INNER JOIN acdLearningPeriod G
+//                         ON (B.learningPeriodId = G.learningPeriodId AND G.periodId = ?)
+//                 INNER JOIN acdCurriculum H
+//                         ON (B.curriculumId = H.curriculumId)
+//                 INNER JOIN acdCurricularComponent I
+//                         ON (H.curricularComponentId = I.curricularComponentId AND
+//                             H.curricularComponentVersion = I.curricularComponentVersion)
+//                      WHERE G.periodId = ? AND
+//                            A.statusId NOT IN (" . ENROLL_STATUS_CANCELLED . ")";
+
+        if ( is_array($filter) )
+        {
+            $sql .= ' AND AE.formationLevelId IN (' . implode(',', $filter) . ')';
+        }
+        else
+        {
+            if (strlen((string)$filter) > 0)
+            {
+                $sql .= ' AND AE.formationLevelId = \'' . $filter . '\'';
+            }
+        }
+
+        $sql .= "  GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9
+                   ORDER BY 1, 2, 4, 6, 9";
+
+        $result = $db->query($sql);
+
+        return $result;
+    }
+
+    /**
+     *  Return data to pupil listing options by option 6
+     * 
+     * @param $periodId (int): Identification of period
+     *
+     * @return (array): Array containing the results.
+     */
+    public function getPupilListingOp6($periodId, $filter)
+    {
+        $MIOLO = MIOLO::getInstance();
+
+        //$args = array($periodId, $periodId);
+
+        $db = $this->getDatabase();
+
+        $sql = '     SELECT AC.courseId,
+                            AC.courseVersion,
+                            AE.name as courseName,
+                            AC.turnId,
+                            AF.description,
+                            AC.unitId,
+                            AG.description,
+                            AH.weekDayId,
+                            AJ.description,
+                            AK.curricularComponentId,
+                            AK.name as curricularComponentName,
+                           count(AA.contractId)
+                      FROM acdEnroll AA
+                INNER JOIN acdGroup AB
+                        ON (AB.groupId = AA.groupId)
+                INNER JOIN acdCurriculum AC
+                        ON (AC.curriculumId = AB.curriculumId)
+                INNER JOIN acdLearningPeriod AD
+                        ON (AD.learningPeriodId = AB.learningPeriodId)
+                INNER JOIN acdCourse AE
+                        ON (AE.courseId = AC.courseId)
+                INNER JOIN basTurn AF
+                        ON (AF.turnId = AC.turnId)
+                INNER JOIN basUnit AG
+                        ON (AG.unitId = AC.unitId)
+                INNER JOIN acdScheduleLearningPeriod AI
+                        ON (AI.learningPeriodId = AB.learningPeriodId)
+                INNER JOIN acdSchedule AH
+                        ON (AH.groupId = AB.groupId AND
+                            AI.scheduleLearningPeriodId = AH.scheduleLearningPeriodId)
+                INNER JOIN basWeekDay AJ
+                        ON (AJ.weekDayId = AH.weekDayId)
+                INNER JOIN acdCurricularComponent AK
+                        ON (AK.curricularComponentId = AC.curricularComponentId)
+                     WHERE AD.periodId = \''.$periodId.'\'
+                       AND AA.statusId NOT IN ('.ENROLL_STATUS_CANCELLED.')';
+
+        if ( is_array($filter) )
+        {
+            $sql .= ' AND AE.formationLevelId IN (' . implode(',', $filter) . ')';
+        }
+        else
+        {
+            if (strlen((string)$filter) > 0)
+            {
+                $sql .= ' AND AE.formationLevelId = \'' . $filter . '\'';
+            }
+        }
+
+        $sql .= ' GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11
+                  ORDER BY 8, 3, 6, 4, 10';
+
+          $result = $db->query($sql);
+
+        return $result;
+    }
+
+    /**
+     *  Return data to pupil listing options by option 7
+     * 
+     * @param $periodId (int): Identification of period
+     *
+     * @return (array): Array containing the results.
+     */
+    public function getPupilListingOp7($periodId, $filter)
+    {
+        $MIOLO = MIOLO::getInstance();
+
+        $db = $this->getDatabase();
+/*
+        $sql = "SELECT D.courseId,
+                       D.courseVersion,
+                       getCourseShortName(D.courseId) as shortName,
+                       D.turnId,
+                       getTurnDescription(D.turnId) as turnDescription,
+                       D.unitId,
+                       getUnitDescription(D.unitId) as unitDescription,
+                       sum(M.calouros),
+                       sum(M.veteranos)
+                  FROM (
+                        SELECT DISTINCT A.contractId,
+                                    CASE WHEN C.stateContractId IS NOT NULL THEN 1 ELSE 0 END as calouros,
+                                    CASE WHEN C.stateContractId IS NOT NULL THEN 0 ELSE 1 END as veteranos
+                          FROM acdEnroll A
+                    INNER JOIN acdGroup B
+                            ON ( A.groupId = B.groupId )
+                     LEFT JOIN acdMovementContract C
+                            ON (     A.contractId = C.contractId 
+                                 AND C.stateContractId IN ( SELECT stateContractId
+                                                              FROM acdStateContract
+                                                             WHERE inouttransition = 'I' )
+                                 AND C.learningPeriodId = B.learningPeriodId )
+                         WHERE B.learningPeriodId IN ( SELECT learningPeriodId
+                                                         FROM acdLearningPeriod
+                                                        WHERE periodId = ? )
+                           AND A.statusId NOT IN (" . ENROLL_STATUS_CANCELLED . "," . ENROLL_STATUS_DESISTING . ")
+                    ) AS M
+            INNER JOIN acdContract D
+                    ON ( M.contractId = D.contractId )
+            INNER JOIN acdCourseOccurrence E
+                    ON (     D.courseId      = E.courseId 
+                         AND D.courseVersion = E.courseVersion 
+                         AND D.unitId = E.unitId
+                         AND D.turnId = E.turnId )
+            INNER JOIN acdcourse F
+                    ON (D.courseId = F.courseId)
+                 WHERE getContractDisactivationDate(D.contractId) IS NULL
+                   AND D.isListener = '" . DB_FALSE . "'";
+
+        if ( is_array($filter) )
+        {
+            $sql .= ' AND F.formationLevelId IN (' . implode(',', $filter) . ')';
+        }
+        else
+        {
+            if (strlen((string)$filter) > 0)
+            {
+                $sql .= ' AND F.formationLevelId = \'' . $filter . '\'';
+            }
+        }
+        
+        $sql .= " GROUP BY 1,2,3,4,5,6,7
+                  ORDER BY 2 DESC,1";
+
+        $args = array($periodId);
+        $result = $db->query(SAGU::prepare($sql, $args));
+*/
+
+        $sql = 'SELECT A.courseId,
+                       getCourseShortName(A.courseId) as courseName,
+                       A.courseVersion,
+                       A.unitId,
+                       getUnitDescription(A.unitId) as unitDescription,
+                       A.turnId,
+                       getTurnDescription(A.turnId) as turnDescription
+                  FROM acdCourseOccurrence A
+            INNER JOIN acdCourse B
+                    ON ( A.courseId = B.courseId )';
+
+        if ( is_array($filter) )
+        {
+            $sql .= ' WHERE B.formationLevelId IN (' . implode(',', $filter) . ')';
+        }
+        else
+        {
+            if (strlen((string)$filter) > 0)
+            {
+                $sql .= ' WHERE B.formationLevelId = \'' . $filter . '\'';
+            }
+        }
+
+        $sql .= ' ORDER BY A.unitId, A.courseId, A.courseVersion DESC, A.turnId';
+        $courses = $db->query($sql);
+
+        if ( count($courses)>0 )
+        {
+            foreach ( $courses as $row )
+            {
+
+                list ( $courseId, $courseName, $courseVersion, $unitId,
+                       $unitDescription, $turnId, $turnDescription ) = $row;
+
+                //pega os calouros do curso
+                $sql = "SELECT DISTINCT A.contractId
+                          FROM acdContract A
+                    INNER JOIN acdMovementContract B
+                            ON (     A.contractId = B.contractId
+ -- deve ter um registro de entrada na instituicao
+                                 AND B.stateContractId IN ( SELECT stateContractId
+                                                              FROM acdStateContract
+                                                             WHERE inouttransition = '" . DB_IN . "' )
+ -- não deve ter um registro de saída da instituicao
+                                 AND B.stateContractId NOT IN ( SELECT stateContractId
+                                                                  FROM acdStateContract
+                                                                 WHERE inouttransition = '" . DB_OUT . "' )
+ -- não deve ter um registro de tranferência para outro curso
+                                 AND B.stateContractId NOT IN ( '" . INTERNAL_TRANSFER_TO_COURSE_FIELD_ID . "' )
+                                 AND B.learningPeriodId IN ( SELECT learningperiodId 
+                                                               FROM acdLearningPeriod
+                                                              WHERE periodId = ? ) )
+                         WHERE A.isListener    = '" . DB_FALSE . "'
+                           AND A.courseId      = ?
+                           AND A.courseVersion = ?
+                           AND A.turnId        = ?
+                           AND A.unitId        = ?";
+                $args = array($periodId, $courseId, $courseVersion, $turnId, $unitId);
+                $resC = $db->query(SAGU::prepare($sql, $args));
+                
+                if ( count($resC)>0 )
+                {
+                    foreach ( $resC as $cal )
+                    {
+                        $contractC[] = $cal[0];
+                    }
+                    unset($resC);
+                    $resC[0][0] = count($contractC);
+                }
+
+                //pega os veteranos do curso
+                $sql = "SELECT count(DISTINCT A.contractId)
+                          FROM acdContract A
+                    INNER JOIN acdMovementContract B
+                            ON (     A.contractId = B.contractId
+ -- não deve ter um registro de saída da instituicao
+                                 AND B.stateContractId NOT IN ( SELECT stateContractId
+                                                                  FROM acdStateContract
+                                                                 WHERE inouttransition = '" . DB_OUT . "' )
+ -- não deve ter um registro de tranferência para outro curso
+                                 AND B.stateContractId NOT IN ( '" . INTERNAL_TRANSFER_TO_COURSE_FIELD_ID . "' )
+                                 AND B.learningPeriodId IN ( SELECT learningperiodId 
+                                                               FROM acdLearningPeriod
+                                                              WHERE periodId = ? ) )
+                         WHERE A.isListener    = '" . DB_FALSE . "'
+                           AND A.courseId      = ?
+                           AND A.courseVersion = ?
+                           AND A.turnId        = ?
+                           AND A.unitId        = ?";
+                if ( count($contractC)>0 )
+                {
+                    $sql .= "           AND A.contractId NOT IN (" . implode(',', $contractC) . ")";
+                }
+                $args = array($periodId, $courseId, $courseVersion, $turnId, $unitId);
+                $resV = $db->query(SAGU::prepare($sql, $args));
+                unset($contractC);
+
+                if ( count($resC[0][0])>0 || count($resV[0][0])>0 )
+                {
+
+                    $x = isset($x) ? $x : 0;
+                    $result[$x][0] = $courseId;
+                    $result[$x][1] = $courseVersion;
+                    $result[$x][2] = $courseName;
+                    $result[$x][3] = $turnId;
+                    $result[$x][4] = $turnDescription;
+                    $result[$x][5] = $unitId;
+                    $result[$x][6] = $unitDescription;
+                    $result[$x][7] = $resC[0][0] > 0 ? $resC[0][0] : 0;
+                    $result[$x][8] = $resV[0][0] > 0 ? $resV[0][0] : 0;
+                    $result[$x][9] = $resC[0][0] + $resV[0][0];
+                    $x++;
+                }
+            }
+        }
+
+        return $result;
+    }
+
+    /**
+     *  Return data to pupil listing options by option 8
+     * 
+     * @param $periodId (int): Identification of period
+     *
+     * @return (array): Array containing the results.
+     */
+    public function getPupilListingOp8($periodId, $filter)
+    {
+        $MIOLO = MIOLO::getInstance();
+
+        $args = array($periodId, $periodId);
+
+        $db = $this->getDatabase();
+
+//         $sql = "SELECT  courseId, 
+//                         courseVersion, 
+//                         shortName, 
+//                         turnId, 
+//                         unitId, 
+//                         unitDescription, 
+//                         stateContractId, 
+//                         stateDescription, 
+//                         count(contractId) 
+//                    FROM 
+//                         (SELECT B.courseId, 
+//                                 B.courseVersion, 
+//                                 C.shortName, 
+//                                 B.turnId, 
+//                                 B.unitId, 
+//                                 D.description as unitDescription, 
+//                                 A.stateContractId, 
+//                                 E.description as stateDescription, 
+//                                 A.contractId 
+//                            FROM acdmovementcontract A 
+//                      INNER JOIN acdcontract B 
+//                              ON (A.contractId = B.contractId) 
+//                      INNER JOIN acdcourse C 
+//                              ON (B.courseId = C.courseId) 
+//                      INNER JOIN basUnit D 
+//                              ON (B.unitId = D.unitId) 
+//                      INNER JOIN acdstatecontract E 
+//                              ON (A.stateContractId = E.stateContractId) 
+//                      INNER JOIN acdlearningperiod F 
+//                              ON (A.learningPeriodId = F.learningPeriodId AND F.periodId = ?) 
+//                           WHERE F.periodId = ? ";
+
+        $sql = '         SELECT XA.courseId,
+                                XA.courseVersion,
+                                XA.shortName,
+                                XA.turnId,
+                                getTurnDescription(XA.turnId) as turnDescription,
+                                XA.unitId,
+                                XA.description,
+                                XA.stateContractToRules,
+                                XC.description,
+                                count(XA.stateContractToRules)
+                          FROM (
+                                 SELECT  AB.courseId,
+                                         AB.courseVersion,
+                                         AF.shortName,
+                                         AB.turnId,
+                                         AB.unitId,
+                                         AG.description,
+                                         getStatesContractFromContractToEnrollBookRules(AB.contractId, \''.$periodId.'\') as stateContractToRules--,
+                                    FROM acdMovementContract AA
+                              INNER JOIN acdContract AB
+                                      ON (AA.contractId = AB.contractId)
+                         INNER JOIN ONLY basPhysicalPerson AC
+                                      ON (AC.personId = AB.personId)
+                              INNER JOIN acdLearningPeriod AE
+                                      ON (AE.courseId      = AB.courseId AND
+                                          AE.courseVersion = AB.courseVersion AND
+                                          AE.unitId        = AB.unitId AND
+                                          AE.turnId        = AB.turnId)
+                              INNER JOIN acdCourse AF
+                                      ON (AF.courseId = AB.courseId)
+                              INNER JOIN basUnit AG
+                                      ON (AG.unitId = AB.unitId)
+                                   WHERE AE.periodId = \''.$periodId.'\'';
+
+        if ( is_array($filter) )
+        {
+            $sql .= ' AND AF.formationLevelId IN (' . implode(',', $filter) . ')';
+        }
+        else
+        {
+            if (strlen((string)$filter) > 0)
+            {
+                $sql .= ' AND AF.formationLevelId = \'' . $filter . '\'';
+            }
+        }
+
+        $sql .= '                    AND AA.contractId = ( SELECT DISTINCT CA.contractId
+                                                                      FROM acdEnroll CA
+                                                                INNER JOIN acdGroup CB
+                                                                        ON (CB.groupId = CA.groupId)
+                                                                INNER JOIN acdContract CC
+                                                                        ON (CC.contractId = CA.contractId)
+                                                                     WHERE CB.learningPeriodId =  AE.learningPeriodId
+                                                                       AND CC.isListener = \''.DB_FALSE.'\'
+                                                                       AND CA.statusId NOT IN ('.ENROLL_STATUS_CANCELLED.')
+                                                                       AND CA.contractId = AB.contractId)
+                                     AND AA.stateTime BETWEEN AE.beginDate AND AE.endDate
+                                ORDER BY 1,2,4,5,7
+                               ) AS XA, 
+                                    acdStateEnrollBookRules XB, 
+                                    acdStateEnrollBook XC
+                         WHERE XA.stateContractToRules     = XB.stateIdRules
+                               AND XC.stateEnrollBookId    = XB.stateEnrollBookId
+                      GROUP BY 1,2,3,4,5,6,7,8,9
+                      ORDER BY 1, 2 DESC, 5';
+
+        $result = $db->query(/*SAGU::prepare(*/$sql/*, $args)*/);
+
+        return $result;
+    }
+
+    /**
+     *  Return data to pupil listing options by option 8
+     * 
+     * @param $periodId (int): Identification of period
+     *
+     * @return (array): Array containing the results.
+     */
+    public function getPupilListingOp9($periodId, $filter)
+    {
+        set_time_limit(0);
+
+        $MIOLO = MIOLO::getInstance();
+        
+        $args = array($periodId);
+        
+        $db = $this->getDatabase();
+        
+        $sql = "SELECT DISTINCT D.courseId,
+                                D.courseVersion,
+                                E.shortName as courseName,
+                                D.turnId,
+                                F.description as turnDescription,
+                                D.unitId,
+                                G.description as unitDescription,
+                                A.groupId
+                           FROM acdEnroll A
+                     INNER JOIN acdGroup B
+                             ON (B.groupId = A.groupId)
+                     INNER JOIN acdLearningPeriod C
+                             ON (C.learningPeriodId = B.learningPeriodId)
+                     INNER JOIN acdContract D
+                             ON (D.contractId = A.contractId)
+                     INNER JOIN acdCourse E
+                             ON (E.courseId = D.courseId)
+                     INNER JOIN basTurn F
+                             ON (F.turnId = D.turnId)
+                     INNER JOIN basUnit G
+                             ON (G.unitId = D.unitId)
+                          WHERE C.periodId = ?
+                            AND A.statusId NOT IN (" . ENROLL_STATUS_CANCELLED . ", " . ENROLL_STATUS_DESISTING . ")";
+        
+        if ( is_array($filter) )
+        {
+            $sql .= ' AND E.formationLevelId IN (' . implode(',', $filter) . ')';
+        }
+        else
+        {
+            if (strlen((string)$filter) > 0)
+            {
+                $sql .= ' AND E.formationLevelId = \'' . $filter . '\'';
+            }
+        }
+        
+        $sql .= ' ORDER BY D.courseId,
+                           D.courseVersion DESC,
+                           4,6,8';
+
+        $result1 = $db->query(SAGU::prepare($sql, $args));
+
+        if ( count($result1) > 0 )
+        {
+            for ($i = 0; $i < count($result1); $i++)
+            {
+                list   ($courseId,                  //0
+                        $courseVersion,             //1
+                        $courseName,                //2
+                        $turnId,                    //3
+                        $turnDescription,           //4
+                        $unitId,                    //5
+                        $unitDescription,           //6
+                        $groupId                    //7
+                       ) = $result1[$i];
+
+                $sql = 'SELECT B.curricularComponentId,
+                               B.curricularComponentVersion,
+                               C.name as curricularComponentName
+                          FROM acdGroup A
+                    INNER JOIN acdCurriculum B
+                            ON (B.curriculumId = A.curriculumId)
+                    INNER JOIN acdCurricularComponent C
+                            ON (C.curricularComponentId = B.curricularComponentId AND
+                                C.curricularComponentVersion = B.curricularComponentVersion)
+                         WHERE A.groupId = ?';
+                         
+                $currComp = $db->query(SAGU::prepare($sql, $groupId));
+                
+                $sql = 'SELECT A.scheduleId,
+                               A.scheduleLearningPeriodId,
+                               A.weekDayId,
+                               C.shortDescription,
+                               D.turnId,
+                               D.shortDescription,
+                               E.unitId,
+                               E.description
+                          FROM acdSchedule A
+                    INNER JOIN acdScheduleLearningPeriod B
+                            ON (B.scheduleLearningPeriodId = A.scheduleLearningPeriodId)
+                    INNER JOIN basWeekDay C
+                            ON (C.weekDayId = A.weekDayId)
+                    INNER JOIN basTurn D
+                            ON (D.turnId = B.turnId)
+                    INNER JOIN basUnit E
+                            ON (E.unitId = A.unitId)
+                         WHERE A.groupId = ?
+                      ORDER BY E.unitId, A.weekDayId, D.turnId';
+                      
+                $groupData = $db->query(SAGU::prepare($sql, $groupId));
+                
+                if ( count($groupData) > 0 )
+                {
+                    foreach ( $groupData as $gd )
+                    {
+                        if ( strlen((string)$schedule) > 0 )
+                        {
+                            $schedule .= '/' . $gd[3] . '-' . $gd[5];
+                        }
+                        else
+                        {
+                            $schedule = $gd[3] . '-' . $gd[5];
+                        }
+                        
+                        $sql = 'SELECT A.professorId,
+                                       B.name
+                                  FROM acdScheduleProfessor A
+                       INNER JOIN ONLY basPhysicalPersonProfessor B
+                                    ON (B.personId = A.professorId)
+                                 WHERE A.scheduleId = ?';
+                                 
+                        $professors = $db->query(SAGU::prepare($sql, $gd[0]));
+                        
+                        if ( count($professors) > 0 )
+                        {
+                            foreach ( $professors as $professor )
+                            {
+                                if ((strlen((string)$profs) > 0) && (strstr($profs, $professor[1]) == false))
+                                {
+                                    $profs .= '/' . $professor[1];
+                                }
+                                else
+                                {
+                                    $profs = $professor[1];
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                $sql = 'SELECT count(enrollId)
+                          FROM acdEnroll
+                         WHERE groupId = ?
+                           AND statusId IN (' . implode(',', array(ENROLL_STATUS_ENROLLED, ENROLL_STATUS_APPROVED, ENROLL_STATUS_DESISTING, ENROLL_STATUS_DISAPPROVED_FOR_LACKS, ENROLL_STATUS_DISAPPROVED)) . ')';
+                            
+                $totalEnrolled = $db->query(SAGU::prepare($sql, $groupId));
+                
+                $totalEnrolled = $totalEnrolled[0][0];
+                
+                $sql = 'SELECT count(enrollId)
+                          FROM acdEnroll
+                         WHERE groupId = ?
+                           AND statusId IN (' . ENROLL_STATUS_APPROVED . ')';
+                            
+                $totalApproved = $db->query(SAGU::prepare($sql, $groupId));
+                
+                $totalApproved = $totalApproved[0][0];
+                
+                $sql = 'SELECT count(enrollId)
+                          FROM acdEnroll
+                         WHERE groupId = ?
+                           AND statusId IN (' . implode(',', array(ENROLL_STATUS_DISAPPROVED_FOR_LACKS,  ENROLL_STATUS_DISAPPROVED)) . ')';
+                            
+                $totalDisapproved = $db->query(SAGU::prepare($sql, $groupId));
+                
+                $totalDisapproved = $totalDisapproved[0][0];
+                
+                $sql = 'SELECT count(enrollId)
+                          FROM acdEnroll
+                         WHERE groupId = ?
+                           AND statusId IN (' . ENROLL_STATUS_DESISTING . ')';
+                            
+                $totalDesisting = $db->query(SAGU::prepare($sql, $groupId));
+                
+                $totalDesisting = $totalDesisting[0][0];
+                
+                $sql = 'SELECT count(enrollId)
+                          FROM acdEnroll
+                         WHERE groupId = ?
+                           AND statusId IN (' . ENROLL_STATUS_CANCELLED . ')';
+                
+                $totalCancelled = $db->query(SAGU::prepare($sql, $groupId));
+                
+                $totalCancelled = $totalCancelled[0][0];
+                
+                $label = $courseId . '-' . $courseVersion . '-' . $turnId . '-' . $unitId;
+                $title = $courseId . '(' . $courseVersion . ') - ' . $courseName . ' - ' . $turnDescription . ' - ' . $unitDescription;
+                $data  = array($groupId, $currComp[0][0] . '-' . $currComp[0][1], $currComp[0][2], $schedule, $profs, $totalEnrolled, $totalApproved, $totalDisapproved, $totalDesisting, $totalCancelled);
+                
+                $return[$label]->title  = $title;
+                $return[$label]->data[] = $data;
+                
+                unset($schedule);
+                unset($profs);
+            }
+        }
+        return $return;
+    }
+    
+    function getEnrolledByAge($periodId, $courseId, $unitId, $courseVersion, $turnId)
+    {
+        $MIOLO = MIOLO::getInstance();
+        
+        $db = $this->getDatabase();
+        
+        $args = array($periodId, $periodId, $courseId, $unitId, $courseVersion, $turnId);
+
+        $sql = 'SELECT courseId, 
+                       courseVersion, 
+                       shortName, 
+                       turnId, 
+                       turnDescription, 
+                       unitId, 
+                       unitDescription, 
+                       sex, 
+                       age, 
+                       count(personId) 
+                  FROM ( SELECT C.courseId, 
+                                C.courseVersion, 
+                                C.turnId, 
+                                getTurnDescription(C.turnId) as turnDescription, 
+                                C.unitId, 
+                                getTurnDescription(C.unitId) as unitDescription, 
+                                F.shortName, 
+                                C.personId, 
+                                G.sex, 
+                                getPhysicalPersonAge(C.personId) as age 
+                           FROM acdenroll A 
+                      LEFT JOIN acdgroup B 
+                             ON (A.groupId = B.groupId) 
+                     INNER JOIN acdcontract C 
+                             ON (A.contractId = C.contractId) 
+                     INNER JOIN acdlearningperiod D 
+                             ON (B.learningPeriodId = D.learningPeriodId AND D.periodId = ?) 
+                     INNER JOIN acdcourse F 
+                             ON (C.courseId = F.courseId) 
+                INNER JOIN ONLY basphysicalperson G 
+                             ON (C.personId = G.personId) 
+                          WHERE D.periodId = ?
+                            AND A.statusId NOT IN (' . ENROLL_STATUS_CANCELLED . ')
+                            AND C.courseId = ?
+                            AND C.unitId = ?
+                            AND C.courseVersion = ?
+                            AND C.turnId = ?
+                       GROUP BY C.courseId, 
+                                C.courseVersion, 
+                                F.shortName, 
+                                C.turnId, 
+                                turnDescription, 
+                                C.unitId, 
+                                unitDescription, 
+                                C.personId, 
+                                G.sex) AS A 
+              GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9 
+              ORDER BY age, 
+                       sex';
+
+        $result = $db->query(SAGU::prepare($sql, $args));
+
+        return $result;
+    }
+    
+    function getCourseEnrolledPupils($periodId, $unitId, $courseId, $courseVersion, $turnId)
+    {
+        $MIOLO = MIOLO::getInstance();
+        
+        $db = $this->getDatabase();
+        
+        $args = array($periodId, $periodId, $courseId, $unitId, $courseVersion, $turnId);   
+
+        $sql = '            SELECT    \'1\' as cont,
+                                      C.personId,
+                                      G.name,
+                                      G.email,
+                                      H.name,
+                                      to_char(G.dateBirth, \'' . MASK_DATE . '\'),
+                                      G.residentialPhone,
+                                      G.cellPhone,
+                                      G.workPhone,
+                                      I.content
+                                 FROM acdEnroll A
+                        INNER JOIN acdcontract C
+                                ON (A.contractId = C.contractId)
+                         LEFT JOIN acdgroup B
+                                ON (A.groupId = B.groupId)
+                        INNER JOIN acdlearningperiod D
+                                ON (B.learningPeriodId = D.learningPeriodId AND D.periodId = ?)
+                        INNER JOIN acdcourse F
+                                ON (C.courseId = F.courseId) 
+                   INNER JOIN ONLY basphysicalperson G
+                                ON (C.personId = G.personId)
+                         LEFT JOIN bascity H
+                                ON (G.cityId = H.cityId)
+                         LEFT JOIN basdocument I
+                                ON (G.personId = I.personId AND I.documenttypeid = ' . DEFAULT_DOCUMENT_TYPE_ID_CPF . ')
+                             WHERE D.periodId = ?
+                               AND A.statusId NOT IN (' . ENROLL_STATUS_CANCELLED . ')
+                               AND C.courseId = ?
+                               AND C.unitId   = ?
+                               AND C.courseVersion = ?
+                               AND C.turnId = ?
+                               AND C.isListener = \'' . DB_FALSE . '\'
+                          GROUP BY 1,2,3,4,5,6,7,8,9,10
+                          ORDER BY 3';
+
+        $result = $db->query(SAGU::prepare($sql, $args));
+
+        if ( count($result) > 0 )
+        {
+            $x = 0;
+            foreach ( $result as $row )
+            {
+                $result[$x++][0] = $x;
+            }
+        }
+
+        return $result;
+    }
+
+    function getCourseNotEnrolledPupils($periodId, $unitId, $courseId, $courseVersion, $turnId)
+    {
+        $MIOLO = MIOLO::getInstance();
+        
+        $db = $this->getDatabase();
+        
+        //$args = array($periodId, $periodId, $courseId, $unitId, $courseVersion, $turnId);   
+        
+        $sql = "            SELECT A.courseId,
+                                   E.learningPeriodId,
+                                   A.personId,
+                                   B.name,
+                                   B.email,
+                                   C.name,
+                                   to_char(B.dateBirth, '" . MASK_DATE . "'),
+                                   B.residentialPhone,
+                                   B.cellPhone,
+                                   B.workPhone,
+                                   D.content
+                              FROM acdcontract A
+                   INNER JOIN ONLY basphysicalperson B
+                                ON (A.personId = B.personId)
+                         LEFT JOIN bascity C
+                                ON (B.cityId = C.cityId)
+                         LEFT JOIN basdocument D
+                                ON (B.personId = D.personId AND D.documenttypeid = " . DEFAULT_DOCUMENT_TYPE_ID_CPF . ")
+                        INNER JOIN acdMovementContract E 
+                                ON (A.contractId = E.contractId)
+                         LEFT JOIN acdlearningperiod F
+                                ON (E.learningPeriodId = F.learningPeriodId)
+                             WHERE A.courseId = " . $courseId . "
+                               AND A.courseVersion = " . $courseVersion . "
+                               AND A.turnId = " . $turnId . "
+                               AND A.unitId = " . $unitId ."
+                               AND F.periodId = (SELECT A.periodId
+                                                   FROM acdLearningPeriod A,
+                                                        acdPeriod B
+                                                  WHERE A.periodId = B.periodId
+                                                    AND A.learningPeriodId = ( SELECT previousLearningPeriodId
+                                                                                 FROM acdLearningPeriod
+                                                                                WHERE courseId = " . $courseId . "
+                                                                                  AND courseVersion = " . $courseVersion . "
+                                                                                  AND turnId = " . $turnId . "
+                                                                                  AND unitId = " . $unitId . "
+                                                                                  AND periodId = '" . $periodId . "'
+                                                                                LIMIT 1 ))
+                               AND E.statecontractid NOT IN (" . CONTRACT_STATUSCONTRACTID_OUT . ")
+                               AND A.contractId NOT IN (SELECT A.contractId
+                                                          FROM (SELECT A.contractId, A.groupId FROM acdenroll A) A
+                                                     LEFT JOIN (SELECT groupId, learningPeriodId FROM acdgroup) B
+                                                            ON (A.groupId = B.groupId)
+                                                     LEFT JOIN (SELECT D.contractId, D.courseId, D.courseVersion, D.turnId, D.unitId FROM 
+acdcontract D) D
+                                                            ON (A.contractId = D.contractId)
+                                                     LEFT JOIN (SELECT learningPeriodId, periodId FROM acdlearningperiod) C
+                                                            ON (B.learningPeriodId = C.learningPeriodId AND C.periodId = '" . $periodId . "')
+                                                         WHERE D.courseId = " . $courseId . "
+                                                           AND D.courseVersion = " . $courseVersion . "
+                                                           AND D.turnId = " . $turnId . "
+                                                           AND D.unitId = " . $unitId . "
+                                                           AND C.periodId = '" . $periodId . "'
+                                                      GROUP BY 1)
+                          GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11
+                          ORDER BY 4";
+
+        $result = $db->query($sql);
+        
+        return $result;
+    }
+
+    public function getCoursePupils($courseId, $courseVersion, $turnId, $unitId)
+    {
+        $MIOLO = MIOLO::getInstance();
+        
+        $db = $this->getDatabase();
+        
+        $args = array($courseId, $courseVersion, $turnId, $unitId);
+        
+        $sql = "            SELECT A.personId,
+                                      G.name,
+                                      G.email,
+                                      H.name,
+                                      to_char(G.dateBirth, '" . MASK_DATE . "'),
+                                      G.residentialPhone,
+                                      G.cellPhone,
+                                      G.workPhone,
+                                      I.content
+                                 FROM acdcontract A
+                        INNER JOIN acdCourse F
+                                ON (A.courseId = F.courseId) 
+                   INNER JOIN ONLY basphysicalperson G
+                                ON (A.personId = G.personId)
+                         LEFT JOIN bascity H
+                                ON (G.cityId = H.cityId)
+                         LEFT JOIN basdocument I
+                                ON (G.personId = I.personId AND I.documenttypeid = " . DEFAULT_DOCUMENT_TYPE_ID_CPF . ")
+                             WHERE A.courseId = ?
+                               AND A.courseVersion = ?
+                               AND A.turnId = ?
+                               AND A.unitId = ?
+                          GROUP BY 1,2,3,4,5,6,7,8,9
+                          ORDER BY 2";
+
+        $result = $db->query(SAGU::prepare($sql, $args));
+
+        return $result;
+    }
+
+    public function getNotEnrolledPupils($periodId, $unitId, $courseId, $courseVersion, $turnId)
+    {
+        $MIOLO = MIOLO::getInstance();
+
+        $db = $this->getDatabase();
+
+        $sql = ' SELECT DISTINCT \'\',
+                                 \'\',
+                                 E.personId,
+                                 E.name,
+                                 E.email,
+                                 F.name as cityName,
+                                 E.dateBirth,
+                                 E.residentialPhone,
+                                 E.cellPhone,
+                                 E.workPhone
+                            FROM acdEnroll AA
+                      INNER JOIN acdContract A
+                              ON (AA.contractId = A.contractId)
+                      INNER JOIN acdCourse B
+                              ON (B.courseId = A.courseId)
+                 INNER JOIN ONLY basPhysicalPerson E
+                              ON (E.personId = A.personId)
+                      INNER JOIN basCity F
+                              ON (F.cityId = E.cityId)
+                           WHERE A.personId IN 
+                                 (SELECT DISTINCT D.personId
+                                             FROM acdEnroll A
+                                       INNER JOIN acdGroup B
+                                               ON (A.groupId = B.groupId)
+                                       INNER JOIN acdLearningPeriod C
+                                               ON (B.learningPeriodId = C.learningPeriodId)
+                                       INNER JOIN acdContract D
+                                               ON (D.contractId = A.contractId)
+	                                    WHERE C.periodId NOT IN (\''.$periodId.'\') 
+                                              AND A.dateCancellation IS NULL
+                                              AND C.periodId = 
+                                                  (SELECT A.periodId
+                                                     FROM acdLearningPeriod A
+                                                    WHERE A.periodId <> \''.$periodId.'\'
+                                                      AND A.periodId < \''.$periodId.'\'
+                                                 ORDER BY A.periodId DESC LIMIT 1)
+                                              AND D.personId NOT IN 
+                                                  (SELECT DISTINCT D.personId
+                                                              FROM acdEnroll A
+                                                        INNER JOIN acdGroup B
+                                                                ON (A.groupId = B.groupId)
+                                                        INNER JOIN acdLearningPeriod C
+                                                                ON (C.learningPeriodId = B.learningPeriodId)
+                                                        INNER JOIN acdContract D
+                                                                ON (D.contractId = A.contractId)
+                                                             WHERE C.periodId = \''.$periodId.'\'
+                                                               AND D.courseId = \''.$courseId.'\'
+                                                               AND D.courseVersion = \''.$courseVersion.'\'
+                                                               AND D.unitId = \''.$unitId.'\'
+                                                               AND D.turnId = \''.$turnId.'\'
+                                                               AND getContractState(D.contractId) NOT IN ('.CONTRACT_STATUSCONTRACTID_OUT.', '.STATE_CONTRACT_ID_LOCKED.', '.STATE_CONTRACT_ID_INTERNAL_TRANSFER_TO.')
+                                                          ORDER BY D.personId)
+                                              AND D.courseId = \''.$courseId.'\'
+                                              AND D.courseVersion = \''.$courseVersion.'\'
+                                              AND D.turnId = \''.$turnId.'\'
+                                              AND D.unitId = \''.$unitId.'\'
+                                         ORDER BY D.personId ASC)
+                             AND A.courseId = \''.$courseId.'\'
+                             AND A.courseVersion = \''.$courseVersion.'\'
+                             AND A.turnId = \''.$turnId.'\'
+                             AND A.unitId = \''.$unitId.'\'
+                        ORDER BY E.name';
+
+        $result = $db->query($sql);
+
+        return $result;
+    }
+
+    public function getPupilsSignature($filters)
+    {
+        $MIOLO  = MIOLO::getInstance();
+
+        $options = array();
+
+        if ( is_array($filters->formationLevels) )
+        {
+            foreach ( $filters->formationLevels as $formationLevelId )
+            {
+                $options[] = $formationLevelId;
+            }
+        }
+        else
+        {
+            $options = NULL;
+        }
+
+        $sql    = ' SELECT DISTINCT A.personId,
+                                    H.name as personName
+                               FROM acdContract A
+                         INNER JOIN acdEnroll B
+                                 ON (A.contractId = B.contractId)
+                         INNER JOIN acdGroup D
+                                 ON (B.groupId = D.groupId)
+                         INNER JOIN acdLearningPeriod E
+                                 ON (E.learningPeriodId = D.learningPeriodId)
+                         INNER JOIN acdCurriculum F
+                                 ON (F.curriculumId = D.curriculumId)
+                         INNER JOIN acdCourse G
+                                 ON (G.courseId = F.courseId)
+                    INNER JOIN ONLY basPhysicalPerson H
+                                 ON (H.personId = A.personId)
+                              WHERE getContractDisactivationDate(A.contractId) IS NULL
+                                AND A.isListener = \''.DB_FALSE.'\'
+                                AND B.statusId NOT IN ('.ENROLL_STATUS_CANCELLED.')
+                                AND E.periodId = ?';
+
+        $args = array($filters->periodId);
+
+        if ( is_array($options) )
+        {
+            $sql .= ' AND G.formationLevelId IN ('.implode(",", $options).')';
+            //$args[] = substr($options, 0, (strlen((string)$options)-2));
+        }
+
+        $sql .= ' ORDER BY H.name ASC';
+
+        $db     = $this->getDatabase();
+
+        $result = $db->query(SAGU::prepare($sql, $args));
+
+        return $result;
+    }
+
+
+    public function getCourseCreditsPupils($filters)
+    {
+        $MIOLO  = MIOLO::getInstance();
+
+        $db     = $this->getDatabase();
+
+        $sqlCourse = 'SELECT BA.contractId,
+                             SUM(BF.academicCredits)
+                        FROM acdEnroll BA 
+                  INNER JOIN acdGroup BB
+                          ON (BA.groupId = BB.groupId)
+                  INNER JOIN acdLearningPeriod BC
+                          ON (BB.learningPeriodId = BC.learningPeriodId)
+                  INNER JOIN acdContract BD
+                          ON (BD.contractId = BA.contractId)
+                  INNER JOIN acdCurriculum BE
+                          ON (BE.curriculumId = BA.curriculumId)
+                  INNER JOIN acdCurricularComponent BF
+                          ON (BF.curricularComponentId = BE.curricularComponentId)
+                       WHERE BD.courseId      = ?
+                         AND BD.courseVersion = ?
+                         AND BD.unitId        = ?
+                         AND BD.turnId        = ?
+                         AND BC.periodId      = ?
+                         AND BA.dateCancellation IS NULL
+                         AND BA.statusId NOT IN ('.ENROLL_STATUS_CANCELLED.')
+                         AND BE.curriculumTypeId NOT IN ('.ACD_CURRICULUM_TYPE_COMPLEMENTARY_ACTIVITY.', '. ACD_CURRICULUM_TYPE_PROFICIENCY.', '.ACD_CURRICULUM_TYPE_COMPLEMENT_LESSON_HOUR.')
+                    GROUP BY BA.contractId
+                      HAVING SUM(BF.academicCredits) = ?';
+
+        $args = array($filters->courseId,
+                      $filters->courseVersion,
+                      $filters->unitId,
+                      $filters->turnId,
+                      $filters->periodId,
+                      $filters->credits);
+
+        $resultCourse = $db->query(SAGU::prepare($sqlCourse, $args));
+
+        foreach ( $resultCourse as $key => $course )
+        {
+            $contracts[] = $course[0];
+        }
+
+        $sql    = ' SELECT AB.personId,
+                           AB.name as personName,
+                           AC.content,
+                           AB.residentialPhone,
+                           AB.workPhone,
+                           AB.cellPhone
+                      FROM acdContract AA
+           INNER JOIN ONLY basPhysicalPerson AB
+                        ON (AA.personId = AB.personID)
+                INNER JOIN basDocument AC
+                        ON (AC.personId = AB.personId AND
+                            AC.documentTypeId = \''.RG_CODE.'\')
+                     WHERE AA.contractId IN ('.implode(',', $contracts).')
+                  ORDER BY AB.name';
+
+        $result = $db->query($sql);
+
+        return $result;
+    }
+
+
+
+
+
+
+
+
+
+
+}
+?>

@@ -1,0 +1,2723 @@
+<?php
+
+/**
+ * Enroll curricular components form
+ *
+ * @author Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ *
+ * @since
+ * Class created on 13/10/2005
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2005 SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+
+MIOLO::Import('extensions::cpaint.inc.php','cpaint');
+
+/**
+ * Form to manipulate an enroll
+ **/
+class FrmEnrollCurricularComponentsAjax extends MForm
+{
+
+    var $enrollData;
+    var $substitutionList;
+    var $serialEnrollProcess;
+
+    /**
+     * Class constructor
+     **/
+    function __construct()
+    {
+
+        $action = MIOLO::getCurrentAction();
+        $module = MIOLO::getCurrentModule();
+        $MIOLO  = MIOLO::getInstance();
+
+        $session     = $MIOLO->session;
+        $loginUid    = $session->isRegistered('loginUid') ? $session->getValue('loginUid') : null;
+        $loginPasswd = $session->isRegistered('loginPasswd') ? $session->getValue('loginPasswd') : null;
+
+        $this->enrollData          = unserialize(urldecode(stripslashes(MIOLO::_request('enrollData'))));
+        $this->serialEnrollProcess = false;
+        
+        $busCourseVersion = $MIOLO->getBusiness($module, 'BusCourseVersion');
+        
+        if (strlen((string)$this->enrollData->contractId) > 0)
+        {
+            $busContract      = $MIOLO->getBusiness($module, 'BusContract');
+            
+            $contractData = $busContract->getContract($this->enrollData->contractId);
+            
+            $enrollCourseId      = $contractData->courseId;
+            $enrollCourseVersion = $contractData->courseVersion;
+        }
+        elseif (strlen((string)$this->enrollData->classId) > 0)
+        {
+            $busClass  = $MIOLO->getBusiness($module, 'BusClass');
+            
+            $classData = $busClass->getClass($this->enrollData->classId);
+            
+            $busLearningPeriod = $MIOLO->getBusiness($module, 'BusLearningPeriod');
+            
+            $learningPeriodData = $busLearningPeriod->getLearningPeriod($classData->initialLearningPeriodId);
+            
+            $enrollCourseId      = $learningPeriodData->courseId;
+            $enrollCourseVersion = $learningPeriodData->courseVersion;
+        }
+        
+        if ( (strlen((string)$enrollCourseId) > 0) && (strlen((string)$enrollCourseVersion) > 0) )
+        {
+            $courseVersionData = $busCourseVersion->getCourseVersion($enrollCourseId, $enrollCourseVersion);
+            
+            if ( in_array($courseVersionData->courseVersionTypeId, explode(',', str_replace(' ', '', SERIAL_ENROLL_TYPE_IDS) ) ) )
+            {
+                $this->serialEnrollProcess = true;
+            }
+        }
+        
+        parent::__construct(_M('Curricular component selection', $module));
+
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        //$this->eventHandler();
+
+        if ( !( SAGU::authenticate($loginUid, $loginPasswd) || $MIOLO->checkAccess($module, ACD_ENROLL, false, true) ) )
+        {
+            $this->page->mGoto($MIOLO->getActionURL($module, substr($action,0,strrpos($action,':')) . ':enroll'));
+        }
+        
+        if (($f = $this->page->request('cpaint_function')) != "") 
+        {
+            $this->manager->getTheme()->clearContent();
+            $this->$f($this->page->request('cpaint_argument'));
+            $this->page->generateMethod = 'generateAJAX';
+        }
+        else
+        {
+            $this->defineFields();
+            $this->eventHandler();
+        }
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function defineFields()
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $returnTo = MIOLO::_request('returnTo');
+
+        $busDocument = $MIOLO->getBusiness('basic', 'BusDocument');
+        $busClass    = $MIOLO->getBusiness($module, 'BusClass');
+        
+        //Verifica documentos pendentes
+        if ( ($MIOLO->checkAccess($module, ACD_ENROLL, false, true)) && (strlen((string)$this->enrollData->contractId) > 0) )
+        {   
+            $missingDocs = $busDocument->checkMissingDocuments($this->enrollData->contractPersonId, $this->enrollData->contractId);
+        
+            if (count($missingDocs) > 0)
+            {
+                $msg = _M('This pupil has the following missing documents', $module) . ':<br><br><ul>';
+                
+                foreach ($missingDocs as $documentTypeId => $missingDoc)
+                {
+                    $msg .= '<li>' . $missingDoc->documentName . '</li>';
+                }
+                
+                $msg .= '</ul>';
+                $this->addError($msg);
+            }
+            
+            $documentsObs = $busDocument->checkDocumentsObs($this->enrollData->contractPersonId);
+            
+            if ( count($documentsObs) > 0 )
+            {
+                $msg = _M('The pupil has the following observations registered', $module) . ':<br><br>';
+                
+                $msg .= '<table>';
+                
+                foreach ($documentsObs as $obs)
+                {
+                    $msg .= '<tr><td>' . $obs[1] . ':</td><td>' . $obs[2] . '</td></tr>';
+                }
+                
+                $msg .= '</table><br>';
+                
+                $this->addError($msg);
+            }
+        }
+        elseif (!$MIOLO->checkAccess($module, ACD_ENROLL, false, true))
+        {
+            $missingDocs = $busDocument->checkMissingDocuments($this->enrollData->contractPersonId, $this->enrollData->contractId);
+            
+            if ( count($missingDocs) > 0 )
+            {
+                $msg = _M('The documents below need to be delivered', $module) . ':<br><br><ul>';
+                
+                $hasNonBlockingDocs = false;
+                foreach ($missingDocs as $documentTypeId => $missingDoc)
+                {
+                    if ( ! $missingDoc->isBlockEnroll )
+                    {
+                        $hasNonBlockingDocs = true;
+                        $msg .= '<li>' . $missingDoc->documentName . '</li>';
+                    }
+                }
+                $msg .= '</ul>';
+                
+                if ( $hasNonBlockingDocs )
+                {
+                    $this->addError($msg);
+                }
+            }
+        }
+        
+        $busCourseVersion = $MIOLO->getBusiness($module, 'BusCourseVersion');
+        
+        if (strlen((string)$this->enrollData->contractId) > 0)
+        {
+            $courseVersionData = $busCourseVersion->getCourseVersion($this->enrollData->contractCourseId, $this->enrollData->contractCourseVersion);
+        }
+        else
+        {
+            $courseVersionData = $busCourseVersion->getCourseVersion($this->enrollData->classCourseId, $this->enrollData->classCourseVersion);
+        }
+        
+        if ( in_array($courseVersionData->courseVersionTypeId, explode(',', SERIAL_ENROLL_TYPE_IDS)) )
+        {
+            $this->serialEnrollProcess = true;
+        }
+        
+        //Cabeçalho do formulário
+        $fields[] = new MHiddenField('contractId', $this->getFormValue('contractId', $this->enrollData->contractId));
+        $fields[] = new MHiddenField('learningPeriodId', $this->getFormValue('learningPeriodId', $this->enrollData->learningPeriodId));
+        $fields[] = new MHiddenField('limbo', $limbo);
+
+        $business = $MIOLO->getBusiness($module, 'BusLearningPeriod');
+        $learningPeriod = $business->getLearningPeriod($this->enrollData->learningPeriodId);
+        $txtPeriodId = new MTextField('txtPeriodId', $this->getFormValue('txtPeriodId', $learningPeriod->periodId), _M('Period id',$module), FIELD_ID_SIZE);
+        $txtPeriodId->setReadOnly(true);
+
+        if (strlen((string)$this->enrollData->contractId) > 0)
+        {
+            $txtContractId = new MTextField('txtContractId', $this->getFormValue('txtContractId', $this->enrollData->contractId), _M('Contract id',$module), FIELD_ID_SIZE);
+            $txtContractId->setReadOnly(true); 
+           
+            $business = $MIOLO->getBusiness($module, 'BusContract');
+            $contract = $business->getContract($this->enrollData->contractId);
+
+            $txtPersonId = new MTextField('txtPersonId', $this->getFormValue('txtPersonId', $contract->personId), _M('Person id',$module), FIELD_ID_SIZE);
+            $txtPersonId->setReadOnly(true);
+            $txtPersonName = new MTextField('txtPersonName', $this->getFormValue('txtPersonName', $contract->personName), _M('Person name',$module), FIELD_DESCRIPTION_SIZE);
+            $txtPersonName->setReadOnly(true);
+
+            $cntLine1 = new MHContainer('cntLine1', array($txtPeriodId, $txtContractId, $txtPersonId, $txtPersonName));
+            
+            $headerFields[] = $cntLine1;
+            
+            $courseData->courseId        = $contract->courseId;
+            $courseData->courseVersion   = $contract->courseVersion;
+            $courseData->courseName      = $contract->courseName;
+            $courseData->turnDescription = $this->enrollData->turnDescription;
+        }
+
+        if ( $this->serialEnrollProcess )
+        {
+            $classData = $busClass->getClass($this->enrollData->classId);
+            
+            $txtClassId = new MTextField('txtClassId', $this->getFormValue('txtClassId', $this->enrollData->classId), _M('Class id', $module), FIELD_ID_SIZE);
+            $txtClassId->setReadOnly(true);
+            
+            $txtClassName = new MTextField('txtClassName', $this->getFormValue('txtClassName', $this->enrollData->className), _M('Class name', $module), FIELD_DESCRIPTION_SIZE);
+            $txtClassName->setReadOnly(true);
+            
+            $classPeriod = $busClass->getClassPeriod($this->enrollData->classId, $this->enrollData->learningPeriodId);
+            
+            $txtClassPeriod = new MTextField('txtClassPeriod', $classPeriod, _M('Class period', $module), FIELD_ID_SIZE);
+            $txtClassPeriod->setReadOnly(true);
+            
+            if (strlen((string)$this->enrollData->contractId) > 0)
+            {
+                $classFields = array($txtClassId, $txtClassName, $txtClassPeriod);
+            }
+            else
+            {
+                $classFields = array($txtPeriodId, $txtClassId, $txtClassName, $txtClassPeriod);
+            }
+            
+            $cntLineClass = new MHContainer('cntLineClass', $classFields);
+            
+            $headerFields[] = $cntLineClass;
+            
+            $business = $MIOLO->getBusiness($module, 'BusLearningPeriod');
+            
+            $classLearningPeriod = $business->getLearningPeriod($classData->initialLearningPeriodId);
+
+            $courseData->courseId      = $classLearningPeriod->courseId;
+            $courseData->courseVersion = $classLearningPeriod->courseVersion;
+            $courseData->courseName    = $classLearningPeriod->courseName;
+            
+            $this->enrollData->courseId      = $classLearningPeriod->courseId;
+            $this->enrollData->courseVersion = $classLearningPeriod->courseVersion;
+            $this->enrollData->turnId        = $classLearningPeriod->turnId;
+            $this->enrollData->unitId        = $classLearningPeriod->unitId;
+        }
+
+        $txtCourseId = new MTextField('txtCourseId', strlen((string)$contract->courseId) ? $contract->courseId : $courseData->courseId, _M('Course id',$module), FIELD_ID_SIZE);
+        $txtCourseId->setReadOnly(true);
+        $txtCourseVersion = new MTextField('txtCourseVersion', strlen((string)$contract->courseVersion) ? $contract->courseVersion : $courseData->courseVersion, _M('Course version',$module), FIELD_ID_SIZE);
+        $txtCourseVersion->setReadOnly(true);
+        $txtCourseName = new MTextField('txtCourseName', strlen((string)$contract->courseName) ? $contract->courseName : $courseData->courseName, _M('Course name',$module), FIELD_DESCRIPTION_SIZE);
+        $txtCourseName->setReadOnly(true);
+        $txtCourseTurnDescription = new MTextField('txtCourseTurnDescription', strlen((string)$contract->turnDescription) ? $contract->turnDescription : $courseData->turnDescription, _M('Turn',$module), FIELD_DESCRIPTION_SIZE);
+        $txtCourseTurnDescription->setReadOnly(true);
+
+        $cntLine2 = new MHContainer('cntLine2', array($txtCourseId, $txtCourseVersion, $txtCourseName, $txtCourseTurnDescription));
+        
+        $headerFields[] = $cntLine2;
+
+        $cntHeaderInfo = new MBaseGroup('cntHeaderInfo', _M('Enroll details', $module), $headerFields, 'vertical');
+
+        $fields[] = $cntHeaderInfo;
+
+        $selCoursed    = new MSelection('selCoursed', $this->getFormValue('selCoursed', 'f'), _M('Coursed', $module),     SAGU::listYesNo());
+        $selBlocked    = new MSelection('selBlocked', $this->getFormValue('selBlocked', 't'), _M('Blocked', $module),     SAGU::listYesNo());
+        $selNonCoursed = new MSelection('selNonCoursed', $this->getFormValue('selNonCoursed', 'f'), _M('Unavailable', $module), SAGU::listYesNo());
+        $selFree       = new MSelection('selFree', $this->getFormValue('selFree', 't'), _M('Free', $module),        SAGU::listYesNo());
+        $selEnrolled   = new MSelection('selEnrolled', $this->getFormValue('selEnrolled', 't'), _M('Enrolled', $module),    SAGU::listYesNo());
+        $selCoursing   = new MSelection('selCoursing', $this->getFormValue('selCoursing', 't'), _M('Coursing', $module), SAGU::listYesNo());
+
+        $btnLoadCurriculum = new MButton('btnLoadCurriculum', _M('Filter', $module));
+
+        $cntViewOptions = new MBaseGroup('cntViewOptions', _M('Filtering options', $module), array($selCoursed, $selBlocked, $selNonCoursed, $selFree, $selEnrolled, $selCoursing, $btnLoadCurriculum), 'horizontal' );
+
+        $fields[] = $cntViewOptions;
+        
+        //Aqui começam as alterações mais bruscas em relação ao método de matrícula seriada.
+        if ( $this->serialEnrollProcess )
+        {   
+            //Bloco das disciplinas do curriculo do curso
+            if ( ! ($selNonCoursed->value == 't' ||
+                    $selFree->value       == 't' ||
+                    $selBlocked->value    == 't' ||
+                    $selCoursed->value    == 't' ||
+                    $selEnrolled->value   == 't' ||
+                    $selCoursing->value   == 't') )
+            {
+                $this->addError(_M('At least one of the filters must be selected.',$module));
+            }
+            else
+            {
+                $business                    = $MIOLO->getBusiness($module, 'BusEnroll');
+                $businessCurricularComponent = $MIOLO->getBusiness($module, 'BusCurricularComponent');
+                $businessCurriculum          = $MIOLO->getBusiness($module, 'BusCurriculum');
+                
+                //Matrícula seriada individual
+                if (strlen((string)$this->enrollData->contractId) > 0)
+                {
+                    $data = $business->getContractCurriculum($this->enrollData->contractId, $this->enrollData->learningPeriodId);
+                    
+                    $cntSemester = new MVContainer('cntSemester');
+                    
+                    $oldSemester = '';
+                    
+                    if ( count($data) > 0 )
+                    {
+                        $instImage = new MImage('instImage', '', $MIOLO->getActionURL($module, 'html:images:attention.gif'));
+            
+                        $imageDiv = new MDiv('imageDiv', $instImage, null, 'align=center');
+                        $imageDiv->width = '9%';
+                        
+                        $instructionMessage = _M('Clicking on the word beetwen \'[ ]\' you can see entire information about the curricular component. If the status is FREE, UNBLOCKED or ENROLLED, you gonna see the groups you can enroll yourself. If the status is BLOCKED, you gonna see the curricular component conditions. If the status is DEPENDENT, mark the box besides the schedule to be enrolled and dismark it to cancel your enroll.', $module);
+                        
+                        $enrollInstructions = new MText('enrollInstructions', $instructionMessage, 'blue');
+                        $enrollInstructions->width = '90%';
+                        
+                        $hctInstructions = new MHContainer('hctInstructions', array($imageDiv, $enrollInstructions));
+                        
+                        $fields[] = $hctInstructions;
+                        
+                        $fields[] = new MSeparator('<hr>');
+                        foreach ($data as $curriculum)
+                        {
+                            list ( $semester,
+                                   $curricularComponentId,
+                                   $curricularComponentVersion,
+                                   $curricularComponentName,
+                                   $curriculumId,
+                                   $curricularComponentGroupId,
+                                   $curricularComponentGroupElectiveId,
+                                   $curricularComponentTypeId ) = $curriculum;
+
+                            if ($curricularComponentTypeId == CURRICULAR_COMPONENT_TYPE_ELECTIVE)
+                            {
+                                $status = $business->getElectiveCurricularComponentStatus($this->enrollData->contractId, $curricularComponentId, $curricularComponentVersion, $this->enrollData->learningPeriodId, $curriculumId, $curricularComponentGroupElectiveId, $contract->courseId,  $contract->courseVersion);
+                            }
+                            else
+                            {
+                                $status = $business->getCurricularComponentStatus($this->enrollData->contractId, $curricularComponentId, $curricularComponentVersion, $this->enrollData->learningPeriodId, $curriculumId);
+                            }
+
+                            if ( ($status->showGroups || $curricularComponentTypeId == CURRICULAR_COMPONENT_TYPE_ELECTIVE && strlen((string)$curricularComponentGroupElectiveId)>0) )
+                            {
+                                if ( $business->isDependent($this->enrollData->contractId, $curriculumId) )
+                                {
+                                    $ccGroups = $business->getDependentGroups($curricularComponentId, $curricularComponentVersion, $this->enrollData->learningPeriodId, $this->enrollData->classId);
+                                }
+                                else
+                                {
+                                    $ccGroups = $business->getClassCurricularComponentGroups($curricularComponentId, $curricularComponentVersion, $this->enrollData->learningPeriodId, $this->enrollData->classId);
+                                }
+
+                                if ( count($ccGroups) > 0 )
+                                {
+                                    if (!$business->isDependent($this->enrollData->contractId, $curriculumId))
+                                    {
+                                        foreach ($ccGroups as $ccGroup)
+                                        {
+                                            // Se for um array, so adiciona a oferecida se ja nao estiver no array.
+                                            if ( is_array($this->enrollData->groupId) )
+                                            {
+                                                if ( ! in_array($ccGroup[0], $this->enrollData->groupId) )
+                                                {
+                                                    $this->enrollData->groupId[] = $ccGroup[0];
+                                                }
+                                            }
+                                            // Caso contrario, insere normalmente
+                                            else
+                                            {
+                                                $this->enrollData->groupId[] = $ccGroup[0];
+                                            }
+                                        }
+                                    }
+
+                                    $isEnrolled = $business->isEnrolledCurricularComponent($this->enrollData->contractId, $curricularComponentId, $curricularComponentVersion);
+                                    
+                                    if ($isEnrolled)
+                                    {
+                                        $status->text   = _M('ENROLLED', $module);
+                                        $status->color  = CURRICULUM_STATUS_COLOR_ENROLLED;
+                                        $status->status = 'ENROLLED';
+                                    }
+                                }
+                                else
+                                {
+                                    $status->text   = _M('UNAVAILABLE', $module);
+                                    $status->color  = CURRICULUM_STATUS_COLOR_NON_COURSED;
+                                    $status->status = 'NON COURSED';
+                                }
+                            }
+                            
+                            if ( ($status->status == 'NON COURSED' && $selNonCoursed->value == 't') ||
+                                 ($status->status == 'FREE'        && $selFree->value       == 't') ||
+                                 ($status->status == 'BLOCKED'     && $selBlocked->value    == 't') ||
+                                 ($status->status == 'COURSED'     && $selCoursed->value    == 't') ||
+                                 ($status->status == 'ENROLLED'    && $selEnrolled->value   == 't') ||
+                                 ($status->status == 'COURSING'    && $selCoursing->value   == 't') )
+                            {
+                                $hctImage = new MHContainer('hctImage_' . $curriculumId, array(new MText('txtImage_' . $curriculumId, '&nbsp')));
+                                $hctImage->addBoxStyle('width', '5%');
+                                $path     = $MIOLO->getActionURL($module, 'html:images:forward.png');
+
+                                $txtStatus = new MText('txtStatus_' . $curriculumId );
+                                $txtStatus->setBold(true);
+                                $txtStatus->color = $status->color;
+                                $txtStatus->setValue('[ ' . $status->text . ' ]');
+                                $txtStatus->addBoxStyle('width', '20%');
+
+                                $txtCurricularComponentId = new MText('txtCurricularcomponentId_' . $curriculumId, "$curricularComponentId/$curricularComponentVersion");
+                                $txtCurricularComponentId->setWidth(70);
+
+                                $txtCurricularComponentName = new MText('txtCurricularcomponentName_' . $curriculumId, "$curricularComponentName");
+
+                                $divCurriculum   = new MDiv('divCurriculum_' . $curriculumId, '');
+                                $divCurriculumId = $divCurriculum->getId();
+                                
+                                if ( ($status->status == 'ENROLLED') || ($status->status == 'FREE') )
+                                {
+                                    if ($status->showGroups)
+                                    {
+                                        $js = 'freeClick(' . $curriculumId . ',' .  $this->enrollData->learningPeriodId . ',' .  $this->enrollData->contractId . ', 1';
+
+                                        if ( strlen((string)$this->substitutionList[$curriculumId]) > 0 )
+                                        {
+                                            $js .= ',' . $this->substitutionList[$curriculumId];
+                                        }
+
+                                        $js .= ')';
+
+                                        $checkFunctions[$curriculumId] = $js;
+                                    }
+                                    elseif ($status->showElective)
+                                    {
+                                        $js = 'electiveClick(' . $curriculumId . ',' .  $this->enrollData->learningPeriodId . ',' . $this->enrollData->contractId. ')';
+                                    }
+
+                                    if ($status->status == 'ENROLLED')
+                                    {
+                                        $this->page->addJsCode($js);
+                                    }
+
+                                    $image = new MImage('image_' . $curriculumId, '', $path);
+                                    $image->addAttribute('onclick', $js);
+                                    $image->addAttribute('onmouseover','document.body.style.cursor=\'pointer\'');
+                                    $image->addAttribute('onmouseout','document.body.style.cursor=\'auto\'');
+                                    $hctImage->setControls(array($image));
+
+                                    $txtStatus->addAttribute('onclick', $js);
+                                    $txtStatus->addAttribute('onmouseover','document.body.style.cursor=\'pointer\'');
+                                    $txtStatus->addAttribute('onmouseout','document.body.style.cursor=\'auto\'');
+                                }
+                                elseif ( $status->status == 'BLOCKED' )
+                                {
+                                    $js = 'blockedClick(' . $curriculumId . ')';
+                                    $txtStatus->addAttribute('onclick', $js);
+                                    $txtStatus->addAttribute('onmouseover','document.body.style.cursor=\'pointer\'');
+                                    $txtStatus->addAttribute('onmouseout','document.body.style.cursor=\'auto\'');
+                                }
+                                elseif ( $status->status == 'COURSING' )
+                                {
+                                    $js = 'coursingClick(' . $curriculumId . ',' .  $this->enrollData->learningPeriodId . ',' . $this->enrollData->contractId . ')';
+                                    $txtStatus->addAttribute('onclick', $js);
+                                    $txtStatus->addAttribute('onmouseover','document.body.style.cursor=\'pointer\'');
+                                    $txtStatus->addAttribute('onmouseout','document.body.style.cursor=\'auto\'');
+                                }
+                                elseif ( $status->status == 'NON COURSED' )
+                                {
+                                    $js = 'nonCoursedClick(' . $curriculumId . ')';
+                                    $txtStatus->addAttribute('onclick', $js);
+                                    $txtStatus->addAttribute('onmouseover','document.body.style.cursor=\'pointer\'');
+                                    $txtStatus->addAttribute('onmouseout','document.body.style.cursor=\'auto\'');
+                                }
+
+                                $cntCurriculum = new MHContainer('cntCurriculum_' . $curriculumId, array($hctImage, $txtStatus, $txtCurricularComponentId, $txtCurricularComponentName));
+                                
+                                if ( $oldSemester != $semester )
+                                {
+                                    if ( $semester == '0' )
+                                    {
+                                        $txtSemester = new MText('txtSemester_' . $semester, _M('Optional curricular component', $module));
+                                    }
+                                    else
+                                    {
+                                        $txtSemester = new MText('txtSemester_' . $semester, _M('Semester', $module) . ' ' . $semester);
+                                    }
+                                    $txtSemester->setBold(true);
+                                    $cntSemester->addControl($txtSemester);
+                                    $oldSemester = $semester;
+                                }
+                                
+                                $cntSemester->addControl($cntCurriculum);
+                                $cntSemester->addControl($divCurriculum);
+
+                                $jsFunction = "function showInfo_" . $curriculumId . "(result)
+                                               {
+                                                    xGetElementById('" . $divCurriculumId . "').innerHTML     = result;
+                                                    MIOLO_parseAjaxJavascript(result);
+                                                    stopShowLoading();
+                                               }";
+
+                                $this->addJsCode($jsFunction);
+                            }    
+                        }
+                        
+                        $fields[] = $cntSemester;
+                        
+                        $btnNext = new MButton('btnNext', _M('Next', $module) . ' >>');
+                    }
+                    else
+                    {
+                        $instImage = new MImage('instImage', '', $MIOLO->getActionURL($module, 'html:images:error.png'));
+            
+                        $imageDiv = new MDiv('imageDiv', $instImage, null, 'align=center');
+                        $imageDiv->width = '9%';
+                        
+                        $instructionMessage = _M('No curriculum registered for the contract course.', $module);
+                        
+                        $enrollInstructions = new MText('enrollInstructions', $instructionMessage, 'red');
+                        $enrollInstructions->width = '90%';
+                        
+                        $hctInstructions = new MHContainer('hctInstructions', array($imageDiv, $enrollInstructions));
+                        
+                        $fields[] = $hctInstructions;
+                        
+                        $fields[] = new MSeparator('<hr>');
+                    }
+                }
+                //Matricula seriada para turmas
+                else
+                {
+                    $data = $business->getClassGroupsCurricularComponents($this->enrollData->learningPeriodId, $this->enrollData->classId);
+                    if (count($data) > 0)
+                    {
+                        $instImage = new MImage('instImage', '', $MIOLO->getActionURL($module, 'html:images:attention.gif'));
+            
+                        $imageDiv = new MDiv('imageDiv', $instImage, null, 'align=center');
+                        $imageDiv->width = '9%';
+                        
+                        $instructionMessage = _M('Clicking on the word beetwen \'[ ]\' you can see entire information about the curricular component. Click on the ENROLL button to enroll all the class pupils.', $module);
+                        
+                        $enrollInstructions = new MText('enrollInstructions', $instructionMessage, 'blue');
+                        $enrollInstructions->width = '90%';
+                        
+                        $hctInstructions = new MHContainer('hctInstructions', array($imageDiv, $enrollInstructions));
+                        
+                        $fields[] = $hctInstructions;
+
+                        $fields[] = new MSeparator('<hr>');
+
+                        $cntSemester = new MVContainer('cntSemester');
+
+                        $oldSemester = '';
+                        
+                        $this->enrollData->groupId = array();
+                        
+                        foreach ($data as $groupData)
+                        {
+                            list ( $curricularComponentId,
+                                   $curricularComponentVersion,
+                                   $curricularComponentName,
+                                   $curricularComponentGroupId,
+                                   $curriculumId,
+                                   $curricularComponentGroupId,
+                                   $curricularComponentGroupElectiveId,
+                                   $curricularComponentTypeId ) = $groupData;
+
+                            if(($curricularComponentGroupElectiveId != null && $curricularComponentTypeId == CURRICULAR_COMPONENT_TYPE_ELECTIVE ) || $curricularComponentTypeId != CURRICULAR_COMPONENT_TYPE_ELECTIVE)
+                            {
+                            //Captura dados do curriculum da disciplina para o curso especifico
+                            $businessLearningPeriod = $MIOLO->getBusiness($module,'BusLearningPeriod');
+                            $lpPeriod = $businessLearningPeriod->getLearningPeriod($this->enrollData->learningPeriodId);
+                            $filters->courseId                   = $lpPeriod->courseId;
+                            $filters->courseVersion              = $lpPeriod->courseVersion;
+                            $filters->courseTurnId                     = $lpPeriod->turnId;
+                            $filters->courseUnitId                     = $lpPeriod->unitId;
+
+                            $filters->curricularComponentId      = $curricularComponentId;
+                            $filters->curricularComponentVersion = $curricularComponentVersion;
+                            $curriculumData = $businessCurriculum->searchCurriculum($filters);
+                            if (count($curriculumData) > 0)
+                            {
+                                $semester                           = $curriculumData[0][11];
+                                $curriculumId                       = $curriculumData[0][0];
+                                $curricularComponentGroupElectiveId = $curriculumData[0][16];
+                                $curricularComponentTypeId          = $curriculumData[0][24];
+                            }
+
+                            $ccGroups = $business->getClassCurricularComponentGroups($curricularComponentId, $curricularComponentVersion, $this->enrollData->learningPeriodId, $this->enrollData->classId);
+                            if ( count($ccGroups) > 0 )
+                            {
+                                foreach ($ccGroups as $ccGroup)
+                                {
+                                    // Se for um array, so adiciona a oferecida se ja nao estiver no array.
+                                    if ( is_array($this->enrollData->groupId) )
+                                    {
+                                        if ( ! in_array($ccGroup[0], $this->enrollData->groupId) )
+                                        {
+                                            $this->enrollData->groupId[] = $ccGroup[0];
+                                        }
+                                    }
+                                    // Caso contrario, insere normalmente
+                                    else
+                                    {
+                                        $this->enrollData->groupId[] = $ccGroup[0];
+                                    }
+                                }
+                            }
+
+                            $status->status = 'FREE';
+                            $status->color  = CURRICULUM_STATUS_COLOR_UNBLOCKED;
+                            $status->text   = _M('LIBERATED', $module);
+                            $status->showGroups = true;
+                            
+                            $hctImage = new MHContainer('hctImage_' . $curriculumId, array(new MText('txtImage_' . $curriculumId, '&nbsp')));
+                            $hctImage->addBoxStyle('width', '5%');
+                            $path     = $MIOLO->getActionURL($module, 'html:images:forward.png');
+                            
+                            //Constrói os controles (conteúdo da tela)
+                            $txtStatus = new MText('txtStatus_' . $curriculumId );
+                            $txtStatus->setBold(true);
+                            $txtStatus->color = $status->color;
+                            $txtStatus->setValue('[ ' . $status->text . ' ]');
+                            $txtStatus->addBoxStyle('width', '20%');
+                            
+                            $txtCurricularComponentId = new MText('txtCurricularcomponentId_' . $curriculumId, "$curricularComponentId/$curricularComponentVersion");
+                            $txtCurricularComponentId->setWidth(70);
+
+                            $txtCurricularComponentName = new MText('txtCurricularcomponentName_' . $curriculumId, "$curricularComponentName");
+                            
+                            $divCurriculum   = new MDiv('divCurriculum_' . $curriculumId, '');
+                            $divCurriculumId = $divCurriculum->getId();
+                            if ( $curricularComponentTypeId == CURRICULAR_COMPONENT_TYPE_ELECTIVE )
+                            {
+                                $js = 'electiveClassClick(' . $curriculumId . ',' .  $this->enrollData->learningPeriodId . ',\'' .  $this->enrollData->classId . '\', 1)';
+                            }
+                            else
+                            {
+                                $js = 'freeClassClick(' . $curriculumId . ',' .  $this->enrollData->learningPeriodId . ',\'' . $this->enrollData->classId. '\')';
+                            }
+                            
+                            $image = new MImage('image_' . $curriculumId, '', $path);
+                            $image->addAttribute('onclick', $js);
+                            $image->addAttribute('onmouseover','document.body.style.cursor=\'pointer\'');
+                            $image->addAttribute('onmouseout','document.body.style.cursor=\'auto\'');
+                            $hctImage->setControls(array($image));
+                            
+                            $txtStatus->addAttribute('onclick', $js);
+                            $txtStatus->addAttribute('onmouseover','document.body.style.cursor=\'pointer\'');
+                            $txtStatus->addAttribute('onmouseout','document.body.style.cursor=\'auto\'');
+                            
+                            $cntCurriculum = new MHContainer('cntCurriculum_' . $curriculumId, array($hctImage, $txtStatus, $txtCurricularComponentId, $txtCurricularComponentName));
+                            
+                            if ( $oldSemester != $semester )
+                            {
+                                if ( $semester == '0' )
+                                {
+                                    $txtSemester = new MText('txtSemester_' . $semester, _M('Optional curricular component', $module));
+                                }
+                                else
+                                {
+                                    $txtSemester = new MText('txtSemester_' . $semester, _M('Semester', $module) . ' ' . $semester);
+                                }
+                                $txtSemester->setBold(true);
+                                $cntSemester->addControl($txtSemester);
+                                $oldSemester = $semester;
+
+                            }
+                            $cntSemester->addControl($cntCurriculum);
+                            $cntSemester->addControl($divCurriculum);
+                            $jsFunction = "function showInfo_" . $curriculumId . "(result)
+                                            {
+                                                xGetElementById('" . $divCurriculumId . "').innerHTML     = result;
+                                                MIOLO_parseAjaxJavascript(result);
+                                                stopShowLoading();
+                                            }";
+                                            
+                            $this->addJsCode($jsFunction);
+                            
+                        }
+                    }
+                    $fields[] = $cntSemester;
+                    $btnNext = new MButton('btnNext', _M('To enroll', $module));
+                    }
+                    else
+                    {
+                        $instImage = new MImage('instImage', '', $MIOLO->getActionURL($module, 'html:images:error.png'));
+            
+                        $imageDiv = new MDiv('imageDiv', $instImage, null, 'align=center');
+                        $imageDiv->width = '9%';
+                        
+                        $instructionMessage = _M('No groups registered for selected class.', $module);
+                        
+                        $enrollInstructions = new MText('enrollInstructions', $instructionMessage, 'red');
+                        $enrollInstructions->width = '90%';
+                        
+                        $hctInstructions = new MHContainer('hctInstructions', array($imageDiv, $enrollInstructions));
+                        
+                        $fields[] = $hctInstructions;
+                        
+                        $fields[] = new MSeparator('<hr>');
+                    }
+                }
+            }
+        }
+        else //Matricula por créditos individual
+        {
+            $instImage = new MImage('instImage', '', $MIOLO->getActionURL($module, 'html:images:attention.gif'));
+            
+            $imageDiv = new MDiv('imageDiv', $instImage, null, 'align=center');
+            $imageDiv->width = '9%';
+            
+            $instructionMessage = _M('Clicking on the word beetwen \'[ ]\' you can see entire information about the curricular component. If the status is FREE, UNBLOCKED or ENROLLED, you gonna see the groups you can enroll yourself. If the status is BLOCKED, you gonna see the curricular component conditions. Mark the box besides the schedule to be enrolled and dismark it to cancel your enroll.', $module);
+            
+            $enrollInstructions = new MText('enrollInstructions', $instructionMessage, 'blue');
+            $enrollInstructions->width = '90%';
+            
+            $hctInstructions = new MHContainer('hctInstructions', array($imageDiv, $enrollInstructions));
+            
+            $fields[] = $hctInstructions;
+            
+            $fields[] = new MSeparator('<hr>');
+            
+            //Bloco das disciplinas do curriculo do curso
+            if ( ! ($selNonCoursed->value == 't' ||
+                    $selFree->value       == 't' ||
+                    $selBlocked->value    == 't' ||
+                    $selCoursed->value    == 't' ||
+                    $selEnrolled->value   == 't' ||
+                    $selCoursing->value   == 't') )
+            {
+                $this->addError(_M('At least one of the filters must be selected.',$module));
+            }
+            else
+            {
+                $business                    = $MIOLO->getBusiness($module, 'BusEnroll');
+                $businessCurricularComponent = $MIOLO->getBusiness($module, 'BusCurricularComponent');
+                $data                        = $business->getContractCurriculum($this->enrollData->contractId, $this->enrollData->learningPeriodId);
+
+                $cntSemester = new MVContainer('cntSemester');
+
+                $oldSemester = '';
+
+                if (count($data) > 0)
+                {
+                    foreach ( $data as $curriculum )
+                    {
+                        list ( $semester,
+                               $curricularComponentId,
+                               $curricularComponentVersion,
+                               $curricularComponentName,
+                               $curriculumId,
+                               $curricularComponentGroupId,
+                               $curricularComponentGroupElectiveId,
+                               $curricularComponentTypeId ) = $curriculum;
+
+                        if ($curricularComponentTypeId == CURRICULAR_COMPONENT_TYPE_ELECTIVE)
+                        {
+                            $status = $business->getElectiveCurricularComponentStatus($this->enrollData->contractId, $curricularComponentId, $curricularComponentVersion, $this->enrollData->learningPeriodId, $curriculumId, $curricularComponentGroupElectiveId, $contract->courseId,  $contract->courseVersion);
+                        }
+                        else
+                        {
+                            $status = $business->getCurricularComponentStatus($this->enrollData->contractId, $curricularComponentId, $curricularComponentVersion, $this->enrollData->learningPeriodId, $curriculumId);
+                        }                   
+
+                        if ( ($status->status != 'COURSED') && ($status->status != 'COURSING') )
+                        {
+                            $substituted = $business->checkIfSubstituted($this->enrollData->contractId, $this->enrollData->learningPeriodId, $curriculumId);
+                            
+                            if ( $substituted->curricularComponentId && $substituted->curricularComponentVersion )
+                            {
+                                $curricularComponent = $businessCurricularComponent->getCurricularComponent($substituted->curricularComponentId, $substituted->curricularComponentVersion);
+                                $curricularComponentId      = $substituted->curricularComponentId;
+                                $curricularComponentVersion = $substituted->curricularComponentVersion;
+                                $curricularComponentName    = $curricularComponentName . ' (' . $curricularComponent->name . ')';
+
+                                $groups = $business->getGroups($curricularComponentId, $curricularComponentVersion, $this->enrollData->learningPeriodId);
+                                if ( count($groups) > 0 )
+                                {
+                                    $businessGroup = $MIOLO->getBusiness($module,'BusGroup');
+                                    $group = $businessGroup->getGroup($groups[0][0]);
+                                    $this->enrollData->curriculumIdOld[$group->curriculumId] = $curriculumId;
+                                    $this->substitutionList[$curriculumId] = $group->curriculumId;
+                                }
+
+                                $status->status = 'FREE';
+                                $status->color  = CURRICULUM_STATUS_COLOR_UNBLOCKED;
+                                $status->text   = _M('UNBLOCKED', $module);
+                                $status->showGroups = true;
+                            }
+                        }
+                        
+                        if ( $status->showGroups ) //Disciplina
+                        {
+                            $hasGroups = $business->hasGroups($curricularComponentId, $curricularComponentVersion, $this->enrollData->learningPeriodId);
+                             
+                            //Se possui grupos trata a disciplina como liberada
+                            if ( $hasGroups )
+                            {
+                                $isEnrolled = $business->isEnrolledCurricularComponent($this->enrollData->contractId, $curricularComponentId, $curricularComponentVersion);
+                                
+                                //Verifica se o aluno já esta matriculado nesta disciplina
+                                if ($isEnrolled)
+                                {
+                                    $status->text   = _M('ENROLLED', $module);
+                                    $status->color  = CURRICULUM_STATUS_COLOR_ENROLLED;
+                                    $status->status = 'ENROLLED';
+                                }
+                            }
+                            //Senão, a disciplina está indisponível
+                            else
+                            {
+                                $status->text   = _M('UNAVAILABLE', $module);
+                                $status->color  = CURRICULUM_STATUS_COLOR_NON_COURSED;
+                                $status->status = 'NON COURSED';
+                            }
+                        }
+
+                        if ( ($status->status == 'NON COURSED' && $selNonCoursed->value == 't') ||
+                             ($status->status == 'FREE'        && $selFree->value       == 't') ||
+                             ($status->status == 'BLOCKED'     && $selBlocked->value    == 't') ||
+                             ($status->status == 'COURSED'     && $selCoursed->value    == 't') ||
+                             ($status->status == 'ENROLLED'    && $selEnrolled->value   == 't') ||
+                             ($status->status == 'COURSING'    && $selCoursing->value   == 't') )
+                        {
+                            $hctImage = new MHContainer('hctImage_' . $curriculumId, array(new MText('txtImage_' . $curriculumId, '&nbsp')));
+                            $hctImage->addBoxStyle('width', '5%');
+                            $path     = $MIOLO->getActionURL($module, 'html:images:forward.png');
+                            
+                            $txtStatus = new MText('txtStatus_' . $curriculumId );
+                            $txtStatus->setBold(true);
+                            $txtStatus->color = $status->color;
+                            $txtStatus->setValue('[ ' . $status->text . ' ]');
+                            $txtStatus->addBoxStyle('width', '20%');
+                            
+                            $txtCurricularComponentId = new MText('txtCurricularcomponentId_' . $curriculumId, "$curricularComponentId/$curricularComponentVersion");
+                            $txtCurricularComponentId->setWidth(70);
+
+                            $txtCurricularComponentName = new MText('txtCurricularcomponentName_' . $curriculumId, "$curricularComponentName");
+                            
+                            $divCurriculum   = new MDiv('divCurriculum_' . $curriculumId, '');
+                            $divCurriculumId = $divCurriculum->getId();
+                            //$divCurriculum->addStyle('display', 'none');
+                            
+                            if ( ($status->status == 'ENROLLED') || ($status->status == 'FREE') )
+                            {
+                                if ($status->showGroups)
+                                {
+                                    $js = 'freeClick(' . $curriculumId . ',' .  $this->enrollData->learningPeriodId . ',' .  $this->enrollData->contractId . ', 1';
+                                    
+                                    if ( strlen((string)$this->substitutionList[$curriculumId]) > 0 )
+                                    {
+                                        $js .= ',' . $this->substitutionList[$curriculumId];
+                                    }
+                                    
+                                    $js .= ')';
+                                    
+                                    $checkFunctions[$curriculumId] = $js;
+                                }
+                                elseif ($status->showElective)
+                                {
+                                    $js = 'electiveClick(' . $curriculumId . ',' .  $this->enrollData->learningPeriodId . ',' . $this->enrollData->contractId. ')';
+                                }
+                                
+                                if ($status->status == 'ENROLLED')
+                                {
+                                    $this->page->addJsCode($js);
+                                } 
+                                
+                                $image = new MImage('image_' . $curriculumId, '', $path);
+                                $image->addAttribute('onclick', $js);
+                                $image->addAttribute('onmouseover','document.body.style.cursor=\'pointer\'');
+                                $image->addAttribute('onmouseout','document.body.style.cursor=\'auto\'');
+                                $hctImage->setControls(array($image));
+                                
+                                $txtStatus->addAttribute('onclick', $js);
+                                $txtStatus->addAttribute('onmouseover','document.body.style.cursor=\'pointer\'');
+                                $txtStatus->addAttribute('onmouseout','document.body.style.cursor=\'auto\'');
+                            }
+                            elseif ( $status->status == 'BLOCKED' )
+                            {
+                                $js = 'blockedClick(' . $curriculumId . ')';
+                                $txtStatus->addAttribute('onclick', $js);
+                                $txtStatus->addAttribute('onmouseover','document.body.style.cursor=\'pointer\'');
+                                $txtStatus->addAttribute('onmouseout','document.body.style.cursor=\'auto\'');
+                            }
+                            elseif ( $status->status == 'COURSING' )
+                            {
+                                $js = 'coursingClick(' . $curriculumId . ',' .  $this->enrollData->learningPeriodId . ',' . $this->enrollData->contractId . ')';
+                                $txtStatus->addAttribute('onclick', $js);
+                                $txtStatus->addAttribute('onmouseover','document.body.style.cursor=\'pointer\'');
+                                $txtStatus->addAttribute('onmouseout','document.body.style.cursor=\'auto\'');
+                            }
+                            elseif ( $status->status == 'NON COURSED' )
+                            {
+                                $js = 'nonCoursedClick(' . $curriculumId . ')';
+                                $txtStatus->addAttribute('onclick', $js);
+                                $txtStatus->addAttribute('onmouseover','document.body.style.cursor=\'pointer\'');
+                                $txtStatus->addAttribute('onmouseout','document.body.style.cursor=\'auto\'');
+                            }
+                            
+                            $cntCurriculum = new MHContainer('cntCurriculum_' . $curriculumId, array($hctImage, $txtStatus, $txtCurricularComponentId, $txtCurricularComponentName));
+                            
+                            if ( $oldSemester != $semester )
+                            {
+                                if ( $semester == '0' )
+                                {
+                                    $txtSemester = new MText('txtSemester_' . $semester, _M('Optional curricular component', $module));
+                                }
+                                else
+                                {
+                                    $txtSemester = new MText('txtSemester_' . $semester, _M('Semester', $module) . ' ' . $semester);
+                                }
+                                $txtSemester->setBold(true);
+                                $cntSemester->addControl($txtSemester);
+                                $oldSemester = $semester;
+                            }
+                            $cntSemester->addControl($cntCurriculum);
+                            $cntSemester->addControl($divCurriculum);
+                            
+                            $jsFunction = "function showInfo_" . $curriculumId . "(result)
+                                           {
+                                                //xGetElementById('textArea').value = result;
+                                                
+                                                xGetElementById('" . $divCurriculumId . "').innerHTML     = result;
+                                                MIOLO_parseAjaxJavascript(result);
+                                                
+                                                stopShowLoading();
+                                           }";
+                                           
+                                           
+                                           
+                            $this->addJsCode($jsFunction);
+                        }
+                    }
+                }
+                
+                //Bloco de disciplinas fora do curriculo
+                $unblockFilters->learningPeriodId = $this->enrollData->learningPeriodId;
+                $unblockFilters->contractId       = $this->enrollData->contractId;
+                $busCurricularUnblock     = $MIOLO->getBusiness($module, 'BusCurricularComponentOutOfCurriculumUnblock');
+                $currCompsOutOfCurriculum = $busCurricularUnblock->searchCurricularComponentOutOfCurriculumUnblock($unblockFilters);        
+                
+                if (count($currCompsOutOfCurriculum) > 0)
+                {
+                    foreach ($currCompsOutOfCurriculum as $currCompOut)
+                    {
+                        $curricularComponentId      = $currCompOut[6];
+                        $curricularComponentVersion = $currCompOut[7];
+                        $curricularComponentName    = $currCompOut[8];
+                        $curriculumId               = $currCompOut[9];
+                        
+                        $status = $business->getCurricularComponentStatus($this->enrollData->contractId, $curricularComponentId, $curricularComponentVersion, $this->enrollData->learningPeriodId, $curriculumId);
+                        
+                        if ( $status->showGroups ) //Disciplina
+                        {
+                            $hasGroups = $business->hasGroups($curricularComponentId, $curricularComponentVersion, $this->enrollData->learningPeriodId);
+                            
+                            //Se possui grupos trata a disciplina como liberada
+                            if ( $hasGroups )
+                            {   
+                                $isEnrolled = $business->isEnrolledCurricularComponent($this->enrollData->contractId, $curricularComponentId, $curricularComponentVersion);
+                                
+                                //Verifica se o aluno ja está matriculado na disciplina
+                                if ($isEnrolled)
+                                {
+                                    $status->text   = _M('ENROLLED', $module);
+                                    $status->color  = CURRICULUM_STATUS_COLOR_ENROLLED;
+                                    $status->status = 'ENROLLED';
+                                }
+                            }
+                            //Senão, a disciplina está indisponível
+                            else
+                            {
+                                $status->text   = _M('UNAVAILABLE', $module);
+                                $status->color  = CURRICULUM_STATUS_COLOR_NON_COURSED;
+                                $status->status = 'NON COURSED';
+                            }
+                        }
+                        
+                        if ( ($status->status == 'NON COURSED' && $selNonCoursed->value == 't') ||
+                             ($status->status == 'FREE'        && $selFree->value       == 't') ||
+                             ($status->status == 'BLOCKED'     && $selBlocked->value    == 't') ||
+                             ($status->status == 'COURSED'     && $selCoursed->value    == 't') ||
+                             ($status->status == 'ENROLLED'    && $selEnrolled->value   == 't') )
+                        {
+                            $hctImage = new MHContainer('hctImage_' . $curriculumId, array(new MText('txtImage_' . $curriculumId, '&nbsp')));
+                            $hctImage->addBoxStyle('width', '5%');
+                            $path     = $MIOLO->getActionURL($module, 'html:images:forward.png');
+                            
+                            $txtStatus = new MText('txtStatus_' . $curriculumId );
+                            $txtStatus->setBold(true);
+                            $txtStatus->color = $status->color;
+                            $txtStatus->setValue('[ ' . $status->text . ' ]');
+                            $txtStatus->addBoxStyle('width', '20%');
+                            
+                            $txtCurricularComponentId = new MText('txtCurricularcomponentId_' . $curriculumId, "$curricularComponentId/$curricularComponentVersion");
+                            $txtCurricularComponentId->setWidth(70);
+
+                            $txtCurricularComponentName = new MText('txtCurricularcomponentName_' . $curriculumId, "$curricularComponentName");
+                            
+                            $divCurriculum   = new MDiv('divCurriculum_' . $curriculumId, null, '');
+                            $divCurriculumId = $divCurriculum->getId();
+                            //$divCurriculum->addStyle('display', 'none');
+                            
+                            if ( ($status->status == 'ENROLLED') || ($status->status == 'FREE') )
+                            {
+                                if ($status->showGroups)
+                                {
+                                    $js = 'freeClick(' . $curriculumId . ',' .  $this->enrollData->learningPeriodId . ',' .  $this->enrollData->contractId . ', 1)';
+                                    $checkFunctions[$curriculumId] = $js;
+                                }
+                                
+                                if ($status->status == 'ENROLLED')
+                                {
+                                    $this->page->addJsCode($js);
+                                }   
+                                
+                                $image = new MImage('image_' . $curriculumId, '', $path);
+                                $image->addAttribute('onclick', $js);
+                                $image->addAttribute('onmouseover','document.body.style.cursor=\'pointer\'');
+                                $image->addAttribute('onmouseout','document.body.style.cursor=\'auto\'');
+                                $hctImage->setControls(array($image));
+                                
+                                $txtStatus->addAttribute('onclick', $js);
+                                $txtStatus->addAttribute('onmouseover','document.body.style.cursor=\'pointer\'');
+                                $txtStatus->addAttribute('onmouseout','document.body.style.cursor=\'auto\'');
+                            }
+                            elseif ( $status->status == 'BLOCKED' )
+                            {
+                                $js = 'blockedClick(' . $curriculumId . ')';
+                                $txtStatus->addAttribute('onclick', $js);
+                                $txtStatus->addAttribute('onmouseover','document.body.style.cursor=\'pointer\'');
+                                $txtStatus->addAttribute('onmouseout','document.body.style.cursor=\'auto\'');
+                            }
+                            elseif ( $status->status == 'COURSING' )
+                            {
+                                $js = 'coursingClick(' . $curriculumId . ',' .  $this->enrollData->learningPeriodId . ',' . $this->enrollData->contractId . ')';
+                                $txtStatus->addAttribute('onclick', $js);
+                                $txtStatus->addAttribute('onmouseover','document.body.style.cursor=\'pointer\'');
+                                $txtStatus->addAttribute('onmouseout','document.body.style.cursor=\'auto\'');
+                            }
+                            elseif ( $status->status == 'NON COURSED' )
+                            {
+                                $js = 'nonCoursedClick(' . $curriculumId . ')';
+                                $txtStatus->addAttribute('onclick', $js);
+                                $txtStatus->addAttribute('onmouseover','document.body.style.cursor=\'pointer\'');
+                                $txtStatus->addAttribute('onmouseout','document.body.style.cursor=\'auto\'');
+                            }
+                            
+                            $cntCurriculum = new MHContainer('cntCurriculum_' . $curriculumId, array($hctImage, $txtStatus, $txtCurricularComponentId, $txtCurricularComponentName));
+                            
+                            $txtSemester = new MText('txtSemester_' . $semester, _M('Curricular components out of curriculum', $module));
+                            $txtSemester->setBold(true);
+                            $cntSemester->addControl($txtSemester);
+                            $cntSemester->addControl($cntCurriculum);
+                            $cntSemester->addControl($divCurriculum);
+                            
+                            $jsFunction = "function showInfo_" . $curriculumId . "(result)
+                                           {
+                                                xGetElementById('" . $divCurriculumId . "').innerHTML = result;
+                                                MIOLO_parseAjaxJavascript(result);
+                                                
+                                                stopShowLoading();
+                                           }";
+                                           
+                            $this->addJsCode($jsFunction);
+                        }
+                        //$fields[] = $cntSemester;
+                    }
+                }
+                
+                $fields[] = $cntSemester;
+                $btnNext = new MButton('btnNext', _M('Next', $module) . ' >>');
+            }
+        }
+        
+        $returnTo   = substr($action,0,strrpos($action,':')) . ':enrollContract';
+        $sep1       = new MSeparator();
+        $vars       = array ( 'enrollData' => urlencode(serialize($this->enrollData)) );
+        $currentUrl = str_replace('&amp;', '&', $this->manager->getCurrentURL());
+        $prevUrl    = $MIOLO->getActionURL($module, $returnTo, null, $vars);
+        $btnPrev    = new MButton('btnPrev', '<< ' . _M('Previous', $module), $prevUrl);
+        $sep2       = new MSeparator();
+        if (isset($btnNext))
+        {
+            $arrayButtons = array($sep1, $btnPrev, $btnNext, $sep2);
+        }
+        else
+        {
+            $arrayButtons = array($sep1, $btnPrev, $sep2);
+        }
+        $cntButtons = new MDiv('cntButtons', $arrayButtons, null, 'align=center');
+
+        $fields[] = $cntButtons;
+
+        $this->setFields($fields);
+        $this->setShowPostButton(false);
+        
+        if ($MIOLO->checkAccess($module, ACD_ENROLL, false, true))
+        {
+            $this->setClose($MIOLO->getActionURL($module,substr($action,0,strrpos($action,':'))));
+        }
+        
+        $this->page->addScript('m_lookup_ajax.js');
+        //$this->page->addScript('m_lookup.js');
+        $MIOLO->getRequiredJS4Ajax();
+        
+        if (strlen((string)$this->enrollData->contractId) > 0)
+        {    
+            $jsCode =
+            
+<<< HERE
+                function freeClick(curriculumId, learningPeriodId, contractId, checkValue, subsCurriculumId)
+                {
+                    var args = new Array(curriculumId, learningPeriodId, contractId, checkValue);
+                    
+                    if (subsCurriculumId)
+                    {
+                        var args = new Array(curriculumId, learningPeriodId, contractId, checkValue, subsCurriculumId);
+                    }
+                    
+                    var infoFunction = "showInfo_" + curriculumId;
+                    
+                    if (xGetElementById('divCurriculum_' + curriculumId).innerHTML == '')
+                    {
+                        
+                        xGetElementById('divCurriculum_' + curriculumId).innerHTML = 'Loading...<img src="/images/loading.gif"/>';
+                        xGetElementById('divCurriculum_' + curriculumId).style.display = 'block';    
+                        cpaint_call("{$currentUrl}", "POST", "enrollFreeInfo", args, eval(infoFunction), "TEXT");
+                    }
+                    else
+                    {
+                        if (checkValue == 2)
+                        {
+                            setCheckedValue(xGetElementById('divCurriculum_' + curriculumId), true);
+                            xGetElementById('divCurriculum_' + curriculumId).style.display = 'block';
+                        }    
+                        if (checkValue == 3)
+                        {
+                            setCheckedValue(xGetElementById('divCurriculum_' + curriculumId), false);
+                            xGetElementById('divCurriculum_' + curriculumId).style.display = 'none';
+                        }
+                        if (checkValue == 1)
+                        {
+                            expandRetractContainer('divCurriculum_' + curriculumId);
+                        }
+                    }
+                }
+
+                function nonCoursedClick(curriculumId)
+                {
+                    var infoFunction = "showInfo_" + curriculumId;
+                    
+                    if (xGetElementById('divCurriculum_' + curriculumId).innerHTML == '')
+                    {
+                        xGetElementById('divCurriculum_' + curriculumId).innerHTML = 'Loading...<img src="/images/loading.gif"/>';
+                        xGetElementById('divCurriculum_' + curriculumId).style.display = 'block';
+                        cpaint_call("{$currentUrl}", "POST", "nonCoursedInfo", curriculumId, eval(infoFunction), "TEXT");
+                    }
+                    else
+                    {
+                        expandRetractContainer('divCurriculum_' + curriculumId);
+                    }
+                }
+
+                function coursingClick(curriculumId, learningPeriodId, contractId)
+                {
+                    var args         = new Array(curriculumId, learningPeriodId, contractId);
+                    var infoFunction = "showInfo_" + curriculumId;
+                    
+                    if (xGetElementById('divCurriculum_' + curriculumId).innerHTML == '')
+                    {
+                        xGetElementById('divCurriculum_' + curriculumId).innerHTML = 'Loading...<img src="/images/loading.gif"/>';
+                        xGetElementById('divCurriculum_' + curriculumId).style.display = 'block';
+                        cpaint_call("{$currentUrl}", "POST", "enrollCoursingInfo", args, eval(infoFunction), "TEXT");
+                    }
+                    else
+                    {
+                        expandRetractContainer('divCurriculum_' + curriculumId);
+                    }
+                }
+
+                function blockedClick(curriculumId)
+                {
+                    var infoFunction = "showInfo_" + curriculumId;
+                    
+                    if (xGetElementById('divCurriculum_' + curriculumId).innerHTML == '')
+                    {
+                        xGetElementById('divCurriculum_' + curriculumId).innerHTML = 'Loading...<img src="/images/loading.gif"/>';
+                        xGetElementById('divCurriculum_' + curriculumId).style.display = 'block';
+                        cpaint_call("{$currentUrl}", "POST", "enrollBlockedInfo", curriculumId, eval(infoFunction), "TEXT");
+                    }
+                    else
+                    {
+                        expandRetractContainer('divCurriculum_' + curriculumId);
+                    }
+                }
+                
+                function electiveClick(curriculumId, learningPeriodId, contractId)
+                {
+                    var args         = new Array(curriculumId, learningPeriodId, contractId);
+                    var infoFunction = "showInfo_" + curriculumId;
+                    
+                    if (xGetElementById('divCurriculum_' + curriculumId).innerHTML == '')
+                    {
+                        xGetElementById('divCurriculum_' + curriculumId).innerHTML = 'Loading...<img src="/images/loading.gif"/>';
+                        xGetElementById('divCurriculum_' + curriculumId).style.display = 'block';
+                        cpaint_call("{$currentUrl}", "POST", "enrollElectiveInfo", args, eval(infoFunction), "TEXT");
+                    }
+                    else
+                    {
+                        expandRetractContainer('divCurriculum_' + curriculumId);
+                    }
+                }
+                
+                function expandRetractContainer(elementId)
+                {
+                    if (xGetElementById(elementId).style.display != 'none')
+                    {
+                        xGetElementById(elementId).style.display = 'none';
+                    }
+                    else
+                    {
+                        xGetElementById(elementId).style.display = 'block';
+                    }
+                }
+                
+                function setCheckedValue(obj, value)
+                {       
+                    for (var i = 0; i < obj.childNodes.length; i++)
+                    {
+                        try {
+                            obj.childNodes[i].checked = value;
+                            
+                            setCheckedValue(obj.childNodes[i], value);
+                        }
+                        catch (e) { }
+                    }
+                }
+HERE;
+            
+            $this->page->AddJsCode($jsCode);
+        }
+        else
+        {
+            $jsCode =
+            
+<<< HERE
+                function freeClassClick(curriculumId, learningPeriodId, classId)
+                {
+                    var args         = new Array(curriculumId, learningPeriodId, classId);
+                    var infoFunction = "showInfo_" + curriculumId;
+                    
+                    if (xGetElementById('divCurriculum_' + curriculumId).innerHTML == '')
+                    {
+                        xGetElementById('divCurriculum_' + curriculumId).innerHTML = 'Loading...<img src="/images/loading.gif"/>';
+                        xGetElementById('divCurriculum_' + curriculumId).style.display = 'block';
+                        cpaint_call("{$currentUrl}", "POST", "enrollClassFreeInfo", args, eval(infoFunction), "TEXT");
+                    }
+                    else
+                    {
+                        expandRetractContainer('divCurriculum_' + curriculumId);
+                    }
+                }
+                function electiveClassClick(curriculumId, learningPeriodId, classId)
+                {
+                    var args         = new Array(curriculumId, learningPeriodId, classId);
+                    var infoFunction = "showInfo_" + curriculumId;
+                    
+                    if (xGetElementById('divCurriculum_' + curriculumId).innerHTML == '')
+                    {
+                        xGetElementById('divCurriculum_' + curriculumId).innerHTML = 'Loading...<img src="/images/loading.gif"/>';
+                        xGetElementById('divCurriculum_' + curriculumId).style.display = 'block';
+                        cpaint_call("{$currentUrl}", "POST", "enrollElectiveClassInfo", args, eval(infoFunction), "TEXT");
+                    }
+                    else
+                    {
+                        expandRetractContainer('divCurriculum_' + curriculumId);
+                    }
+                }
+                function expandRetractContainer(elementId)
+                {
+                    if (xGetElementById(elementId).style.display != 'none')
+                    {
+                        xGetElementById(elementId).style.display = 'none';
+                    }
+                    else
+                    {
+                        xGetElementById(elementId).style.display = 'block';
+                    }
+                }
+
+HERE;
+
+            $this->page->AddJsCode($jsCode);
+        }
+    }
+
+    public function btnLoadCurriculum_click($sender = null)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $this->addFields($fields);
+    }
+
+    /**
+     * Functions to show the curricular components info (AJAX concept)
+     **/
+     
+    //Cria os campos necessários para disciplinas com estado BLOQUEADA 
+    public function enrollBlockedInfo($args)
+    {
+        global $MIOLO, $module;
+        
+        $curriculumId = $args[0];
+        
+        $busCurriculum = $MIOLO->getBusiness($module, 'BusCurriculum');
+        $busEnroll     = $MIOLO->getBusiness($module, 'BusEnroll');
+        
+        $curriculumData = $busCurriculum->getCurriculum($curriculumId);
+        
+        $cntConditions = new MBaseGroup('cntConditions_' . $curriculumId, null, 'vertical');
+
+        $filters               = new AcdCondition();
+        $filters->curriculumId = $curriculumId;
+        $filters->type         = 'P';
+
+        $businessCondition = $MIOLO->getBusiness($module, 'BusCondition');
+        $conditions        = $businessCondition->searchCondition($filters);
+
+        unset($txtConditions);
+        if (count($conditions) > 0)
+        {
+            foreach ( $conditions as $condition )
+            {
+                $hasMinimum = false;
+                
+                if (strlen((string)$condition[12]) > 0)
+                {
+                    $label           = $condition[12] . '/' . $condition[13] . ' - ' . $condition[14];
+                    $txtCondition    = new MText('txtCondition1_' . $condition[0], $label);
+                    
+                    $txtConditions[] = $txtCondition;
+                }
+                if ($condition[16] > 0)
+                {
+                    $label = $condition[16] . ' ' . _M('credits concluded', $module);
+                    $txtCondition    = new MText('txtCondition2_' . $condition[0], $label);
+                    
+                    $txtConditions[] = $txtCondition;
+                    
+                    $hasMinimum = true;
+                }
+                if ($condition[17] > 0)
+                {
+                    $label = $condition[17] . ' ' . _M('hours concluded', $module);
+                    $txtCondition    = new MText('txtCondition3_' . $condition[0], $label);
+                    
+                    $txtConditions[] = $txtCondition;
+                    
+                    $hasMinimum = true;
+                }
+                if (strlen((string)$condition[18]) > 0 && $hasMinimum) 
+                {
+                    $label = _M('Education area:', $module) . ' ' . $condition[19];
+                    $txtCondition    = new MText('txtCondition4_' . $condition[0], $label);
+                    
+                    $txtConditions[] = $txtCondition;
+                }
+            }
+        }
+        $cntCondition = new MVContainer('cntCondition_' . $curriculumId, $txtConditions);
+        
+        $cntSpacer       = new MVContainer('cntSpacerCond_' . $curriculumId, array(new MTextLabel('txtSpacerCond_' . $curriculumId, '&nbsp')));
+        $cntSpacer->addBoxStyle('width', '30%');
+        
+        $cntCondition->addBoxStyle('width', '65%');
+        
+        $cntConds = new MHContainer('cntConds_' . $curriculumId, array($cntSpacer, $cntCondition));       
+        
+        $cntConditions->addControl($cntConds);
+        
+        $this->manager->getTheme()->setContent($cntConditions);
+    }
+    
+    //Cria os campos necessários para disciplinas com estado NAO CURSADA 
+    public function nonCoursedInfo($args)
+    {
+        global $MIOLO, $module;
+        
+        $curriculumId = $args[0];
+        
+        $cntNonCoursed = new MBaseGroup('cntNonCoursed_' . $curriculumId, null, 'vertical');
+        $cntNonCoursed->addControl(new MText('txtNonCoursed_' . $curriculumId, _M('This curricular component has no offer in this learning period.',$module)));
+        
+        $this->manager->getTheme()->setContent($cntNonCoursed);
+    }
+
+    //Cria os campos necessários para disciplinas com estado CURSANDO
+    public function enrollCoursingInfo($args)
+    {
+        global $MIOLO, $module;
+        
+        $args = explode(',', $args[0]);
+        
+        $curriculumId     = $args[0];
+        $learningPeriodId = $args[1];
+        $contractId       = $args[2];
+        
+        $busCurriculum = $MIOLO->getBusiness($module, 'BusCurriculum');
+        $busEnroll     = $MIOLO->getBusiness($module, 'BusEnroll');
+        
+        $curriculumData = $busCurriculum->getCurriculum($curriculumId);
+        
+        $cntCoursingData = new MBaseGroup('cntCoursingData_' . $curriculumId, null, 'vertical');
+        $cntCoursing     = new MVContainer('cntCoursing_' . $curriculumId, null);
+        
+        $coursingData = $busEnroll->getInCourseCurricularComponentData($curriculumData->curricularComponentId, $curriculumData->curricularComponentVersion, $contractId, $learningPeriodId);
+        
+        if ( count($coursingData) > 0 )
+        {   
+            foreach ($coursingData as $coursingInfo)
+            {   
+                $txtCoursingPeriod = new MText('txtCoursingPeriod_' . $coursingInfo[0], _M('Period', $module) . ': ' . $coursingInfo[1]);
+                //$txtCoursingPeriod->addStyle('width', '20%');
+                $txtCoursingSchedules = new MText('txtCoursingSchedules_' . $coursingInfo[0], _M('Schedule', $module) . ': ' . $coursingInfo[2]);
+                //$txtCoursingSchedules->addStyle('width', '30%');
+                $txtCoursingProfessors = new MText('txtCoursingProfessors_' . $coursingInfo[0], _M('Professor', $module) . ': ' . $coursingInfo[3]);
+                //$txtCoursingProfessors->addStyle('width', '48%');
+                
+                $coursingLine = array($txtCoursingPeriod, $txtCoursingSchedules, $txtCoursingProfessors);
+                
+                $cntCoursingLine = new MHContainer('cntCoursingLine_' . $coursingInfo[0], $coursingLine);
+                //$cntCoursingLine->addBoxStyle('width', '90%');
+                $cntCoursing->addControl($cntCoursingLine);
+            }
+        }
+        
+        $cntSpacer       = new MVContainer('cntSpacerCour_' . $curriculumId, array(new MText('txtSpacerCour_' . $curriculumId, '&nbsp')));
+        $cntSpacer->addBoxStyle('width', '30%');
+        
+        $cntCoursing->addBoxStyle('width', '65%');
+        
+        $cntCoursingData->addControl(new MHContainer('cntCoursingD_' . $curriculumId, array($cntSpacer, $cntCoursing)));
+        
+        $this->manager->getTheme()->setContent($cntCoursingData);
+    }
+    
+    //Cria os campos necessários para disciplinas com estado LIBERADA, MATRICULADO, DESBLOQUEADA ou DEPENDENTE
+    public function enrollFreeInfo($args)
+    {
+        global $MIOLO, $module;
+        
+        $args = explode(',', $args[0]);
+        
+        $curriculumId     = $args[0];
+        $learningPeriodId = $args[1];
+        $contractId       = $args[2];
+        $checkValue       = $args[3];
+        
+        $busCurriculum    = $MIOLO->getBusiness($module, 'BusCurriculum');
+        $busEnroll        = $MIOLO->getBusiness($module, 'BusEnroll');
+        $busGroup         = $MIOLO->getBusiness($module, 'BusGroup');
+        
+        if (strlen((string)$args[4]) > 0 )
+        {
+            $curriculumData = $busCurriculum->getCurriculum($args[4]);
+        }
+        else
+        {
+            $curriculumData = $busCurriculum->getCurriculum($curriculumId);
+        }        
+        
+        if ( !$this->serialEnrollProcess )
+        {
+            $groups = $busEnroll->getGroups($curriculumData->curricularComponentId, $curriculumData->curricularComponentVersion, $learningPeriodId);
+        }
+        elseif ( $busEnroll->isDependent($contractId, $curriculumId) )
+        {
+            $groups = $busEnroll->getDependentGroups($curriculumData->curricularComponentId, $curriculumData->curricularComponentVersion, $learningPeriodId, $this->enrollData->classId);
+        }
+        else
+        {
+            $groups = $busEnroll->getClassCurricularComponentGroups($curriculumData->curricularComponentId, $curriculumData->curricularComponentVersion, $learningPeriodId, $this->enrollData->classId);
+        }
+        
+        //Obtem as oferecidas da disciplina
+        if ( count($groups) > 0 )
+        {
+            $cntGroups = new MBaseGroup('cntGroups_' . $curriculumId, null, 'vertical');
+            
+            $cntGrps   = new MVContainer('cntGrp_' . $curriculumId, null);
+            
+            foreach ($groups as $group)
+            {
+                list ( $groupId,
+                       $curricularComponentId,
+                       $curricularComponentVersion,
+                       $vacant,
+                       $totalEnrolled ) = $group;
+                
+                $isEnrolled = $busEnroll->isEnrolled($contractId, $groupId);
+                
+                if ( $checkValue != 1 )
+                {
+                    if ($checkValue == 2)
+                    {
+                        $isEnrolled = true;
+                    }
+                    elseif ($checkValue == 3)
+                    {
+                        $isEnrolled = false;
+                    }
+                }
+                
+                if (in_array($curricularComponentId, explode(',', str_replace(' ', '', FREE_SEMINARY_CURRICULAR_COMPONENT_IDS))))
+                {
+                    $groupData = $busGroup->getGroup($groupId);
+                    $freeSeminarySub = new MText('txtSubject_' . $groupId, $groupData->complement);
+                    $cntGrps->addControl($freeSeminarySub);
+                    $cntGrps->addControl(new MSeparator());
+                }
+                
+                if (strlen((string)$totalEnrolled) == 0)
+                {
+                    $totalEnrolled = 0;
+                }
+
+                if (strlen((string)$vacant) == 0)
+                {
+                    $vacant = 0;
+                }
+                
+                if ( (!$this->serialEnrollProcess) || ($busEnroll->isDependent($contractId, $curriculumId)) )
+                {   
+                    if ($totalEnrolled >= $vacant)
+                    {
+                        $chkGroup = new MText('fullText_' . $groupId, '[' . _M('Full', $module) . ']', 'red');
+                    }
+                    else
+                    {
+                        $chkGroup = new MCheckBox('chkGroup_' . $groupId, $groupId, '', $isEnrolled);
+                        $checkBoxes[$groupId] = $chkGroup->getId();
+                    }
+                }
+                $txtVacancies = new MText('txtVacancies_' . $groupId, _M('Vacant', $module) . ": $totalEnrolled/$vacant");
+                //$txtVacancies->setWidth(600);
+                
+                $cntGroup = new MHContainer('cntGroup_' . $groupId, array($chkGroup, $txtVacancies));
+                //$cntGroup->setWidth('99%');
+
+                $cntGrps->addControl($cntGroup);
+                
+                $schedules = $busEnroll->getSchedules($groupId);
+                
+                //Obtem os horarios da oferecida
+                if ( count($schedules) > 0 )
+                {
+                    $cntSchedules = new MVContainer('cntSchedules_' . $groupId);
+                    
+                    foreach ($schedules as $schedule)
+                    {
+                        list ( $scheduleId,
+                               $beginDate,
+                               $beginHour,
+                               $endDate,
+                               $endHour,
+                               $turnId,
+                               $turnDescription,
+                               $turnBeginHour,
+                               $turnEndHour,
+                               $unitId,
+                               $unitDescription,
+                               $weekDayId,
+                               $weekDayDescription,
+                               $physicalResourceId,
+                               $physicalResourceVersion,
+                               $physicalResourceDescription ) = $schedule;
+                               
+                        $filters              = new AcdScheduleProfessor();
+                        $filters->scheduleId  = $scheduleId;
+                        $busScheduleProfessor = $MIOLO->getBusiness($module, 'BusScheduleProfessor');
+                        $professors           = $busScheduleProfessor->searchScheduleProfessor($filters);
+                        
+                        //Primeira coluna dos horários
+                        $txtUnit = new MText('txtUnit_' . $scheduleId, _M('Unit', $module) . ": $unitDescription");
+                        if (strlen((string)$weekDayId) > 0)
+                        {
+                            $txtWeekDay = new MText('txtWeekDay_' . $scheduleId, _M('Week day', $module) . ": $weekDayDescription");
+                        }
+                        else
+                        {
+                            $groupData = $busGroup->getGroup($groupId);
+                            
+                            $txtWeekDay = new MText('txtWeekDay_' . $scheduleId, _M('Regimen', $module) . ": $groupData->regimenDescription");
+                        }
+                            
+                        $txtPhysicalResource = new MText('txtPhysicalResource_' . $scheduleId, _M('Room/Building', $module) . ": $physicalResourceDescription");
+                        $cntScheduleCol1 = new MVContainer('cntScheduleCol1_' . $scheduleId, array($txtUnit, $txtWeekDay, $txtPhysicalResource));
+                        
+                        //Segunda coluna dos horários
+                        $txtTurn = new MText('txtTurn_' . $scheduleId, _M('Turn', $module) . ": $turnDescription");
+                        $txtBeginEndDate = new MText('txtBeginEndDate_' . $scheduleId, _M('Begin/End date', $module) . ": $beginDate - $endDate");
+                        $txtBeginEndHour = new MText('txtBeginEndHour_' . $scheduleId, _M('Begin/End hour', $module) . ": $beginHour - $endHour");
+                        $cntScheduleCol2 = new MVContainer('cntScheduleCol2_' . $scheduleId, array($txtTurn, $txtBeginEndDate, $txtBeginEndHour));
+
+                        //Junta as duas colunas
+                        $cntSchedule = new MHContainer('cntSchedule_' . $scheduleId, array($cntScheduleCol1, $cntScheduleCol2, $cntScheduleCol3));
+                        
+                        //Adiciona os campos no container de horários
+                        $cntSchedules->addControl($cntSchedule);
+                        
+                        //Gera informações dos professores
+                        if ( count($professors) > 0 )
+                        {
+                            unset($txtProfessor);
+                            foreach ( $professors as $professor )
+                            {
+                                $txtProfessor[] = new MText('txtProfessor_' . $scheduleId, _M('Professor', $module) . ": {$professor[2]}");
+                            }
+                            $cntProfessor = new MVContainer('cntProfessor_' . $scheduleId, $txtProfessor);
+                            
+                            $cntSchedules->addControl($cntProfessor);
+                        }
+                    }
+                    $cntGrps->addControl($cntSchedules);
+                }
+                //$cntGrps->addControl(new MSeparator());
+            }
+            
+            $cntSpacer       = new MVContainer('cntSpacerFree_' . $curriculumId, array(new MTextLabel('txtSpacerFree_' . $curriculumId, '&nbsp')));
+            $cntSpacer->addBoxStyle('width', '30%');
+            
+            $cntGrps->addBoxStyle('width', '65%');
+            
+            $cntGroups->addControl(new MHContainer('cntGrp_' . $curriculumId, array($cntSpacer, $cntGrps)));
+            
+            $this->manager->getTheme()->setContent($cntGroups);
+        }
+    }
+    
+    //Cria os campos necessários para as disciplinas oferecidas do modelo seriado
+    public function enrollClassFreeInfo($args)
+    {
+        global $MIOLO, $module;
+        
+        $args = explode(',', $args[0]);
+        
+        $curriculumId     = $args[0];
+        $learningPeriodId = $args[1];
+        $classId          = $args[2];
+        
+        $busCurriculum = $MIOLO->getBusiness($module, 'BusCurriculum');
+        $busEnroll     = $MIOLO->getBusiness($module, 'BusEnroll');
+        $busGroup      = $MIOLO->getBusiness($module, 'BusGroup');
+        
+        $curriculumData = $busCurriculum->getCurriculum($curriculumId);
+        
+        $groups = $busEnroll->getClassCurricularComponentGroups($curriculumData->curricularComponentId, $curriculumData->curricularComponentVersion, $learningPeriodId, $classId);
+
+        //Obtem as oferecidas da disciplina
+        if ( count($groups) > 0 )
+        {
+            $cntGroups = new MBaseGroup('cntGroups_' . $curriculumId, null, 'vertical');
+
+            foreach ($groups as $group)
+            {
+                list ( $groupId,
+                       $curricularComponentId,
+                       $curricularComponentVersion,
+                       //$curricularComponentName,
+                       //$curricularComponentGroupId,
+                       $vacant,
+                       $totalEnrolled ) = $group;
+
+                $groupField = new MHiddenField('groupField_' . $groupId, $groupId);
+                
+                //$cntGroups->addControl($groupField);
+                
+                if (in_array($curricularComponentId, explode(',', str_replace(' ', '', FREE_SEMINARY_CURRICULAR_COMPONENT_IDS))))
+                {
+                    $groupData = $busGroup->getGroup($groupId);
+                    $freeSeminarySub = new MText('txtSubject_' . $groupId, $groupData->complement);
+                    $cntGroups->addControl($freeSeminarySub);
+                    $cntGroups->addControl(new MSeparator());
+                }
+                
+                if (strlen((string)$totalEnrolled) == 0)
+                {
+                    $totalEnrolled = 0;
+                }
+
+                if (strlen((string)$vacant) == 0)
+                {
+                    $vacant = 0;
+                }
+
+                $txtVacancies = new MText('txtVacancies_' . $groupId, _M('Vacant', $module) . ": $totalEnrolled/$vacant");
+                $txtVacancies->setWidth(600);
+
+                $cntGroup = new MHContainer('cntGroup_' . $groupId, array($txtVacancies));
+                $cntGroup->setWidth('100%');
+
+                $cntGroups->addControl($cntGroup);
+                
+                $schedules = $busEnroll->getSchedules($groupId);
+                
+                //Obtem os horarios da oferecida
+                if ( count($schedules) > 0 )
+                {
+                    $cntSchedules = new MVContainer('cntSchedules_' . $groupId);
+                    
+                    foreach ($schedules as $schedule)
+                    {
+                        list ( $scheduleId,
+                               $beginDate,
+                               $beginHour,
+                               $endDate,
+                               $endHour,
+                               $turnId,
+                               $turnDescription,
+                               $turnBeginHour,
+                               $turnEndHour,
+                               $unitId,
+                               $unitDescription,
+                               $weekDayId,
+                               $weekDayDescription,
+                               $physicalResourceId,
+                               $physicalResourceVersion,
+                               $physicalResourceDescription ) = $schedule;
+                               
+                        $filters              = new AcdScheduleProfessor();
+                        $filters->scheduleId  = $scheduleId;
+                        $busScheduleProfessor = $MIOLO->getBusiness($module, 'BusScheduleProfessor');
+                        $professors           = $busScheduleProfessor->searchScheduleProfessor($filters);
+                        
+                        //Primeira coluna dos horários
+                        $txtUnit = new MText('txtUnit_' . $scheduleId, _M('Unit', $module) . ": $unitDescription");
+                        
+                        if (strlen((string)$weekDayId) > 0)
+                        {
+                            $txtWeekDay = new MText('txtWeekDay_' . $scheduleId, _M('Week day', $module) . ": $weekDayDescription");
+                        }
+                        else
+                        {
+                            $groupData = $busGroup->getGroup($groupId);
+                            
+                            $txtWeekDay = new MText('txtWeekDay_' . $scheduleId, _M('Regimen', $module) . ": $groupData->regimenDescription");
+                        }
+                        
+                        $txtPhysicalResource = new MText('txtPhysicalResource_' . $scheduleId, _M('Room/Building', $module) . ": $physicalResourceDescription");
+                        $cntScheduleCol1 = new MVContainer('cntScheduleCol1_' . $scheduleId, array($txtUnit, $txtWeekDay, $txtPhysicalResource));
+                        
+                        //Segunda coluna dos horários
+                        $txtTurn = new MText('txtTurn_' . $scheduleId, _M('Turn', $module) . ": $turnDescription");
+                        $txtBeginEndDate = new MText('txtBeginEndDate_' . $scheduleId, _M('Begin/End date', $module) . ": $beginDate - $endDate");
+                        $txtBeginEndHour = new MText('txtBeginEndHour_' . $scheduleId, _M('Begin/End hour', $module) . ": $beginHour - $endHour");
+                        $cntScheduleCol2 = new MVContainer('cntScheduleCol2_' . $scheduleId, array($txtTurn, $txtBeginEndDate, $txtBeginEndHour));
+
+                        //Junta as duas colunas
+                        $cntSchedule = new MHContainer('cntSchedule_' . $scheduleId, array($cntScheduleCol1, $cntScheduleCol2, $cntScheduleCol3));
+                        
+                        //Adiciona os campos no container de horários
+                        $cntSchedules->addControl($cntSchedule);
+                        
+                        //Gera informações dos professores
+                        if ( count($professors) > 0 )
+                        {
+                            unset($txtProfessor);
+                            foreach ( $professors as $professor )
+                            {
+                                $txtProfessor[] = new MText('txtProfessor_' . $scheduleId, _M('Professor', $module) . ": {$professor[2]}");
+                            }
+                            $cntProfessor = new MVContainer('cntProfessor_' . $scheduleId, $txtProfessor);
+                            
+                            $cntSchedules->addControl($cntProfessor);
+                        }
+                    }
+                    $cntGroups->addControl($cntSchedules);
+                }
+                $cntGroups->addControl(new MSeparator());
+            }
+            
+            $this->manager->getTheme()->setContent($cntGroups);
+        }
+    }
+    
+    //Cria os campos necessários para as disciplinas eletivas
+    public function enrollElectiveInfo($args)
+    {
+        global $MIOLO, $module;
+        
+        $args = explode(',', $args[0]);
+        
+        $curriculumId     = $args[0];
+        $learningPeriodId = $args[1];
+        $contractId       = $args[2];
+        
+        $busCurriculum = $MIOLO->getBusiness($module, 'BusCurriculum');
+        $busEnroll     = $MIOLO->getBusiness($module, 'BusEnroll');
+        
+        $curriculumData = $busCurriculum->getCurriculum($curriculumId);
+        
+        $curricularComponentElective = $busEnroll->groupIdEnrolledElective($contractId,$curriculumId, $learningPeriodId);
+        
+        unset( $lookGroupId,
+               $lookCurricularComponentId,
+               $lookCurricularComponentVersion,
+               $lookCurricularComponentName,
+               $lookBeginDate,
+               $lookBeginHour,
+               $lookEndDate,
+               $lookEndHour,
+               $lookTurn,
+               $lookUnit,
+               $lookWeekDay );
+        
+        $cntGroups = new MBaseGroup('cntGroups_' . $curriculumId, null, 'vertical');
+        
+        //Verifica se o aluno já está matriculado em alguma eletiva       
+        if ( count($curricularComponentElective) > 0 )
+        {
+            list ( $lookGroupId,
+                   $lookCurricularComponentId,
+                   $lookCurricularComponentVersion,
+                   $lookCurricularComponentName ) = $curricularComponentElective[0];
+
+            $schedules = $busEnroll->getSchedules($lookGroupId);
+            list ( $limbo,
+                   $lookBeginDate,
+                   $lookBeginHour,
+                   $lookEndDate,
+                   $lookEndHour,
+                   $limbo,
+                   $lookTurn,
+                   $limbo,
+                   $limbo,
+                   $limbo,
+                   $lookUnit,
+                   $limbo,
+                   $lookWeekDay ) = $schedules[0];
+        }
+        
+        //Monta os campos        
+        $fldsElective1[] = new MHiddenField('curricularComponentGroupElectiveId_' . $curriculumId, $curriculumData->curricularComponentGroupElectiveId);
+        
+        $autoCompleteFields = array('lookGroupId[' . $curriculumId . ']',
+                                    'lookCurricularComponentId_' . $curriculumId,
+                                    'lookCurricularComponentVersion_' . $curriculumId,
+                                    'lookCurricularComponentName_' . $curriculumId,
+                                    'limbo',
+                                    'limbo',
+                                    'lookUnit_' . $curriculumId,
+                                    'limbo',
+                                    'lookTurn_' . $curriculumId,
+                                    'limbo',
+                                    'lookWeekDay_' . $curriculumId,
+                                    'lookBeginDate_' . $curriculumId,
+                                    'lookEndDate_' . $curriculumId,
+                                    'lookBeginHour_' . $curriculumId,
+                                    'lookEndHour_' . $curriculumId);
+                                    
+        $filterFields = array('curricularComponentGroupElectiveId' => 'curricularComponentGroupElectiveId_' . $curriculumId, 
+                              'courseId'         => 'txtCourseId', 
+                              'courseVersion'    => 'txtCourseVersion',
+                              'contractId'       => 'contractId',
+                              'learningPeriodId' => 'learningPeriodId');
+        
+        $fldLookField = new MLookupField('lookField_' . $curriculumId, $this->getFormValue('lookField_' . $curriculumId, $lookField), _M('Offered curricular component id',$module), null, $autoCompleteFields, $module, 'Elective', null, $filterFields );
+        
+        $fldsElective1[] = $fldLookField;
+
+        $fldLookGroupId = new MTextField('lookGroupId[' . $curriculumId . ']', $lookGroupId, _M('Offered curricular component id', $module), FIELD_ID_SIZE);
+        $fldLookGroupId->setReadOnly(true);
+        $fldsElective1[] = $fldLookGroupId;
+        
+        $fldLookCurricularComponentId = new MTextField('lookCurricularComponentId_' . $curriculumId, $lookCurricularComponentId, _M('Curricular component id', $module), FIELD_ID_SIZE);
+        $fldLookCurricularComponentId->setReadOnly(true);
+        $fldsElective1[] = $fldLookCurricularComponentId;
+
+        $fldLookCurricularComponentVersion = new MTextField('lookCurricularComponentVersion_' . $curriculumId, $lookCurricularComponentVersion, _M('Curricular component version', $module), FIELD_ID_SIZE);
+        $fldLookCurricularComponentVersion->setReadOnly(true);
+        $fldsElective1[] = $fldLookCurricularComponentVersion;
+
+        $fldLookCurricularComponentName = new MTextField('lookCurricularComponentName_' . $curriculumId, $lookCurricularComponentName, _M('Curricular component name', $module), FIELD_DESCRIPTION_SIZE);
+        $fldLookCurricularComponentName->setReadOnly(true);
+        $fldsElective1[] = $fldLookCurricularComponentName;
+
+        $hBox[] = new MHContainer('hBox1_' . $curriculumId, $fldsElective1);
+        unset($fldsElective);
+
+        $fldLookUnit = new MTextField('lookUnit_' . $curriculumId, $lookUnit, _M('Unit', $module), 20);
+        $fldLookUnit->setReadOnly(true);
+        $fldsElective3[] = $fldLookUnit;
+
+        $fldLookTurn = new MTextField('lookTurn_' . $curriculumId, $lookTurn, _M('Turn', $module), 20);
+        $fldLookTurn->setReadOnly(true);
+        $fldsElective3[] = $fldLookTurn;
+
+        $fldLookWeekDay = new MTextField('lookWeekDay_' . $curriculumId, $lookWeekDay, _M('Week day',  $module), 20);
+        $fldLookWeekDay->setReadOnly(true);
+        $fldsElective3[] = $fldLookWeekDay;
+
+        $hBox[] = new MHContainer('hBox3_' . $curriculumId, $fldsElective3);
+        unset($fldsElective);
+
+        $fldLookBeginDate = new MCalendarField('lookBeginDate_' . $curriculumId, $lookBeginDate, _M('Begin date', $module), FIELD_DATE_SIZE);
+        $fldLookBeginDate->setReadOnly(true);
+        $fldsElective2[] = $fldLookBeginDate;
+
+        $fldLookEndDate = new MCalendarField('lookEndDate_' . $curriculumId, $lookEndDate, _M('End date', $module), FIELD_DATE_SIZE);
+        $fldLookEndDate->setReadOnly(true);
+        $fldsElective2[] = $fldLookEndDate;
+
+        $fldLookBeginHour = new MTextField('lookBeginHour_' . $curriculumId, $lookBeginHour, _M('Begin hour', $module), FIELD_TIME_SIZE);
+        $fldLookBeginHour->setReadOnly(true);
+        $fldsElective2[] = $fldLookBeginHour;
+
+        $fldLookEndHour = new MTextField('lookEndHour_' . $curriculumId, $lookEndHour, _M('End hour',  $module), FIELD_TIME_SIZE);
+        $fldLookEndHour->setReadOnly(true);
+        $fldsElective2[] = $fldLookEndHour;
+
+        $hBox[] = new MHContainer('hBox2_' . $curriculumId, $fldsElective2);
+
+        $cntGroup = new MVContainer('cntGroup_' . $curriculumId, $hBox);
+        $cntGroups->addControl($cntGroup);
+        unset($fldsElective1, $fldsElective2, $fldsElective3, $hBox);
+        
+        $this->manager->getTheme()->setContent($cntGroups);
+    }
+    
+    //Cria os campos necessários para as disciplinas eletivas para as turmas
+    public function enrollElectiveClassInfo($args)
+    {
+        global $MIOLO, $module;
+        
+        $args = explode(',', $args[0]);
+        
+        $curriculumId     = $args[0];
+        $learningPeriodId = $args[1];
+        $classId          = $args[2];
+        
+        $busCurriculum = $MIOLO->getBusiness($module, 'BusCurriculum');
+        $busEnroll     = $MIOLO->getBusiness($module, 'BusEnroll');
+        
+        unset( $lookGroupId,
+               $lookCurricularComponentId,
+               $lookCurricularComponentVersion,
+               $lookCurricularComponentName,
+               $lookBeginDate,
+               $lookBeginHour,
+               $lookEndDate,
+               $lookEndHour,
+               $lookTurn,
+               $lookUnit,
+               $lookWeekDay );
+        
+        $cntGroups = new MBaseGroup('cntGroups_' . $curriculumId, null, 'vertical');
+        
+        $curriculumData = $busCurriculum->getCurriculum($curriculumId);
+
+        //Monta os campos        
+        $fldsElective1[] = new MHiddenField('curricularComponentGroupElectiveId_' . $curriculumId, $curriculumData->curricularComponentGroupElectiveId);
+        
+        $autoCompleteFields = array('lookGroupId[' . $curriculumId . ']',
+                                    'lookCurricularComponentId_' . $curriculumId,
+                                    'lookCurricularComponentVersion_' . $curriculumId,
+                                    'lookCurricularComponentName_' . $curriculumId,
+                                    'limbo',
+                                    'limbo',
+                                    'lookUnit_' . $curriculumId,
+                                    'limbo',
+                                    'lookTurn_' . $curriculumId,
+                                    'limbo',
+                                    'lookWeekDay_' . $curriculumId,
+                                    'lookBeginDate_' . $curriculumId,
+                                    'lookEndDate_' . $curriculumId,
+                                    'lookBeginHour_' . $curriculumId,
+                                    'lookEndHour_' . $curriculumId);
+                                    
+        $filterFields = array('curricularComponentGroupElectiveId' => 'curricularComponentGroupElectiveId_' . $curriculumId, 
+                              'courseId'         => 'txtCourseId', 
+                              'courseVersion'    => 'txtCourseVersion',
+                              'classId'          => 'txtClassId',
+                              'learningPeriodId' => 'learningPeriodId');
+        
+        $fldLookField = new MLookupField('lookField_' . $curriculumId, $this->getFormValue('lookField_' . $curriculumId, $lookField), _M('Offered curricular component id',$module), null, $autoCompleteFields, $module, 'ClassElective', null, $filterFields );
+        
+        $fldsElective1[] = $fldLookField;
+
+        $fldLookGroupId = new MTextField('lookGroupId[' . $curriculumId . ']', $lookGroupId, _M('Offered curricular component id', $module), FIELD_ID_SIZE);
+        $fldLookGroupId->setReadOnly(true);
+        $fldsElective1[] = $fldLookGroupId;
+        
+        $fldLookCurricularComponentId = new MTextField('lookCurricularComponentId_' . $curriculumId, $lookCurricularComponentId, _M('Curricular component id', $module), FIELD_ID_SIZE);
+        $fldLookCurricularComponentId->setReadOnly(true);
+        $fldsElective1[] = $fldLookCurricularComponentId;
+
+        $fldLookCurricularComponentVersion = new MTextField('lookCurricularComponentVersion_' . $curriculumId, $lookCurricularComponentVersion, _M('Curricular component version', $module), FIELD_ID_SIZE);
+        $fldLookCurricularComponentVersion->setReadOnly(true);
+        $fldsElective1[] = $fldLookCurricularComponentVersion;
+
+        $fldLookCurricularComponentName = new MTextField('lookCurricularComponentName_' . $curriculumId, $lookCurricularComponentName, _M('Curricular component name', $module), FIELD_DESCRIPTION_SIZE);
+        $fldLookCurricularComponentName->setReadOnly(true);
+        $fldsElective1[] = $fldLookCurricularComponentName;
+
+        $hBox[] = new MHContainer('hBox1_' . $curriculumId, $fldsElective1);
+        unset($fldsElective);
+
+        $fldLookUnit = new MTextField('lookUnit_' . $curriculumId, $lookUnit, _M('Unit', $module), 20);
+        $fldLookUnit->setReadOnly(true);
+        $fldsElective3[] = $fldLookUnit;
+
+        $fldLookTurn = new MTextField('lookTurn_' . $curriculumId, $lookTurn, _M('Turn', $module), 20);
+        $fldLookTurn->setReadOnly(true);
+        $fldsElective3[] = $fldLookTurn;
+
+        $fldLookWeekDay = new MTextField('lookWeekDay_' . $curriculumId, $lookWeekDay, _M('Week day',  $module), 20);
+        $fldLookWeekDay->setReadOnly(true);
+        $fldsElective3[] = $fldLookWeekDay;
+
+        $hBox[] = new MHContainer('hBox3_' . $curriculumId, $fldsElective3);
+        unset($fldsElective);
+
+        $fldLookBeginDate = new MCalendarField('lookBeginDate_' . $curriculumId, $lookBeginDate, _M('Begin date', $module), FIELD_DATE_SIZE);
+        $fldLookBeginDate->setReadOnly(true);
+        $fldsElective2[] = $fldLookBeginDate;
+
+        $fldLookEndDate = new MCalendarField('lookEndDate_' . $curriculumId, $lookEndDate, _M('End date', $module), FIELD_DATE_SIZE);
+        $fldLookEndDate->setReadOnly(true);
+        $fldsElective2[] = $fldLookEndDate;
+
+        $fldLookBeginHour = new MTextField('lookBeginHour_' . $curriculumId, $lookBeginHour, _M('Begin hour', $module), FIELD_TIME_SIZE);
+        $fldLookBeginHour->setReadOnly(true);
+        $fldsElective2[] = $fldLookBeginHour;
+
+        $fldLookEndHour = new MTextField('lookEndHour_' . $curriculumId, $lookEndHour, _M('End hour',  $module), FIELD_TIME_SIZE);
+        $fldLookEndHour->setReadOnly(true);
+        $fldsElective2[] = $fldLookEndHour;
+
+        $hBox[] = new MHContainer('hBox2_' . $curriculumId, $fldsElective2);
+
+        $cntGroup = new MVContainer('cntGroup_' . $curriculumId, $hBox);
+        $cntGroups->addControl($cntGroup);
+        unset($fldsElective1, $fldsElective2, $fldsElective3, $hBox);
+        
+        $this->manager->getTheme()->setContent($cntGroups);
+    }
+     
+    /**
+     * Event triggered when user click next
+     **/
+    public function btnNext_click($sender = null)
+    {
+        /**
+         * Collect required from data
+         **/
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $data->learningPeriodId = $this->enrollData->learningPeriodId;
+        $data->curriculumIdOld  = $this->enrollData->curriculumIdOld;
+        $data->parcelsNumber    = $this->enrollData->parcelsNumber;
+        $data->classId          = $this->enrollData->classId;
+
+        $business           = $MIOLO->getBusiness($module, 'BusEnroll');
+        $businessGroup      = $MIOLO->getBusiness($module, 'BusGroup');
+        $businessContract   = $MIOLO->getBusiness($module, 'BusContract');
+        $businessCurriculum = $MIOLO->getBusiness($module, 'BusCurriculum');
+
+        //matricula seriada
+        if ( $this->serialEnrollProcess )
+        {
+            $data->isSerialEnrollProcess = true;
+
+            //Obtém as turmas nas quais o aluno se matriculará (processo seriado)
+            $data->groupId = $this->enrollData->groupId;
+            
+            //obtem os lookups das eletivas
+            $lookups = $this->getFormValue('lookGroupId', $MIOLO->_request('lookGroupId'));
+
+            if ( count($data->groupId) > 0 )
+            {
+                //Obtém as turmas de disciplinas que o aluno possui dependencia (caso existam)
+                foreach ( $data->groupId as $groupId )
+                {
+                    $group = $businessGroup->getGroup($groupId);
+                    //se nao for eletiva
+                    if ( $group->curricularComponentTypeId != CURRICULAR_COMPONENT_TYPE_ELECTIVE )
+                    {
+                        $dataGroup[] = $groupId;
+//                        $data->curriculumIdOld[$group->curriculumId] = $group->curriculumId;
+                    }
+                    else
+                    {
+                        //checagem para lookups
+                        if ( count($lookups) > 0 )
+                        {
+                            foreach ( $lookups as $key => $value )
+                            {
+                                if ( strlen((string)$value) > 0 )
+                                {
+                                    $groupAux = $businessGroup->getGroup($value);
+                                    if ( $groupAux->curricularComponentGroupElectiveId == $group->curricularComponentGroupDocumentEndCourseId )
+                                    {
+                                        $dataGroup[] = $groupAux->groupId;
+                                        $data->curriculumIdOld[$groupAux->curriculumId] = $group->curriculumId;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            $data->groupId = $dataGroup;
+        }
+        else
+        {
+            $data->isSerialEnrollProcess = false;
+
+            if ( count($_POST) > 0 )
+            {
+                //Obtém as turmas nas quais o aluno OPTOU por se matricular (processo por créditos)
+                foreach ( $_POST as $key => $value )
+                {
+                    if ( strstr($key,'chkGroup_') )
+                    {
+                        $data->groupId[] = str_replace('chkGroup_','',$key);
+                    }
+                    elseif ( strstr($key, 'lookGroupId_') )
+                    {
+                        if ( strlen((string)$this->$key->value) > 0 )
+                        {
+                            $data->groupId[] = $this->$key->value;
+                            $group = $businessGroup->getGroup($this->$key->value);
+                            $data->curriculumIdOld[$group->curriculumId] = str_replace('lookGroupId_', '', $key);
+                        }
+                    }
+                }
+            }
+            
+            $lookups = $this->getFormValue('lookGroupId', $MIOLO->_request('lookGroupId'));
+            
+            if (count($lookups) > 0)
+            {
+                foreach ($lookups as $key => $value)
+                {
+                    if (strlen((string)$value) > 0)
+                    {
+                        $data->groupId[] = $value;
+                        $group = $businessGroup->getGroup($value);
+                        $data->curriculumIdOld[$group->curriculumId] = $key;
+                    }
+                }
+            }
+        }
+
+        //Verifica se a matrícula é para um único contrato
+        if (strlen((string)$this->enrollData->contractId) > 0)
+        {
+            $data->contractId       = $this->enrollData->contractId;
+            $data->periodId         = $this->enrollData->periodId;
+            
+            $contractData = $businessContract->getContract($data->contractId);
+            
+            //Verifica choque de horários
+            $businessConcurrence = $MIOLO->getBusiness($module, 'BusCurriculumConcurrence');
+            $hasShock = false;
+            for ( $i=0; $i<count($data->groupId) && ! $hasShock; $i++ )
+            {
+                $group1 = $businessGroup->getGroup($data->groupId[$i]);
+                
+                if ($group1->totalEnrolled >= $group1->vacant)
+                {
+                    $fullGroups[] = $data->groupId[$i];
+                }
+                
+                for ( $j=$i+1; $j<count($data->groupId) && ! $hasShock; $j++ )
+                {
+                    $hasShock      = $business->hasShockingSchedule($data->groupId[$i], $data->groupId[$j]);
+              
+                    $group2        = $businessGroup->getGroup($data->groupId[$j]);
+                    
+                    $group1Curriculum = $businessCurriculum->getCurriculum($group1->curriculumId);
+                    $group2Curriculum = $businessCurriculum->getCurriculum($group2->curriculumId);
+                    
+                    //Obter os códigos de curriculo do curso do aluno
+                    $filters->curricularComponentId      = $group1Curriculum->curricularComponentId;
+                    $filters->curricularComponentVersion = $group1Curriculum->curricularComponentVersion;
+                    $filters->courseId                   = $contractData->courseId;
+                    $filters->courseVersion              = $contractData->courseVersion;
+                    $filters->turnId                     = $contractData->turnId;
+                    $filters->unitId                     = $contractData->unitId;
+                    
+                    $courseCurriculum1 = $businessCurriculum->searchCurriculum($filters);
+                    
+                    $filters->curricularComponentId      = $group2Curriculum->curricularComponentId;
+                    $filters->curricularComponentVersion = $group2Curriculum->curricularComponentVersion;
+                    
+                    $courseCurriculum2 = $businessCurriculum->searchCurriculum($filters);
+                    
+                    //Se não existir curriculumId para o curso do aluno, utiliza o código de curriculo registrado na disciplina oferecida
+                    if (strlen((string)$courseCurriculum1[0][0]) > 0)
+                    {
+                        $unblockCurriculum1 = $courseCurriculum1[0][0];
+                    }
+                    else
+                    {
+                        $unblockCurriculum1 = $group1->curriculumId;
+                    }
+                    
+                    if (strlen((string)$courseCurriculum2[0][0]) > 0)
+                    {
+                        $unblockCurriculum2 = $courseCurriculum2[0][0];
+                    }
+                    else
+                    {
+                        $unblockCurriculum2 = $group2->curriculumId;
+                    }
+                   
+                    if ( $hasShock )
+                    {    
+                        $group1Curriculum = $businessCurriculum->getCurriculum($group1->curriculumId);
+                        $group2Curriculum = $businessCurriculum->getCurriculum($group2->curriculumId);
+                        
+                        //Obter os códigos de curriculo do curso do aluno
+                        $filters->curricularComponentId      = $group1Curriculum->curricularComponentId;
+                        $filters->curricularComponentVersion = $group1Curriculum->curricularComponentVersion;
+                        $filters->courseId                   = $contractData->courseId;
+                        $filters->courseVersion              = $contractData->courseVersion;
+                        $filters->turnId                     = $contractData->turnId;
+                        $filters->unitId                     = $contractData->unitId;
+                        
+                        $courseCurriculum1 = $businessCurriculum->searchCurriculum($filters);
+                        
+                        $filters->curricularComponentId      = $group2Curriculum->curricularComponentId;
+                        $filters->curricularComponentVersion = $group2Curriculum->curricularComponentVersion;
+                        
+                        $courseCurriculum2 = $businessCurriculum->searchCurriculum($filters);
+                        
+                        //Se não existir curriculumId para o curso do aluno, utiliza o código de curriculo registrado na disciplina oferecida
+                        if (strlen((string)$courseCurriculum1[0][0]) > 0)
+                        {
+                            $unblockCurriculum1 = $courseCurriculum1[0][0];
+                        }
+                        else
+                        {
+                            $unblockCurriculum1 = $group1->curriculumId;
+                        }
+                        
+                        if (strlen((string)$courseCurriculum2[0][0]) > 0)
+                        {
+                            $unblockCurriculum2 = $courseCurriculum2[0][0];
+                        }
+                        else
+                        {
+                            $unblockCurriculum2 = $group2->curriculumId;
+                        }
+                        
+                        if ( $business->isScheduleShock($data->contractId, $data->learningPeriodId, $unblockCurriculum1) ||
+                             $business->isScheduleShock($data->contractId, $data->learningPeriodId, $unblockCurriculum2) )
+                        {
+                            $hasShock = false;
+                        }
+                        else
+                        {
+                            $shockingGroups = array ( $data->groupId[$i], $data->groupId[$j] );
+                        }
+                    }
+                    
+                    if ( !$hasShock )
+                    {
+                        if ( ($group1->curriculumCurricularComponentId      == $group2->curriculumCurricularComponentId) &&
+                             ($group1->curriculumCurricularComponentVersion == $group2->curriculumCurricularComponentVersion) )
+                        {
+                            $freeSeminaries = explode(',', str_replace(' ', '', FREE_SEMINARY_CURRICULAR_COMPONENT_IDS));
+                            
+                            if (!in_array($group1->curriculumCurricularComponentId, $freeSeminaries))
+                            {
+                                $duplicatedGroups[] = $data->groupId[$i];
+                            }
+                        }
+                        else
+                        {
+                            $isElectiveEnroll = false;
+                            if ( strlen((string)$data->curriculumIdOld[$group1->curriculumId]) > 0)
+                            {
+                                $curriculumOldData1 = $businessCurriculum->getCurriculum($data->curriculumIdOld[$group1->curriculumId]);
+                            }
+                            if (strlen((string)$data->curriculumIdOld[$group2->curriculumId]) > 0) 
+                            {   
+                                $curriculumOldData2 = $businessCurriculum->getCurriculum($data->curriculumIdOld[$group2->curriculumId]);
+                            }
+
+                            if ( ($curriculumOldData1->curriculuarComponentTypeId == CURRICULAR_COMPONENT_TYPE_ELECTIVE) ||
+                                 ($curriculumOldData2->curriculuarComponentTypeId == CURRICULAR_COMPONENT_TYPE_ELECTIVE) )
+                            {
+                                $isElectiveEnroll = true;
+                            }
+                            
+                            if (!$isElectiveEnroll)
+                            {
+                                $filters->courseId      = $contractData->courseId;
+                                $filters->courseVersion = $contractData->courseVersion;
+                                $filters->courseUnitId  = $contractData->unitId;
+                                $filters->courseTurnId  = $contractData->turnId;
+                                
+                                $filters->curricularComponentId      = $group1->curriculumCurricularComponentId;
+                                $filters->curricularComponentVersion = $group1->curriculumCurricularComponentVersion;
+                                
+                                $group1Curriculum = $businessCurriculum->searchCurriculum($filters);
+                                
+                                $filters->curricularComponentId      = $group2->curriculumCurricularComponentId;
+                                $filters->curricularComponentVersion = $group2->curriculumCurricularComponentVersion;
+                                
+                                $group2Curriculum = $businessCurriculum->searchCurriculum($filters);
+                                
+                                $filters2->curriculumInId  = $group1Curriculum[0][0];
+                                $filters2->curriculumOutId = $group2Curriculum[0][0];
+                                $concurrence1 = $businessConcurrence->searchCurriculumConcurrence($filters2);
+                                
+                                $filters2->curriculumInId  = $group2Curriculum[0][0];
+                                $filters2->curriculumOutId = $group1Curriculum[0][0];
+                                $concurrence2 = $businessConcurrence->searchCurriculumConcurrence($filters2);
+                                
+                                if ( (count($concurrence1) > 0) || 
+                                     (count($concurrence2) > 0) )
+                                {
+                                    $concurrentGroups[] = array($data->groupId[$i], $data->groupId[$j]);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            if ( count($fullGroups) > 0)
+            {
+                $msg = _M('The following curricular components are full', $module) . ':' .  '<br><br><table>';
+                
+                foreach ($fullGroups as $fullGroup)
+                {
+                    $group1 = $businessGroup->getGroup($fullGroup);
+                    
+                    $msg .= '<tr>' .
+                            '<td align="right">' . $group1->curriculumCurricularComponentId . '/' . $group1->curriculumCurricularComponentVersion . '</td>' .
+                            '<td>' . $group1->curriculumCurricularComponentName . '</td>' .
+                            '</tr>';
+                }
+                
+                $msg .= '</table><br>';
+                $msg .= _M('Please, correct this problems and try again.', $module);
+                
+                $this->addError($msg);
+            }
+            elseif ( $hasShock )
+            {
+                $group1 = $businessGroup->getGroup($shockingGroups[0]);
+                $group2 = $businessGroup->getGroup($shockingGroups[1]);
+                $msg = _M('The following curricular components have shocking schedules', $module) . ':' . '<br><br>' .
+                       '<table>' .
+                       ' <tr>' .
+                       '  <td align="right">' . $group1->curriculumCurricularComponentId . '/' . $group1->curriculumCurricularComponentVersion . '</td>' .
+                       '  <td>' . $group1->curriculumCurricularComponentName . '</td>' .
+                       ' </tr>' .
+                       ' <tr>' .
+                       '  <td align="right">' . $group2->curriculumCurricularComponentId . '/' . $group2->curriculumCurricularComponentVersion . '</td>' .
+                       '  <td>' . $group2->curriculumCurricularComponentName . '</td>' .
+                       ' </tr>' .
+                       '</table><br>' .
+                       _M('Please, correct this problems and try again.', $module);
+
+                $this->addError($msg);
+            }
+            elseif ( count($duplicatedGroups) > 0 )
+            {
+                $businessGroup   = $MIOLO->getBusiness($module,'BusGroup');
+                
+                $msg = _M('The following curricular components are duplicated', $module) . ':' . '<br><br>' . '<table>';
+                
+                foreach ($duplicatedGroups as $duplicatedGroup)
+                {
+                    $duplicatedCurr = $businessGroup->getGroup($duplicatedGroup);
+                    $msg .= '<tr>' .
+                            '<td align="right">' . $duplicatedCurr->curriculumCurricularComponentId . '/' . $duplicatedCurr->curriculumCurricularComponentVersion . '</td>' .
+                            '<td>' . $duplicatedCurr->curriculumCurricularComponentName . '</td>' .
+                            '</tr>';
+                }
+                
+                $msg .= '</table><br>' . _M('Please, correct this problems and try again.', $module);
+                
+                $this->addError($msg);
+            }
+            elseif ( count($concurrentGroups) > 0 )
+            {
+                $businessGroup = $MIOLO->getBusiness($module, 'BusGroup');
+                
+                $msg = _M('The following curricular components can not be coursed together', $module) . ':' . '<br><br>' . '<table>';
+                
+                foreach ($concurrentGroups as $concurrentGroup)
+                {
+                    $concurrentGroup1 = $businessGroup->getGroup($concurrentGroup[0]);
+                    $concurrentGroup2 = $businessGroup->getGroup($concurrentGroup[1]);
+                    
+                    $msg .= '<tr>' .
+                            '<td align="right">' . $concurrentGroup1->curriculumCurricularComponentId . '/' . $concurrentGroup1->curriculumCurricularComponentVersion . '</td>' .
+                            '<td>' . $concurrentGroup1->curriculumCurricularComponentName . '</td>' .
+                            '</tr>' .
+                            '<tr>' . 
+                            '<td>' . $concurrentGroup2->curriculumCurricularComponentId . '/' . $concurrentGroup2->curriculumCurricularComponentVersion . '</td>' .
+                            '<td>' . $concurrentGroup2->curriculumCurricularComponentName . '</td>' . 
+                            '</tr>' . '<tr><td>&nbsp</td></tr>';
+                }
+                
+                $msg .= '</table><br>' . _M('Please, correct this problems and try again.', $module);
+                
+                $this->addError($msg);
+            }
+            else
+            {
+                /**
+                 * Verifica os co-requisitos
+                 **/
+                $businessCondition = $MIOLO->getBusiness($module, 'BusCondition');
+                $error = $businessCondition->checkGroupCondition($data->groupId, $data->contractId, $data->learningPeriodId, $this);
+
+                if ( !$error )
+                {
+                    if (!$business->checkMinimumCreditsCondition($data))
+                    {
+                        $msg = _M('Enroll blocked cause do not reach the minimum credits', $module);
+                        $this->addError($msg);
+                    }
+                    elseif (!$business->checkTurnMinimumCreditsCondition($data))
+                    {
+                        $msg = _M('Enroll blocked cause do not reach the minimum credits to course curricular components in another turn', $module);
+                        $this->addError($msg);
+                    }
+                    else
+                    {
+                        $vars       = array ( 'enrollData' => urlencode(serialize($this->enrollData)), 
+                                              'data' => urlencode(serialize($data)) );
+                        $postAction = substr($action,0,strrpos($action,':')) . ':enrollConfirmation';
+                        $postUrl    = $MIOLO->getActionURL($module, $postAction, null, $vars);
+                        $this->page->mGoto($postUrl);
+                    }
+                }
+            }
+        }
+        //Verifica se existe turma para matrícula em seriada em turma
+        elseif ( strlen((string)$data->classId) )
+        {
+            if ( count($data->groupId) > 0 )
+            {
+                for ( $i=0; $i<count($data->groupId) && ! $hasShock; $i++ )
+                {
+                    for ( $j=$i+1; $j<count($data->groupId) && ! $hasShock; $j++ )
+                    {
+                        $hasShock = $business->hasShockingSchedule($data->groupId[$i], $data->groupId[$j]); 
+                        
+                        $group1        = $businessGroup->getGroup($data->groupId[$i]);
+                        $group2        = $businessGroup->getGroup($data->groupId[$j]);
+                        
+                        if ($hasShock)
+                        {
+                            $shockingGroups = array ( $data->groupId[$i], $data->groupId[$j] );
+                        }
+                        else
+                        {
+
+                        if ( ($group1->curriculumCurricularComponentId      == $group2->curriculumCurricularComponentId) &&
+                             ($group1->curriculumCurricularComponentVersion == $group2->curriculumCurricularComponentVersion) )
+                        {
+                            $freeSeminaries = explode(',', str_replace(' ', '', FREE_SEMINARY_CURRICULAR_COMPONENT_IDS));
+                            
+                            if (!in_array($group1->curriculumCurricularComponentId, $freeSeminaries))
+                            {
+                                $duplicatedGroups[] = $data->groupId[$i];
+                            }
+                        }
+                        else
+                        {
+                            $isElectiveEnroll = false;
+                            if ( strlen((string)$data->curriculumIdOld[$group1->curriculumId]) > 0)
+                            {
+                                $curriculumOldData1 = $businessCurriculum->getCurriculum($data->curriculumIdOld[$group1->curriculumId]);
+                            }
+                            if (strlen((string)$data->curriculumIdOld[$group2->curriculumId]) > 0) 
+                            {   
+                                $curriculumOldData2 = $businessCurriculum->getCurriculum($data->curriculumIdOld[$group2->curriculumId]);
+                            }
+                                    
+                            if ( ($curriculumOldData1->curriculuarComponentTypeId == CURRICULAR_COMPONENT_TYPE_ELECTIVE) ||
+                                 ($curriculumOldData2->curriculuarComponentTypeId == CURRICULAR_COMPONENT_TYPE_ELECTIVE) )
+                            {
+                                $isElectiveEnroll = true;
+                            }
+                            
+                            if (!$isElectiveEnroll)
+                            {
+                                $businessConcurrence = $MIOLO->getBusiness('academic', 'BusCurriculumConcurrence');
+                                $filters->courseId      = $contractData->courseId;
+                                $filters->courseVersion = $contractData->courseVersion;
+                                $filters->courseUnitId  = $contractData->unitId;
+                                $filters->courseTurnId  = $contractData->turnId;
+                                
+                                $filters->curricularComponentId      = $group1->curriculumCurricularComponentId;
+                                $filters->curricularComponentVersion = $group1->curriculumCurricularComponentVersion;
+                                
+                                $group1Curriculum = $businessCurriculum->searchCurriculum($filters);
+                                
+                                $filters->curricularComponentId      = $group2->curriculumCurricularComponentId;
+                                $filters->curricularComponentVersion = $group2->curriculumCurricularComponentVersion;
+                                
+                                $group2Curriculum = $businessCurriculum->searchCurriculum($filters);
+                                
+                                $filters2->curriculumInId  = $group1Curriculum[0][0];
+                                $filters2->curriculumOutId = $group2Curriculum[0][0];
+                                $concurrence1 = $businessConcurrence->searchCurriculumConcurrence($filters2);
+                                
+                                $filters2->curriculumInId  = $group2Curriculum[0][0];
+                                $filters2->curriculumOutId = $group1Curriculum[0][0];
+                                $concurrence2 = $businessConcurrence->searchCurriculumConcurrence($filters2);
+                                
+                                if ( (count($concurrence1) > 0) || 
+                                     (count($concurrence2) > 0) )
+                                {
+                                    $concurrentGroups[] = array($data->groupId[$i], $data->groupId[$j]);
+                                }
+                            }
+                        }
+                        }
+                    }
+                }
+                
+                if ( $hasShock )
+                {
+                    $group1 = $businessGroup->getGroup($shockingGroups[0]);
+                    $group2 = $businessGroup->getGroup($shockingGroups[1]);
+                    $msg = _M('The following curricular components have shocking schedules', $module) . ':' . '<br><br>' .
+                           '<table>' .
+                           ' <tr>' .
+                           '  <td align="right">' . $group1->curriculumCurricularComponentId . '/' . $group1->curriculumCurricularComponentVersion . '</td>' .
+                           '  <td>' . $group1->curriculumCurricularComponentName . '</td>' .
+                           ' </tr>' .
+                           ' <tr>' .
+                           '  <td align="right">' . $group2->curriculumCurricularComponentId . '/' . $group2->curriculumCurricularComponentVersion . '</td>' .
+                           '  <td>' . $group2->curriculumCurricularComponentName . '</td>' .
+                           ' </tr>' .
+                           '</table><br>' .
+                           _M('Please, correct this problems and try again.', $module);
+
+                    $this->addError($msg);
+                }
+                elseif (count($duplicatedGroups) > 0)
+                {
+                    $businessGroup   = $MIOLO->getBusiness($module,'BusGroup');
+                
+                    $msg = _M('The following curricular components are duplicated', $module) . ':' . '<br><br>' . '<table>';
+                    
+                    foreach ( $duplicatedGroups as $duplicatedGroup )
+                    {
+                        $duplicatedCurr = $businessGroup->getGroup($duplicatedGroup);
+                        $msg .= '<tr>' .
+                                '<td align="right">' . $duplicatedCurr->curriculumCurricularComponentId . '/' . $duplicatedCurr->curriculumCurricularComponentVersion . '</td>' .
+                                '<td>' . $duplicatedCurr->curriculumCurricularComponentName . '</td>' .
+                                '</tr>';
+                    }
+                    
+                    $msg .= '</table><br>' . _M('Please, correct this problems and try again.', $module);
+                    
+                    $this->addError($msg); 
+                }
+                else
+                {
+                    $enrollOperation = $business->insertClassEnroll($data);
+
+                    if ( $enrollOperation->ok )
+                    {
+                        if ( count($enrollOperation->errors) > 0 )
+                        {
+                            $msg = _M('The enroll process for the following contracts could not be completed', $module) . '. ' . _M('Please, try to enroll them individually to check the problem', $module) . '.' . '<br><br>' . '<table>'; 
+
+                            foreach ( $enrollOperation->errors as $classContractId )
+                            {
+                                $contractData = $businessContract->getContract($classContractId);
+                                
+                                $msg .= '<tr>' .
+                                        '<td align="right">' . $contractData->contractId . '</td>' .
+                                        '<td>' . $contractData->personName . '</td>' .
+                                        '</tr><tr><td>&nbsp</td></tr>';
+                            }
+                            
+                            $msg .= '</table>';
+                            
+                            $this->addError($msg);
+                        }
+
+                        //converte o resumo de matrícula em previsões
+                        if ( GENERATE_INC_FORECAST_ON_ENROLL == 'YES' )
+                        {
+                            $busFinance = $MIOLO->getBusiness('finance', 'BusIncomeForecast');
+                            $res        = $busFinance->generateIncomeForecast($data->learningPeriodId);
+
+                            //converte as previsões em títulos
+                            if ( $res && GENERATE_INVOICE_ON_ENROLL == 'YES')
+                            {
+
+                                $businessRec = $MIOLO->getBusiness('finance', 'BusReceivableInvoicePupil');
+
+                                //pega os alunos da turma
+                                $dataFil->classId        = $data->classId;
+                                $dataFil->notHaveEndDate = DB_TRUE;
+                                $businessClassPupil = $MIOLO->getBusiness($module, 'BusClassPupil');
+                                $pupils = $businessClassPupil->searchClassPupil($dataFil);
+
+                                if ( count($pupils)>0 )
+                                {
+                                    $busLearningPeriod = $MIOLO->getBusiness('academic', 'BusLearningPeriod');
+                                    foreach ( $pupils as $pupil )
+                                    {
+                                    
+                                        $dataInvoice->bankAccountId    = $busLearningPeriod->getLearningPeriodBankAccount($data->learningPeriodId);
+                                        $dataInvoice->bankContractId   = $busLearningPeriod->getLearningPeriodBankContract($data->learningPeriodId);
+                                        $dataInvoice->personId         = $pupil[6];
+                                        $dataInvoice->contractId       = $pupil[2];
+                                        $dataInvoice->learningPeriodId = $data->learningPeriodId;
+
+                                        //pega os meses e anos do período letivo
+                                        $dates = $busFinance->getMonthAndYear($dataInvoice);
+
+                                        $dataInvoice->periodId         = $this->enrollData->periodId;
+
+                                        if ( count($dates) > 0 )
+                                        {
+                                            foreach ( $dates as $date )
+                                            {
+                                                list ( $dataInvoice->month, $dataInvoice->year ) = $date;
+                                                $businessRec->generateReceivableInvoices($dataInvoice);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                        }
+
+                        $msg = _M('Enroll process for class', $module) . ' ' . $data->classId . ' ' . _M('finished', $module) . '. ' . $enrollOperation->numberInserted . ' ' . _M('pupils enrolled', $module) . '.';
+                        
+                        $this->addInfo($msg);
+                    }
+                    else
+                    {
+                        $msg = _M('Occured some errors trying to enroll the class pupils. Please, verify if all the registers are correctly done', $module);
+                        
+                        $this->addError($msg);
+                    }
+                }
+            }
+            else
+            {
+                $msg = _M('No groups registered for selected class', $module) . '!';
+                
+                $this->addError($msg);
+            }
+        }
+        else
+        {
+            $msg = _M('Unable to get a class', $module) . '!';
+            
+            $this->addError($msg);
+        }
+
+    }
+
+}
+
+?>

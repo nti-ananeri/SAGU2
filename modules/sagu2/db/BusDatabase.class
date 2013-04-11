@@ -1,0 +1,266 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for the table descriptions informations
+ *
+ * @author Daniel Afonso Heisler [daniel@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Armando Taffarel Neto [taffarel@solis.coopb.br]
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 20/10/2006
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to manipulate table description informations
+ **/
+class BusinessSagu2BusDatabase extends MBusiness
+{
+
+    public $db;
+
+    /**
+     * Class constructor
+     **/
+    public function BusinessSagu2BusDatabase()
+    {
+        $this->db = $this->getDatabase();
+    }
+
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $MIOLO->getClass('basic', 'sagu');
+        $module = is_null($module) ? 'basic' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+   /**
+     * get all table description
+     *
+     * @return On succeed, returns true. Otherwise, false.
+     *
+     */
+    function getDatabaseDescription()
+    {
+
+        $objSubId = 0; //somente a descrição das tabelas
+        $relAm    = 0; //somente as tabelas
+
+        $sql = 'SELECT A.oid as tableId,
+                       A.relName as tableName, 
+                       B.description as tableDescription
+                  FROM pg_class A
+             LEFT JOIN pg_description B
+                    ON (     A.oid    = B.objOid 
+                         AND B.objSubId = ? )
+                 WHERE (    A.relName ILIKE ?
+                         OR A.relName ILIKE ?
+                         OR A.relName ILIKE ?
+                         OR A.relName ILIKE ?
+                         OR A.relName ILIKE ?
+                         OR A.relName ILIKE ?
+                         OR A.relName ILIKE ?
+                         OR A.relName ILIKE ?
+                         OR A.relName ILIKE ? )
+                   AND A.relAm = ?
+              ORDER BY A.relName';
+
+        $args = array(
+                        $objSubId,
+                        'acc%',
+                        'acd%',
+                        'bas%',
+                        'ccp%',
+                        'fin%',
+                        'ins%',
+                        'ptc%',
+                        'rsh%',
+                        'spr%',
+                        $relAm
+                     );
+
+        $result = $this->db->query(SAGU::prepare($sql, $args));
+
+        if ( count($result) > 0 )
+        {
+            $x = 0;
+            foreach ( $result as $row )
+            {
+                list ( $tableOid,
+                       $tableName,
+                       $tabledescription ) = $row;
+
+                $sql = 'SELECT A.attName as attributeName,
+                               B.description as attributeDescription
+                          FROM  pg_attribute A 
+                     LEFT JOIN pg_description B
+                        ON (A. attrelid  = B.objOid AND A.attNum = B.objSubId)
+                         WHERE B.objsubid > ? AND
+                               B.objOid IN (SELECT * FROM inheritanceHierarchy(?))
+                         GROUP BY 1, 2, objsubid
+                         ORDER BY objsubid';
+
+                $args = array(
+                                $objSubId,
+                                $tableOid
+                             );
+
+                $result3[$x]    = $row;
+                $result3[$x++][3] = $this->db->query(SAGU::prepare($sql, $args));
+            }
+        }
+
+        return $result3;
+
+    }
+
+   /**
+     * get the basConfig parameters and descriptions
+     *
+     * @return On succeed, returns true. Otherwise, false.
+     *
+     */
+    function getParametersTable()
+    {
+
+        $sql = 'SELECT A.moduleConfig,
+                       A.parameter,
+                       A.description,
+                       A.type
+                  FROM basConfig A
+              ORDER BY A.moduleConfig,
+                       A.parameter';
+
+        $result = $this->db->query(SAGU::prepare($sql, $args));
+
+        return $result;
+
+    }
+    
+
+   /**
+     * get the installation instructions
+     *
+     * @return On succeed, returns true. Otherwise, false.
+     *
+     */
+    function getInstallationFiles()
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = is_null($module) ? 'basic' : $module;
+
+        $files = scandir(DOCUMENTATION_PATH . '/INSTALL');
+
+        if ( $files )
+        {
+            foreach( $files as $file )
+            {
+                if ( ereg("^.*\.txt$", $file) )
+                {
+                    $key = ereg_replace("([^\.]*).txt", "\\1", $file);
+                    
+                    $ret[$key] = DOCUMENTATION_PATH . '/INSTALL/' . $file;
+                }
+
+            }
+        }
+        
+        return $ret;
+    }
+
+   /**
+     * get the installation instructions
+     *
+     * @return On succeed, returns true. Otherwise, false.
+     *
+     */
+    function getLdap()
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = is_null($module) ? 'basic' : $module;
+
+        $file = DOCUMENTATION_PATH . '/LDAP/README';
+
+        if ( file_exists($file) )
+        {
+            $fp      = fopen($file, 'r');
+            $content = fread($fp, filesize($file));
+            fclose($fp);
+        }
+
+        return $content;
+    }
+
+   /**
+     * get the step by step instructions
+     *
+     * @return On succeed, returns true. Otherwise, false.
+     *
+     */
+    function getStepByStep()
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = is_null($module) ? 'basic' : $module;
+
+        $file = DOCUMENTATION_PATH . '/passo-a-passo.txt';
+
+        if ( file_exists($file) )
+        {
+            $fp      = fopen($file, 'r');
+            $content = fread($fp, filesize($file));
+            fclose($fp);
+        }
+
+        return $content;
+    }
+
+    public function beginTransaction()
+    {
+
+        $db = $this->getDatabase();
+        $db->execute('BEGIN TRANSACTION');
+
+    }
+
+    public function commit()
+    {
+
+        $db = $this->getDatabase();
+        $db->execute('COMMIT');
+
+    }
+
+}
+
+?>

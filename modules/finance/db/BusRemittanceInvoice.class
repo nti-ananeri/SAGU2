@@ -1,0 +1,352 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions in Remittences File table
+ *
+ * @author Giovani Murilo Dantas Corrêa [gmurilo@isolution.inf.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Daniel Afonso Heisler [daniel@isolution.inf.br]
+ * 
+ * @since
+ * Class created on 03/01/2008
+ *
+ * \b @organization \n
+ * iSolution - Soluções em TI \n
+ * The iSolution development team
+ *
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to manipulate the Remittence Files
+ **/
+class BusinessFinanceBusRemittanceInvoice extends Business
+{
+    private $db;
+    private $ntitles;
+    private $tvalue;
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $this->db = $MIOLO->getDatabase($module, 'finance');
+    }
+
+    /**
+     * Get header
+     * @author: Giovani Murilo Dantas Correa [gmurilo@isolution.inf.br]
+     * 
+     *
+    **/    
+    public function getHeader($data)
+    {
+	    $sql = "SELECT DISTINCT
+                BA.branchNumber,
+                BA.accountNumber,
+			                ( SELECT substring(L.name,1,30) FROM basCompanyConf 
+						      INNER JOIN basLegalPerson L USING (personId)
+							    WHERE companyId = ( SELECT value FROM basconfig
+								    WHERE parameter = 'DEFAULT_COMPANY_CONF' ) ) as companyName,
+			    B.bankId,
+			    substring(B.description,1,15) as bankName,
+			    TO_CHAR(now()::date,'DDMMYY') as date,
+                BA.accountNumberDigit,
+                BA.assignorCode
+				    FROM ONLY finInvoice A
+				    INNER JOIN finBankAccount BA ON BA.bankAccountId = A.bankAccountId
+				    INNER JOIN finBank B ON B.bankId = BA.bankId 
+			    WHERE maturityDate >= now()::date-5 AND BA.bankAccountId = ? 
+			    GROUP BY 1,2,4,5,6,7,8";
+	    $args[] = $data->bankAccountId;
+	    $sql = SAGU::prepare($sql, $args);
+        $result = $this->db->query($sql);
+	    list($data->branchNumber,
+		     $data->accountNumber,
+		     $data->companyName,
+		     $data->bankId,
+		     $data->bankName,
+		     $data->date,
+             $data->accountNumberDigit,
+             $data->assignorCode) = $result[0];
+	    return $data;
+    }
+  /**
+    *
+    * @author: Giovani Murilo Dantas Correa [gmurilo@isolution.inf.br]
+    *
+    * @param: $data (object): object containing data to begin a process for titles
+    *
+    * @return (boolean): true if succeed, otherwise false
+    *
+    */
+    public function listDetails($data)
+    {
+	    $sql  = "SELECT returntextasinteger(L.cnpj) as cnpj,
+	       BA.branchNumber,
+	       BA.accountNumber,
+	       I.bankInvoiceId,
+	       FP.daysToFine,
+	       ROUND((CASE WHEN isfineinpercent THEN ((balance(invoiceid)*round(FP.fine::numeric(14,4),2))/100) ELSE FP.fine::numeric(14,4) END)::numeric(14,2), 2),
+	       I.invoiceId,
+	       to_char(I.maturityDate,'DDMMYY'),
+	       round(balance(I.invoiceId),2) as value,
+	       B.bankId,
+	       to_char(I.emissionDate,'DDMMYY'),
+	       ROUND((CASE WHEN ismonthlyinterestinpercent THEN (balance(invoiceId)*(round(FP.monthlyinterest::numeric(14,4),2)/100))/30 ELSE FP.monthlyinterest::numeric(14,4) END)::numeric(14,2),2) ,
+	       ( CASE WHEN FP.daysToDiscount = 0 OR FP.daysToDiscount IS NULL THEN '999999' ELSE to_char(I.maturityDate::date-(FP.daysToDiscount-1),'DDMMYY') END ) as daysToDiscount,
+	       round(FP.discount::numeric(14,4),2),
+	       substring(returntextasinteger(PD.content),1,9)||'000'||substring(returntextasinteger(PD.content),10,2) as cpf,
+	       substring(to_ascii(P.name) ,1,40) as name,
+	       substring(to_ascii(P.location),1,40) as location,
+	       substring(to_ascii(P.neighborhood),1,12) as neighborhood,
+	       to_ascii(P.zipcode) as zipcode,
+	       substring(CASE WHEN P.responsablelegalid IS NULL THEN to_ascii(P.name) ELSE (SELECT to_ascii(name) FROM ONLY basPerson WHERE personId = P.responsablelegalid) END,1,40) as responsablelegal,
+	       substring(to_ascii(PC.name),1,15) as cityName,
+	       PC.stateId
+	    FROM     
+		    basLegalPerson L 
+		INNER JOIN 
+		    basCompanyConf C USING (personId) 
+		LEFT JOIN 
+		    ONLY finReceivableInvoice I ON 1 = 1
+		INNER JOIN 
+		    finPolicy FP USING (policyId)
+		INNER JOIN  
+		    finBankAccount BA ON I.bankAccountId = BA.bankAccountId
+		INNER JOIN
+		    finBank B ON B.bankId = BA.bankId
+		LEFT JOIN
+		     ONLY basPhysicalPerson P ON P.personId = I.personId
+		LEFT JOIN
+		     ONLY basLegalPerson LP ON LP.personId = I.personId
+		INNER JOIN 
+		    basCity PC ON PC.cityId = P.cityId
+		LEFT JOIN
+		    basDocument PD ON PD.personId = P.personId 
+		        AND PD.documentTypeId = (SELECT value FROM 
+		                                                basconfig   
+		                                              WHERE 
+		                                                parameter = 'CPF_CODE')
+	    WHERE 
+		C.companyId = ( SELECT value FROM 
+		                                basconfig   
+		                             WHERE 
+		                                parameter = 'DEFAULT_COMPANY_CONF' ) 
+		AND I.remittanceField IS NULL
+		AND balance(invoiceId) > 0
+		AND BA.bankAccountId = ? 
+        AND NOT invoiceId IN (SELECT invoiceId FROM finRemittanceFile)";
+        $args[] = $data->bankAccountId;
+        if( strlen((string)$data->initialMaturityDate) > 0  && strlen((string)$data->endMaturityDate) > 0 )
+        {
+            $sql .= " AND I.maturityDate BETWEEN TO_DATE(?,'" . MASK_DATE . "') AND TO_DATE(?,'" . MASK_DATE . "') ";
+            $args[] = $data->initialMaturityDate;
+            $args[] = $data->endMaturityDate;
+            
+        }
+        else if( strlen((string)$data->initialMaturityDate) > 0 )
+        {
+            $sql .= " AND I.maturityDate BETWEEN TO_DATE(?,'" . MASK_DATE . "') AND now()::date ";
+            $args[] = $data->initialMaturityDate;
+            
+        }
+        else if( strlen((string)$data->endMaturityDate) > 0 )
+        {
+            $sql .= " AND I.maturityDate BETWEEN now()::date AND TO_DATE(?,'" . MASK_DATE . "') ";
+            $args[] = $data->endMaturityDate;
+            
+        }
+
+		$sql = SAGU::prepare($sql, $args);
+        $return = $this->db->query($sql);
+        for($x=0;$x < count($return);$x++)
+        {
+            $this->tvalue += (float)$return[$x][8];
+        }
+        $this->tvalue = SAGU::formatNumber($this->tvalue);
+        $this->tvalue = str_replace('.','',$this->tvalue);
+        $this->ntitles = count($return)+1;
+        return $return;
+    }
+
+    /**
+     * Get trailler
+     * @author: Giovani Murilo Dantas Correa [gmurilo@isolution.inf.br]
+     * 
+     *
+    **/    
+    public function getTrailler()
+    {
+	    $data->ntitles = $this->ntitles;
+        $data->tvalue = $this->tvalue;
+        return $data;
+    }
+
+  /**
+    *
+    * @author: Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+    *
+    * @param: $invoiceId (int): invoiceId data to get target for remittance.
+    *
+    * @return (object) PhysicalTarget.
+    *
+    */
+    public function getPhysicalTargetFromInvoice($invoiceId)
+    {
+
+        $sql = '     SELECT contractid,
+                            isactive,
+                            cityid,
+                            (SELECT name FROM basCity WHERE basCity.cityId = A.cityId ) AS cityName,
+                            zipcode,
+                            location,
+                            number,
+                            complement,
+                            neighborhood,
+                            name,
+                            documentnumber,
+                            (SELECT stateId FROM basCity WHERE basCity.cityId = A.cityId) AS stateId
+                       FROM finPhysicalTarget A
+                      WHERE contractId IN ( SELECT contractId 
+                                              FROM finReceivableInvoice A 
+                                        INNER JOIN acdContract AS B
+                                                ON (A.courseId = B.courseId 
+                                                    AND A.courseVersion = B.courseVersion 
+                                                    AND A.personId = B.personId) 
+                                             WHERE A.invoiceId = ? )
+                        AND isActive = \''. DB_TRUE .'\' ';
+
+        $args = array($invoiceId);
+
+        $result = $this->db->query(SAGU::prepare($sql, $args));
+
+        if(is_array($result))
+        {
+            $bankTarget = new finPhysicalTarget();
+    
+            list (  $bankTarget->contractId,
+                    $bankTarget->isActive,
+                    $bankTarget->cityId,
+                    $bankTarget->cityName,
+                    $bankTarget->zipCode,
+                    $bankTarget->location,
+                    $bankTarget->number,
+                    $bankTarget->complement,
+                    $bankTarget->neighborhood,
+                    $bankTarget->personName,
+                    $bankTarget->documentNumber,
+                    $bankTarget->stateId ) = $result[0];
+    
+            return $bankTarget;
+        }
+        return false;
+    }
+
+   /**
+    * Function to initiate a transaction
+    *
+    * @param: No parameters needed
+    *
+    * @return: null
+    *
+    */
+    function beginTransaction()
+    {
+        $this->db->execute('BEGIN TRANSACTION');
+    }
+
+   /**
+    * Function to close the transaction
+    *
+    * @param $commit (boolean): True if commit or false to roolback
+    *
+    * @return: null
+    */
+    function endTransaction($commit = true)
+    {
+        $this->db->execute($commit == true ? 'COMMIT' : 'ROOLBACK');
+    }
+
+   /**
+    * Get the company information needed for invoices
+    *
+    * @param: $companyId (int): Object containing the company identification
+    *
+    * @return: Return an object with information.
+    *
+    */
+    function getCompanyData($companyId)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+
+        $sql = ' SELECT name
+                   FROM basCompanyConf
+                  WHERE companyId = ? ';
+
+        $args = array($companyId);
+
+        $ret = $this->db->query(SAGU::prepare($sql, $args));
+        
+        $return->name = $ret[0][0];
+        return $return;
+    }
+
+   /** 
+    * Bank account information
+    * 
+    * @param $bankAccountId (int): Primary key for bank account information
+    *
+    * @return: Return the bank account information
+    *
+    */
+    public function getBankAccountData($bankAccountId)
+    {
+        $sql = ' SELECT assignorCode
+                   FROM finBankAccount
+                  WHERE bankAccountId = ? ';
+        
+        $args = array($bankAccountId);
+
+        $ret = $this->db->query(SAGU::prepare($sql, $args));
+        $return->assignorCode = $ret[0][0];
+        return $return;
+    }
+
+    public function insertRemittanceFile($data)
+    {
+        $this->beginTransaction();
+        $commit = true;
+        for($x = 0; $x < count($data->invoices)  && $commit == true; $x++)
+        {
+            $sql = 'INSERT INTO finRemittanceFile (bankAccountId, fileName, invoiceId ) VALUES (?, ?, ?)';
+            unset($args);
+            $args[] = $data->bankAccountId;
+            $args[] = $data->fileId;
+            $args[] = $data->invoices[$x];
+
+            $sql = SAGU::prepare($sql, $args);
+            $commit = $this->db->execute($sql);        
+        }
+        $this->endTransaction($commit);
+        
+    }
+
+}
+?>

@@ -1,0 +1,304 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for basCompanyConf table
+ *
+ * @author Daniel Afonso Heisler [daniel@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 01/09/2005
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to manipulate the basCompanyConf table
+ **/
+class BusinessBasicBusCompany extends Business
+{
+
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module = is_null($module) ? 'basic' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+    /**
+     * List all records from the table handled by the class
+     *
+     * @param: None
+     *
+     * @returns (array): Return an array with the entire table
+     *
+     **/
+    public function listCompany()
+    {
+        $db  = $this->getDatabase();
+
+        $sql = 'SELECT companyId,
+                       name
+                  FROM basCompanyConf
+              ORDER BY name';
+
+        $ret = $db->query(SAGU::prepare($sql, $args));
+        //$db->close();
+        return $ret;
+    }
+
+    /**
+     * Return a specific record from the database
+     *
+     * @param $companyId (integer): Primary key of the record to be retrieved
+     *
+     * @return (object): Return an object of the type handled by the class
+     *
+     **/
+    public function getCompany($companyId)
+    {
+        $sql = 'SELECT A.companyId,
+                       A.personId,
+                       A.name,
+                       A.acronym,
+                       A.companyTypeDescription,
+                       A.legalResponsableId,
+                       C.name,
+                       A.maskNumberSchoolRegistration,
+                       A.noteOrConcept,
+                       A.inep,
+                       A.userName,
+                       TO_CHAR(A.dateTime,\'' . MASK_TIMESTAMP . '\'),
+                       A.ipAddress
+                  FROM basCompanyConf A
+        LEFT JOIN ONLY basLegalPerson B
+                 USING ( personId )
+        LEFT JOIN ONLY basPhysicalPerson C
+                    ON ( A.legalResponsableId = C.personId)
+                 WHERE A.companyId = ?';
+
+        $db     = $this->getDatabase();
+        $result = $db->query(SAGU::prepare($sql, $companyId));
+        //$db->close();
+
+        $company = new basCompanyConf();
+        list ( $company->companyId,
+               $company->personId,
+               $company->name,
+               $company->acronym,
+               $company->companyTypeDescription,
+               $company->legalResponsableId,
+               $company->legalResponsableName,
+               $company->maskNumberSchoolRegistration,
+               $company->noteOrConcept,
+               $company->inep,
+               $company->userName,
+               $company->dateTime,
+               $company->ipAddress
+               ) = $result[0];
+
+        return $company; 
+    }
+
+    /**
+     * Do a search on the database table handled by the class
+     *
+     * @param $filters (object): Search filters
+     *
+     * @return (array): An array containing the search results
+     **/
+    public function searchCompany($filters)
+    {
+        $sql = 'SELECT A.companyId,
+                       A.name,
+                       A.acronym,
+                       A.personId,
+                       B.name,
+                       A.maskNumberSchoolRegistration,
+                       A.noteOrConcept,
+                       A.legalResponsableId,
+                       A.inep,
+                       A.userName,
+                       TO_CHAR(A.dateTime,\'' . MASK_TIMESTAMP . '\'),
+                       A.ipAddress
+                  FROM basCompanyConf A
+        LEFT JOIN ONLY basLegalPerson B
+                 USING ( personId ) ';
+
+        if ( strlen((string)$filters->companyId) > 0 )
+        {
+            $where .= ' AND A.companyId = ? ';
+            $args[] = $filters->companyId;
+        }
+        if ( strlen((string)$filters->name) > 0 )
+        {
+            $where .= ' AND TO_ASCII(A.name) ILIKE TO_ASCII(?) ';
+            $args[] = $filters->name . '%';
+        }
+        if ( strlen((string)$filters->acronym) > 0 )
+        {
+            $where .= ' AND TO_ASCII(A.acronym) ILIKE TO_ASCII(?) ';
+            $args[] = $filters->acronym . '%';
+        }
+        if ( strlen((string)$filters->personId) > 0 )
+        {
+            $where .= ' AND A.personId = ? ';
+            $args[] = $filters->personId;
+        }
+
+        unset($result);
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE ' . substr($where, 4) . ' ORDER BY A.name';
+
+            $db     = $this->getDatabase();
+            $result = $db->query(SAGU::Prepare($sql,$args));
+            //$db->close();
+        }
+        return $result;
+    }
+
+    /**
+     * Insert a new record
+     *
+     * @param $data (object): An object of the type handled by the class
+     *
+     * @return True if succed, otherwise False
+     *
+     **/
+    public function insertCompany($data)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+
+        $sql = 'INSERT INTO basCompanyConf
+                            (personId,
+                             name,
+                             acronym,
+                             companyTypeDescription,
+                             maskNumberSchoolRegistration,
+                             noteOrConcept,
+                             legalResponsableId,
+                             inep)
+                     VALUES (?,?,?,?,?,?,?,?)';
+
+        $args = array( $data->personId,
+                       $data->name,
+                       $data->acronym,
+                       $data->companyTypeDescription,
+                       $data->maskNumberSchoolRegistration,
+                       $data->noteOrConcept,
+                       $data->legalResponsableId,
+                       $data->inep );
+
+        $db     = $this->getDatabase();
+        $result = $db->execute(SAGU::prepare($sql, $args));
+
+        //$this->finish();
+        //$db->close();
+
+        return $result;
+    }
+
+    /**
+     * Update data from a specific record
+     *
+     * @param $data (object): Data which will replace the old record data
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+    public function updateCompany($data)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+
+        $sql = 'UPDATE basCompanyConf   
+                   SET name                         = ?,
+                       acronym                      = ?,
+                       companyTypeDescription       = ?,
+                       personId                     = ?,
+                       maskNumberSchoolRegistration = ?,
+                       noteOrConcept                = ?,
+                       legalResponsableId           = ?,
+                       inep                         = ?
+                 WHERE companyId                    = ?';
+              
+        $args[] = $data->name;
+        $args[] = $data->acronym;
+        $args[] = $data->companyTypeDescription;
+        $args[] = $data->personId;
+        $args[] = $data->maskNumberSchoolRegistration;
+        $args[] = $data->noteOrConcept;
+        $args[] = $data->legalResponsableId;
+        $args[] = $data->inep;
+        $args[] = $data->companyId;
+
+        $db   = $this->getDatabase();
+        $sqls = SAGU::prepare($sql, $args);
+
+        for ( $i=0; $i<count($sqls); $i++ )
+        {
+            $result = $db->execute($sqls[$i]);
+        }
+
+        //$this->finish();
+        //$db->close();
+
+        return $result;
+    }
+
+    /**
+     * Delete a record
+     *
+     * @param $companyId (string): Primary key for deletion
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+    public function deleteCompany($companyId)
+    {
+
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+
+        $sql = 'DELETE FROM basCompanyConf 
+                      WHERE companyId = ?';
+
+        $db     = $this->getDatabase();
+        $result = $db->execute(SAGU::prepare($sql, $companyId));
+
+        return $result;
+    }
+
+}
+
+?>

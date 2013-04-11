@@ -1,0 +1,405 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for finTax table
+ *
+ * @author Rudi Uhrig Neto [rudi@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 20/12/2005
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to manipulate the finTax table
+ **/
+class BusinessFinanceBusTax extends Business
+{
+
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module = is_null($module) ? 'finance' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+    /**
+     * List all records from the table handled by the class
+     *
+     * @param: None
+     *
+     * @returns (array): Return an array with the entire table
+     *
+     **/
+    public function listTax()
+    {
+        $db  = $this->getDatabase();
+        $sql = 'SELECT taxId,
+                       description || \' - $\' || ROUND(value,2)::varchar
+                  FROM finTax
+              ORDER BY description';
+        $ret = $db->query($sql);
+        //$db->close();
+        return $ret;
+    }
+    
+    /**
+     * Return a specific record from the database
+     *
+     * @param $taxId (integer): Primary key of the record to be retrieved
+     *
+     * @return (object): Return an object of the type handled by the class
+     *
+     **/
+    public function getTax($taxId)
+    {
+        $sql = 'SELECT A.taxId,
+                       A.description,
+                       A.policyId,
+                       A.incomeSourceId,
+                       A.operationId,
+                       A.accountSchemeId,
+                       A.costcenterId,
+                       A.value,
+                       A.bankAccountId,
+                       A.bankContractId,
+                       A.userName,
+                       TO_CHAR(A.dateTime,\'' . MASK_TIMESTAMP . '\'),
+                       A.ipAddress,
+                       B.description
+                  FROM 
+                    finTax A INNER JOIN
+                    finPolicy B USING ( policyId )
+                 WHERE 
+                    A.taxId = ?';
+
+        $db     = $this->getDatabase();
+        $result = $db->query(SAGU::prepare($sql, $taxId));
+        //$db->close();
+
+        $tax = new finTax();
+        list ( $tax->taxId,
+               $tax->description,
+               $tax->policyId,
+               $tax->incomeSourceId,
+               $tax->operationId,
+               $tax->accountSchemeId,
+               $tax->costCenterId,
+               $tax->value,
+               $tax->bankAccountId,
+               $tax->bankContractId,
+               $tax->userName,
+               $tax->dateTime,
+               $tax->ipAddress,
+               $tax->policyDescription ) = $result[0];
+
+        return $tax;
+    }
+    
+    /**
+     * Do a search on the database table handled by the class
+     *
+     * @param $filters (object): Search filters
+     *
+     * @return (array): An array containing the search results
+     **/
+    public function searchTax($filters)
+    {
+        $sql= 'SELECT taxId,
+                      A.description as taxa,
+                      A.value as valor,
+                      B.description as politica,
+                      C.description as origem,
+                      D.description as operacao,
+                      E.description as centro_de_custo,
+                      F.description as plano_de_contas,
+                      A.bankAccountId,
+                      A.bankContractId
+
+                 FROM finTax A LEFT JOIN
+                      finPolicy B ON ( A.policyId = B.policyId ) LEFT JOIN 
+                      finIncomeSource C ON ( A.incomeSourceId = C.incomeSourceId ) LEFT JOIN 
+                      finOperation D ON ( D.operationId = A.operationId ) LEFT JOIN 
+                      accCostCenter E ON ( E.costCenterId = A.costCenterId ) LEFT JOIN 
+                      accAccountScheme F ON ( F.accountSchemeId = A.accountSchemeId ) ';
+
+        if ( strlen((string)$filters->taxId) > 0 )
+        {
+            $where .= ' AND taxId = ? ';
+            $args[] = $filters->taxId;
+        }
+        if ( strlen((string)$filters->description) > 0 )
+        {
+            $where .= ' AND A.description ILIKE ? ';
+            $args[] = $filters->description . '%';
+        }
+        if ( strlen((string)$filters->policyId) > 0 )
+        {
+            $where .= ' AND A.policyId = ?::integer ';
+            $args[] = $filters->policyId;
+        }
+
+        if ( strlen((string)$filters->policyDescription) > 0 )
+        {
+            $where .= ' AND B.description ILIKE ? ';
+            $args[] = $filters->policyDescription . '%';
+        }
+
+        if ( strlen((string)$filters->incomeSourceId) > 0 )
+        {
+            $where .= ' AND A.incomeSourceId = ?::integer ';
+            $args[] = $filters->incomeSourceId;
+        }
+
+        if ( strlen((string)$filters->incomeSourceDescription) > 0 )
+        {
+            $where .= ' AND C.description ILIKE ? ';
+            $args[] = $filters->incomeSourceDescription . '%';
+        }
+
+        if ( strlen((string)$filters->operationId) > 0 )
+        {
+            $where .= ' AND A.operationId = ?::integer ';
+            $args[] = $filters->operationId;
+        }
+
+        if ( strlen((string)$filters->operationDescription) > 0 )
+        {
+            $where .= ' AND D.description ILIKE ? ';
+            $args[] = $filters->operationDescription . '%';
+        }
+
+        if ( strlen((string)$filters->costCenterId) > 0 )
+        {
+            $where .= ' AND A.costcenterId = ? ';
+            $args[] = $filters->costCenterId;
+        }
+
+        if ( strlen((string)$filters->costCenterDescription) > 0 )
+        {
+            $where .= ' AND E.description ILIKE ? ';
+            $args[] = $filters->costCenterDescription . '%';
+        }
+
+        if ( strlen((string)$filters->accountSchemeId) > 0 )
+        {
+            $where .= ' AND A.accountSchemeId = ? ';
+            $args[] = $filters->accountSchemeId;
+        }
+
+        if ( strlen((string)$filters->accountSchemeDescription) > 0 )
+        {
+            $where .= ' AND F.description ILIKE ? ';
+            $args[] = $filters->accountSchemeDescription . '%';
+        }
+
+        unset($result);
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE ' . substr($where, 4) . ' ORDER BY A.description';
+            $db = $this->getDatabase();
+            $result = $db->query(SAGU::prepare($sql, $args));
+            //$db->close();
+        }
+
+        return $result;
+    }
+
+    /**
+     * Insert a new record
+     *
+     * @param $data (object): An object of the type handled by the class
+     *
+     * @return True if succed, otherwise False
+     *
+     **/
+    public function insertTax($data)
+    {
+        $sql = 'INSERT INTO finTax
+                            (description,
+                             policyId, 
+                             incomeSourceId,
+                             operationId,
+                             accountSchemeId,
+                             costCenterId,
+                             value,
+                             bankAccountId,
+                             bankContractId)
+                     VALUES (?,
+                             ?::integer,
+                             ?::integer,
+                             ?::integer,
+                             ?,
+                             ?,
+                             ?::numeric(14,2),
+                             ?::integer,
+                             ?::integer)';
+        $args = array( $data->description,
+                       $data->policyId,
+                       $data->incomeSourceId,
+                       $data->operationId,
+                       $data->accountSchemeId,
+                       $data->costCenterId,
+                       $data->value,
+                       $data->bankAccountId,
+                       $data->bankContractId);
+
+        $db     = $this->getDatabase();
+        $result = $db->execute(SAGU::prepare($sql, $args));
+        //$db->close();
+
+        return $result;
+    }
+
+    /**
+     * Update data from a specific record
+     *
+     * @param $data (object): Data which will replace the old record data
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+   public function updateTax($data)
+    {
+        $sql = 'UPDATE finTax
+                   SET description    = ?,
+                       policyId = ?::integer,
+                       incomeSourceId = ?::integer,
+                       operationId = ?::integer,
+                       costCenterId = ?,
+                       accountSchemeId = ?,
+                       value = ?::numeric(14,2),
+                       bankAccountId = ?::integer,
+                       bankContractId = ?::integer
+                 WHERE taxId      = ?::integer';
+
+        $args = array( $data->description,
+                       $data->policyId,
+                       $data->incomeSourceId,
+                       $data->operationId,
+                       $data->costCenterId,
+                       $data->accountSchemeId,
+                       $data->value,
+                       $data->bankAccountId,
+                       $data->bankContractId,
+                       $data->taxId );
+
+        $db   = $this->getDatabase();
+        $sqls = SAGU::prepare($sql, $args);
+
+        for ( $i=0; $i<count($sqls); $i++ )
+        {
+            $result = $db->execute($sqls[$i]);
+        }
+
+        //$db->close();
+
+        return $result;
+    }
+
+    /**
+     * Delete a record
+     *
+     * @param $taxId (string): Primary key for deletion
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+   public function deleteTax($taxId)
+    {
+        $sql = 'DELETE FROM finTax
+                      WHERE taxId = ?';
+
+        $db     = $this->getDatabase();
+        $result = $db->execute(SAGU::prepare($sql, $taxId));
+        //$db->close();
+
+        return $result;
+    }
+    
+    public function insertTaxPupil ( $data )
+    {
+        $tax            = $this->getTax($data->taxId);
+        $tax->personId  = $data->personId;
+        $tax->courseId  = $data->courseId;
+        $tax->courseVersion     = $data->courseVersion;
+        $tax->maturityDate      = $data->maturityDate;
+        $tax->contractId        = $data->contractId;
+        $tax->comments          = $data->comments;
+        $tax->periodId          = $data->periodId;
+        $tax->messageInvoice    = $data->messageInvoice;
+        $tax->parcelNumber      = 1;
+        $tax->automaticDebit    = DB_FALSE;
+        $tax->unitId            = $data->unitId;
+        unset($tax->userName);
+        unset($tax->ipAddress);
+        unset($tax->dateTime);
+//        $ok     = $this->db->execute('BEGIN TRANSACTION');
+        $MIOLO = MIOLO::getInstance();
+        $db2 = $MIOLO->getBusiness('finance', 'BusReceivableInvoice');
+        $invoiceId = $db2->insertReceivableInvoice($tax);
+
+        $sql = ' INSERT INTO 
+                        finEntry
+                        ( invoiceId,
+                          operationId,
+                          entryDate,
+                          value,
+                          costCenterId)
+                        VALUES 
+                        (?::integer, 
+                         ?::integer, 
+                         now()::date, 
+                         ?::numeric(14,2),
+                         ?) ';
+           
+        $args = array( $invoiceId,
+                       $tax->operationId,
+                       $tax->value,
+                       $tax->costCenterId );
+        $db     = $db2->getDatabase();
+        $ok = $db->execute(SAGU::prepare($sql, $args));
+        if ( $ok ) 
+        {
+            return $invoiceId ;
+        }
+        else
+        {
+            return $ok;
+        }
+
+    }
+}
+
+?>

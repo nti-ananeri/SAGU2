@@ -1,0 +1,487 @@
+<?php
+
+/**
+ * Extension document form
+ *
+ * @author Guilherme Gregory [guilherme@solis.coop.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * Leovan Tavares da Silva [leovan@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ *
+ * @since
+ * Class created on 23/05/2006
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2005 SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+
+/**
+ * Form to manipulate a contract document
+ **/
+class FrmExtensionDocument extends MForm
+{
+    private $home;
+
+    /**
+     * Class constructor
+     **/
+    function __construct($data)
+    {
+        $module = MIOLO::getCurrentModule();
+        $this->home   = $data->home;
+
+        parent::__construct(_M('Extension', $module));
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+        //set_time_limit(0);
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+        $event    = MIOLO::_request('event');
+
+        $toolBar = new MToolBar('toolBar', $MIOLO->getActionURL($module, $action));
+        $toolBar->hideButton('tbBtnNew');
+        $toolBar->hideButton('tbBtnSave');
+        $toolBar->hideButton('tbBtnSearch');
+        $toolBar->hideButton('tbBtnDelete');
+        $toolBar->enableButton('tbBtnPrint');
+
+        //favoritos
+        $enabledImage  = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-20x20.png');
+        $disabledImage = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-disabled-20x20.png');
+        $url           = $MIOLO->getActionURL($module, $this->home, null, array('function' => 'search', 'event' => 'bookmark'));
+        $toolBar->addButton('tbBtnBookmark', _M('Add to bookmarks', 'basic'), $url, null, true, $enabledImage, $disabledImage);
+
+        if ( MIOLO::_request('event') == 'bookmark' )
+        {
+            $MIOLO->getClass('basic', 'access');
+            access::insert('Extension', $this->home, 'extension-16x16.png', true);
+        }
+        //fim favoritos
+
+        $fields[]   = $toolBar;
+
+        $fields[]   = new MSeparator();
+        $fields[]   = new MHiddenField('limbo', '');
+
+        $contractId = new MHiddenField('contractId', $this->contractId->value);
+        $fields2[]  = $contractId;
+
+        $fields[]   = new MSeparator();
+
+        $courseLabel = new MText('courseLabel', _M('Course',$module) . ':');
+        $courseLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $courseLabel->setClass('m-caption m-caption-required');
+
+        $formationLevelId = new MHiddenField('formationLevelId', EXTENSION_FORMATION_LEVEL_ID);
+        $fields[]         = $formationLevelId;
+
+        $businessPeriod = $MIOLO->getBusiness($module,'BusPeriod');
+        $periodId = new MComboBox('periodId', strlen((string)$this->getFormValue('periodId', $data->periodId))>0 ? $this->getFormValue('periodId', $data->periodId) : CURRENT_PERIOD_ID, _M('Period',$module), $businessPeriod->listPeriod(), true );
+        $fields[] = $periodId;
+
+        $courseId     = new MLookupTextField('courseId', $courseId->value > 0 ? $courseId->value > 0 : $this->getFormValue('courseId', $courseId), '', FIELD_LOOKUPFIELD_SIZE, null, null, 'courseVersion, courseName', $module, 'CourseVersion', null, array('courseId' => 'courseId', 'formationLevelId' => 'formationLevelId'), !$this->page->isPostBack());
+
+        $courseId->setJsHint(_M('Enter the course code',$module));
+
+        $courseName = new MTextField('courseName', null, '', FIELD_DESCRIPTION_SIZE);
+        $courseName->setReadOnly(true);
+        $courseName->setJsHint(_M('Course name',$module));
+
+        $courseVersion = new MTextField('courseVersion', $this->getFormValue('courseVersion', $this->courseVersion->value), '', FIELD_ID_SIZE);
+        //$courseVersion->setReadOnly(true);
+        $courseVersion->setJsHint(_M('Course version',$module));
+        $validators[]  = new MRequiredValidator('courseVersion', _M('Course',$module));
+
+        $hctCourse = new MHContainer('hctCourse', array($courseLabel, $courseId, $courseVersion, $courseName));
+        $hctCourse->setShowLabel(true);
+        $fields[]  = $hctCourse;
+
+        $learningPeriodLabel = new MText('learningPeriodLabel', _M('Learning period',$module) . ':');
+        $learningPeriodLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $learningPeriodLabel->setClass('m-caption m-caption-required');
+        $flds[]              = $learningPeriodLabel;
+
+        $learningPeriodId = new MLookupTextField('learningPeriodId', $this->getFormValue('learningPeriodId',$this->learningPeriodId->value), NULL, FIELD_LOOKUPFIELD_SIZE, null, null, array(null, null, null, null, 'unitId', 'learningPeriodDescription'), $module, 'LearningPeriod', null, array('periodId' => 'periodId', 'courseId' => 'courseId', 'courseVersion' => 'courseVersion'), true);
+        $learningPeriodId->setJsHint(_M('Enter the learning period code',$module));
+        $validators[]     = new MRequiredValidator('learningPeriodId', _M('Learning period',$module), 'required');
+        $flds[]           = $learningPeriodId;
+ 
+        $learningPeriodDescription = new MTextField('learningPeriodDescription', $this->getFormValue('learningPeriodDescription', $this->learningPeriodDescription->value), '', FIELD_DESCRIPTION_SIZE);
+        $learningPeriodDescription->setJsHint(_M('Learning period description',$module));
+        $learningPeriodDescription->setReadOnly(true);
+        $flds[]                    = $learningPeriodDescription;
+
+        $hctLearningPeriod = new MHContainer('hctLearningPeriod', $flds);
+        unset($flds);
+        $fields[]          = $hctLearningPeriod;
+
+        $business     = $MIOLO->getBusiness('basic', 'BusUnit');
+        $unitId       = new MComboBox('unitId', $this->getFormValue('unitId', $this->unitId->value), _M('Unit id',$module), $business->listUnit());
+        $unitId->setJsHint(_M('Enter the unit code',$module));
+        $validators[] = new MRequiredValidator('unitId');
+        $fields[]     = $unitId;
+
+        $moneyValueLabel  = new MText('moneyValueLabel', _M('Value',$module) . ':');
+        $moneyValueLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $flds[]           = $moneyValueLabel;
+
+        $moneyValue      = new MTextField('moneyValue', '', '', 10);
+        $moneyValue->setJsHint(_M('Enter the value',$module));
+        $flds[]          = $moneyValue;
+        $validators[] = new MFloatValidator('moneyValue');
+
+        $hctValue = new MHContainer('hctValue', $flds);
+        $hctValue->setShowLabel(false);
+        $fields[] = $hctValue;
+        unset($flds);
+
+        $parcelsLabel = new MText('parcelsLabel', _M('Parcels',$module) . ':');
+        $parcelsLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $flds[]       = $parcelsLabel;
+
+        $parcels      = new MTextField('parcels', '', '', 10);
+        $parcels->setJsHint(_M('Enter the parcels',$module));
+        $flds[]       = $parcels;
+
+    //    $parcelsValue = $moneyValue/$parcels;
+
+        $hctParcels = new MHContainer('hctParcels', $flds);
+        $hctParcels->setShowLabel(false);
+        $fields[]   = $hctParcels;
+        unset($flds);      
+
+        $durationLabel = new MText('durationLabel', _M('Duration',$module) . ':');
+        $durationLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $flds[]         = $durationLabel;      
+
+        $selMonth = new MSelection('selMonth', $this->getFormValue('selMonth',$currDate['mon']), _M('Duration',$module), SAGU::listMonths());
+        $flds[]   = $selMonth; 
+
+        $middleLabel = new MText('middleLabel', _M('To',$module));
+        $flds[]       = $middleLabel; 
+
+        $selMonth1 = new MSelection('selMonth1', $this->getFormValue('selMonth1',$currDate['mon']), _M('Duration',$module), SAGU::listMonths());
+        $flds[]     = $selMonth1;
+
+        $lastLabel = new MText('lastLabel', _M('Of the',$module));
+        $flds[]    = $lastLabel; 
+
+        $selYear = new MSelection('selYear', $this->getFormValue('selYear',$currDate['mon']), _M('Duration',$module), SAGU::listYears(date('Y'), date('Y')+10));
+        $flds[] = $selYear;
+        
+        $hctDuration = new MHContainer('hctDuration', $flds);
+        $hctDuration->setShowLabel(false);
+        $fields[]  = $hctDuration;
+        unset($flds);  
+ 
+        $expirationLabel = new MText('expirationLabel', _M('Expiration of the first parcel',$module) . ':');
+        $expirationLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $flds[]         = $expirationLabel;      
+
+        $selMonth2 = new MSelection('selMonth2', $this->getFormValue('selMonth2',$currDate['mon']), _M('Expiration',$module), SAGU::listMonths());
+        $flds[]     = $selMonth2;
+                
+        $lastLabel1 = new MText('lastLabel', _M('Of the',$module));
+        $flds[]    = $lastLabel; 
+        
+        $selYear1 = new MSelection('selYear1', $this->getFormValue('selYear1',$currDate['mon']), _M('Expiration',$module), SAGU::listYears(date('Y'), date('Y')+10));
+        $flds[] = $selYear1;
+
+        $hctExpiration = new MHContainer('hctExpiration', $flds);
+        $hctExpiration->setShowLabel(false);
+        $fields[]      = $hctExpiration;
+        unset($flds);
+
+        $dateCancellationLabel = new MText('dateCancellationLabel', _M('Cancellation limit date',$module) . ':');
+        $dateCancellationLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $flds[]                = $dateCancellationLabel;
+
+        $dateCancellationDay = new MTextField('dateCancellationDay', '', '', 1);
+        $dateCancellationDay->addAttribute('maxlength', '2');
+        $flds[]              =  $dateCancellationDay;
+
+        $dateCancellationLabel1 = new MText('dateCancellationLabel1', '-');
+        $flds[]                 = $dateCancellationLabel1;
+
+        $dateCancellationMonth = new MTextField('dateCancellationMonth', '', '', 1);
+        $dateCancellationMonth->addAttribute('maxlength', '2');
+        $flds[]                =  $dateCancellationMonth;
+
+        $dateCancellationLabel2 = new MText('dateCancellationLabel2', '-');
+        $flds[]                 = $dateCancellationLabel2;
+
+        $dateCancellationYear = new MTextField('dateCancellationYear', '', '', 3);
+        $dateCancellationYear->addAttribute('maxlength', '4');
+        $flds[]               =  $dateCancellationYear;         
+
+        $hctDateCancellation = new MHContainer('hctDateCancellation', $flds);
+        $hctDateCancellation->setShowLabel(false);
+        $fields[]            = $hctDateCancellation;
+        unset($flds); 
+        $fields[]            = new MSeparator();
+
+        $enrollLabel  = new MText('enrollLabel', 'Re' . strtolower(_M('Enroll',$module)));
+        $enrollLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $flds[]       = $enrollLabel;
+
+        $enrollCheckBox = new MCheckBox('enrollCheckBox', 'Yes', '', false, '', '2'); 
+        $enrollCheckBox->setWidth(20);
+        $flds[]         = $enrollCheckBox;
+
+        $expirationDateLabel = new MText('expirationDateLabel', _M('Expiration date', $module) . ':');
+        $flds[]              = $expirationDateLabel;
+
+        $expirationDateDay = new MTextField('expirationDateDay', '', '', 1);
+        $expirationDateDay->addAttribute('maxlength', '2');
+        $flds[]            =  $expirationDateDay;
+
+        $expirationDateLabel1 = new MText('expirationDateLabel1', '-');
+        $flds[]               = $expirationDateLabel1;
+
+        $expirationDateMonth = new MTextField('expirationDateMonth', '', '', 1);
+        $expirationDateMonth->addAttribute('maxlength', '2');
+        $flds[]              =  $expirationDateMonth;
+
+        $expirationDateLabel2 = new MText('expirationDateLabel2', '-');
+        $flds[]               = $expirationDateLabel2;
+
+        $expirationDateYear = new MTextField('expirationDateYear', '', '', 3);
+        $expirationDateYear	->addAttribute('maxlength', '4');
+        $flds[]             = $expirationDateYear;
+
+        $hctEnroll = new MHContainer('hctEnroll', $flds);
+        $hctEnroll->setShowLabel(false);
+        $fields[]  = $hctEnroll;
+        unset($flds); 
+        $fields[]  = new MSeparator(); 
+
+        $opts[] = new MOption('optYes', 'Yes', _M('Yes', $module), false);
+        $opts[] = new MOption('optNo', 'No', _M('No', $module), true);
+
+        $radCurricularComponentLabel = new MText('radCurricularComponentLabel', _M('List curricular component and turn',$module) . ':');
+        $radCurricularComponentLabel->setWidth(FIELD_CONTAINER_SIZE);
+
+        $radCurricularComponent = new MRadioButtonGroup('radCurricularComponent', '', $opts, 2, '', 'horizontal', '');
+        $radCurricularComponent->setShowLabel(false);
+
+        $hctCurricularComponent = new MHContainer('hctCurricularComponent', array($radCurricularComponentLabel, $radCurricularComponent));
+        $hctCurricularComponent->setShowLabel(false);
+        $fields[]    = $hctCurricularComponent;
+        unset($opts);
+
+        $personLabel = new MText('personLabel', _M('Person',$module) . ':');
+        $personLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $flds[]      = $personLabel;
+
+        $personId     = new MLookupTextField('personId', $this->getFormValue('personId', $this->personId->value), _M('Person id',$module), FIELD_LOOKUPFIELD_SIZE, null, null, array('personName'), 'basic', 'PhysicalPerson', null, null, true);
+        $validators[] = new MIntegerValidator('personId', '', 'optional');
+        $flds[]       = $personId;
+
+        $personName   = new MTextField('personName', $this->getFormValue('personName', $data->personName), _M('Person name',$module), FIELD_DESCRIPTION_SIZE);
+        $personName->setJsHint(_M('Enter the person name',$module));
+        $personName->setReadOnly(true);
+        $flds[]       = $personName;
+
+        $hctPerson = new MHContainer('hctPerson', $flds);
+        $hctPerson->setShowLabel(false);
+        $fields[]  = $hctPerson;
+        unset($flds);
+
+        $opts[] = new MOption('optPdf', 'pdf', 'pdf', true);
+        $opts[] = new MOption('optSxw', 'sxw', 'sxw', false);
+
+        $radFileTypeLabel = new MText('radFileTypeLabel', _M('File type',$module) . ':');
+        $radFileTypeLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $radFileTypeLabel->setClass('m-caption m-caption-required');
+
+        $radFileType = new MRadioButtonGroup('radFileType', '', $opts, 2, '', 'horizontal', '');
+        $radFileType->setShowLabel(false);
+
+        $hctFileType = new MHContainer('hctFileType', array($radFileTypeLabel, $radFileType));
+        $hctFileType->setShowLabel(false);
+        $fields[]    = $hctFileType;
+
+        $divError = new MDiv('divError', null, null, 'align=center');
+        $fields[] = $divError;
+
+        $fields[] = new MSeparator();
+
+        $this->setFields($fields);
+        $this->setValidators($validators);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+        $this->setClose($MIOLO->getActionURL($module,substr($action,0,strrpos($action,':'))));
+    }
+
+    /**
+     * Event triggered when user chooses Search from the toolbar
+     **/
+    public function tbBtnPrint_click($sender = null)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+        $cd->contractId             = MIOLO::_request('contractId');
+        $cd->personId               = MIOLO::_request('personId');
+        $cd->personName             = MIOLO::_request('personName');
+	$cd->courseId               = MIOLO::_request('courseId');
+        $cd->courseName             = MIOLO::_request('courseName');
+        $cd->courseVersion          = MIOLO::_request('courseVersion');
+        $cd->unitId                 = MIOLO::_request('unitId');
+        $cd->learningPeriodId       = MIOLO::_request('learningPeriodId');
+	$cd->moneyValue             = MIOLO::_request('moneyValue');
+        $cd->parcels                = MIOLO::_request('parcels');
+        $cd->fileType               = MIOLO::_request('radFileType');
+        $cd->monthDurationBegin     = MIOLO::_request('selMonth');
+	$cd->monthDurationEnd       = MIOLO::_request('selMonth1');
+	$cd->yearDuration           = MIOLO::_request('selYear');
+	$cd->expirationMonth        = MIOLO::_request('selMonth2');
+	$cd->expirationYear         = MIOLO::_request('selYear1');
+	$cd->dateCancellationDay    = MIOLO::_request('dateCancellationDay');
+	$cd->dateCancellationMonth  = MIOLO::_request('dateCancellationMonth');
+	$cd->dateCancellationYear   = MIOLO::_request('dateCancellationYear');
+	$cd->enrollCheckBox         = MIOLO::_request('enrollCheckBox');
+	$cd->expirationDateDay      = MIOLO::_request('expirationDateDay');
+	$cd->expirationDateMonth    = MIOLO::_request('expirationDateMonth');
+	$cd->expirationDateYear     = MIOLO::_request('expirationDateYear');
+	$cd->radCurricularComponent = MIOLO::_request('radCurricularComponent');	
+
+        set_time_limit(0);
+
+        $businessContractDocument = $MIOLO->getBusiness($module, 'BusContractDocument');
+        $data                     = $businessContractDocument->getExtensionContractDocument($cd);
+
+        $businessCompany = $MIOLO->getBusiness('basic', 'BusCompany');
+        $company         = $businessCompany->getCompany(DEFAULT_COMPANY_CONF);
+
+        $businessLegalPerson = $MIOLO->getBusiness('basic', 'BusLegalPerson');
+        $legalPerson         = $businessLegalPerson->getLegalPerson($company->personId);
+
+        $businessCity = $MIOLO->getBusiness('basic', 'BusCity');
+        $city         = $businessCity->getCity($legalPerson->cityId);
+
+        $businessCountry = $MIOLO->getBusiness('basic', 'BusCountry');
+        $country         = $businessCountry->getCountry($city->countryId);
+
+        if ( count($data) > 0 )
+        {
+            $MIOLO->uses('/core/AgataAPI.class');
+            $MIOLO->uses('classes/sagu.class', 'basic');
+
+            $api = new AgataAPI;
+
+            //set_time_limit(0);
+
+//            $monthNumberToExtense = array(_M('January', $module), _M('February', $module), _M('March', $module), _M('April', $module), _M('May', $module), _M('June', $module), _M('July', $module), _M('August', $module), _M('Setember', $module), _M('October', $module), _M('November', $module), _M('December', $module));
+
+
+            $api->setParameter('$companyId',            $company->companyId);
+            $api->setParameter('$courseName',           $cd->courseName);
+            $api->setParameter('$companyName',          $company->name);
+
+            $businessPhysicalPerson = $MIOLO->getBusiness('basic', 'BusPhysicalPerson');
+
+            $legalResponsable       = $businessPhysicalPerson->getPhysicalPerson($company->legalResponsableId);
+
+            $api->setParameter('$legalResponsableId',   $legalResponsable->name);
+
+            $api->setParameter('$cnpj',                 $legalPerson->cnpj);
+            $api->setParameter('$fakeName',             $legalPerson->fakeName);
+            $api->setParameter('$companyTypeDescription',$company->companyTypeDescription);
+            $api->setParameter('$companyCity',          $city->name);
+            $api->setParameter('$companyStateId',       $city->stateId);
+            $api->setParameter('$companyLocation',      $legalPerson->location);
+            $api->setParameter('$companyNumber',        $legalPerson->number);
+            $api->setParameter('$acronym',              $company->acronym);
+            $api->setParameter('$currencySymbol',       $country->currencySymbol);
+            $api->setParameter('$moneyValue',           $cd->moneyValue);
+
+            if ( strlen((string)$cd->moneyValue) > 0 )
+            {
+                 $moneyValueParcels = SAGU::calcNumber(SAGU::formatNumber($cd->moneyValue).'/'.SAGU::formatNumber($cd->parcels), true);
+            }
+            else
+            {
+                $moneyValueParcels = NULL;
+            }
+
+            $api->setParameter('$parcelsXValue',        $moneyValueParcels);
+            $api->setParameter('$parcelsDescription',   SAGU::extensive('0'.'0'.$cd->parcels));
+            $api->setParameter('$parcels',              $cd->parcels);
+            $api->setParameter('$descriptionMoney',     SAGU::getExtensiveNumber(SAGU::formatNumber($cd->moneyValue), 'REAL', 'REAIS'));
+            $api->setParameter('$descriptionParcelsValue', SAGU::getExtensiveNumber($moneyValueParcels, 'REAL', 'REAIS'));
+            $api->setParameter('$monthDurationBegin',   SAGU::getMonth($cd->monthDurationBegin-1));
+            $api->setParameter('$monthDurationEnd',     SAGU::getMonth($cd->monthDurationEnd-1));
+            $api->setParameter('$yearDuration',         $cd->yearDuration);
+            $api->setParameter('$expirationMonth',      SAGU::getMonth($cd->expirationMonth-1));
+            $api->setParameter('$expirationYear',       $cd->expirationYear);
+            $api->setParameter('$dateCancellationDay',  $cd->dateCancellationDay);
+            $api->setParameter('$dateCancellationMonth',$cd->dateCancellationMonth);
+            $api->setParameter('$dateCancellationYear', $cd->dateCancellationYear);
+            $api->setParameter('$expirationDateDay',    $cd->expirationDateDay);
+
+            $api->setParameter('$expirationDateMonth', SAGU::getMonth($cd->expirationDateMonth-1));
+
+            $api->setParameter('$expirationDateYear',   $cd->expirationDateYear);
+
+            $api->setLanguage($MIOLO->getConf('i18n.language'));
+            $api->setOutputPath(TEMP_DIR . '/contract.sxw');
+            $api->setDataArray($data);
+
+            $busCompany  = $MIOLO->getBusiness(basic, 'BusCompany');
+            $company     = $busCompany->getCompany(DEFAULT_COMPANY_CONF);
+
+            $api->setImageReplace('logo', SAGUFile::getPhotoPath($company->personId));
+
+            $ok = $api->parseOpenOffice($MIOLO->getModulePath('basic', '/documents/extensionContract.sxw'));
+
+            if ( $ok && $cd->fileType == 'pdf' )
+            {
+                $api->setOutputPath(TEMP_DIR . '/contract.pdf');
+                $ok = $api->openOffice2pdf(TEMP_DIR . '/contract.sxw');
+            }
+
+            if ( !$ok )
+            {
+                $lblAgataError        = new MText('lblMsg1', $api->getError());
+                $lblAgataError->color = 'red';
+                $sep1                 = new Separator('');
+                $cntErrors            = new MVContainer('cntErrors', array($lblAgataError,$sep));
+                $this->divError->addControl($cntErrors);
+            }
+            else
+            {
+                $api->fileDialog();
+            }
+        }
+    }
+}
+
+?>

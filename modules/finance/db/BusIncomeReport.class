@@ -1,0 +1,331 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for finInvoice table
+ *
+ * @author Giovani Murilo Dantas Corrêa [gmurilo@isolution.inf.br] 
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Daniel Afonso Heisler [daniel@isolution.inf.br]
+ *
+ * @since
+ * Class created on 19/06/2009
+ *
+ * \b @organization \n
+ * iSolution - Soluções em TI \n
+ * The iSolution Development Team
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+class BusinessFinanceBusIncomeReport extends MBusiness
+{
+    public $db;
+    
+    function __construct()
+    {
+        $this->db = $this->getDatabase();
+    }
+
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module = is_null($module) ? 'finance' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+    /**
+     * List all records from the table handled by the class
+     *
+     * @param: None
+     *
+     * @returns (array): Return an array with the entire table
+     *
+     **/
+    public function getIncome ( $filters )
+    {
+        $sql = "
+        SELECT
+            extract(year from A.maturityDate) as year,
+            extract(month from A.maturityDate) as month,
+            to_char(A.maturityDate, 'Month') as monthdescription,
+            A.incomeSourceId as incomesourceid,
+            A.invoiceId,
+            getIncomeSourceDescription(A.incomeSourceId) as incomesourcedescription,
+            A.courseId as courseid,
+            getCourseName(A.courseId) as coursename,
+            SUM(receitaPrevistaLiquida(A.invoiceId))::numeric(14,2) as receitaLiquida,
+            SUM(receitaPrevistaBruta(A.invoiceId))::numeric(14,2) as receitaBruta,
+            SUM(receitaRealizada(A.invoiceId))::numeric(14,2) as receitaRealizada,
+            SUM(incentivos(A.invoiceId))::numeric(14,2) as incentivos,
+            SUM(descontos(A.invoiceId))::numeric(14,2) as descontos,
+            SUM(juros(A.invoiceId))::numeric(14,2) as juros,
+            CASE WHEN balance(A.invoiceId) <= 0 THEN 'FECHADO' ELSE 'ABERTO' END as situacao
+        FROM
+            ONLY finReceivableInvoice A
+        WHERE 
+            A.status IS NULL ";
+        $sql .= "\n";
+        
+        if ( strlen((string)$filters->year) > 0 ) 
+        {
+            $where .= ' AND extract(year from A.maturityDate) = ? ';
+            $args[] = $filters->year;
+            $where .= "\n";
+        }
+        if ( is_array($filters->incomeSourceId) || strlen((string)$filters->incomeSourceId) > 0 )
+        {
+            if( is_array($filters->incomeSourceId) && count($filters->incomeSourceId) > 0 )
+            {
+             $operacoes = implode(',',$filters->incomeSourceId);
+            }
+            else if ( strlen((string)$filters->incomeSourceId) > 0 )
+            {
+                $operacoes = $filters->incomeSourceId;
+            }
+            $where .= ' AND A.incomeSourceId IN ('.$operacoes.')';
+            $where .= "\n";
+        }
+        else
+        {
+            $operacoes = 0;
+        }
+
+        if ( is_array($filters->month) || strlen((string)$filters->month) > 0 )
+        {
+            if( is_array($filters->month) && count($filters->month) > 0 )
+            {
+             $meses = implode(',',$filters->month);
+            }
+            else if ( strlen((string)$filters->month) > 0 )
+            {
+                $meses = $filters->month;
+            }
+            $where .= ' AND extract(month from A.maturityDate) IN ('.$meses.')';
+            $where .= "\n";
+        }
+
+        if ( strlen((string)$filters->courseId) > 0 )
+        {
+            $where .= ' AND A.courseId = ? ';
+            $args[] = $filters->courseId; 
+            $where .= "\n";
+        }
+        $sql .= $where;
+        $sql .= 
+        "
+        GROUP BY 
+            extract(year from A.maturityDate), 
+            extract(month from A.maturityDate), 
+            to_char(A.maturityDate, 'Month'), 
+            A.incomeSourceId, 
+            A.courseId,
+            A.invoiceId";
+        $sqlPrepare = SAGU::prepare($sql, $args);
+        $sql = "
+        SELECT 
+            A.year, 
+            A.month, 
+            A.monthdescription,";
+        if ( strlen((string)$filters->groupByIncomeSource) > 0 )
+        {
+            $sql .= "\n".'A.incomesourceid, 
+            A.incomesourcedescription,';
+        }
+        else
+        {
+            $sql .= "null as incomeSourceId, null as incomeSourceDescription,"; 
+        }
+        if ( strlen((string)$filters->groupByCourse) > 0 || strlen((string)$filters->courseId) > 0 )
+        {
+            $sql .= "\n".'A.courseid, 
+            A.coursename,';
+        }
+        else
+        {
+            $sql .= "null as courseId, null as courseName,";
+        }
+        $sql .= "
+            COUNT(DISTINCT A.invoiceId) as totalTitulos,
+            sum(A.receitaLiquida)::numeric(14,2) as receitaLiquida,
+            sum(A.receitaBruta)::numeric(14,2) as receitaBruta,
+            sum(A.receitaRealizada)::numeric(14,2) as receitaRealizada,
+            SUM(A.incentivos)::numeric(14,2) as incentivos,
+            SUM(A.descontos)::numeric(14,2) as decontos,
+            SUM(A.juros)::numeric(14,2) as jurosrecebidos,
+            A.situacao
+        FROM
+            ( " . $sqlPrepare . " ) A
+        GROUP BY
+            A.year, 
+            A.month, 
+            A.monthdescription, ";
+        if ( strlen((string)$filters->groupByIncomeSource) > 0 )
+        {
+            $sql .= "\n".'A.incomesourceid, 
+            A.incomesourcedescription,';
+        }
+        if ( strlen((string)$filters->groupByCourse) > 0 || strlen((string)$filters->courseId) > 0 )
+        {
+            $sql .= "\n".'A.courseId, 
+            A.courseName,';
+        }
+        $sql .= "A.situacao";
+        $sql .= ' ORDER BY A.year, A.month ';
+
+        if ( strlen((string)$filters->groupByCourse) > 0 || strlen((string)$filters->courseId) > 0 )
+        {
+            $sql .= ',A.courseId ';
+        }
+        if ( strlen((string)$filters->groupByIncomeSource) > 0 )
+        {
+            $sql .= ',A.incomeSourceId';
+        }
+        $result2 = $this->db->query($sql);
+        foreach ( $result2 as $line => $tupla )
+        {
+            unset( $obj );
+            list (  $obj->year, 
+                    $obj->month, 
+                    $obj->monthDescription, 
+                    $obj->incomeSourceId, 
+                    $obj->incomeSourceDescription, 
+                    $obj->courseId,
+                    $obj->courseName,
+                    $obj->totalTitulos,
+                    $obj->receitaLiquida,
+                    $obj->receitaBruta,
+                    $obj->receitaRealizada,
+                    $obj->incentivos,
+                    $obj->descontos,
+                    $obj->jurosRecebidos,
+                    $obj->situacao ) = $tupla;
+
+            if ( isset($results[$obj->year][$obj->month][$obj->incomeSourceId][$obj->courseId]) )
+            {
+                $results[$obj->year][$obj->month][$obj->incomeSourceId][$obj->courseId]->receitaPrevistaLiquida    += $obj->receitaLiquida;
+                $results[$obj->year][$obj->month][$obj->incomeSourceId][$obj->courseId]->receitaPrevistaBruta      += $obj->receitaBruta;
+                $results[$obj->year][$obj->month][$obj->incomeSourceId][$obj->courseId]->receitaPrevistaIncentivos += $obj->incentivos;
+                $results[$obj->year][$obj->month][$obj->incomeSourceId][$obj->courseId]->receitaPrevistaDescontos  += $obj->descontos;
+                $results[$obj->year][$obj->month][$obj->incomeSourceId][$obj->courseId]->receitaPrevistaTitulos    += $obj->totalTitulos;
+
+                if ( $obj->situacao == 'ABERTO' )
+                {
+                    $results[$obj->year][$obj->month][$obj->incomeSourceId][$obj->courseId]->receitaNaoRealizadaLiquida    = $obj->receitaLiquida;
+                    $results[$obj->year][$obj->month][$obj->incomeSourceId][$obj->courseId]->receitaNaoRealizadaBruta      = $obj->receitaBruta;
+                    $results[$obj->year][$obj->month][$obj->incomeSourceId][$obj->courseId]->receitaNaoRealizadaIncentivos = $obj->incentivos;
+                    $results[$obj->year][$obj->month][$obj->incomeSourceId][$obj->courseId]->receitaNaoRealizadaDescontos  = $obj->descontos;
+                    $results[$obj->year][$obj->month][$obj->incomeSourceId][$obj->courseId]->receitaNaoRealizadaTitulos    = $obj->totalTitulos;
+
+                }
+                else
+                {
+                    $results[$obj->year][$obj->month][$obj->incomeSourceId][$obj->courseId]->receitaRealizadaLiquida    = $obj->receitaLiquida;
+                    $results[$obj->year][$obj->month][$obj->incomeSourceId][$obj->courseId]->receitaRealizadaBruta      = $obj->receitaBruta;
+                    $results[$obj->year][$obj->month][$obj->incomeSourceId][$obj->courseId]->receitaRealizadaIncentivos = $obj->incentivos;
+                    $results[$obj->year][$obj->month][$obj->incomeSourceId][$obj->courseId]->receitaRealizadaDescontos  = $obj->descontos;
+                    $results[$obj->year][$obj->month][$obj->incomeSourceId][$obj->courseId]->receitaRealizadaTitulos    = $obj->totalTitulos;
+                }
+
+            }
+            else
+            {
+                $obj->receitaPrevistaLiquida    = $obj->receitaLiquida;
+                $obj->receitaPrevistaBruta      = $obj->receitaBruta;
+                $obj->receitaPrevistaIncentivos = $obj->incentivos;
+                $obj->receitaPrevistaDescontos  = $obj->descontos;
+                $obj->receitaPrevistaTitulos    = $obj->totalTitulos;
+                if ( $obj->situacao == 'ABERTO' )
+                {
+                    $obj->receitaNaoRealizadaLiquida    = $obj->receitaLiquida;
+                    $obj->receitaNaoRealizadaBruta      = $obj->receitaBruta;
+                    $obj->receitaNaoRealizadaIncetivos  = $obj->incentivos;
+                    $obj->receitaNaoRealizadaTitulos    = $obj->totalTitulos;
+                    $obj->receitaNaoRealizadaDescontos  = $obj->descontos;
+                    $obj->receitaRealizadaLiquida    = 0;
+                    $obj->receitaRealizadaBruta      = 0;
+                    $obj->receitaRealizadaIncentivos = 0;
+                    $obj->receitaRealizadaTitulos    = 0;
+                    $obj->receitaRealizadaDescontos  = 0;
+                }
+                else
+                {
+                    $obj->receitaNaoRealizadaLiquida    = 0;
+                    $obj->receitaNaoRealizadaBruta      = 0;
+                    $obj->receitaNaoRealizadaIncetivos  = 0;
+                    $obj->receitaNaoRealizadaTitulos    = 0;
+                    $obj->receitaNaoRealizadaDescontos  = 0;
+                    $obj->receitaRealizadaLiquida    = $obj->receitaLiquida;
+                    $obj->receitaRealizadaBruta      = $obj->receitaBruta;
+                    $obj->receitaRealizadaIncentivos = $obj->incentivos;
+                    $obj->receitaRealizadaTitulos    = $obj->totalTitulos;
+                    $obj->receitaRealizadaDescontos  = $obj->descontos;
+                }
+                unset( $obj->receitaLiquida, $obj->receitaBruta, $obj->receitaRealizada, $obj->incentivos, $obj->totalTitulos, $obj->situacao, $obj->descontos );
+                $results[$obj->year][$obj->month][$obj->incomeSourceId][$obj->courseId] = $obj;
+            }
+        }
+        unset ($obj, $result2);
+        if (count($results) > 0 )
+        {
+            $linha = 0;
+            foreach ( $results as $year => $contentYear )
+            {
+                foreach ( $contentYear as $month => $contentMonth )
+                {
+                    foreach ( $contentMonth as $incomeSourceId => $contentIncomeSource )
+                    {
+                        foreach ( $contentIncomeSource as $courseId => $obj )
+                        {
+                            $result2[$linha][0] = $obj->year;
+                            $result2[$linha][1] = $obj->month;
+                            $result2[$linha][2] = $obj->monthDescription;
+                            $result2[$linha][3] = $obj->incomeSourceId;
+                            $result2[$linha][4] = $obj->incomeSourceDescription;
+                            $result2[$linha][5] = $obj->courseId;
+                            $result2[$linha][6] = $obj->courseName;
+                            $result2[$linha][7] = $obj->receitaPrevistaTitulos;
+                            $result2[$linha][8] = $obj->receitaPrevistaLiquida;
+                            $result2[$linha][9] = $obj->receitaPrevistaBruta;
+                            $result2[$linha][10]= $obj->receitaPrevistaDescontos;
+                            $result2[$linha][11]= $obj->receitaPrevistaIncentivos;
+                            $result2[$linha][12]= $obj->receitaRealizadaTitulos;
+                            $result2[$linha][13]= $obj->receitaRealizadaLiquida;
+                            $result2[$linha][14]= $obj->receitaRealizadaBruta;
+                            $result2[$linha][15]= $obj->receitaRealizadaDescontos;
+                            $result2[$linha][16]= $obj->receitaRealizadaIncentivos;
+                            $result2[$linha][17]= $obj->jurosRecebidos;
+                            $result2[$linha][18]= $obj->receitaNaoRealizadaTitulos;
+                            $result2[$linha][19]= $obj->receitaNaoRealizadaLiquida;
+                            $result2[$linha][20]= $obj->receitaNaoRealizadaBruta;
+                            $result2[$linha][21]= $obj->receitaNaoRealizadaDescontos;
+                            $result2[$linha][22]= $obj->receitaNaoRealizadaIncentivos;
+                            $result2[$linha][23]= ($obj->receitaNaoRealizadaTitulos/$obj->receitaPrevistaTitulos)*100;
+                            $linha++;
+                        }
+                    }
+                }
+            }
+        }
+        return $result2;
+    }
+}
+
+?>

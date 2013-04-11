@@ -1,0 +1,264 @@
+<?
+/**
+*
+* @author Giovani Murilo Dantas Correa [gmurilo@isolution.inf.br]
+*
+* $version: $Id$
+*
+* \b Maintainers \n
+* Daniel Afonso Heisler [daniel@isolution.inf.br]
+*
+* @since
+* Class created on 15/06/2009
+*
+* \b Organization: \n
+* iSolution - Soluções de Internet \n
+* The iSolution TEAM
+*
+* \b CopyLeft: \n
+* CopyLeft (L) 2007 iSolution - Soluções de Internet \n
+*
+* \b License \n
+* Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+*
+* \b History \n
+* See history in CVS repository: http://isolution.inf.br   
+*
+**/
+set_time_limit(0);        
+$MIOLO = MIOLO::getInstance();
+
+define('FPDF_FONTPATH', $MIOLO->getModulePath('basic', '/classes/fpdf/font/'));
+$MIOLO->Uses('classes/fpdf/pdf.php', 'basic');
+
+class RptResultFinalAct extends PDF
+{
+    public $module = 'academic';
+
+    public function __construct($filters = NULL)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $this->useUserInfo = false;
+        $this->title = strtoupper(_M('Result final act', 'academic') . ' - '. _M('Period','academic') . '  ' . $filters->periodId . ' / ' . _M('Class', 'academic') . ': '. $filters->classId);
+        
+        foreach($filters as $item => $value )
+        {
+            if(!$this->headerData->{$item} )
+            {
+                $this->headerData->{$item} = $value;
+            }
+        }
+        parent::__construct();
+        $this->addPage('L', 'mm', 'A4');
+        $this->aliasNbPages();
+        $this->criaReport();
+		$this->output();
+    }
+    
+    public function putHeader()
+    {
+        $this->cell1 = $this->colSize[2]/count($this->groups);
+        $y[0] = $this->y;
+        $y[1] = $this->y;
+        
+        $posx[0] = $this->x+($this->colSize[0]+$this->colSize[1]);
+        $x = 0;
+        $size = 0;
+        $fs = $this->fontSizeBody;
+        while ( $size >= $this->cell1 || $size == 0 )
+        {
+            foreach ( $this->groups as $id => $group )
+            {
+               $a = strpos($group[1], chr(32));
+
+                if ( $this->GetStringWidth(substr($group[1], 0, $a)) > $size )
+                {
+                    $size = $this->GetStringWidth(substr($group[1],0,$a));
+                }
+            }
+            if ( $size > $this->cell1 )
+            {
+                $fs -= 0.1;
+                $this->setFont( DEFAULT_REPORT_FONT, '', $fs );
+                $size = 0;
+            }
+        }
+        
+        foreach ( $this->groups as $id => $group )
+        {
+            $x++;
+            $this->setY($y[0]);
+            $this->setX((($this->cell1*$x)-$this->cell1)+$posx[0]);
+            $this->multiCell($this->cell1, $this->lsize, $group[1] . "\n" . ' C/H '. $group[2], null, 'C');
+            if ( $this->y > $y[1] )
+            {
+                $y[1] = $this->y;
+            }
+        }
+        $this->setY($y[0]);
+        $this->setFont( DEFAULT_REPORT_FONT, 'BI', $this->fontSizeBody );
+        $this->cell($this->colSize[0]+$this->colSize[1], $y[1]-$y[0], _M('Curricular component', 'academic'). 's', 1, null, 'R');
+        $this->setY($y[1]);
+        $this->colsNotes = array ( 'N1', 'N2', 'PF', 'NF', 'F');
+        $x = 0;
+        $this->setFont( DEFAULT_REPORT_FONT, 'BI', $this->fontSizeBody );
+        $this->cell($this->colSize[0], $this->lsize, 'N.', 1, null, 'C');
+        $this->cell($this->colSize[1], $this->lsize, _M('Name', 'basic'), 1, null, 'C');
+        foreach ( $this->groups as $id => $group )
+        {
+            $x++;
+            $this->setY($y[1]);
+            $this->setX((($this->cell1*$x)-$this->cell1)+$posx[0]);
+            $this->setLineWidth(0.5);
+            $this->Line($this->x, $this->y+0.2, $this->x, ($this->y+$this->lsize)-0.2);
+            $this->Line($this->x, $y[0]+0.2, $this->x, $y[1]-0.2);
+            $this->setLineWidth(0.1);
+            $this->Line($this->x, $y[0], $this->x+($this->cell1), $y[0]);
+            foreach ( $this->colsNotes as $id => $value )
+            {
+                $this->Cell($this->cell1/count($this->colsNotes), $this->lsize, $value, 1, null, 'C' );
+            }
+        }
+        $this->Line($this->x, $y[0]+0.2, $this->x, $y[1]-0.2);
+        $this->ln();
+
+    }
+
+    public function criaReport()
+    {
+        $MIOLO = MIOLO::getInstance();
+        $busResultFinalAct = $MIOLO->getBusiness('academic', 'BusResultFinalAct');
+        $pupils = $busResultFinalAct->getClassPupils($this->headerData);
+        if ( count($pupils) == 0 )
+        {
+            $this->addPage('L', 'mm', 'A4');
+            $this->aliasNbPages();
+            $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->fontSizeBody);
+            $this->SetFillColor(255,0,0);
+            $this->cell($this->psize, $this->lsize, _M('No data found to process', 'finance'), null, null, 'C', 1);
+            $this->output();
+            return;
+        }
+        /*
+         * 0: ContractId
+         * 1: Personid
+         * 2: Name
+         * 3: Situation
+        */
+        $x = 1;
+        $this->setFont( DEFAULT_REPORT_FONT, '', $this->fontSizeBody );
+        $size = 0;
+        $this->colSize[0] = 7;
+        $this->colSize[1] = 50; 
+        $fsb = $this->fontSizeBody;
+        while($size >= $this->colSize[1] || $size == 0 )
+        {
+            foreach ( $pupils as $aluno )
+            {
+                if ( $this->GetStringWidth($aluno[2]) > $size )
+                {
+                    $size = $this->GetStringWidth($aluno[2]);
+                }
+            }
+            if ( $size > $this->colSize[1] )
+            {
+                $fsb -= 0.1;
+                $fontSizeForPupils = $this->fontSizeBody;
+                $this->setFont( DEFAULT_REPORT_FONT, '', $fsb );
+                $size = 0;
+            }
+        }
+
+        $size += 1.5;
+        $this->colSize[1] = $size;
+
+        $this->groups = $busResultFinalAct->getGroups($this->headerData);
+        $dados = $busResultFinalAct->getGroupPupilInformation($this->headerData);
+        $this->colSize[2] = $this->psize - array_sum($this->colSize);
+
+        $this->putHeader();
+        $this->setFont( DEFAULT_REPORT_FONT, '', $fsb );
+        $x = 1;
+        foreach ( $pupils as $id => $aluno )
+        {
+            if ( $aluno[0] != $oldContract )
+            {
+                if ( $this->y+($this->lsize) > $this->PageBreakTrigger && $x <= count($pupils) )
+                {
+                    $this->addPage('L', 'mm', 'A4');
+                    $this->putHeader();
+                    $this->setFont( DEFAULT_REPORT_FONT, '', $fsb );
+                }
+                $n = 0;
+                if ( count($dados[$aluno[0]]) == 0 )
+                {
+                    $this->setTextColor(255,0,0);
+                    $this->cell( $this->colSize[0], $this->lsize, str_pad($x, 3, '0', STR_PAD_LEFT), 1, null, 'R');
+                    $this->cell( $this->colSize[1], $this->lsize, $aluno[2], 1, null, 'L');
+                    $this->setFont( DEFAULT_REPORT_FONT, 'BI', $fsb );
+                    $this->setLineWidth(0.5);
+                    $this->Line($this->x, $this->y+0.2, $this->x, ($this->y+$this->lsize)-0.2);
+                    $this->setLineWidth(0.1);
+                    $this->cell( $this->colSize[2], $this->lsize, _M('No curricular component', 'academic'), 1, null, 'C');
+                    $this->setFont( DEFAULT_REPORT_FONT, '', $fsb );
+                    $this->setTextColor(0);
+                }
+                else
+                {
+                    $this->setTextColor(0);
+                    $this->cell( $this->colSize[0], $this->lsize, str_pad($x, 3, '0', STR_PAD_LEFT), 1, null, 'R');
+                    $this->cell( $this->colSize[1], $this->lsize, $aluno[2], 1, null, 'L');
+                    foreach ( $this->groups as $id => $group )
+                    {
+                        $n++;
+                        $this->setLineWidth(0.5);
+                        $this->Line($this->x, $this->y+0.2, $this->x, ($this->y+$this->lsize)-0.2);
+                        $this->setLineWidth(0.1);
+                        unset($dt);
+                        $dt->groupId = $group[0];
+                        $dt->contractId = $aluno[0];
+                        foreach ( $this->colsNotes as $id => $value )
+                        {
+                            if ( strlen((string)$dados[$dt->contractId][$dt->groupId]['enrollId']) > 0 )
+                            {
+                                if ( strlen((string)$dados[$dt->contractId][$dt->groupId][$value]) > 0 )
+                                {
+                                    if ( $value == 'F' )
+                                    {
+                                        $this->Cell($this->cell1/count($this->colsNotes), $this->lsize, $dados[$dt->contractId][$dt->groupId][$value], 1, null, 'C' );
+                                    }
+                                    else
+                                    {
+                                        $this->Cell($this->cell1/count($this->colsNotes), $this->lsize, $dados[$dt->contractId][$dt->groupId][$value], 1, null, 'R' );
+                                    }
+                                }
+                                else
+                                {
+                                    $this->Cell($this->cell1/count($this->colsNotes), $this->lsize, '-', 1, null, 'C' );
+                                }
+                            }
+                            else
+                            {
+                                $this->Cell($this->cell1/count($this->colsNotes), $this->lsize, null, 1, null, 'C' );
+                            }
+                        }
+                    }
+                }
+                $this->ln();
+                $x++;
+            }
+            $oldContract = $aluno[0];
+        }
+    }
+
+    public function Header()
+    {
+        parent::Header();
+    }
+
+    public function Footer()
+    {
+        parent::Footer();
+    }
+}
+?>

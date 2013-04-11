@@ -1,0 +1,509 @@
+<?php
+
+class FrmMessage extends MForm
+{
+    private $home;
+
+    /**
+     * Class constructor
+     **/
+    function __construct($data)
+    {
+        $this->home = $data->home;
+
+        if ( MIOLO::_REQUEST('function') == 'insert' )
+        {
+            parent::__construct(_M('Insert', 'services') . ' ' . _M('message', 'services'));
+        }
+        else
+        {
+            parent::__construct(_M('View', 'services') . ' ' . _M('messages', 'services'));
+        }
+
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_REQUEST('function');
+
+        $business  = $MIOLO->getBusiness('basic','BusConfig');
+        $constants = $business->getModuleValues('academic');
+        if ( count($constants)>0 )
+        {
+            foreach ( $constants as $cnt )
+            {
+                define($cnt[0],$cnt[1]);
+            }
+        }
+
+        $toolBar  = new MToolBar('toolBar',$MIOLO->getActionURL('services',$action));
+        if ( $function != 'view' )
+        {
+            $toolBar->hideButton('tbBtnDelete');
+        }
+        $toolBar->hideButton('tbBtnPrint');
+        $toolBar->hideButton('tbBtnReset');
+        if ( $function != 'insert' )
+        {
+            $toolBar->hideButton('tbBtnSave');
+        }
+        $toolBar->hideButton('tbBtnBack');
+        $toolBar->hideButton('tbBtnExit');
+
+        $enabledImage  = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'exit-20x20.png' );
+        $disabledImage = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'exit-disabled-20x20.png' );
+        $toolBar->addButton('tbBtnClose', _M('Close', 'services'), $MIOLO->getActionURL('services', substr($this->home, 0, strrpos($this->home, ':'))), _M('Close', 'services'), true, $enabledImage, $disabledImage);
+
+        $fields[] = $toolBar;
+
+        $mioloUserName = trim($MIOLO->getLogin()->id);
+        $busPerson     = $MIOLO->getBusiness('basic', 'BusPerson');
+
+        //se for um usuário do sistema logado
+        if ( strlen((string)$mioloUserName) >  0 )
+        {
+            $personData       = $busPerson->getPersonByMioloUserName($mioloUserName);
+        }
+        else //caso for um aluno
+        {
+            $personData->personId = $MIOLO->session->getValue('loginUid');
+        }
+
+        //VISUALIZACAO DE MENSAGENS
+        if ( $function == 'view' )
+        {
+            $messageId = MIOLO::_REQUEST('messageId');
+            $business  = $MIOLO->getBusiness('basic', 'BusMessage');
+            $data      = $business->getMessage($messageId);
+
+            if ( $data->toPersonId == $personData->personId )
+            {
+                $fields[] = new MHiddenField('messageId', $messageId);
+                $fields[] = new MTextLabel('txtFrom', $data->fromPersonName, _M('From', 'basic'));
+                $fields[] = new MTextLabel('txtTitle', $data->title, _M('Title', 'basic'));
+                $fields[] = new MTextLabel('txtMessage', $data->message, _M('Message', 'basic'));
+                $fields[] = new MSeparator();
+
+                $imgResp  = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'reply-20x20.png');
+                $url      = $MIOLO->getActionURL('services', $this->home, null, array('function' => 'insert', 'messageId' => $messageId));
+                $toolBar->addButton('tbBtnBookmark', _M('Reply', 'basic'), $url, null, true, $imgResp, $imgResp);
+            }
+
+            //marca como lida
+            $business->updateMessageMarked(MIOLO::_REQUEST('messageId'));
+
+        }
+        elseif ( $function != 'insert' )
+        {
+            $filters->toPersonId = $personData->personId;
+            $filters->home       = $this->home;
+
+            $business = $MIOLO->getBusiness('basic', 'BusMessage');
+
+            if ( $function == 'marked' )
+            {
+                $business->updateMessageMarked(MIOLO::_REQUEST('messageId'));
+            }
+
+            $grdResults = $MIOLO->getUI()->getGrid('services','GrdMessageSearch',$filters);
+            $data       = $business->searchMessage($filters);
+            $grdResults->setData($data);
+            if ( count($data) > 0 )
+            {
+                $fields[] = new MSeparator();
+                $fields[] = $grdResults;
+                $fields[] = new MSeparator();
+            }
+            else
+            {
+                $fields[] = new MText('lblerro', _M('No messages', 'basic') . '!');
+                $fields[] = new MSeparator();
+            }
+        }
+        elseif ( $function == 'insert' )
+        {
+            $messageId = MIOLO::_REQUEST('messageId');
+            //REPLY
+            if ( strlen((string)$messageId) > 0 )
+            {
+                $business  = $MIOLO->getBusiness('basic', 'BusMessage');
+                $data      = $business->getMessage($messageId);
+                $fields[]  = new MHiddenField('messageId', $messageId);
+                if ( $data->toPersonId == $personData->personId )
+                {
+                    $fields[]     = new MHiddenField('fromPersonId', $data->toPersonId);
+                    $fields[]     = new MHiddenField('toPersonId', $data->fromPersonId);
+                    $fields[]     = new MHiddenField('title_', 'Re: ' . $data->title);
+                    $fields[]     = new MTextLabel('lblToPersonId', $data->fromPersonName, _M('To', 'basic'));
+                    $fields[]     = new MTextLabel('lbltitle_', 'Re: ' . $data->title, _M('Title', 'basic'));
+                    $fields[]     = new MMultiLineField('message', $this->message->value, _M('Message', 'basic'), 40, 4);
+                    $validators[] = new MRequiredValidator('message',  _M('Message', 'basic'));
+                }
+            }
+            //SE FOR UMA NOVA MENSAGEM
+            else
+            {
+
+                $businesPerson     = $MIOLO->GetBusiness('basic', 'BusPerson');
+                $businessProfessor = $MIOLO->getBusiness('basic', 'BusPhysicalPersonProfessor');
+                $businessEmployee  = $MIOLO->getBusiness('basic', 'BusPhysicalPersonEmployee');
+                $businessStudent   = $MIOLO->getBusiness('academic', 'BusSchedule');
+
+                if ( $businesPerson->isPhysicalPersonStudent($personData->personId) == DB_TRUE )
+                {
+                    $optP   = new MOption('optP', 'P', _M('Professor', 'basic'), false);
+                    $opts[] = $optP;
+                }
+                if ( $businesPerson->isPhysicalPersonProfessor($personData->personId) == DB_TRUE || $businesPerson->isPhysicalPersonEmployee($personData->personId) == DB_TRUE )
+                {
+                    if ( $businesPerson->isPhysicalPersonProfessor($personData->personId) == DB_TRUE )
+                    {
+                        $optS   = new MOption('optS', 'S', _M('Student', 'basic'), false);
+                        $opts[] = $optS;
+                    }
+
+                    $optE   = new MOption('optE', 'E', _M('Employee', 'basic'), false);
+                    $opts[] = $optE;
+                }
+
+
+                $radOptionLabel = new MText('radOptionLabel', _M('To', 'basic') . ':');
+                $radOptionLabel->setWidth(FIELD_CONTAINER_SIZE);
+                $radOptionLabel->setClass('m-caption m-caption-required');
+                $flds[]         = $radOptionLabel;
+
+                $radOption    = new MRadioButtonGroup('radOption', '', $opts, $this->getFormValue('radOption', $this->radOption->value), '', 'vertical');
+                $radOption->setShowLabel(false);
+                $flds[]       = $radOption;
+
+                unset($opts);
+
+                $hctOption = new MHContainer('hctOption', $flds);
+                $hctOption->setShowLabel(false);
+                $hctOption->setAutoPostBack(true);
+                $fields[]     = $hctOption;
+                unset($flds);
+
+                //envio de mensagens para os professores
+                if (  $this->getFormValue('radOption', $this->radOption->value) == 'P' )
+                {
+                    $fil->professorId = $personData->personId;
+                    $fil->periodId    = CURRENT_PERIOD_ID;
+                    $list             = $businessProfessor->listPhysicalPersonProfessor();
+
+                    $fields[]      = new MHiddenField('fromPersonId', $personData->personId);
+
+                    $fields[]      = new MSelection('toPersonId', $this->toPersonId->value, _M('To','basic'), $list);
+                    $validators[]  = new MRequiredValidator('toPersonId',  _M('To', 'basic'));
+
+                    $fields[]      = new MTextField('title_',     $this->title_->value,     _M('Title', 'basic'), 40);
+                    $validators[]  = new MRequiredValidator('title_',  _M('Title', 'basic'));
+
+                    $fields[]      = new MMultiLineField('message', $this->message->value, _M('Message', 'basic'), 40, 4);
+                    $validators[]  = new MRequiredValidator('message',  _M('Message', 'basic'));
+
+
+                }
+                //envio de mensagens para os funcionários
+                elseif (  $this->getFormValue('radOption', $this->radOption->value) == 'E' )
+                {
+                    $fil->professorId = $personData->personId;
+                    $fil->periodId    = CURRENT_PERIOD_ID;
+                    $list             = $businessEmployee->listPhysicalPersonEmployee();
+
+                    $fields[]      = new MHiddenField('fromPersonId', $personData->personId);
+
+                    $fields[]      = new MSelection('toPersonId', $this->toPersonId->value, _M('To','basic'), $list);
+                    $validators[]  = new MRequiredValidator('toPersonId',  _M('To', 'basic'));
+
+                    $fields[]      = new MTextField('title_',     $this->title_->value,     _M('Title', 'basic'), 40);
+                    $validators[]  = new MRequiredValidator('title_',  _M('Title', 'basic'));
+
+                    $fields[]      = new MMultiLineField('message', $this->message->value, _M('Message', 'basic'), 40, 4);
+                    $validators[]  = new MRequiredValidator('message',  _M('Message', 'basic'));
+
+
+                }
+                elseif ( $this->getFormValue('radOption', $this->radOption->value) == 'S' )
+                {
+
+                    if ( $businesPerson->isPhysicalPersonProfessor($personData->personId) == DB_TRUE )
+                    {
+                        $fil->professorId = $personData->personId;
+                        $fil->periodId    = CURRENT_PERIOD_ID;
+
+                        $list             = $businessStudent->searchSchedule($fil);
+                        $b = 0;
+                        if ( count($list)>0 )
+                        {
+                            foreach ( $list as $row )
+                            {
+                                $aaa[$b][0] = $row[1];
+                                $aaa[$b][1] = $row[2] . '(' . $row[26] . '): ' . $row[7] . ' - ' . $row[11];
+                                $b++;
+                            }
+                        }
+                        $list = $aaa;
+                        if ( count($list) > 0 )
+                        {
+                            sort($list);
+                        }
+                    }
+                    else
+                    {
+                        $personId         = $personData->personId;
+                        $businessContract = $MIOLO->getBusiness('academic', 'BusContract');
+                        $contracts        = $businessContract->listAvailableContractsForEnroll($personId);
+                        if ( count($contracts) > 0 )
+                        {
+                            $businessEnroll = $MIOLO->getBusiness('academic', 'BusEnroll');
+                            foreach ( $contracts as $contr )
+                            {
+                                $contractId = $contr[0];
+                                $enrolls    = $businessEnroll->getCurricularComponentsEnrolled($contractId, CURRENT_PERIOD_ID);
+                                if ( count($enrolls) > 0 )
+                                {
+                                    foreach ( $enrolls as $enrl )
+                                    {
+                                        $scheduleId = $enrl[11];
+                                        $prof       = $businessEnroll->getScheduleProfessors($scheduleId);
+                                        if ( count($prof) > 0 )
+                                        {
+                                            $iii = count($list);
+                                            foreach ( $prof as $prf )
+                                            {
+                                                $list[$iii][0] = $prf[0];
+                                                $list[$iii][1] = $prf[1];
+                                                $iii++;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        if ( count($list) > 0 )
+                        {
+                            $list_1 = array();
+                            $list2  = array();
+                            foreach ( $list as $llllll )
+                            {
+                                if ( ! in_array($llllll[0], $list_1) )
+                                {
+                                    $list_1[] = $llllll[0];
+                                    $list2[]  = $llllll;
+                                }
+                            }
+                            unset($list_1);
+                            sort($list2);
+                            $list = $list2;
+                        }
+    
+                    }
+                    $fields[]      = new MHiddenField('fromPersonId', $personData->personId);
+                    if ( $businesPerson->isPhysicalPersonProfessor($personData->personId) == DB_TRUE )
+                    {
+                        $class        = new MSelection('toPersonId', $this->toPersonId->value, _M('Curricular component','academic'), $list);
+                        $class->setAutoSubmit(true);
+                        $fields[]     = $class; 
+
+                        if ( strlen((string)$this->GetFormValue('toPersonId'))>0 )
+                        {
+                            $businessClassPupil = $MIOLO->getBusiness('academic', 'BusClassPupil');
+                            $list               = $businessClassPupil->listClassPupil($this->GetFormValue('toPersonId'));
+                            $class        = new MMultiSelection('toPersonIdClass', $this->getFormValue('toPersonIdClass'), _M('To','basic'), $list, false, null, count($list));
+                            $validators[] = new MRequiredValidator('toPersonIdClass',  _M('To', 'basic'));
+                            $fields[]     = $class;
+                        }
+                        //se for um professor coordenador ele pode enviar mensagens para qualquer aluno do curso dele
+                        elseif ( $businessProfessor->isPhysicalPersonProfessorCoordinator($personData->personId) == DB_TRUE )
+                        {
+                            $aux_fill->coordinatorId = $personData->personId;
+                            $businessCourseCoordinator = $MIOLO->getBusiness('academic', 'BusCourseCoordinator');
+                            $list             = $businessCourseCoordinator->searchCourseCoordinator($aux_fill);
+
+                            if ( count($list)>0 )
+                            {
+                                $lista_auxiliar = array();
+                                foreach ( $list as $rowlist )
+                                {
+                                    list (  $courseId,
+                                            $courseVersion,
+                                            $null,
+                                            $null,
+                                            $turnId,
+                                            $null,
+                                            $unitId ) = $rowlist;
+
+                                    $businessContract = $MIOLO->getBusiness('academic', 'BusContract');
+                                    $list222          = $businessContract->listCoursePeople($courseId, $courseVersion, $unitId, $turnId);
+                                    $lista_auxiliar   =  array_merge($list222, $lista_auxiliar);
+                                }
+                                $list = $lista_auxiliar;
+                            }
+
+                            $class        = new MMultiSelection('toPersonIdClass', $this->getFormValue('toPersonIdClass'), _M('To','basic'), $list, false, null, count($list));
+                            $validators[] = new MRequiredValidator('toPersonIdClass',  _M('To', 'basic'));
+                            $fields[]     = $class;
+                        }
+                    }
+                    else
+                    {
+                        $fields[]      = new MSelection('toPersonId', $this->toPersonId->value, _M('To','basic'), $list);
+                        $validators[]  = new MRequiredValidator('toPersonId',  _M('To', 'basic'));
+                    }
+                    $fields[]      = new MTextField('title_',     $this->title_->value,     _M('Title', 'basic'), 40);
+                    $validators[]  = new MRequiredValidator('title_',  _M('Title', 'basic'));
+                    $fields[]      = new MMultiLineField('message', $this->message->value, _M('Message', 'basic'), 40, 4);
+                    $validators[]  = new MRequiredValidator('message',  _M('Message', 'basic'));
+                }
+             }
+            $fields[] = new MSeparator();
+        }
+
+        if ( isset($validators) )
+        {
+            $this->setValidators($validators);
+        }
+        $this->setFields($fields);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setClose($MIOLO->getActionURL('services', substr($action, 0, strrpos($action, ':'))));
+        $this->setShowPostButton(false);
+
+    }
+
+    /**
+     * Event triggered when user chooses New from the toolbar
+     **/
+    public function tbBtnNew_click($sender=NULL)
+    {
+    }
+
+    public function tbBtnDelete_click($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $action = MIOLO::getCurrentAction();
+
+        $messageId = MIOLO::_REQUEST('messageId');
+        $business  = $MIOLO->getBusiness('basic', 'BusMessage');
+        $data      = $business->getMessage($messageId);
+
+        $mioloUserName = trim($MIOLO->getLogin()->id);
+        $busPerson     = $MIOLO->getBusiness('basic', 'BusPerson');
+
+        //se for um usuário do sistema logado
+        if ( strlen((string)$mioloUserName) >  0 )
+        {
+            $personData       = $busPerson->getPersonByMioloUserName($mioloUserName);
+        }
+        else //caso for um aluno
+        {
+            $personData->personId = $MIOLO->session->getValue('loginUid');
+        }
+
+        if ( $data->toPersonId == $personData->personId )
+        {
+            $ok      = $business->deleteMessage($messageId);
+            $goto    = $MIOLO->getActionURL('services', $action);
+            $caption = _M('Information', 'basic');
+            $MIOLO->information(_M('Message deleted', 'basic'), $goto . '&function=search');
+        }
+    }
+
+    public function tbBtnSave_click($sender=NULL)
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_REQUEST('function');
+
+        $data->toPersonId   = $this->toPersonId->value;
+        $data->fromPersonId = $this->fromPersonId->value;
+        $data->title        = $this->title_->value;
+        $data->message      = str_replace("\n", '<br>', $this->message->value);
+
+        $mioloUserName = trim($MIOLO->getLogin()->id);
+        $busPerson     = $MIOLO->getBusiness('basic', 'BusPerson');
+
+        //se for um usuário do sistema logado
+        if ( strlen((string)$mioloUserName) >  0 )
+        {
+            $personData       = $busPerson->getPersonByMioloUserName($mioloUserName);
+        }
+        else //caso for um aluno
+        {
+            $personData->personId = $MIOLO->session->getValue('loginUid');
+        }
+
+        $business       = $MIOLO->getBusiness('basic', 'BusMessage');
+        $businessPerson = $MIOLO->getBusiness('basic', 'BusPhysicalPerson');
+        $businessEnroll = $MIOLO->getBusiness('academic', 'BusEnroll');
+
+        //se a mensagem for para um professor
+        if ( $this->getFormValue('radOption', $this->radOption->value) == 'P' )
+        {
+            $data->toPersonType = 'P';
+            $ok  = $business->insertMessage($data);
+        }
+        //resposta a uma mensagem
+        else
+        {
+            if ( $businessPerson->isPhysicalPersonProfessor($data->toPersonId) == DB_TRUE )
+            {
+                $data->toPersonType = 'P';
+            }
+            elseif ( $businessPerson->isPhysicalPersonEmployee($data->toPersonId) == DB_TRUE )
+            {
+                $data->toPersonType = 'E';
+            }
+            elseif ( $businessPerson->isPhysicalPersonProfessor($personData->personId) == DB_TRUE && strlen((string)$this->messageId->value) == 0 )
+            {
+                if ( is_array($this->getFormValue('toPersonIdClass')) )
+                {
+                    $enrolled = $this->getFormValue('toPersonIdClass');
+                }
+                else
+                {
+                    $enrolled[0] = $this->getFormValue('toPersonIdClass');
+                }
+
+                $fil->groupId  = $data->toPersonId;
+                $fil->statusId = ENROLL_STATUS_ENROLLED;
+                //$enrolled      = $businessEnroll->searchEnroll($fil);
+                if ( count($enrolled) > 0 )
+                {
+                    foreach ( $enrolled as $row )
+                    {
+                        //list ( $enrollId,
+                        //       $contractId,
+                        //       $personId )  = $row;
+
+                        $personId = $row;
+                        $data->toPersonId   = $personId;
+                        $data->toPersonType = 'S';
+
+                        $ok = $business->insertMessage($data);
+                    }
+                }
+            }
+            else
+            {
+                $data->toPersonType = 'S';
+            }
+            $ok = $business->insertMessage($data);
+        }
+
+        $caption = _M('Information', 'basic');
+        $MIOLO->information(_M('Message sendet', 'basic'), $MIOLO->getActionURL( 'services', $this->home));
+
+    }
+
+}
+
+?>

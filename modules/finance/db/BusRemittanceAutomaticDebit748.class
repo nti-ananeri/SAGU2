@@ -1,0 +1,301 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for finSpecies table
+ *
+ * @author William Prigol Lopes [william@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 20/12/2005
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to manipulate the finSpecies table
+ **/
+class BusinessFinanceBusRemittanceAutomaticDebit748 extends Business
+{
+    private $db;
+    /**
+     * Make a connection to the database
+         * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $this->db = $MIOLO->getDatabase($module, 'finance');
+    }
+        
+   /**
+    * Function to initiate a transaction
+    *
+    * @param: No parameters needed
+    *
+    * @return: null
+    *
+    */
+    function beginTransaction()
+    {
+        $this->db->execute('BEGIN TRANSACTION');
+    }
+
+   /**
+    * Function to close the transaction
+    *
+    * @param $commit (boolean): True if commit or false to roolback
+    *
+    * @return: null
+    */
+    function endTransaction($commit = true)
+    {
+        $this->db->execute($commit == true ? 'COMMIT' : 'ROOLBACK');
+    }
+
+   /**
+    * Get the company information needed for invoices
+    *
+    * @param: $companyId (int): Object containing the company identification
+    *
+    * @return: Return an object with information.
+    *
+    */
+    function getCompanyData($companyId)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+
+        $sql = ' SELECT acronym
+                   FROM basCompanyConf
+                  WHERE companyId = ? ';
+                  
+        $args = array($companyId);
+        $ret = $this->db->query(SAGU::prepare($sql, $args));
+        
+        $return->acronym = $ret[0][0];
+        return $return;
+    }
+
+
+
+   /** 
+    * Bank account information
+    * 
+    * @param $bankAccountId (int): Primary key for bank account information
+    *
+    * @return: Return the bank account information
+    *
+    */
+    public function getBankAccountData($bankAccountId)
+    {
+        $sql = '    SELECT A.assignorCode,
+                           B.description,
+                           B.bankId,
+                           B.accordCode
+                      FROM finBankAccount A
+                INNER JOIN finBank B
+                     USING (bankId)
+                  WHERE bankAccountId = ? ';
+        
+        $args = array($bankAccountId);
+        
+        $ret = $this->db->query(SAGU::prepare($sql, $args));
+        $return->assignorCode    = $ret[0][0];
+        $return->bankDescription = $ret[0][1];
+        $return->bankId          = $ret[0][2];
+        $return->accordCode      = $ret[0][3];
+        return $return;
+    }
+ 
+   /** 
+    * Invoice remittance sequence number
+    * 
+    * @param No parameters needed
+    *
+    * @return: The number
+    *
+    */
+    public function getFileSequence()
+    {
+        $MIOLO = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        
+        $sql = ' SELECT value
+                   FROM basConfig
+                  WHERE parameter = ? ';
+        
+        $parameter = 'SEQ_BANK_REMITTANCE_AUTOMATIC_DEBIT_748';
+        $args = array($parameter);
+        $ret = $this->db->query(SAGU::prepare($sql, $args));
+
+        if (is_array($ret[0]))
+        {
+            $sql = ' UPDATE basConfig SET VALUE = ? WHERE parameter = ? ';
+            $args = array(++$ret[0][0], $parameter);
+            $this->db->execute(SAGU::prepare($sql, $args));
+        }
+        else
+        {
+            $MIOLO->information(_M('The parameter of bank remittance for this bank on basConfig does not exists', $module), SAGU::getStackBackURL());
+        }
+        return $ret[0][0];
+    }
+
+    
+
+  /** 
+    * details for automatic debit
+    *
+    * @param $data (object): Object containing information about data
+    *
+    * @return: Return a array containing the specific information
+    *
+    */
+    function listDetails($data)
+    {
+        $sql = ' SELECT B.contractid,
+                        A.branchNumber,
+                        A.accountNumber, ';
+                                          
+        if (strlen((string)$data->debitDate)>0)
+        {
+            $sql.= SAGU::prepare(' ? as maturityDate, ', array($data->debitDate));
+        }
+        else
+        {
+            $sql.= '        TO_CHAR(C.maturityDate, \''.MASK_DATE.'\') as maturityDate, ';
+        }
+              
+        if ( $data->receiveDiscount == 't')
+        {
+            $sql.= ' ROUND( ( balance(C.invoiceId)* ( (1.00 - ( SELECT discount
+                                                                 FROM finPolicy
+                                                                WHERE finPolicy.policyId = C.policyId )/100 
+                                                      )
+                                                    )::numeric(10,4)
+                            ), '.REAL_ROUND_VALUE.'
+                          ) as balance, ';
+        }
+        else
+        {
+            $sql.= '        ROUND(balance(C.invoiceId), '.REAL_ROUND_VALUE.') as balance, ';
+        }
+
+        $sql.='         C.invoiceId,
+                        B.personId,
+                        D.name as personName,
+                        ( SELECT content
+                            FROM basDocument
+                           WHERE basDocument.personId = B.personId
+                             AND documentTypeId = '.CPF_CODE.') as documentCPF,
+                        E.name as cityName,
+                        F.name as stateName,
+                        ( SELECT discount
+                            FROM finPolicy
+                           WHERE finPolicy.policyId = C.policyId ) as discount,
+                        CASE WHEN D.isInsured = true
+                        
+            --      COMMENT: When is insured, then verify if have a active incentive for that person 
+            --               and that incentive block the sending invoice
+            
+                             THEN COALESCE ((    SELECT AA.incentiveId||\' - \'||AB.description
+                                                   FROM finIncentive AA
+                                             INNER JOIN finIncentiveType AB
+                                                  USING (incentiveTypeId)
+                                                  WHERE sendInvoices = false
+                                                    AND AA.contractId = A.contractId
+                                                    AND C.maturityDate
+                                                BETWEEN AA.startDate
+                                                    AND ( CASE WHEN AA.cancellationDate IS NULL
+                                                               THEN AA.endDate
+                                                               ELSE AA.cancellationDate END ) LIMIT 1), NULL)
+                             ELSE NULL
+                        END as hasBenefit
+                   FROM ( SELECT contractId,
+                                 bankId,
+                                 branchnumber,
+                                 branchNumberDigit,
+                                 accountnumber,
+                                 accountnumberdigit
+                            FROM finBankTarget
+                           WHERE bankId = \'748\' ) AS A
+             INNER JOIN (   SELECT contractId,
+                                   personId,
+                                   courseId,
+                                   courseVersion,
+                                   unitId
+                         FROM ONLY acdContract ) AS B
+                  USING (contractId)
+             INNER JOIN (   SELECT invoiceId,
+                                   personId,
+                                   courseId,
+                                   courseVersion,
+                                   unitId,
+                                   maturityDate,
+                                   policyId
+                         FROM ONLY finReceivableInvoice
+                             WHERE automaticDebit = true 
+                               AND maturityDate BETWEEN TO_DATE(?, \''.MASK_DATE.'\')
+                               AND TO_DATE(?, \''.MASK_DATE.'\')
+                        ) AS C
+                     ON (    B.personId = C.personId
+                         AND B.courseId = C.courseId
+                         AND B.courseVersion = C.courseVersion
+                         AND B.unitId = C.unitId )
+             INNER JOIN (   SELECT personId,
+                                   name,
+                                   cityId,
+                                   dateDeath,
+                                   isInsured
+                         FROM ONLY basPhysicalPersonStudent ) AS D
+                     ON (C.personId = D.personId)
+             INNER JOIN (   SELECT cityId,
+                                   name,
+                                   stateId
+                         FROM ONLY basCity ) AS E
+                  USING (cityId)
+             INNER JOIN (   SELECT stateId,
+                                   name
+                         FROM ONLY basState ) AS F
+                  USING (stateId)
+                  WHERE D.dateDeath IS NULL
+                    AND balance(C.invoiceId)>0 ';
+
+        $args = array( $data->initialMaturityDate,
+                       $data->finalMaturityDate );
+
+        if (strlen((string)$data->defaulterMaturityDate)>0)
+        {
+            $sql.= ' AND C.maturityDate <= TO_DATE(?, \''.MASK_DATE.'\') ';
+            $args[] = $data->defaulterMaturityDate;
+        }
+        $sql.=' ORDER BY D.name ';
+        $ret = $this->db->query(SAGU::prepare($sql, $args));
+        return $ret;
+    }
+}
+?>

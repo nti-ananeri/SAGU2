@@ -1,0 +1,251 @@
+<?php
+set_time_limit(0);        
+$MIOLO  = MIOLO::getInstance();
+
+$module = 'finance';
+define('REPORT_ID', _M('Debt confession', $module)); 
+define('FPDF_FONTPATH', $MIOLO->getModulePath('basic', '/classes/fpdf/font/'));
+$MIOLO->Uses('classes/fpdf/pdf.php', 'basic');
+
+class RptDebtConfession extends PDF
+{
+    public function __construct($filters = NULL)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $this->title = strtoupper(_M('Debt confession', 'finance'));
+        parent::__construct();
+        $this->useUserInfo = false;
+        $this->AddPage('P', 'mm', 'A4');
+        $this->aliasNbPages();
+        $this->generatePDF($filters);
+    }
+	
+    public function generatePDF($data)
+    {
+        $this->generateContent($data);
+        PDF::generatePDF();
+    }
+
+    public function Header()
+    {
+        parent::Header();
+    }
+    
+    public function Footer()
+    {
+        parent::Footer();
+    }
+
+    protected function replaceText($rdata)
+    {
+        parent::replaceText($rdata);
+        
+        $this->procurar[] = '$INVOICES_REFERENCE';
+        $this->substituir[] =   $rdata->contract->invoicesReference; 
+
+        $this->procurar[] = '$INPUTVALUE_EXTENSIVE';
+        $this->substituir[] =   strtolower(SAGU::extensive($rdata->contract->inputValue, 'M', true )); 
+
+        $this->procurar[] = '$INPUTVALUE';
+        $this->substituir[] =   SAGU::formatNumber($rdata->contract->inputValue, true); 
+
+        $this->procurar[] = '$PARCELS_TOTAL_VALUE_EXTENSIVE';
+        $this->substituir[] = strtolower(SAGU::extensive($rdata->contract->parcelsTotalValue, 'M', true));
+
+        $this->procurar[] = '$PARCELS_TOTAL_VALUE';
+        $this->substituir[] =   SAGU::formatNumber($rdata->contract->parcelsTotalValue, true); 
+
+        $this->procurar[] = '$TOTAL_VALUE_EXTENSIVE';
+        $this->substituir[] =   strtolower(SAGU::extensive($rdata->contract->totalValue, 'M', true)); 
+
+        $this->procurar[] = '$TOTAL_VALUE';
+        $this->substituir[] =   SAGU::formatNumber($rdata->contract->totalValue, true); 
+
+        $this->procurar[] = '$DESCRIBE_PARCELS';
+        $this->substituir[] =   $rdata->contract->describeParcels; 
+
+//        $this->procurar[] = '$TOTAL_VALUE
+
+        if ( $rdata->contract->cpf != $rdata->responsable->cpf && strlen((string)$rdata->responsable->cpf) > 0  && defined('DEBT_CONFESSION_TEXT_RESPONSABLE') )
+        {
+            $text = DEBT_CONFESSION_TEXT_RESPONSABLE;
+        }
+        else
+        {
+            $text = DEBT_CONFESSION_TEXT;
+        }
+        $text = str_replace($this->procurar, $this->substituir, $text);
+
+        return $text;
+    }
+
+    protected function generateContent($filters)
+    {	   
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $module = 'academic';
+    
+     	$this->setFont(DEFAULT_REPORT_FONT, '', 8);
+
+        $busStamp         = $MIOLO->getBusiness('basic','BusStamp');
+        $busPerson        = $MIOLO->getBusiness('basic','BusPhysicalPerson');
+        $busDocument      = $MIOLO->getBusiness('basic','BusDocument');
+        $busMaritalStatus = $MIOLO->getBusiness('basic','BusMaritalStatus');
+        $busCity          = $MIOLO->getBusiness('basic','BusCity');
+        $busState         = $MIOLO->getBusiness('basic','BusState');
+        $busStamp         = $MIOLO->getBusiness('basic','BusStamp');
+        $busCountry       = $MIOLO->getBusiness('basic','BusCountry');
+        $busAgreementTerm = $MIOLO->getBusiness('finance', 'BusAgreementTerm');
+ 
+        $stamp          = $busStamp->getStamp($filters->stampId);
+        $stampPerson    = $busPerson->getPhysicalPerson($stamp->personId);
+        $person         = $busPerson->getPhysicalPerson($filters->personId);
+        if ( strlen((string)$person->responsableLegalId) > 0 )
+        {
+            $person2        = $busPerson->getPhysicalPerson($person->responsableLegalId);
+        }
+    //    $person2        = $busPerson->getPhysicalPerson($person->responsableLegalId);
+        $invoices        = $busAgreementTerm->getInvoices($filters);
+        $balance = ($invoices[0]->saldoComPoliticas-$invoices[0]->desconto);
+        $person->parcelsTotalValue = 0; 
+        $person->parcelsNumber = 0;
+        $person->describeParcels = '';
+        foreach ( $invoices as $item => $value )
+        {
+            if ( $value->invoiceType == 'I' )
+            {
+                $invoiceInput[] = $value->invoiceId;
+            }
+            elseif ( $value->invoiceType == 'O' && $value->parcelNumber == 'ENTRADA' )
+            {
+                $person->inputValue = $value->entrada;
+                $person->describeParcels .= 'TIPO: ENTRADA       VENCIMENTO: '. $value->dataVencimento . '      VALOR: '. $this->pdfInfo->legalPerson->country->currencySymbol . ' ' . SAGU::formatNumber($value->valorGerado, true). '     TITULO: '. $value->invoiceId . "\n";
+                $lastDate = $value->dataVencimento;
+
+            }
+            elseif ( $value->invoiceType == 'O' )
+            {
+                $person->parcelsNumber++;
+                $person->describeParcels .= 'TIPO: PARCELA '. $person->parcelsNumber . '     VENCIMENTO: '. $value->dataVencimento . '      VALOR: '. $this->pdfInfo->legalPerson->country->currencySymbol . ' ' . SAGU::formatNumber($value->valorGerado, true). '     TITULO: '. $value->invoiceId . "\n";
+                $person->parcelsTotalValue += (float)$value->valorGerado;
+                $lastDate = $value->dataVencimento;
+            }
+        }
+        
+
+        if ( strlen((string)$person2->maritalStatusId) > 0 )
+        {
+            $a = $busMaritalStatus->getMaritalStatus($person2->maritalStatusId);
+            $person2->maritalStatus = $a->description;
+            unset ($a);
+        }
+
+        if ( strlen((string)$person->maritalStatusId) > 0 )
+        {
+            $a = $busMaritalStatus->getMaritalStatus($person->maritalStatusId);
+            $person->maritalStatus = $a->description;
+            unset ($a);
+        }
+
+        if ( strlen((string)$stampPerson->maritalStatusId) > 0 )
+        {
+            $a = $busMaritalStatus->getMaritalStatus($stampPerson->maritalStatusId);
+            $stampPerson->maritalStatus = $a->description;
+            unset ($a);
+        }
+
+        if ( strlen((string)$person->countryIdBirth) > 0 )
+        {
+            $country = $busCountry->getCountry($person->countryIdBirth);
+        }
+        else if ( strlen((string)$person->cityId) > 0 )
+        {
+            $country = $busCountry->getCountryByCityId($person->cityId);
+        }
+        $person->nationality = $country->nationality;
+        unset($country);
+
+        if ( strlen((string)$person2->countryIdBirth) > 0 )
+        {
+            $country = $busCountry->getCountry($person2->countryIdBirth);
+        }
+        else if ( strlen((string)$person2->cityId) > 0 )
+        {
+            $country = $busCountry->getCountryByCityId($person2->cityId);
+        }
+        $person2->nationality = $country->nationality;
+        unset($country);
+        if ( strlen((string)$stampPerson->countryIdBirth) > 0 )
+        {
+            $country = $busCountry->getCountry($stampPerson->countryIdBirth);
+        }
+        else if ( strlen((string)$stampPerson->cityId) > 0 )
+        {
+            $country = $busCountry->getCountryByCityId($stampPerson->cityId);
+        }
+        $stampPerson->nationality = $country->nationality;
+        unset($country);
+
+        if ( count($invoiceInput) > 0 )
+        {
+            $person->invoicesReference = implode(',', $invoiceInput);
+        }
+
+        $rdata->contract = $person;
+        $rdata->responsable = $person2;
+        $rdata->stamp = $stamp;
+        $rdata->stampData = $stampPerson;
+//        $rdata->contract->totalValue = $balance;
+        $rdata->contract->totalValue = $person->parcelsTotalValue + $person->inputValue;
+
+        $text = $this->replaceText($rdata);
+     
+        $this->multiCell($this->psize, $this->lsize,$text, null, 'J');
+        
+        $this->ln(10);
+ 		$this->Cell(($this->psize/10)*2, 5,'','','C');
+    	$this->Cell(($this->psize/10)*6, 5,'','B','C');
+        $this->ln(5);
+   		$this->MultiCell($this->psize, 4, $rdata->stampData->name,'','C');
+   		$this->MultiCell($this->psize, 4, $this->pdfInfo->legalPerson->name . ' - ' . $this->pdfInfo->legalPerson->shortName ,'','C');
+    	$this->ln(10);		
+	    $this->Cell(($this->psize/10)*2, 5,'','','C');
+        $this->Cell(($this->psize/10)*6, 5,'','B','C');
+        $this->ln(5);
+      	$this->MultiCell($this->psize, 4,$rdata->contract->name,'','C');
+      	$this->MultiCell($this->psize, 4,'CONFITENTE DEVEDOR(A)' ,'','C');
+      	$this->MultiCell($this->psize, 4,'CPF: ' . SAGU::convertInCPFFormat($rdata->contract->cpf) ,'','C');
+	    $this->ln(10);		
+
+        
+        if ( $rdata->contract->cpf != $rdata->responsable->cpf && strlen((string)$rdata->responsable->cpf) > 0  )
+        {
+
+    		$this->Cell(($this->psize/10)*2, 5,'','','C');
+	    	$this->Cell(($this->psize/10)*6, 5,'','B','C');
+            $this->ln(5);
+	    	$this->MultiCell($this->psize, 4,'FIADOR' ,'','C');
+          	$this->MultiCell($this->psize, 4,'CPF: ' . SAGU::convertInCPFFormat($rdata->responsable->cpf) ,'','C');
+		    $this->ln(10);		
+        }
+
+        $this->Cell(($this->psize/14)*0.5, 5, '');
+        $this->Cell(($this->psize/14)*6, 5,'', 'B');
+        $this->Cell(($this->psize/14)*0.5, 5, '');
+        $this->Cell(($this->psize/14)*0.5, 5, '');
+        $this->Cell(($this->psize/14)*6, 5,'', 'B');
+        $this->ln();
+        $this->Cell(($this->psize/14)*0.5, 5, '');
+        $this->Cell(($this->psize/14)*6, 5,'1ª Testemunha', '');
+        $this->Cell(($this->psize/14)*0.5, 5, '');
+        $this->Cell(($this->psize/14)*0.5, 5, '');
+        $this->Cell(($this->psize/14)*6, 5,'2ª Testemunha', '');
+        $this->ln();
+        $this->Cell(($this->psize/14)*0.5, 5, '');
+        $this->Cell(($this->psize/14)*6, 5,'CPF:', '');
+        $this->Cell(($this->psize/14)*0.5, 5, '');
+        $this->Cell(($this->psize/14)*0.5, 5, '');
+        $this->Cell(($this->psize/14)*6, 5,'CPF:', '');
+	}
+}
+?>

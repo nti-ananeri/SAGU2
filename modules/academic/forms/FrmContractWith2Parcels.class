@@ -1,0 +1,1222 @@
+<?php
+
+/**
+ * Contract form
+ *
+ * @author Daniel Afonso Heisler [daniel@solis.coop.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ *
+ * @since
+ * Class created on 30/08/2005
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2005 SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+
+/**
+ * Form to manipulate a contract
+ **/
+class FrmContract extends MForm
+{
+
+    /**
+     * Class constructor
+     **/
+    function __construct()
+    {
+
+        $module = MIOLO::getCurrentModule();
+
+        if ( MIOLO::_request('function') == 'insert' )
+        {
+            parent::__construct(_M('Insert', $module));
+        }
+        else
+        {
+            parent::__construct(_M('Update', $module));
+        }
+
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+
+        $toolBar = new MToolBar('toolBar',$MIOLO->getActionURL($module,$action));
+
+        $data = unserialize(urldecode(stripslashes(MIOLO::_request('contractData'))));    
+
+        if ( $function == 'insert' )
+        {
+            $toolBar->disableButton('tbBtnDelete');
+            $toolBar->disableButton('tbBtnPrint');
+        }
+        elseif ( $function == 'delete' )
+        {
+            $toolBar->disableButton('tbBtnSave');
+        }
+
+        if ( INCREASE_SECURITY_LEVEL == 'YES' )
+        {
+            $toolBar->disableButton('tbBtnDelete');
+        }
+
+        $fields[] = $toolBar;
+        $fields[] = new MDiv('promptMsg', null);
+        if ( in_array($function,array('update','delete')) )
+        {
+            $contractId = $_GET['contractId'] ? $_GET['contractId'] : $_POST['contractId'];
+            $fields[] = new MTextLabel('contractId', $contractId, _M('Contract id',$module));
+            $fields[] = new MHiddenField('contractId', $contractId);
+
+            $business = $MIOLO->getBusiness($module, 'BusContract');
+            $data     = $business->getContract($contractId);
+            $businessTurn                 = $MIOLO->getBusiness('basic', 'BusTurn');
+            $businessUnit                 = $MIOLO->getBusiness('basic', 'BusUnit');
+
+            $dataTurn                     = $businessTurn->getTurn($data->turnId);
+            $dataUnit                     = $businessUnit->getUnit($data->unitId);
+
+            $data->turnDescription        = $dataTurn->description;
+            $data->unitDescription        = $dataUnit->description;
+
+            if ($business->isClosed($contractId))
+            {
+                $busMovementContract = $MIOLO->getBusiness($module, 'BusMovementContract');
+                $lastMovement        = $busMovementContract->getLastMovementContract($contractId);
+                
+                $busReason  = $MIOLO->getBusiness($module, 'BusReason');
+                $reasonData = $busReason->getReason($lastMovement->reasonId);
+                
+                if (strlen((string)$lastMovement->reasonId) > 0)
+                {
+                    $reasonDescription = $lastMovement->reasonId . ' - ' . $reasonData->description;
+                }
+                else
+                {
+                    $contractState = $business->getContractState($contractId);
+                    $reasonDescription.= $contractState->stateContractId . ' - ' .$contractState->description;
+                }
+                $msg  = _M('This contract is closed (reason @1). If you intend to change any information, pay attention to the contract situation (see contract movements).', $module, $reasonDescription);
+                $this->addInfo($msg);
+            }
+        }
+        else if ( strtoupper($function) == 'PRINT' )
+        {
+            $contractId = $_GET['contractId'] ? $_GET['contractId'] : $_POST['contractId'];
+            $fields[] = new MTextLabel('contractId', $contractId, _M('Contract id',$module));
+            $fields[] = new MHiddenField('contractId', $contractId);
+
+        }
+        $fields[] = new MHiddenField('limbo', $limbo);
+
+        //Person
+        $personLabel  = new MText('personLabel', _M('Person',$module) . ':');
+        $personLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $personLabel->setClass('m-caption m-caption-required');
+
+        $personId     = new MLookupTextField('personId', $this->getFormValue('personId', $data->personId), '', FIELD_LOOKUPFIELD_SIZE, null, null, 'personName, limbo, limbo, limbo, limbo, limbo, limbo, limbo, limbo, externalCourseIdHs, externalCourseHsName, institutionIdHs, institutionHsName, cityIdHs, cityHsName, yearHs, limbo, passive', 'basic', 'PhysicalPerson', null, null, true);
+        $personId->setJsHint(_M('Enter the person code', $module));
+        $validators[] = new MIntegerValidator('personId', _M('Person', $module), 'required');
+
+        $personName   = new MTextField('personName', $this->personName->value, '', FIELD_DESCRIPTION_SIZE);
+        $personName->setReadOnly(true);
+        $personName->setJsHint(_M('Person name',$module));
+
+        $hctPerson    = new MHContainer('hctPerson', array($personLabel, $personId, $personName));
+        $hctPerson->setShowLabel(true);
+        $fields[]     = $hctPerson;
+
+        //Course
+        $courseLabel   = new MText('courseLabel', _M('Course',$module) . ':');
+        $courseLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $courseLabel->setClass('m-caption m-caption-required');
+        if ( $function == 'update' )
+        {
+            $courseId      = new MLookupTextField('courseId', $data->courseId, '', FIELD_LOOKUPFIELD_SIZE, null, null, 'courseVersion, courseName, unitId, unitDescription, turnId, turnDescription', $module, 'CourseOccurrence', null, array('courseId' => 'courseId', 'courseVersion' => 'courseVersion', 'turnId' => 'turnId', 'unitId' => 'unitId'), false);
+        }
+        else
+        {
+            $courseId      = new MLookupTextField('courseId', $this->getFormValue('courseId', $data->courseId), '', FIELD_LOOKUPFIELD_SIZE, null, null, 'courseVersion, courseName, unitId, unitDescription, turnId, turnDescription', $module, 'CourseOccurrence', null, array('courseId' => 'courseId', 'courseVersion' => 'courseVersion'), !$this->page->isPostBack());
+        }
+        $courseId->setJsHint(_M('Enter the course code',$module));
+        $validators[]  = new MRequiredValidator('courseId', _M('Course', $module));
+
+        $courseName    = new MTextField('courseName', strlen((string)$data->courseName) > 0 && strlen((string)$this->getFormValue('courseName', $data->courseName)) == 0 ? $data->courseName : $this->getFormValue('courseName', $data->courseName), '', FIELD_DESCRIPTION_SIZE);
+        $courseName->setReadOnly(true);
+        $courseName->setJsHint(_M('Course name',$module));
+        $courseVersion = new MTextField('courseVersion', strlen((string)$data->courseVersion) > 0  && strlen((string)$this->getFormValue('courseVersion')) == 0 ? $data->courseVersion : $this->getFormValue('courseVersion', $data->courseVersion), '', FIELD_ID_SIZE);
+        //$courseVersion->setReadOnly(true);
+        $courseVersion->setJsHint(_M('Course version code',$module));
+
+        $hctCourse     = new MHContainer('hctCourse', array($courseLabel, $courseId, $courseVersion, $courseName));
+        $hctCourse->setShowLabel(true);
+        $fields[]      = $hctCourse;
+
+        //Turn
+        $turnLabel       = new MText('turnLabel', _M('Turn', $module) . ':');
+        $turnLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $turnLabel->setClass('m-caption m-caption-required');
+
+        $turnId          = new MTextField('turnId', $this->getFormValue('turnId', $data->turnId), '', FIELD_ID_SIZE);
+        $turnId->setReadOnly(true);
+        $turnId->setJsHint(_M('Turn id', $module));
+        $validators[]    = new MRequiredValidator('turnId', _M('Turn', $module));
+
+        $turnDescription = new MTextField('turnDescription', $this->getFormValue('turnDescription', $data->turnDescription), '', FIELD_DESCRIPTION_SIZE);
+        $turnDescription->setReadOnly(true);
+        $turnDescription->setJsHint(_M('Turn description', $module));
+
+        $hctTurn         = new MHContainer('hctTurn', array($turnLabel, $turnId, $turnDescription));
+        $hctTurn->setShowLabel(true);
+        $fields[]        = $hctTurn;
+
+        //Unit
+        $unitLabel       = new MText('unitLabel', _M('Unit', $module) . ':');
+        $unitLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $unitLabel->setClass('m-caption m-caption-required');
+
+        $unitId          = new MTextField('unitId', $this->getFormValue('unitId', $data->unitId),'', FIELD_ID_SIZE);
+        $unitId->setReadOnly(true);
+        $unitId->setJsHint(_M('Unit id', $module));
+        $validators[]    = new MRequiredValidator('unitId', _M('Unit', $module));
+
+        $unitDescription = new MTextField('unitDescription', $this->getFormValue('unitDescription', $data->unitDescription), '', FIELD_DESCRIPTION_SIZE);
+        $unitDescription->setReadOnly(true);
+        $unitDescription->setJsHint(_M('Unit description', $module));
+
+        $hctUnit         = new MHContainer('hctUnit', array($unitLabel, $unitId, $unitDescription));
+        $hctUnit->setShowLabel(true);
+        $fields[]        = $hctUnit;
+
+        if ( in_array($function,array('update','delete')) )
+        {
+            $formationDate = new MCalendarField('formationDate', $this->getFormValue('formationDate', $data->formationDate), _M('Formation date',$module), FIELD_DATE_SIZE);
+            $validators[]  = new MDATEDMYValidator('formationDate', '');
+            $fields[]      = $formationDate;
+
+            $business          = $this->manager->getBusiness($module,'BusContract');
+            $datap             = $business->getPeriod();
+            $formationPeriodId = new MComboBox('formationPeriodId', $this->getFormValue('formationPeriodId', $data->formationPeriodId), _M('Formation period id', $module), $datap );
+            $fields[]          = $formationPeriodId;
+
+            $conclusionDate = new MCalendarField('conclusionDate', $this->getFormValue('conclusionDate', $data->conclusionDate), _M('Conclusion date',$module), FIELD_DATE_SIZE);
+            $validators[]   = new MDATEDMYValidator('conclusionDate', '', 'optional');
+            $fields[]       = $conclusionDate;
+
+            $emendsDate   = new MCalendarField('emendsDate', $this->getFormValue('emendsDate', $data->emendsDate), _M('Emends date',$module), FIELD_DATE_SIZE);
+            $validators[] = new MDATEDMYValidator('emendsDate', '', 'optional');
+            $fields[]     = $emendsDate;
+
+            $diplomaDate  = new MCalendarField('diplomaDate', $this->getFormValue('diplomaDate', $data->diplomaDate), _M('Diploma date',$module), FIELD_DATE_SIZE);
+            $validators[] = new MDATEDMYValidator('diplomaDate', '');
+            $fields[]     = $diplomaDate;
+        }
+        $inscriptionSelectiveProcLabel = new MText('inscriptionSelectiveProcLabel ', _M('Selective process inscription',$module) . ':');
+        $inscriptionSelectiveProcLabel ->setWidth(FIELD_CONTAINER_SIZE);
+
+        $inscriptionSelectiveProcId   = new MLookupTextField('inscriptionSelectiveProcId', $this->getFormValue('inscriptionSelectiveProcId', $data->inscriptionSelectiveProcId), '', FIELD_LOOKUPFIELD_SIZE, null, null, 'inscriptionSelectiveProcName', 'selectiveProcess', 'Inscription', null, array('personId' => 'personId'), true);
+        $inscriptionSelectiveProcId->setJsHint(_M('Inscription selective process id',$module));
+        $validators[] = new MIntegerValidator('inscriptionSelectiveProcId', '', 'optional');
+
+        $inscriptionSelectiveProcName = new MTextField('inscriptionSelectiveProcName', $this->inscriptionSelectiveProcName->value, '', FIELD_DESCRIPTION_SIZE);
+        $inscriptionSelectiveProcName->setReadOnly(true);
+        $inscriptionSelectiveProcName->setJsHint(_M('Person name of seletive process inscription',$module));
+
+        $hctinscriptionSelectiveProc  = new MHContainer('hctinscriptionSelectiveProc', array($inscriptionSelectiveProcLabel, $inscriptionSelectiveProcId, $inscriptionSelectiveProcName));
+        $hctinscriptionSelectiveProc->setShowLabel(true);
+        $fields[]                     = $hctinscriptionSelectiveProc;
+
+        if ( MODULE_FINANCE_INSTALLED == 'YES' )
+        {
+            $parcelsNumber = new MTextField('parcelsNumber', strlen((string) $this->getFormValue('parcelsNumber', $data->parcelsNumber) ) > 0 ?  $this->getFormValue('parcelsNumber', $data->parcelsNumber) : DEFAULT_CONTRACT_PARCELSNUMBER  , _M('Parcels number',$module), 4);
+            $parcelsNumber->setJsHint(_M('Enter the parcels number', $module));
+            $validators[]  = new MRegExpValidator('parcelsNumber', '', POSSIBLE_PARCELS_NUMBER);
+            $fields[]      = $parcelsNumber;
+
+            $parcelsNumber2 = new MTextField('parcelsNumber2', $this->getFormValue('parcelsNumber2', $data->parcelsNumber2), _M('Parcels number',$module) . ' 2', 4);
+            $parcelsNumber2->setJsHint(_M('Enter the parcels number', $module));
+            $validators[]  = new MRegExpValidator('parcelsNumber2', '', POSSIBLE_PARCELS_NUMBER);
+            $fields[]      = $parcelsNumber2;
+
+            $maturityDay  = new MTextField('maturityDay', strlen((string)$this->getFormValue('maturityDay', $data->maturityDay))  > 0 ? $this->getFormValue('maturityDay', $data->maturityDay) : DEFAULT_MATURITYDAY  , _M('Maturity day',$module), 4);
+            $validators[] = new MIntegerValidator('maturityDay','','optional');
+            $fields[]     = $maturityDay;
+			
+			// Policy 
+		    $policyLabel = new MText('policyLabel', _M('Policy', $module). ':');
+		    $policyLabel->setWidth(FIELD_CONTAINER_SIZE);
+		    //$policyLabel->setClass('m-caption m-caption-required');
+		    $policyId = new MLookupTextField('policyId', $this->getFormValue('policyId', $data->policyId), null, FIELD_ID_SIZE, null, null, 'policyDescription', 'finance', 'Policy', null, null, true);
+		    $policyId->setJsHint(_M('Select the policy id', 'finance'));
+		    $validators[] = new MIntegerValidator('policyId', _M('Policy', $module), null);
+		
+		    $policyDescription = new MTextField('policyDescription', $this->getFormValue('policyDescription',$data->policyDescription), null, FIELD_DESCRIPTION_SIZE);
+		    $policyDescription->setReadOnly(true);
+		    $hctPolicy = new MHContainer('hctPolicy', array($policyLabel, $policyId, $policyDescription));
+		    $hctPolicy->setShowLabel(true);
+		    $fields[]   = $hctPolicy;
+
+            $policyLabelForEnroll = new MText('policyLabelForEnroll', _M('Policy for enroll', 'finance') . ':');
+            $policyLabelForEnroll->setWidth(FIELD_CONTAINER_SIZE);        
+            $policyIdForEnroll = new MLookupTextField('policyIdForEnroll', $this->getFormValue('policyIdForEnroll',$data->policyIdForEnroll), null, FIELD_LOOKUPFIELD_SIZE, null, null, 'policyDescriptionForEnroll', 'finance', 'Policy', null, null, true);
+            $policyIdForEnroll->setJsHint(_M('Select the policy id', 'finance'));
+         
+            $policyDescriptionForEnroll = new MTextField('policyDescriptionForEnroll', $this->getFormValue('policyDescriptionForEnroll',$data->policyDescriptionForEnroll), null, FIELD_DESCRIPTION_SIZE);
+            $policyDescriptionForEnroll->setReadOnly(true);
+            
+            $hctPolicyForEnroll = new MHContainer('hctPolicy', array($policyLabelForEnroll, $policyIdForEnroll, $policyDescriptionForEnroll));
+            $hctPolicyForEnroll->setShowLabel(true);
+            $fields[]  = $hctPolicyForEnroll;
+
+            $policyLabelForReEnroll = new MText('policyLabelForReEnroll', _M('Policy for re-enroll', 'finance') . ':');
+            $policyLabelForReEnroll->setWidth(FIELD_CONTAINER_SIZE);        
+            $policyIdForReEnroll = new MLookupTextField('policyIdForReEnroll', $this->getFormValue('policyIdForReEnroll',$data->policyIdForReEnroll), null, FIELD_LOOKUPFIELD_SIZE, null, null, 'policyDescriptionForReEnroll', 'finance', 'Policy', null, null, true);
+            $policyIdForReEnroll->setJsHint(_M('Select the policy id for re-enroll', 'finance'));
+         
+            $policyDescriptionForReEnroll = new MTextField('policyDescriptionForReEnroll', $this->getFormValue('policyDescriptionForReEnroll',$data->policyDescriptionForReEnroll), null, FIELD_DESCRIPTION_SIZE);
+            $policyDescriptionForReEnroll->setReadOnly(true);
+            
+            $hctPolicyForReEnroll = new MHContainer('hctPolicy', array($policyLabelForReEnroll, $policyIdForReEnroll, $policyDescriptionForReEnroll));
+            $hctPolicyForReEnroll->setShowLabel(true);
+            $fields[]  = $hctPolicyForReEnroll;
+        }
+
+        // get Yes and No for Radio Button
+        $option = '1';
+        $messagesType =  SAGU::listYesNo('1'); 
+
+        //isListener
+        $isListenerLabel = new MText('isListenerLabel', _M('Is it listener',$module) . '?');
+        $isListenerLabel->setClass('m-caption m-caption-required');
+        $isListenerLabel->setWidth(FIELD_CONTAINER_SIZE);
+
+        $isListener      = $this->GetFormValue('isListener',$data->isListener) ? $this->GetFormValue('isListener',$data->isListener) : DB_FALSE;
+        $isListener      = new MRadioButtonGroup('isListener', '', $messagesType , $isListener, null, 'horizontal');
+        $isListener->SetShowLabel(false);
+
+        $hctIsListener   = new MHContainer('hctIsListener', array($isListenerLabel, $isListener));
+        $fields[]        = $hctIsListener;
+
+        if ( in_array($function,array('update','delete')) )
+        {
+            //isRequestAcademicDegree
+            $isRequestAcademicDegreeLabel = new MText('isRequestAcademicDegreeLabel', _M('Is it graduating',$module) . '?');
+            $isRequestAcademicDegreeLabel->setWidth(FIELD_CONTAINER_SIZE);
+
+            $isRequestAcademicDegree      = $this->GetFormValue('isRequestAcademicDegree',$data->isRequestAcademicDegree);
+            $isRequestAcademicDegree      = new MRadioButtonGroup('isRequestAcademicDegree', '', SAGU::listTrueFalse(1), $isRequestAcademicDegree, null, 'horizontal');
+            $isRequestAcademicDegree->SetShowLabel(false);
+
+            $hctIsRequestAcademicDegree   = new MHContainer('hctIsRequestAcademicDegree', array($isRequestAcademicDegreeLabel, $isRequestAcademicDegree));
+            $fields[]                     = $hctIsRequestAcademicDegree;
+
+            $globalAverage = new MTextField('globalAverage', $this->getFormValue('globalAverage', $data->globalAverage), _M('Global average',$module), 20);
+            $fields[]      = $globalAverage;
+        }
+
+        $obs      = new MMultiLineField('obs', $this->getFormValue('obs', $data->obs), _M('Observation', $module), 100, 3, 30);
+        $obs->setJsHint(_M('Enter the contract observation',$module));
+        $fields[] = $obs;
+
+        //Informações de contrato - Movimentações contratuais. Quando inserimos um contrato temos que inserir uma movimentação
+
+        if ( $function == 'insert' )
+        {
+            $businessStateContract = $MIOLO->getBusiness($module,'BusStatesContract');
+            $stateContractId       = new MComboBox('stateContractId', $this->getFormValue('stateContractId', $data->stateContractId), _M('State contract of in',$module), $businessStateContract->listStatesContractIn());
+            $stateContractId->setAutoPostBack(true);
+            $fields[]              = $stateContractId;
+            $validators[]          = new MRequiredValidator('stateContractId');
+
+            if ( $stateContractId->value > 0 )
+            {
+                //complemento dos estados contratuais
+                $stateContractObject = $businessStateContract->getStatesContract($stateContractId->value);
+                $contractInformation->stateContractId->value = $stateContractId->value;
+
+                $filters->stateContractId   = $stateContractId->value;
+                $businessStateContractField = $MIOLO->getBusiness($module, 'BusStateContractField');
+                $scf = $businessStateContractField->searchStateContractField($filters);
+                if ( count($scf) )
+                {
+                    foreach ( $scf as $rowScf )
+                    {
+                        $scf_ = $businessStateContractField->getStateContractField($rowScf[0]);
+                        $stateFields .= $scf_->stateContractFieldId . ',';
+                        //lookup
+                        if ( strtoupper($scf_->isLookup) == strtoupper(DB_TRUE) )
+                        {
+                            $scfString = $scf_->description[0] . substr(strtolower($scf_->description), 1, strlen((string)$scf_->description)) . ':';
+                            $scfLabel  = new MText('scfLabel' . $scf_->stateContractFieldId, $scfString);
+                            $scfLabel->setWidth(FIELD_CONTAINER_SIZE);
+
+                            eval('$scfText = new MLookupTextField(\'scfText' . $scf_->stateContractFieldId . '\', $this->scfText' . $scf_->stateContractFieldId . '->value, null, \'' . FIELD_LOOKUPFIELD_SIZE . '\', null, null, \'scfText' . $scf_->stateContractFieldId . '_\', \'' . $scf_->lookupModule . '\', \'' . $scf_->lookupName . '\', null, null, true);');
+
+                            eval('$scfText2  = new MTextField(\'scfText' . $scf_->stateContractFieldId . '_\', $this->scfText' . $scf_->stateContractFieldId . '_->value, \'\',' . FIELD_DESCRIPTION_SIZE . ');');
+                            $scfText2->setReadOnly(true);
+
+                            if ( strtolower($scf_->isRequired) == strtolower(DB_TRUE) )
+                            {
+                                $scfLabel->setClass('m-caption m-caption-required');
+                            eval('$validators[] = new MRequiredValidator(\'scfText' . $scf_->stateContractFieldId . '\', \'' . $scf_->description[0] . substr(strtolower($scf_->description), 1, strlen((string)$scf_->description)) . '\', \'required\');');
+                        }
+
+                            $hctScf = new MHContainer('hctScf' . $scf_->stateContractFieldId, array($scfLabel, $scfText, $scfText2));
+                            $hctScf->setShowLabel(true);
+                            $fields[] = $hctScf;
+                        }
+                        //textArea
+                        elseif ( $scf_->rows > 0 )
+                        {
+                            $scf_->cols = ( strlen((string)$scf_->cols)>0 ) ? $scf_->cols : FIELD_DESCRIPTION_SIZE;
+                            $scfString = $scf_->description[0] . substr(strtolower($scf_->description), 1, strlen((string)$scf_->description)) . ':';
+                            $scfLabel  = new MText('scfLabel' . $scf_->stateContractFieldId, $scfString);
+                            $scfLabel->setWidth(FIELD_CONTAINER_SIZE);
+
+                            eval('$scfText  = new MMultiLineField(\'scfText' . $scf_->stateContractFieldId . '\', $this->scfText' . $scf_->stateContractFieldId . '->value, null, \'\',\'' . $scf_->rows . '\',\'' . $scf_->cols . '\');');
+                            if ( strtolower($scf_->isRequired) == strtolower(DB_TRUE) )
+                            {
+                                $scfLabel->setClass('m-caption m-caption-required');
+                                eval('$validators[] = new MRequiredValidator(\'scfText' . $scf_->stateContractFieldId . '\', \'' . $scf_->description . '\', \'required\');');
+                            }
+
+                            $hctScf   = new MHContainer('hctScf' . $scf_->stateContractFieldId, array($scfLabel, $scfText));
+                            $fields[] = $hctScf;
+                        }
+                        //textField
+                        else
+                        {
+                            $scfString = $scf_->description[0] . substr(strtolower($scf_->description), 1, strlen((string)$scf_->description));
+                            $scfLabel  = new MText('scfLabel' . $scf_->stateContractFieldId, $scfString);
+                            $scfLabel->setWidth(FIELD_CONTAINER_SIZE);
+
+                            eval('$scfText  = new MTextField(\'scfText' . $scf_->stateContractFieldId . '\', $this->scfText' . $scf_->stateContractFieldId . '->value, \'\',' . FIELD_DESCRIPTION_SIZE . ');');
+                            if ( strtolower($scf_->isRequired) == strtolower(DB_TRUE) )
+                            {
+                                $scfLabel->setClass('m-caption m-caption-required');
+                                eval('$validators[] = new MRequiredValidator(\'scfText' . $scf_->stateContractFieldId . '\', \'' . $scf_->description . '\', \'required\');');
+                            }
+
+                            $hctScf   = new MHContainer('hctScf' . $scf_->stateContractFieldId, array($scfLabel, $scfText));
+                            $fields[] = $hctScf;
+                        }
+                    }
+                    $stateFields = substr($stateFields, 0, strlen((string)$stateFields)-1);
+                    $stateField  = new MHiddenField('stateFields', $stateFields);
+                    $fields[]    = $stateField;
+                }
+
+                //motivo do estado contratual
+                $businessReason         = $MIOLO->getBusiness($module, 'BusReason');
+                $stateContractReasonId = new MComboBox('stateContractReasonId', $this->getFormValue('stateContractReasonId', $data->stateContractReasonId), _M('Reason of in',$module), $businessReason->listReasonByStateContract($contractInformation->stateContractId)); 
+                $fields[]               = $stateContractReasonId;
+
+                if ( strtolower($stateContractObject->needsReason) == strtolower(DB_TRUE) )
+                {
+                    $validators[] = new MIntegerValidator('stateContractReasonId', _M('States contract id of in',$module), 'required');
+                }
+            }
+        }
+
+        // Desconto na folha de um funcionário
+        //isAccounted
+        $isPayrollDiscountLabel  = new MText('isPayrollDiscountLabel', _M('Does it have payroll discount',$module) . '?');
+        $isPayrollDiscountLabel->setWidth(FIELD_LABEL_SIZE); 
+        $data->isPayrollDiscount = $this->GetFormValue('isPayrollDiscount',$data->isPayrollDiscount);
+        $isPayrollDiscount       = new MRadioButtonGroup('isPayrollDiscount', '', SAGU::listYesNo('1'), $data->isPayrollDiscount ? $data->isPayrollDiscount : DB_FALSE, null, 'horizontal');
+        $isPayrollDiscount->SetShowLabel(false);
+        $isPayrollDiscount->setAutoPostBack(true);
+
+        $hctIsPayrollDiscount    = new MHContainer('hctIsPayrollDiscount', array($isPayrollDiscountLabel, $isPayrollDiscount));
+        $fields[]                = $hctIsPayrollDiscount;
+
+        // get Yes and No for Radio Button
+        if ( strtolower($isPayrollDiscount->value) == DB_TRUE )
+        {
+            $employeeLabel = new MText('employeeLabel', _M('Financial responsible',$module).':');
+            $employeeLabel->setWidth(FIELD_CONTAINER_SIZE);
+            $employeeLabel->setClass('m-caption m-caption-required');
+
+            $employeeId    = new MLookupTextField('employeeId', $this->getFormValue('employeeId',$data->employeeId), '', FIELD_LOOKUPFIELD_SIZE, null, null,'employeeName', 'basic', 'PhysicalPersonEmployee', null, null, true);
+            $employeeId->setJsHint(_M('Enter the financial responsible code',$module));
+            $validators[]  = new MIntegerValidator('employeeId', '', 'optional');
+
+            $employeeName  = new MTextField('employeeName', $this->employeeName->value, '', FIELD_DESCRIPTION_SIZE);
+            $employeeName->setJsHint(_M('Payroll discount employee name',$module));
+            $employeeName->setReadOnly(true);
+
+            $hctPayrollDiscountEmployee = new MHContainer('hctPayrollDiscountEmployee', array($employeeLabel, $employeeId, $employeeName));
+            $hctPayrollDiscountEmployee->setShowLabel(true);
+
+            $fields2[] = new MBaseGroup('mbgPayrollDiscount2', _M('Enter an employee code if there is a payroll discount for this contract', $module), array($hctPayrollDiscountEmployee), null, 1);
+            $fields[]  = $fields2;
+
+        }
+        
+        $personIdValue = $this->getFormValue('personId', $data->personId);
+
+        if ( strlen((string)$personIdValue) > 0)
+        {
+            $busStudent  = $MIOLO->getBusiness('basic', 'BusPhysicalPersonStudent');
+            $dataStudent = $busStudent->getPhysicalPersonStudent($personIdValue);
+        }
+        
+        $fields[] = new MSeparator();
+        $fields[] = new MSeparator(_M('Student data', $module) . '<hr>');
+        
+        unset($flds);
+        
+        $externalCourseLabel  = new MText('externalCourseLabel', _M('External course',$module) . ':');
+        $externalCourseLabel->setWidth(FIELD_CONTAINER_SIZE);
+
+        $externalCourseIdHs   = new MLookupTextField('externalCourseIdHs', $this->getFormValue('externalCourseIdHs', $dataStudent->externalCourseIdHs), '', FIELD_LOOKUPFIELD_SIZE, null, null, 'externalCourseHsName', 'academic', 'ExternalCourse', null, null, true);
+        $externalCourseIdHs->setJsHint(_M('Enter the external course',$module));
+        $validators[]         = new MIntegerValidator('externalCourseIdHs', _M('External course',$module), 'optional');
+
+        $externalCourseHsName = new MTextField('externalCourseHsName', $this->externalCourseHsName->value, '', FIELD_DESCRIPTION_SIZE);
+        $externalCourseHsName->setJsHint(_M('External course name',$module));
+        $externalCourseHsName->setReadOnly(true);
+
+        $hctExternalCourse    = new MHContainer('hctExternalCourse', array($externalCourseLabel, $externalCourseIdHs, $externalCourseHsName));
+        $hctExternalCourse->setShowLabel(true);
+        $flds[]               = $hctExternalCourse;
+
+        $institutionLabel  = new MText('institutionLabel', _M('Institution',$module) . ':');
+        $institutionLabel->setWidth(FIELD_CONTAINER_SIZE);
+
+        $institutionIdHs   = new MLookupTextField('institutionIdHs', $this->getFormValue('institutionIdHs', $dataStudent->institutionIdHs), '', FIELD_LOOKUPFIELD_SIZE, null, null, 'institutionHsName', 'basic', 'LegalPersonInstitution', null, null, true);
+        $institutionIdHs->setJsHint(_M('Enter the institution code',$module));
+        $validators[]      = new MIntegerValidator('institutionIdHs', _M('Institution',$module), 'optional');
+
+        $institutionHsName = new MTextField('institutionHsName', $this->institutionHsName->value, '', FIELD_DESCRIPTION_SIZE);
+        $institutionHsName->setJsHint(_M('Institution name',$module));
+        $institutionHsName->setReadOnly(true);
+
+        $hctInstitution    = new MHContainer('hctInstitution', array($institutionLabel, $institutionIdHs, $institutionHsName));
+        $hctInstitution->setShowLabel(true);
+        $flds[]            = $hctInstitution;
+
+        $cityLabel    = new MText('cityLabel', _M('City',$module) . ':');
+        $cityLabel->setWidth(FIELD_CONTAINER_SIZE);
+
+        $cityIdHs     = new MLookupTextField('cityIdHs', $this->getFormValue('cityIdHs', $dataStudent->cityIdHs), '', FIELD_LOOKUPFIELD_SIZE, null, null, 'cityHsName', 'basic', 'City', null, null, true);
+        $cityIdHs->setJsHint(_M('Enter the city code',$module));
+        $validators[] = new MIntegerValidator('cityIdHs', _M('City',$module), 'optional');
+
+        $cityHsName   = new MTextField('cityHsName', $this->cityHsName->value, '', FIELD_DESCRIPTION_SIZE);
+        $cityHsName->setJsHint(_M('City name',$module));
+        $cityHsName->setReadOnly(true);
+
+        $hctCity      = new MHContainer('hctCity', array($cityLabel, $cityIdHs, $cityHsName));
+        $hctCity->setShowLabel(true);
+        $flds[]       = $hctCity;
+
+        $yearHsLabel  = new MText('yearHsLabel', _M('Year',$module) . ':');
+        $yearHsLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $yearHsText   = new MTextField('yearHs', $this->getFormValue('yearHs', $dataStudent->yearHs), '', 4);
+        $yearHsText->setJsHint(_M('Enter the year',$module));
+        $validators[] = new MIntegerValidator('yearHs', _M('Year',$module), 'optional');
+        $hctYearHs    = new MHContainer('hctYearHs', array($yearHsLabel, $yearHsText));
+        $flds[]       = $hctYearHs;
+
+        $passiveLabel = new MText('passiveLabel', _M('Passive',$module) . ':');
+        $passiveLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $passiveText  = new MTextField('passive', $this->getFormValue('passive', $dataStudent->passive), '', 4);
+        $passiveText->setJsHint(_M('Enter the passive',$module));
+        $hctPassive   = new MHContainer('hctPassive', array($passiveLabel, $passiveText));
+        $flds[]       = $hctPassive;
+
+        //isInsured
+        $isInsuredLabel = new MText('isInsuredLabel', _M('Is it insured',$module).':');
+        $isInsuredLabel->setWidth(FIELD_CONTAINER_SIZE);
+
+        $isInsured      = $this->getFormValue('isInsured', is_null($dataStudent->isInsured) ? DB_FALSE : $dataStudent->isInsured);
+        $isInsured      = new MRadioButtonGroup('isInsured', '', SAGU::listYesNo(1), $isInsured, null, 'horizontal');
+        $isInsured->SetShowLabel(false);
+
+        $hctIsInsured   = new MHContainer('hctIsInsured', array($isInsuredLabel, $isInsured));
+        $flds[]         = $hctIsInsured;
+        
+        $hctStudent     = new MVContainer('hctStudent', $flds);
+        $fields[]       = $hctStudent;
+
+        if ( $function == 'update' )
+        {
+            $comments      = new MMultiLineField('comments', $this->getFormValue('comments', $data->comments), _M('Comments', $module), 100, 3, 30);
+            $comments->setJsHint(_M('Enter the contract comments',$module));
+            $fields[] = $comments;
+
+            $monograph      = new MMultiLineField('monograph', $this->getFormValue('monograph', $data->monograph), _M('Monograph', $module), 100, 3, 30);
+            $monograph->setJsHint(_M('Enter the contract monograph',$module));
+            $fields[] = $monograph;
+
+            $fields[] = new MTextLabel('lastModification', '[' . $data->userName . ' - ' . $data->dateTime . ']', _M('Last modification',$module));
+            /* Obtem as matrículas do aluno, e caso esteja matriculado em alguma disciplina, bloqueia a atualizacao */
+            $totalEnroll = $business->totalEnroll($data->contractId);
+            if ( $totalEnroll )
+            {
+                #   $toolBar->disableButton('tbBtnSave');
+
+               $jsCode = 
+<<< HERE
+                var c = document.{$this->name};
+                for(x=0; x < c.length && c[x].id != 'parcelsNumber'; x++)
+                {
+                    if(     c[x].id != 'conclusionDate' && 
+                            c[x].id != 'formationDate' &&
+                            c[x].id != 'emendsDate' &&
+                            c[x].id != 'diplomaDate' &&
+                            c[x].id != 'parcelsNumber' &&
+                            c[x].id != 'maturityDay' &&
+                            c[x].id != 'formationPeriodId' &&
+                            c[x].id != 'formationPeriodId_sel' &&
+                            c[x].id != 'policyId' &&
+                            c[x].id.substr(0,5) != 'print' && 
+                            c[x].id.substr(0,5) != 'tbBtn' )
+                    {
+                        c[x].disabled = true;
+                    }
+                }
+HERE;
+
+                $this->page->addJSCode($jsCode);
+            }
+        }
+
+        $fields[] = new Separator('');
+
+        $this->setFields($fields);
+        $this->setValidators($validators);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+        $this->setClose($MIOLO->getActionURL($module,substr($action,0,strrpos($action,':'))));
+    }
+
+    /**
+     * Event triggered when user chooses New from the toolbar
+     **/
+    public function tbBtnNew_click($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+    }
+
+    /**
+     * Event triggered when user chooses Delete from the toolbar
+     **/
+    public function tbBtnDelete_click($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $data   = $this->getTypesData();
+        $opts   = array('event'      => 'tbBtnDelete_confirm',
+                        'function'   => 'delete',
+                        'contractId' => MIOLO::_request('contractId') );
+
+        $gotoYes = $MIOLO->getActionURL( $module, $action, null, $opts );
+
+        // This return the primary key to the search form so that user
+        // can see the record he would delete
+        $opts   = array('contractIdS' => MIOLO::_request('contractId'));
+        $goto    = SAGU::getStackBackUrl();
+        $gotoNo  = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+
+        $caption = _M('Question',$module);
+        $MIOLO->question(MSG_CONFIRM_RECORD_DELETE, $gotoYes, $gotoNo);
+    }
+
+    /**
+     * Event triggered when user chooses Yes from the Delete prompt dialog
+     **/
+    public function tbBtnDelete_confirm($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        try
+        {
+            $businessPayroll  = $MIOLO->getBusiness('finance', 'BusPayrollDiscountTarget');
+            $busInvoiceTarget = $MIOLO->getBusiness('finance', 'BusInvoiceTarget');
+            //apaga o desconto em folha
+            $busInvoiceTarget->deleteInvoiceTarget($this->contractId->value);
+            $businessPayroll->deletePayrollDiscountTarget($this->contractId->value);
+            $ok = true;
+        }
+        catch( Exception $e )
+        {
+            $msg  = _M('Error deleting payroll discount', $module) . ' ' . $e->getMessage();
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Error',$module);
+            $MIOLO->error( $msg, $goto, $caption );
+            $ok = false;
+        }
+
+        if ( $ok )
+        {
+
+            $business                 = $MIOLO->getBusiness($module, 'BusContract');
+            $busMovementContract      = $MIOLO->getBusiness($module, 'BusMovementContract');
+            $busMovementContractCompl = $MIOLO->getBusiness($module, 'BusMovementContractComplement');
+
+            try
+            {
+                //inicio da transacao
+                $business->beginTransaction();
+
+                //apaga as movimentacoes contratuais
+                $mov = $busMovementContractCompl->getFirstMovementContractComplement($this->contractId->value);
+                $busMovementContractCompl->deleteMovementContractComplement($mov->contractId, $mov->stateContractId, $mov->stateContractFieldId, $mov->stateTime);
+                $busMovementContract->deleteMovementContract($mov->contractId, $mov->stateContractId);
+
+                //apaga o contrato
+                $business->deleteContract($this->contractId->value);
+
+                $business->commit();
+                //fim da transacao
+
+                $goto    = SAGU::getStackBackUrl();
+                $goto    = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+                $caption = _M('Information',$module);
+                $MIOLO->information(MSG_RECORD_DELETED, $goto);
+            }
+            catch( Exception $e )
+            {
+                $msg  = _M('Error deleting contract and contractual movimentations.', $module) . $e->getMessage();
+                $goto = SAGU::getStackBackUrl();
+                $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+                $caption = _M('Error',$module);
+                $MIOLO->error( $msg, $goto, $caption );
+            }
+        }
+
+    }
+    /** Event triggered when user chooses Save Confirm from the toolbar
+	  *
+	  **/
+	public function tbBtnSave_click($sender=NULL)
+	{
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+		//Verifica se o aluno já possui um contrato pro mesmo curso 
+		$business		= $MIOLO->getBusiness($module,   'BusContract');
+		if ( strlen((string)MIOLO::_request('contractData')) > 0 )
+        {
+            $data = unserialize(stripslashes(MIOLO::_request('contractData')));
+        }
+        else
+        {
+            $data  = $this->getTypesData();
+        }
+		$data2->personId		= $data->personId;
+		$data2->courseId		= $data->courseId;
+		$data2->courseVersion	= $data->courseVersion;
+		$data2->turnId			= $data->turnId;
+		$data2->unitId			= $data->unitId;
+		$contracts				= $business->searchContract($data2);
+		if( count($contracts) > 0 && $function == 'insert' )
+		{
+			$msg = _M('There\'s another contract in the same course occurrence.@1Would you like to include this one ?',$module,'<br>');
+            $gotoYes	= $MIOLO->getActionURL($module, $action, null,array_merge(get_object_vars($data),array('function'=>$function)));
+            $gotoNo		= $MIOLO->getActionURL($module, $action, null, $opts);
+			$MIOLO->Question($msg,$gotoYes,$gotoNo,'tbBtnSave_click_confirm',null);
+		}
+		else
+		{
+			$this->tbBtnSave_click_confirm();
+		}
+
+	}
+    /** 
+	 * Event triggered when user chooses Save Confirm from the toolbar
+     **/
+    public function tbBtnSave_click_confirm($sender=NULL)
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+
+        //data usada para as movimentacoes contratuais
+        $date = date(MASK_TIMESTAMP_PHP);
+
+        $stateContractId->stateContractId = MIOLO::_request('stateContractId');
+        $stateContractId->reasonId        = MIOLO::_request('stateContractReasonId');
+
+        $business                 = $MIOLO->getBusiness($module,   'BusContract');
+        $busCourseOccurrence      = $MIOLO->getBusiness($module,   'BusCourseOccurrence');
+        $busStudent               = $MIOLO->getBusiness('basic',   'BusPhysicalPersonStudent');
+        $busPayrollDiscountTarget = $MIOLO->getBusiness('finance', 'BusPayrollDiscountTarget');
+        $busInvoiceTarget         = $MIOLO->getBusiness('finance', 'BusInvoiceTarget');
+        $busStateContractField    = $MIOLO->getBusiness($module,   'BusStateContractField');
+        $busMovementContract      = $MIOLO->getBusiness($module,   'BusMovementContract');
+        $busMovementContractCompl = $MIOLO->getBusiness($module,   'BusMovementContractComplement');
+        $busPhysicalPerson        = $MIOLO->getBusiness('basic',   'BusPhysicalPerson');
+
+        if ( strlen((string)MIOLO::_request('contractData')) > 0 )
+        {
+            $data = unserialize(stripslashes(MIOLO::_request('contractData')));
+        }
+        else
+        {
+            $data  = $this->getTypesData();
+        }
+
+        $studentData = $busPhysicalPerson->getPhysicalPerson($data->personId);
+        
+        $studentData->externalCourseIdHs = $this->externalCourseIdHs->value;
+        $studentData->institutionIdHs    = $this->institutionIdHs->value;
+        $studentData->cityIdHs           = $this->cityIdHs->value;
+        $studentData->yearHs             = $this->yearHs->value;
+        $studentData->passive            = $this->passive->value;
+        $studentData->isInsured          = $this->isInsured->value;
+
+        $saveAnyway = MIOLO::_request('saveAnyway');
+        $courseData = $busCourseOccurrence->getCourseOccurrence($data->courseId, $data->courseVersion, $data->turnId, $data->unitId);
+
+        //verifica se o curso está inativo
+        if ( ( strtoupper($courseData->status) == strtoupper(DB_FALSE) ) && ( strlen((string)$saveAnyWay) == 0 ) )
+        {
+            $contractData = urlencode(serialize($data));
+
+            $msg     = _M('Selected course is inactive', $module) . '. ' . _M('Do you want to save anyway?', $module);
+            $caption = _M('Warning', $module);
+            $opts = array ( 'function'     => $function,
+                            'event'        =>'tbBtnSave_click',
+                            'saveAnyway'   => 1,
+                            'contractData' => $contractData);
+            $gotoYes = $MIOLO->getActionURL($module, $action, null, $opts);
+
+            $opts = array ( 'function'     => $function,
+                            'contractData' => $contractData);
+            $gotoNo  = $MIOLO->getActionURL($module, $action, null, $opts);
+
+            $buttonYes = new MButton('buttonYes', _M('Yes', $module), $gotoYes);
+            $buttonNo  = new MButton('buttonNo',  _M('No', $module),  $gotoNo);
+
+            $promptMsg = new MPrompt($caption, $msg);
+            $promptMsg->addButton(_M('Yes', $module), $gotoYes);
+            $promptMsg->addButton(_M('No', $module), $gotoNo);
+            $promptMsg->setType('error');
+
+            $this->promptMsg->addControl($promptMsg);
+        }
+        else
+        {
+            //se está ativo define a variável
+            $saveAnyway = 1;
+        }
+
+        //insere ou atualiza os dados de estudante
+        $filters->personId = $data->personId;
+        if ( count($busStudent->searchPhysicalPersonStudent($filters)) <= 0 && $saveAnyway == 1 )
+        {
+            try
+            {
+                $sdata->personId = $data->personId;
+                $ok = $busStudent->insertPhysicalPersonStudent($studentData);
+            }
+            catch( Exception $e )
+            {
+                $msg  = _M('Error inserting student data',$module, $e->getMessage() );
+                $this->addError($msg . ' ' . $e->getMessage());
+            }
+        }
+        else
+        {
+            try
+            {
+                $ok = $busStudent->updatePhysicalPersonStudent($studentData);
+            }
+            catch( Exception $e )
+            {
+                $msg = _M('Error updating student data',$module, $e->getMessage() );
+                $this->addError($msg . ' ' . $e->getMessage());
+                $ok  = false;
+            }
+        }
+
+        //insere ou atualiza os dados do contrato e de desconto em folha
+        if ( $ok )
+        {
+            //atualizacao de contrato (UPDATE)
+            if ( ( $function == 'update' ) && ( $saveAnyway == 1 ) )
+            {
+                try
+                {
+                    $ok = $business->updateContract($data);
+                }
+                catch( Exception $e )
+                {
+                    //Erro de atualização de contrato
+                    $msg     = _M('Error updating contract.', $module);
+                    $this->addError($msg . ' ' . $e->getMessage());
+                    $ok  = false;
+                }
+
+                $msg = MSG_RECORD_UPDATED;
+
+                if ( $ok )
+                {
+                    $dataPayrollDiscount = $busPayrollDiscountTarget->getPayrollDiscountTarget($data->contractId);
+
+                    //Se o contrato estiver cadastrado com desconto em folha e agora ele não terá desconto em folha
+                    if ( ( $dataPayrollDiscount->employeeId != NULL ) && ( $data->isPayrollDiscount == DB_FALSE ) )
+                    {
+                        try
+                        {
+                            $ok = $busPayrollDiscountTarget->deletePayrollDiscountTarget($data->contractId);
+                        }
+                        catch( Exception $e )
+                        {
+                            $msg = _M('Error deleting payroll discount.', $module);
+                            $this->addError($msg . ' ' . $e->getMessage());
+                            $ok  = false;
+                        }
+
+                        if ( $ok )
+                        {
+                            try
+                            {
+                                $ok = $busInvoiceTarget->deleteInvoiceTarget($data->contractId);
+                            }
+                            catch( Exception $e )
+                            {
+                                $msg = _M('Error deleting payroll discount.', $module);
+                                $this->addError($msg . ' ' . $e->getMessage());
+                                $ok  = false;
+                            }
+                        }
+                    }
+                    else
+                    {
+                        //se trocar a pessoa do desconto em folha
+                        $data->isActive = DB_TRUE;
+                        if ( ($dataPayrollDiscount->employeeId != NULL) && ($data->isPayrollDiscount == DB_TRUE ) )
+                        {
+                            if ( $dataPayrollDiscount->employeeId != $data->employeeId )
+                            {
+                                $dataPayrollDiscount->employeeId = $data->employeeId;
+
+                                try
+                                {
+                                    $ok = $busPayrollDiscountTarget->updatePayrollDiscountTarget($dataPayrollDiscount);
+                                }
+                                catch( Exception $e )
+                                {
+                                    $msg = _M('Error updating payroll discount.', $module);
+                                    $this->addError($msg . ' ' . $e->getMessage());
+                                    $ok  = false;
+                                }
+
+                            }
+                        }
+                        //caso não existia pessoa para desconto em folha
+                        elseif ( ($dataPayrollDiscount->employeeId == NULL) && ($data->isPayrollDiscount == DB_TRUE) )
+                        {
+                            $ok = $busPayrollDiscountTarget->insertPayrollDiscountTarget($data);
+                            if ( $ok )
+                            {
+                                try
+                                {
+                                    $ok = $busInvoiceTarget->insertInvoiceTarget($data);
+                                }
+                                catch( Exception $e )
+                                {
+                                    $msg = _M('Error inserting payroll discount.', $module);
+                                    $this->addError($msg . ' ' . $e->getMessage());
+                                    $ok  = false;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            //INSERT (insercao de novo conrato num  curso ativo ou curso inativo forcado
+            elseif ( $saveAnyway == 1 )
+            {
+                $data->isRequestAcademicDegree = DB_FALSE;
+                try
+                {
+                    $ok = $contractId = $business->insertContract($data);
+                }
+                catch( Exception $e )
+                {
+                    $msg = _M('Error inserting contract.', $module);
+                    $this->addError($msg . ' ' . $e->getMessage());
+                    $ok  = false;
+                }
+
+                //se conseguiu inserir o contrato
+                if ( $ok )
+                {
+                    $movementContractId = $contractId;
+
+                    if ( $contractId == false )
+                    {
+                        $ok = false;
+                    }
+                    else 
+                    {
+                        $ok = true;
+
+                        $data->contractId = $contractId;
+                        $data->isActive   = DB_TRUE;
+
+                        //insere o desconto em folha
+                        if ( $data->isPayrollDiscount == DB_TRUE )
+                        {
+                            try
+                            {
+                                $result = $busPayrollDiscountTarget->insertPayrollDiscountTarget($data);
+                            }
+                            catch( Exception $e )
+                            {
+                                $msg = _M('Error updating payroll discount.', $module);
+                                $this->addError($msg . ' ' . $e->getMessage());
+                                $ok  = false;
+                                $business->deleteContract($data->contractId);
+                            }
+
+                            if ( $result == false )
+                            {
+                                $ok = false;
+                            }
+                            else
+                            {
+                                $ok = true;
+                                try
+                                {
+                                    $ok = $busInvoiceTarget->insertInvoiceTarget($data);
+                                }
+                                catch( Exception $e )
+                                {
+                                    $msg = _M('Error requesting payroll discount.', $module);
+                                    $this->addError($msg . ' ' . $e->getMessage());
+                                    $ok  = false;
+                                    $busPayrollDiscountTarget->deletePayrollDiscountTarget($data->contractId);
+                                    $business->deleteContract($data->contractId);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                //se inseriu o contrato, insere as movimentacoes contratuais
+                if ( $ok )
+                {
+                    $busLearningPeriod = $MIOLO->getBusiness($module, 'BusLearningPeriod');
+
+                    $filterLp           = $data;
+                    $filterLp->periodId = CURRENT_PERIOD_ID;
+
+                    $dataStateContract->contractId       = $movementContractId;
+                    $dataStateContract->stateContractId  = $data->stateContractId;
+                    $dataStateContract->reasonId         = $data->reasonId;
+                    $dataStateContract->learningPeriodId = $contractLearningPeriod[0][0];
+                    $dataStateContract->stateTime        = $date;
+
+                    try
+                    {
+                        $ok = $busMovementContract->insertMovementContract($dataStateContract);
+                    }
+                    catch( Exception $e )
+                    {
+                        $business->deleteContract($data->contractId);
+                        $msg = _M('Error inserting contractual movimentations.', $module);
+                        $this->addError($msg . ' ' . $e->getMessage());
+                        $ok  = false;
+                    }
+
+                    if ( $ok )
+                    {
+
+                        //insere o complemento das movimentações contratuais
+                        $stateFields = MIOLO::_request('stateFields');
+
+                        if ( strlen((string)$stateFields) > 0 )
+                        {
+                            $a = explode(',', $stateFields);
+                            $fc = new AcdMovementContractComplement();
+                            
+                            foreach ( $a as $aa )
+                            {
+                                $fc->contractId           = $movementContractId;
+                                $fc->stateContractId      = $data->stateContractId;
+                                $fc->stateContractFieldId = $aa;
+                                $fc->stateTime            = $date;
+                                $fc->value                = MIOLO::_request('scfText' . $aa);
+
+                                try
+                                {
+                                    $ok = $busMovementContractCompl->insertMovementContractComplement($fc);
+                                }
+                                catch( Exception $e )
+                                {
+                                    $busMovementContract->deleteMovementContract($dataStateContract->contractId, $dataStateContract->stateContractId);
+                                    $business->deleteContract($dataStateContract->contractId);
+                                    $msg = _M('Error inserting contractual movimentations.', $module);
+                                    $this->addError($msg . ' ' . $e->getMessage());
+                                    $ok  = false;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // This returns the primary key data to the search form
+            // so that the user can see the inserted/updated record.
+            $data->contractId = strlen((string)$data->contractId)> 0 ? $data->contractId : $contractId;
+            $opts = array('contractIdS' => $data->contractId, 'contractId' => $data->contractId);
+            if ( MODULE_FINANCE_INSTALLED == 'YES' )
+            {
+                $actionEF = $MIOLO->getActionURL($module, $action, null, array_merge($opts, array( 'event'=>'tbBtnPrintEnrollFee:click', 'function'=>'print')) );
+                $button[] = new MButton('printEnrollFree', _M('Enroll fee', 'finance'), $actionEF);
+            }
+
+            if ( $function == 'update' && $ok )
+            {
+                $msg = MSG_RECORD_UPDATED;
+            }
+            elseif ( $ok )
+            {
+                $msg  = MSG_RECORD_INSERTED;
+                $actionInsert = $MIOLO->getActionURL($module, $action, null, array( 'function'=>'insert') );
+                $button[] = new MButton('btnYes', _M('Yes', 'academic'), $actionInsert );
+            }
+            $space = new MSpacer('15px');
+            
+            
+            $actionPC = $MIOLO->getActionURL($module, $action, null, array_merge($opts, array('event'=>'tbBtnPrintContract:click', 'function' => 'print')));
+            $button[] = new MButton('printContract', _M('Contract', 'academic'), $actionPC);
+            
+            $actionCS = $MIOLO->getActionURL($module, $action, null, array_merge($opts, array('event'=>'tbBtnPrint:click', 'function' => 'print')));
+            $button[] = new MButton('tbBtnPrint', _M('Pupil cadastral sheet', 'academic'), $actionCS);
+
+            $action = $MIOLO->getActionURL($module, $action, null, $opts);
+            $button[] = new MButton('tbBtnClose', _M('Exit', 'basic'), $action);
+            
+            $divInfo = new MDiv('divInfo', array ( new MTextLabel('',$msg), new Separator(), $button ), '', 'style="text-align:center;"');
+            $box1 = new MThemeBox( '&nbsp;&nbsp;'._M('Information', 'academic') , array ( $divInfo ) );
+            $fields = array( $box1, $space);
+            $this->validations = array();
+            $this->setFields($fields);
+            $this->SetTitle (_M('Contract', 'academic') );
+        }
+    }
+  
+    public function tbBtnPrintEnrollFee_click($sender = null)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+        $data = $this->getTypesData();
+        $data->periodId = CURRENT_PERIOD_ID;
+        $data->checkInvoice = true;
+        $data->month    = date('m');
+        $data->year     = date('Y');
+        $data->maturityDay = date('d');
+        $busInvoiceGeneration  = $MIOLO->getBusiness('finance','BusInvoicesGeneration');
+        $ok = $busInvoiceGeneration->generateEnrollTax($data);
+        
+        $data->maturityDate = date(MASK_DATE_PHP, mktime(0,0,0,$data->month, $data->maturityDay, $data->year));
+        $data->emissionDate = date(MASK_DATE_PHP);
+        $data->invoiceId = $busInvoiceGeneration->getInvoiceGenerated($data);
+        
+        if ( strlen((string)$data->invoiceId) > 0 )
+        {
+            $class = 'RptPrintInvoice';
+            $MIOLO->getClass('finance', $class);
+            $report = new $class($data); 
+        }
+    }
+
+    public function tbBtnPrint_click($sender = null)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+        $data = $this->getTypesData();
+        $class = 'RptPupilCadastralSheet';
+        $MIOLO->getClass($module, $class);
+        $report = new $class($data); 
+        
+    }
+
+    public function tbBtnPrintContract_click($sender = null)
+    {
+	    $MIOLO  = MIOLO::getInstance();
+        $module = 'academic';
+        $action = MIOLO::getCurrentAction();
+	
+        $cd->contractId         = MIOLO::_request('contractId');
+        $cd->learningPeriodId   = MIOLO::_request('learningPeriodId');
+        $cd->fileType           = MIOLO::_request('radFileType');
+        $cd->situation          = MIOLO::_request('radSituation');
+        $cd->periodId = CURRENT_PERIOD_ID;
+        $cd->personId           = MIOLO::_request('personId');
+        set_time_limit(0);
+		$busContract  = $MIOLO->getBusiness('academic','BusAcademicDocuments');
+		$contract = $busContract->getInfos($cd);
+        $contract->periodId = $cd->periodId;
+//        $contract->contractText = 'teste';
+        $MIOLO->getClass($module, 'RptContractDocument');
+	    $report = new RptContractDocument($contract);
+    }
+    /**
+     * Method to gather all information from the form fields
+     * and put them on a database compatible object
+     **/
+    public function getTypesData()
+    {
+        $data = new AcdContract();
+        $vars = get_object_vars($data);
+        foreach ( $vars as $var => $value )
+        {
+            $data->$var = $this->$var->value;
+        }
+        $data->stateContractId = $this->getFormValue('stateContractId');
+        $data->reasonId        = $this->getFormValue('stateContractReasonId');
+        return $data;
+    }
+
+}
+
+?>

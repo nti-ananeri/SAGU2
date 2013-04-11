@@ -1,0 +1,332 @@
+<?php
+
+/**
+ * Classification form
+ *
+ * @author Jamiel Spezia [jamiel@solis.coop.br]
+ *         Héli R. R. Guimarães [helio@solis.coop.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ *
+ * @since
+ * Class created on 22/08/2005
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2005 SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+
+/**
+ * Form to manipulate a classification
+ **/
+class FrmClassification extends MForm
+{
+    private $classifyAllTheCourse = false;
+
+    /**
+     * Class constructor
+     **/
+    function __construct()
+    {
+
+        $module = MIOLO::getCurrentModule();
+
+        parent::__construct(_M('Classification', $module));
+
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+        $selectiveProcessId = MIOLO::_request('selectiveProcessId');
+        $placeId            = MIOLO::_request('placeId');
+
+        $businessSelectiveProcess = $MIOLO->getBusiness($module, 'BusSelectiveProcess');
+        $selectiveProcessId       = new MComboBox('selectiveProcessId', $this->getFormValue('selectiveProcessId', $selectiveProcessId), _M('Selective process', $module), $businessSelectiveProcess->listSelectiveProcess());
+        $selectiveProcessId->setJsHint(_M('Enter the selective process code', $module));
+        $selectiveProcessId->setAutoPostBack(true);
+        $fields[]            = $selectiveProcessId;
+        $validators[]        = new MRequiredValidator('selectiveProcessId');
+
+//         $placeId      = new MComboBox('placeId', $this->getFormValue('placeId', $placeId), _M('Place', $module), $businessSelectiveProcess->listPlaces(MIOLO::_request('selectiveProcessId')));
+//         $placeId->setJsHint(_M('Select a place', $module));
+//         $placeId->setAutoPostBack(true);
+//         //$placeId->setClass('m-caption m-caption-required');
+//         $validators[] = new MRequiredValidator('placeId');
+//         $fields[]     = $placeId;
+
+        $businessCourseOccurrence = $MIOLO->getBusiness($module, 'BusCourseOccurrence');
+
+        $unitId      = new MComboBox('unitId', $this->getFormValue('unitId', $unitId), _M('Unit from course', $module), $businessCourseOccurrence->listUnitFromCourseOccurence(MIOLO::_request('selectiveProcessId')));
+        $unitId->setJsHint(_M('Select a unit', $module));
+        $unitId->setAutoPostBack(true);
+        $validators[] = new MRequiredValidator('unitId');
+        $fields[]     = $unitId;
+
+        //isHighSchool
+        $onlyHighSchoolLabel = new MText('onlyHighSchoolLabel', _M('Only is high school',$module) . ':');
+        $onlyHighSchoolLabel->setWidth(FIELD_CONTAINER_SIZE);
+
+        $onlyHighSchool = new MRadioButtonGroup('onlyHighSchool', '', SAGU::ListYesNo(1), $this->GetFormValue('onlyHighSchool',$onlyHighSchool) ? $this->GetFormValue('onlyHighSchool',$onlyHighSchool) : DB_TRUE, null, 'horizontal');
+        $onlyHighSchool->SetShowLabel(false);
+
+        $hctOnlyHighSchool = new MHContainer('hctOnlyHighSchool', array($onlyHighSchoolLabel, $onlyHighSchool));
+        $fields[]  = $hctOnlyHighSchool;
+
+        $selectiveProcessIdData  = $this->getFormValue('selectiveProcessId');
+        $unitId                  = $this->getFormValue('unitId');
+
+        $grdResults = $MIOLO->getUI()->getGrid($module,'GrdClassification');
+
+        if ( strlen((string)$selectiveProcessIdData) > 0 && strlen((string)$unitId) > 0 )
+        {
+            $businessInscription = $MIOLO->getBusiness($module, 'BusInscription');
+            $filter->selectiveProcessId  = $selectiveProcessIdData;
+            $filter->unitId             = $unitId;
+            $dataGrid = $businessInscription->searchCourseClassification($filter);
+            $grdResults->setData($dataGrid);
+
+            //###GRID///is_array($dataGrid) ? $grdResults->SetScrollHeight(GRID_SCROLL_HEIGHT) : false;
+
+            if ( $dataGrid )
+            {
+                //Classifica todos os cursos na grid
+                $btnClassifyAllTheCourse = new MButton('btnClassifyAllTheCourse',_M('Classify all the courses',$module));
+                $btnClassifyAllTheCourse->attachEventHandler('click', 'tbBtnClassifyAllTheCourse_click', true);
+
+                //Imprimir listão em formato .pdf
+                $btnListPrintPDF = new MButton('btnListPrintPDF',_M('Print list in .pdf format',$module));
+                $btnListPrintPDF->attachEventHandler('click', 'tbBtnListPrintPDF_click', true);
+
+                //Imprimir listão em formato .txt - VER QUE ESTÁ PRONTO EM RELATÓRIO->OUTRAS LISTAGENS
+                $btnListPrintTXT = new MButton('btnListPrintTXT',_M('Print list in .txt format',$module));
+                $btnListPrintTXT->attachEventHandler('click', 'tbBtnListPrintTXT_click', true);
+
+                $hctButtons = new MHContainer('hctButtons', array($btnClassifyAllTheCourse, $btnListPrintPDF, $btnListPrintTXT));
+                $fields[]  = $hctButtons;
+
+                $fields[] = new MSeparator();
+            }
+        }
+
+        $fields[] = $grdResults;
+
+        $this->setFields($fields);
+
+        $this->setValidators($validators);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+        $this->setClose($MIOLO->getActionURL($module,substr($action,0,strrpos($action,':'))));
+        $this->page->onLoad('document.' . $this->name . '.selectiveProcessId.focus();');
+    }
+
+    /**
+     * Event triggered when user chooses Save from the toolbar
+     **/
+    public function tbBtnClassifyAllTheCourse_click($sender=NULL, $classifyAllTheCourse=false)
+    {
+        $MIOLO                       = MIOLO::getInstance();
+        $module                      = MIOLO::getCurrentModule();
+        $action                      = MIOLO::getCurrentAction();
+        $filters->courseId           = MIOLO::_request('courseId');
+        $filters->courseVersion      = MIOLO::_request('courseVersion');
+        $filters->courseName         = MIOLO::_request('courseName');
+        $filters->vacant             = MIOLO::_request('vacant');
+        $filters->selectiveProcessId = MIOLO::_request('selectiveProcessId');
+        $filters->unitId             = MIOLO::_request('unitId');
+        $filters->turnId             = MIOLO::_request('turnId');
+        $filters->onlyHighSchool     = MIOLO::_request('onlyHighSchool');
+
+        set_time_limit(0);
+
+        $businessClassification = $MIOLO->GetBusiness($module, 'BusClassification');
+
+        //gera a pontuacao total dos candidatos e retorna as inscricoes dos mesmos
+        //$inscriptions = $businessClassification->generateTotalPoints($filters);
+        $inscriptions = $businessClassification->getInscriptions($filters);
+
+        //se conseguiu gerar o total de pontos, marca os classificados e desclassificados
+        if ( count($inscriptions) > 0 )
+        {
+            $filters->inscriptions = $inscriptions;
+            //$isClassified          = $businessClassification->setIsClassified($filters);
+
+            //if ( $isClassified )
+            //{
+                $generatePositions = $businessClassification->generatePosition($filters);
+
+                if ( count($generatePositions) > 0 )
+                {
+                    $this->classifyAllTheCourse = true;
+                    $grdResults = $MIOLO->getUI()->getGrid($module,'GrdClassificationReport');
+                    $grdResults->setData($generatePositions/*SAGU::booleanToText($result,2)*/);
+
+                    //###GRID///is_array($generatePositions) ? $grdResults->SetScrollHeight(GRID_SCROLL_HEIGHT) : false;
+
+                    $fields[] = $grdResults;
+
+                    $this->setFields($fields);
+
+                    //OK, classificou e temos que jogar na grid
+                }
+                else
+                {
+                    //não classificou
+                }
+            //}
+        }
+    }
+
+    public function tbListOption_click($sender=NULL)
+    {
+        $MIOLO                       = MIOLO::getInstance();
+        $module                      = MIOLO::getCurrentModule();
+        $filters->optionNumber       = MIOLO::_request('optionNumber');
+        $filters->courseId           = MIOLO::_request('courseId');
+        $filters->courseVersion      = MIOLO::_request('courseVersion');
+        $filters->courseName         = MIOLO::_request('courseName');
+        $filters->vacant             = MIOLO::_request('vacant');
+        $courseName                  = MIOLO::_request('courseName');
+        $placeDescription            = MIOLO::_request('placeDescription');
+        $orderBy                     = MIOLO::_request('orderBy');
+        $filters->selectiveProcessId = MIOLO::_request('selectiveProcessId');
+        $filters->unitId             = MIOLO::_request('unitId');
+        $filters->turnId             = MIOLO::_request('turnId');
+        $filters->onlyHighSchool     = MIOLO::_request('onlyHighSchool');
+
+        $fields[] = new MTextLabel('selectiveProcessId', $filters->selectiveProcessId, _M('Selective process id', $module));
+
+        $isplaceIdLabel     = new MText('isplaceIdLabel', _M('Unit id',$module).':');
+        $isplaceIdLabel->setWidth(FIELD_LABEL_SIZE); 
+
+        $isUnitId          = new MTextLabel('unitId', $filters->unitId, '');
+//         $isPlaceDescription = new MTextLabel('isPlaceDescription', $placeDescription, '');
+        $hctIsPlace = new MHContainer('hctIsPlace', array($isplaceIdLabel, $isUnitId/*, $isPlaceDescription*/));
+
+        $fields[] = $hctIsPlace;
+
+        $fields[] = new MTextLabel('courseName', $courseName, _M('Course name', $module));
+        $fields[] = new MTextLabel('optionNumber', $filters->optionNumber, _M('Option number', $module));
+        $fields[] = new MButton('btnBack','<< ' . _M('Back', $module), $MIOLO->getActionURL($module, $action, null , array('selectiveProcessId'=>$filters->selectiveProcessId, 'placeId'=>$filters->placeId)));
+
+        $businessClassification = $MIOLO->GetBusiness($module, 'BusClassification');
+
+        if ( $filters->optionNumber == '1' )
+        {
+            if ( $orderBy )
+            {
+                $filters->orderBy = $orderBy;
+                $result               = $businessClassification->getListPosition($filters);
+            }
+            else
+            {
+                $result               = $businessClassification->getListPosition($filters);
+            }
+
+            $grdResults             = $MIOLO->getUI()->getGrid($module,'GrdClassificationList');
+            $grdResults->setData($result);
+
+            //###GRID///is_array($result) ? $grdResults->SetScrollHeight(GRID_SCROLL_HEIGHT) : false;
+
+            $fields[] = $grdResults;
+        }
+        else
+        {
+            $result     = $businessClassification->getListPosition($filters);
+            $grdResults = $MIOLO->getUI()->getGrid($module,'GrdClassificationList');
+            $grdResults->setData($result);
+
+            //###GRID///is_array($result) ? $grdResults->SetScrollHeight(GRID_SCROLL_HEIGHT) : false;
+
+            $fields[]   = $grdResults;
+        }
+
+        $this->setFields($fields);
+    }
+
+    /**
+     * Event triggered when user click in button "print list in .pdf format"
+     **/
+    public function tbBtnListPrintPDF_click($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+
+        $filters->selectiveProcessId = MIOLO::_request('selectiveProcessId');
+
+        $MIOLO->getClass($module, 'RptClassificationInPDF');
+        $report = new RptClassificationInPDF($filters);
+    }
+
+    /**
+     * Event triggered when user click in button "print list in .txt format"
+     **/
+    public function tbBtnListPrintTXT_click($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+
+        $selectiveProcessId = MIOLO::_request('selectiveProcessId');
+        $unitId             = MIOLO::_request('unitId');
+
+        $businessOtherListing = $MIOLO->getBusiness($module, 'BusOtherListings');
+        $txtData = $businessOtherListing->archiveForPeriodical($selectiveProcessId);
+
+        $isClassified[] = _M('List of approved - selective process @1', $module, $periodValue);
+        $isClassified[] = _M('Cont', $module) . ';' . _M('Inscr', $module) . ';' . _M('Candidate name', $module) . ';' . _M('Course name', $module) . '/' . _M('Unit', $module) . ';' . _M('Situation', $module);
+
+        $x = 0;
+        foreach ( $txtData as $countLn=>$k )
+        {
+            if ( $k[4] == 2 )
+            {
+                $x++;
+                $isClassified[] = $x . ';' . $k[0] . ';' . $k[1] . ';' . $k[2] . '/' . $k[3] . ';' . _M('Classified', $module);
+            }
+        }
+        $fileContent = implode("\n", $isClassified);
+
+        $isSurplus[] = "\n" . _M('List of surplus - selective process @1', $module, $periodValue);
+        $isSurplus[] = _M('Cont', $module) . ';' . _M('Inscr', $module) . ';' . _M('Candidate name', $module) . ';' . _M('Course name', $module) . '/' . _M('Unit', $module) . ';' . _M('Situation', $module);
+
+        $y = 0;
+        foreach ( $txtData as $countLn=>$k )
+        {
+            if ( $k[4] == 3 )
+            {
+                $y++;
+                $isSurplus[] = $y . ';' . $k[0] . ';' . $k[1] . ';' . $k[2] . '/' . $k[3] . ';' . _M('Surplus', $module);
+            }
+        }
+        $fileContent .= implode("\n", $isSurplus);
+
+        SAGU::returnAsFile('report.txt', $fileContent, 'text/application');
+    }
+}
+
+?>

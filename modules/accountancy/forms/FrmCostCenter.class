@@ -1,0 +1,288 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for accCostCenter table
+ *
+ * @author Armando Taffarel Neto [taffarel@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Armando Taffarel Neto [taffarel@solis.coop.br]
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 12/12/2005
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Form to search the accCostCenter table
+ */
+class FrmCostCenter extends MForm
+{
+    private $module;
+
+    /**
+     * Class constructor
+     */
+    function __construct()
+    {
+        $module = MIOLO::getCurrentModule();
+        if ( MIOLO::_request('function') == 'insert' )
+        {
+            parent::__construct(_M('Insert', $module));
+        }
+        else
+        {
+            parent::__construct(_M('Update', $module));
+        }
+
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+
+    }
+
+    /**
+     *  Default method to define fields
+     */
+    public function createFields()
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+
+        $toolBar = new MToolBar('toolBar', $MIOLO->getActionURL($module, $action));
+        
+        if ( $function == 'insert' )
+        {
+            $toolBar->disableButton('tbBtnDelete');
+            $toolBar->disableButton('tbBtnPrint');
+        }
+        elseif ( $function == 'delete' )
+        {
+            $toolBar->disableButton('tbBtnSave');
+        }
+        
+        $fields[] = $toolBar;
+        
+        if ( in_array($function, array('update', 'delete')) )
+        {
+            $costCenterId = MIOLO::_request('costCenterId');
+
+            $business = $MIOLO->getBusiness($module, 'BusCostCenter');
+            $data     = $business->getCostCenter($costCenterId);
+
+            $fields[]  = new MHiddenField('costCenterId', $costCenterId);
+            $fields[]  = new MTextLabel('costCenterId', $data->costCenterId, _M('Cost center id', $module));
+        }
+        
+        if ( $function == 'insert' )
+        {
+            $costCenterId = new MTextField('costCenterId', $this->getFormValue('costCenterId', $data->costCenterId), _M('Cost center id', $module), 12);
+            $costCenterId->setJsHint(_M('Enter cost center id', $module));
+            $validators[] = new MRequiredValidator('costCenterId','', 'required');
+            $fields[] = $costCenterId;
+            
+        }
+        $costCenterDescription = new MTextField('costCenterDescription', $this->getFormValue('costCenterDescription', $data->description), _M('Description', $module), FIELD_DESCRIPTION_SIZE);
+        $costCenterDescription->setJsHint(_M('Enter description', $module));
+        $validators[] = new MRequiredValidator('costCenterDescription','', 'required');
+        $fields[] = $costCenterDescription;
+        
+
+        if ( $function == 'update' )
+        {
+            $fields[] = new MTextLabel('lastModification', '['.$data->userName.' - '.$data->dateTime.']', _M('Last modification', $module));
+        }
+
+        $fields[] = new Separator('');
+
+        $this->setFields($fields);
+        $this->setValidators($validators);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+        $this->setClose($MIOLO->getActionURL($module, substr($action, 0, strrpos($action, ':'))));
+        $this->page->onLoad('document.'.$this->name.'.costCenterDescription.focus();');
+
+    }
+    
+    /**
+     * Event triggered when user chooses New from the toolbar
+     **/
+    public function tbBtnNew_click($sender = null)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $data = $this->getTypesData();
+        $vars = get_object_vars($data);
+        foreach ( $vars as $var => $value )
+        {
+            if ( $this->$var && $var != 'description' )
+            {
+                $this->$var->value = $this->getFormValue($var.'S') ? $this->getFormValue($var.'S') : '';
+            }
+        }
+        $this->description->value = $this->getFormValue('descriptionS') ? $this->getFormValue('costCenterDescriptionS') : '';
+    }
+    
+        /**
+     * Event triggered when user chooses Delete from the toolbar
+     **/
+    public function tbBtnDelete_click($sender = null)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $data   = $this->getTypesData();
+        $opts   = array('event'         => 'tbBtnDelete_confirm',
+                        'function'        => 'delete',
+                        'costCenterId'    => MIOLO::_request('costCenterId')
+                       );
+        $gotoYes = $MIOLO->getActionURL( $module, $action, null, $opts );
+        $goto    = SAGU::getStackBackUrl();
+        $gotoNo  = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+        $msg     = MSG_CONFIRM_RECORD_DELETE;
+        $caption = _M('Question',$module);
+        $MIOLO->question($msg, $gotoYes, $gotoNo);
+    }
+
+    /**
+     * Event triggered when user chooses Yes from the Delete prompt dialog
+     **/
+    public function tbBtnDelete_confirm($sender = null)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $business = $MIOLO->getBusiness($module, 'BusCostCenter');
+        $ok = $business->deleteCostCenter(MIOLO::_request('costCenterId'));
+
+        if ( $ok )
+        {
+            $msg  = MSG_RECORD_DELETED;
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Information',$module);
+            $MIOLO->information($msg, $goto);
+        }
+        else
+        {
+            $msg  = _M('Error executing requested operation.',$module);
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Error', $module);
+            $MIOLO->error( $msg, $goto, $caption );
+        }
+    }
+
+    /**
+     * Event triggered when user chooses Save from the toolbar
+     **/
+    public function tbBtnSave_click($sender = null)
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+
+        $data     = $this->getTypesData();
+        $business = $MIOLO->getBusiness($module, 'BusCostCenter');
+
+        if ( $function == 'update' )
+        {
+            $ok  = $business->updateCostCenter($data);
+            $msg = MSG_RECORD_UPDATED;
+        }
+        else
+        {
+            $dataCostCenter = $business->getCostCenter($data->costCenterId);
+            if (strlen((string)$dataCostCenter->costCenterId)>0)
+            {
+                $opts    = array('costCenterId'=>$data->costCenterId, 'function'=>'update');
+                $gotoYes = $MIOLO->getActionURL($module, $action, null, $opts);
+                $opts    = array('costCenterIdS'=>$data->costCenterId, 'event'=>'btnSearch_click');
+                $gotoNo  = $MIOLO->getActionURL($module, $action, null, $opts);
+                $msg     = _M('The cost center id @1 already exists, do you want to edit that cost center?', $module, $data->costCenterId);
+                $MIOLO->question($msg, $gotoYes, $gotoNo);
+            }
+            else
+            {
+                $ok  = $business->insertCostCenter($data);
+                $msg = MSG_RECORD_INSERTED;
+            }
+        }
+
+        if ( $ok )
+        {
+            $opts = array('costCenterIdS'=>$data->costCenterId);
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL( $module, $action, null, $opts);
+            if ( $function == 'update' )
+            {
+                $caption = _M('Information', $module);
+                $MIOLO->information($msg, $goto);
+            }
+            else
+            {
+                $opts    = array('event'=>'tbBtnNew_click',
+                                 'function'=>'insert');
+
+                $gotoYes = $MIOLO->getActionURL($module, $action, null, $opts);
+                $caption = _M('Question',$module);
+                $MIOLO->question($msg, $gotoYes, $goto);
+            }
+        }
+        else
+        {
+            $msg  = _M('Error executing requested operation.', $module);
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Error', $module);
+            $MIOLO->error( $msg, $goto, $caption );
+        }
+    }
+    
+    
+    public function getTypesData()
+    {
+        $data = new accCostCenter();
+        $vars = get_object_vars($data);
+        foreach ( $vars as $var => $value )
+        {
+            if ( $this->$var && $var != 'description' )
+            {
+                $data->$var = $this->$var->value;
+            }
+            $data->description = $this->costCenterDescription->value;
+        }
+
+        return $data;
+    }
+
+}
+
+?>

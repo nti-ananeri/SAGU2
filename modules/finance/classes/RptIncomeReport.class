@@ -1,0 +1,364 @@
+<?
+/**
+*
+* @author Giovani Murilo Dantas Correa [gmurilo@isolution.inf.br]
+*
+* $version: $Id$
+*
+* \b Maintainers \n
+* Daniel Afonso Heisler [daniel@isolution.inf.br]
+*
+* @since
+* Class created on 25/03/2009
+*
+* \b Organization: \n
+* iSolution - Soluções de Internet \n
+* The iSolution TEAM
+*
+* \b CopyLeft: \n
+* CopyLeft (L) 2007 iSolution - Soluções de Internet \n
+*
+* \b License \n
+* Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+*
+* \b History \n
+* See history in CVS repository: http://isolution.inf.br   
+*
+**/
+set_time_limit(0);        
+$MIOLO = MIOLO::getInstance();
+$module = 'finance';
+
+define('FPDF_FONTPATH', $MIOLO->getModulePath('basic', '/classes/fpdf/font/'));
+$MIOLO->Uses('classes/fpdf/pdf.php', 'basic');
+
+class RptIncomeReport extends PDF
+{
+    public function __construct($filters = NULL)
+    {
+        $this->module = 'finance';
+        $MIOLO = MIOLO::getInstance();
+        $db = $MIOLO->getBusiness('finance', 'BusIncomeReport');
+        foreach($filters as $item => $value)
+        {
+            $this->filters->{$item} = $value;
+        }
+        $this->relats = $db->getIncome($this->filters);
+        $this->title = strtoupper(_M('Income report', $this->module));
+        parent::__construct();
+        $this->useUserInfo = false;
+        $this->aliasNbPages();
+        if ( count($this->filters->fieldsSelect) > 5 )
+        {
+            $this->addPage('L', 'mm', 'A4');
+        }
+        else
+        {
+            $this->addPage('P', 'mm', 'A4');
+        }
+        $this->PageBreakTrigger = ($this->h-$this->tMargin)-6;
+
+        if ( count($this->relats) == 0 )
+        {
+            $this->SetFillColor(255,0,0);
+            $this->cell($this->psize, $this->lsize, _M('No data found to process', 'finance'), 1, null, 'C', 1);
+            $this->outPut();
+            return;
+        }
+
+        $this->generatePDF();
+    }
+
+    public function generatePDF()
+    {
+        $this->module = 'academic';
+        $this->putContent();
+        PDF::generatePDF();
+    }
+
+    public function putHeaderContent()
+    {
+        unset($this->col['name']);
+
+        $dataFieldsSelect[0] = 'Ano';
+        $dataFieldsSelect[1] = 'Mês';
+        $dataFieldsSelect[2] = 'Descrição do mês';
+        $dataFieldsSelect[3] = 'Código da origem';
+        $dataFieldsSelect[4] = 'Descrição da origem';
+        $dataFieldsSelect[5] = 'Código do Curso';
+        $dataFieldsSelect[6] = 'Nome do curso';
+        $dataFieldsSelect[7] = 'Total de Títulos (RP)';
+        $dataFieldsSelect[8] = 'Valor Líquido (RP)';
+        $dataFieldsSelect[9] = 'Valor Bruto (RP)';
+        $dataFieldsSelect[10]= 'Descontos (RP)';
+        $dataFieldsSelect[11]= 'Incetivos (RP)';
+        $dataFieldsSelect[12]= 'Total de Títulos (RR)';
+        $dataFieldsSelect[13]= 'Valor Líquido (RR)';
+        $dataFieldsSelect[14]= 'Valor Bruto (RR)';
+        $dataFieldsSelect[15]= 'Descontos (RR)';
+        $dataFieldsSelect[16]= 'Incetivos (RR)';
+        $dataFieldsSelect[17]= 'Juros (RR)';
+        $dataFieldsSelect[18]= 'Total de Títulos (RNR)';
+        $dataFieldsSelect[19]= 'Valor Líquido (RNR)';
+        $dataFieldsSelect[20]= 'Valor Bruto (RNR)';
+        $dataFieldsSelect[21]= 'Descontos (RNR)';
+        $dataFieldsSelect[22]= 'Incetivos (RNR)';
+        $dataFieldsSelect[23]= '% Inadimplência (RNR)';
+        
+        foreach ( $this->filters->fieldsSelect as $item => $value )
+        {
+            if ( in_array($value, array(0,1,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23)))
+            {
+                $this->col['align'][$value] = 'R';
+            }
+            else if ( in_array($value, array(3,5)))
+            {
+                $this->col['align'][$value] = 'C';
+            }
+            else
+            {
+                $this->col['align'][$value] = 'L';
+            }
+            $this->col['name'][$value] = $dataFieldsSelect[$value];
+            if ( (stristr($this->col['name'][$value], 'Descrição') !== FALSE || stristr($this->col['name'][$value], 'Nome') !== FALSE) && stristr($this->col['name'][$value], 'Mês') === false )
+            {
+                $this->col['size'][$value] = $this->getStringWidth($this->col['name'][$value])*3;
+            }
+            else
+            {
+                $this->col['size'][$value] = $this->getStringWidth($this->col['name'][$value])+3;
+            }
+        }
+        $m = $this->psize / array_sum($this->col['size']);
+        foreach ( $this->col['size'] as $item => $value )
+        {
+            $this->col['size'][$item] = $value * $m;
+        }
+        $this->setFillColor(232,232,232);
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', 8);
+        $fs = 8;
+        foreach ($this->col['name'] as $x => $value )
+        {
+            while ( $this->getStringWidth($value)+1 >= $this->col['size'][$x] ) 
+            {
+                $fs -= 0.1;
+                $this->setFont(DEFAULT_REPORT_FONT, 'B', $fs);
+            }
+            //$this->cell($this->col['size'][$x], $this->lsize, $this->col['name'][$x], 1, null, 'C', 1 );
+        }
+        $this->headerFontSize = $fs;
+        foreach ( $this->col['name'] as $x => $value )
+        {
+            $this->cell($this->col['size'][$x], $this->lsize, $value, 1, null, 'C', 1 );
+        }
+        $this->ln();
+        $this->setFont(DEFAULT_REPORT_FONT, '', $fs);
+    }
+
+    public function putContent()
+    {
+        $this->putHeaderContent();
+        $this->headerFontSize = 8;
+        $this->setFont(DEFAULT_REPORT_FONT, '', 8);
+        $fs = 8;
+        asort($this->relats);
+        $this->setFillColor(232,232,232);
+        foreach($this->relats as $line => $content )
+        {
+            foreach ( $this->col['name'] as $item => $value )
+            {
+                while ( $this->col['size'][$item] < $this->getStringWidth(_M(trim($content[$item]), 'basic'))+1.5 )
+                {
+                    $fs -= 0.1;
+                    $this->setFont(DEFAULT_REPORT_FONT, '', $fs);
+                }
+            }
+        }
+        foreach($this->relats as $line => $content )
+        {
+            $this->setFillColor(242,242,242);
+            $zebra = $zebra == true ? false : true;
+            foreach ( $this->col['name'] as $item => $value )
+            {
+                if ( $item > 6 )
+                {
+                    $total[$item][] = $content[$item];
+                }
+                if ( $item > 7  && !in_array($item, array(12,18)) )
+                {
+                    $value = SAGU::formatNumber($content[$item], true);
+                }
+                else
+                {
+                    $value = _M(trim($content[$item]), 'basic');
+                }
+                $this->cell($this->col['size'][$item], $this->lsize, $value, 1, null, $this->col['align'][$item], $zebra );
+            }
+            $this->ln();
+        }
+        $this->setFillColor(232,232,232);
+        $this->setFont(DEFAULT_REPORT_FONT, 'BI', $fs);
+        $s = 0;
+        $size = 0;
+        foreach ( $this->col['name'] as $item => $value )
+        {
+            $s++;
+            if ( $item > 6 )
+            {
+                if ( $item == 23 )
+                {
+                    $this->cell($this->col['size'][$item], $this->lsize, SAGU::formatNumber(array_sum($total[$item])/count($total[$item]), true), 1, null, $this->col['align'][$item], true );
+                }
+                else if ( !in_array($item, array(7, 12,18)) )
+                {
+                    $this->cell($this->col['size'][$item], $this->lsize, SAGU::formatNumber(array_sum($total[$item]), true), 1, null, $this->col['align'][$item], true );
+                }
+                else
+                {
+                    $this->cell($this->col['size'][$item], $this->lsize, array_sum($total[$item]), 1, null, $this->col['align'][$item], true );
+                }
+            }
+            else
+            {
+                if ( $s == 1 )
+                {
+                    $x = $this->x;
+                    $y = $this->y;
+                    $this->cell($this->col['size'][$item], $this->lsize, null, 'LBT', null, $this->col['align'][$item], true );
+                }
+                else
+                {
+                    $this->cell($this->col['size'][$item], $this->lsize, null, 'BT', null, $this->col['align'][$item], true );
+                }
+                $size += $this->col['size'][$item];
+            }
+        }
+        $this->setY($y);
+        $this->setX($x);
+        $this->cell($size, $this->lsize, _M('Total', 'basic'), 1, null, 'R', true);
+    }
+
+    public function Header()
+    {
+        parent::Header();
+        /*
+        $MIOLO = MIOLO::getInstance();
+        $this->busCourse = $MIOLO->getBusiness('academic', 'BusCourse');
+        $this->busUnit = $MIOLO->getBusiness('basic', 'BusUnit');
+        $this->busTurn = $MIOLO->getBusiness('basic', 'BusTurn');
+
+        if ( strlen((string)$this->filters->unitId) > 0 )
+        {
+            $dataUnit = $this->busUnit->getUnit($this->filters->unitId);
+            $unit = $dataUnit->unitId . ' - ' . $dataUnit->description;
+        }
+        else
+        {
+            $unit = strtoupper('Todas as Unidade');
+        }
+
+        if ( strlen((string)$this->filters->courseId) > 0 )
+        {
+            $dataCourse = $this->busCourse->getCourse($this->filters->courseId);
+            $course = $dataCourse->courseId . ' - ' . $dataCourse->name;
+        }
+        else
+        {
+            $course = strtoupper('Todos os Cursos');
+        }
+
+        if ( strlen((string)$this->filters->courseId) > 0 )
+        {
+            $dataCourse = $this->busCourse->getCourse($this->filters->courseId);
+            $course = $dataCourse->courseId . ' - ' . $dataCourse->name;
+        }
+        else
+        {
+            $course = strtoupper('Todos os Cursos');
+        }
+
+        if ( strlen((string)$this->filters->turnId) > 0 )
+        {
+            $dataTurn = $this->busTurn->getTurn($this->filters->turnId);
+            $turn = $dataTurn->turnId . ' - ' . $dataTurn->description;
+        }
+        else
+        {
+            $turn = strtoupper('Todos os Turnos');
+        }
+
+        $this->setFont(DEFAULT_REPORT_FONT, 'BI', 9);
+        $this->setFillColor(232,232,232);
+        $this->cell($this->psize, $this->lsize, _M('Filtros', $this->module ), 1, null, 'C', 1);
+        $this->ln();
+        $this->lsize = 3.5;
+        $this->setFont(DEFAULT_REPORT_FONT, '', 8);
+        $this->cell(($this->psize/5), $this->lsize, _M('Enroll date', $this->module ), 'TLR', null, 'C');
+        $this->cell(12,$this->lsize, _M('Unit', $this->module ) . ': ' , 'TL', null, 'L');
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', 8);
+        $this->cell(($this->psize-(($this->psize/5)*2))-12, $this->lsize, $unit, 'T', null, 'L');
+        $this->setFont(DEFAULT_REPORT_FONT, '', 8);
+        $this->cell(($this->psize/5)-13, $this->lsize, _M('Período/série/ano', $this->module ) . ': ', 'TL', null, 'L');
+        $this->cell(13, $this->lsize, ( strlen((string)$this->filters->semester) > 0 ? $this->filters->semester : 'Todos' ), 'RT', null, 'L');
+        $this->ln();
+        $this->cell(($this->psize/5), $this->lsize, _M('Inicial', $this->module ) . ': ' . ( strlen((string)$this->filters->beginDate) > 0 ? $this->filters->beginDate : '    /    /    ' ), 'LR', null, 'L');
+        $this->cell(12,$this->lsize, _M('Course', $this->module ) . ': ' , 'L', null, 'L');
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', 8);
+        $this->cell(($this->psize-(($this->psize/5)*2))-12, $this->lsize, $course, '', null, 'L');
+        $this->setFont(DEFAULT_REPORT_FONT, 'I', 8);
+        $this->cell(($this->psize/5), $this->lsize, '', 'LR', null, 'C');
+        $this->ln();
+        $this->setFont(DEFAULT_REPORT_FONT, '', 8);
+        $this->cell(($this->psize/5), $this->lsize, _M('Final', $this->module ) . ': ' . ( strlen((string)$this->filters->endDate) > 0 ? $this->filters->endDate : '    /    /    ' ), 'LR', null, 'L');
+        $this->cell(12,$this->lsize, _M('Turn', $this->module ) . ': ' , 'L', null, 'L');
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', 8);
+        $this->cell(($this->psize-(($this->psize/5)*2))-12, $this->lsize, $turn, null, 'L');
+        $this->Rect($this->x+1, $this->y, 3, 3);
+        if ( strlen((string)$this->filters->enrollSituation[4]) > 0 )
+        {
+            $this->Line($this->x+1, $this->y, $this->x+4, $this->y+3);
+            $this->Line($this->x+4, $this->y, $this->x+1, $this->y+3);
+        }
+        $this->setFont(DEFAULT_REPORT_FONT, '', 8);
+        $this->cell(($this->psize/5), $this->lsize, '     Normais', 'LR', null, 'L');
+        $this->ln();
+        $this->setFont(DEFAULT_REPORT_FONT, '', 8);*/
+//        $this->cell(($this->psize/5), $this->lsize, null /*_M('Final', $this->module ) . '    /    /    '*/, 'LR', null, 'L');
+  /*      $this->cell(12,$this->lsize, _M('Class', $this->module ) . ': ' , 'L', null, 'L');
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', 8);
+        $this->cell(($this->psize-(($this->psize/5)*2))-12, $this->lsize, ( strlen((string)$this->filters->classId) > 0 ? ($this->filters->classId . ' - ' . $this->filters->className ) : 'Todas as turmas' ), null, 'L');
+        $this->Rect($this->x+1, $this->y, 3, 3);
+        if ( strlen((string)$this->filters->enrollSituation[1]) > 0 )
+        {
+            $this->Line($this->x+1, $this->y, $this->x+4, $this->y+3);
+            $this->Line($this->x+4, $this->y, $this->x+1, $this->y+3);
+        }
+        $this->setFont(DEFAULT_REPORT_FONT, '', 8);
+        $this->cell(($this->psize/5), $this->lsize, '     Dependência', 'LR', null, 'L');
+        $this->ln();
+        $this->setFont(DEFAULT_REPORT_FONT, '', 8);*/
+        //$this->cell(($this->psize/5), $this->lsize, null /*_M('Final', $this->module ) . '    /    /    '*/, 'LR', null, 'L');
+        /*$this->cell(12,$this->lsize, _M('Period', $this->module ) . ': ' , 'L', null, 'L');
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', 8);
+        $this->cell(($this->psize-(($this->psize/5)*2))-12, $this->lsize, $this->filters->periodId, null, 'L');
+        $this->Rect($this->x+1, $this->y, 3, 3);
+        if ( strlen((string)$this->filters->enrollSituation[2]) > 0 )
+        {
+            $this->Line($this->x+1, $this->y, $this->x+4, $this->y+3);
+            $this->Line($this->x+4, $this->y, $this->x+1, $this->y+3);
+        }
+        $this->setFont(DEFAULT_REPORT_FONT, '', 8);
+        $this->cell(($this->psize/5), $this->lsize, '     Adaptação', 'LR', null, 'L');
+        $this->ln();*/
+//        $this->cell(($this->psize/5), $this->lsize,null /* _M('Final', $this->module ) . '    /    /    '*/, 'BLR', null, 'L');
+        /*$this->cell(25,$this->lsize, _M('Formation level', $this->module ) . ': ' , 'LB', null, 'L');
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', 8);
+        $this->cell(($this->psize-(($this->psize/5)*2))-25, $this->lsize, 'Todos', 'B', null, 'L');*/
+//        $this->Rect($this->x+1, $this->y, 3, 3);
+    }
+    public function Footer()
+    {
+        parent::Footer();
+    }
+}
+?>

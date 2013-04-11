@@ -1,0 +1,223 @@
+<?php
+
+/**
+ * Pupil folder form
+ *
+ * @author Guilherme Gregory [guilherme@solis.coop.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * Leovan Tavares da Silva [leovan@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ *
+ * @since
+ * Class created on 29/06/2006
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2005 SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+
+/**
+ * Form to manipulate a pupilListing
+ **/
+class FrmPupilFolder extends MForm
+{
+    private $home;
+
+    /**
+     * Class constructor
+     **/
+    function __construct($data)
+    {
+        $module = MIOLO::getCurrentModule();
+        $this->home   = $data->home;
+
+        parent::__construct(_M('Label for pupil folder', $module));
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+        $event    = MIOLO::_request('event');
+
+        $toolBar = new MToolBar('toolBar', $MIOLO->getActionURL($module, $action));
+        $toolBar->hideButton('tbBtnNew');
+        $toolBar->hideButton('tbBtnSave');        
+        $toolBar->hideButton('tbBtnSearch');
+        $toolBar->hideButton('tbBtnDelete');
+        $toolBar->enableButton('tbBtnPrint');
+
+        //favoritos
+        $enabledImage  = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-20x20.png');
+        $disabledImage = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-disabled-20x20.png');
+        $url           = $MIOLO->getActionURL($module, $this->home, null, array('function' => 'search', 'event' => 'bookmark'));
+        $toolBar->addButton('tbBtnBookmark', _M('Add to bookmarks', 'basic'), $url, null, true, $enabledImage, $disabledImage);
+
+        if ( MIOLO::_request('event') == 'bookmark' )
+        {
+            $MIOLO->getClass('basic', 'access');
+            access::insert('Label for pupil folder', $this->home, 'pupilFolder-16x16.png', true);
+        }
+        //fim favoritos
+
+        $fields[] = $toolBar;
+
+        //$fields[] = new MHiddenField('stateContractId', STATE_CONTRACT_ID_ENROLLED);
+
+        $fields[] = new MSeparator();		
+
+        $business = $MIOLO->getBusiness($module, 'BusPeriod');
+        $periodId = new MComboBox('periodId', strlen((string)$this->getFormValue('periodId', $data->periodId))>0 ? $this->getFormValue('periodId', $data->periodId) : CURRENT_PERIOD_ID, _M('Period', $module), $business->listPeriod());
+        $validators[] = new MRequiredValidator('periodId');
+        $fields[] = $periodId;
+        $fields[] = new MSeparator();
+
+        //Course
+        $courseLabel = new MText('courseLabel', _M('Course',$module) . ':');
+        $courseLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $courseLabel->setClass('m-caption m-caption-required');
+
+        $courseId     = new MLookupTextField('courseId', $this->getFormValue('courseId', $data->courseId), '', FIELD_LOOKUPFIELD_SIZE, null, null, 'courseVersion, courseName, limbo, limbo, turnId, turnDescription', $module, 'CourseOccurrence', null, array('courseId' => 'courseId'), true);
+        $courseId->setJsHint(_M('Enter the course code',$module));
+        $validators[] = new MRequiredValidator('courseId', _M('Course',$module));
+
+        $courseVersion = new MTextField('courseVersion', $this->getFormValue('courseVersion', $data->courseVersion), _M('Course version',$module), FIELD_ID_SIZE);
+        //$courseVersion->setReadOnly(true);
+
+        $courseName = new MTextField('courseName', $this->getFormValue('courseName', $data->courseName), '', FIELD_DESCRIPTION_SIZE);
+        $courseName->setReadOnly(true);
+        $courseName->setJsHint(_M('Course name',$module));
+
+        $hctCourse = new MHContainer('hctCourse', array($courseLabel, $courseId, $courseVersion, $courseName));
+        $hctCourse->setShowLabel(false);
+        $fields[]  = $hctCourse;
+        $fields[]  = new MSeparator();
+
+        $business     = $MIOLO->getBusiness('basic', 'BusUnit');
+        $unitId       = new MComboBox('unitId', $this->getFormValue('unitId', $this->unitId->value), _M('Unit id',$module), $business->listUnit());
+        $unitId->setJsHint(_M('Enter the unit code',$module));
+        $validators[] = new MRequiredValidator('unitId');
+        $fields[]     = $unitId;
+        $fields[]     = new MSeparator();
+
+        $optsAll         = new MOption('all', 'opt1', _M('All', $module), true);
+        $optsAll->addAttribute('onChange', $this->getName() . '.submit();');
+        $opts[]          = $optsAll;
+        $optsFreshmen    = new MOption('freshman', 'opt2', _M('Freshmen', $module), false);
+        $optsFreshmen->addAttribute('onChange', $this->getName() . '.submit();');
+        $opts[]          = $optsFreshmen;
+        $optsEnrolled    = new MOption('enrolled', 'opt3', _M('Enrolled', $module), false);
+        $optsEnrolled->addAttribute('onChange', $this->getName() . '.submit();');
+        $opts[]          = $optsEnrolled;
+        $optsChoicePupil = new MOption('choicePupil', 'opt4', _M('Choose pupil', $module), false);
+        $optsChoicePupil->addAttribute('onChange', $this->getName() . '.submit();');
+        $opts[]          = $optsChoicePupil;
+
+        $radFileTypeLabel = new MText('radFileTypeLabel', _M('File type',$module) . ':');
+        $radFileTypeLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $radFileTypeLabel->setClass('m-caption m-caption-required');
+
+        $radFileType = new MRadioButtonGroup('radFileType', '', $opts, $this->getFormValue('radFileType', $this->radFileType->value), '', 'horizontal', '');
+        $radFileType->setShowLabel(false);
+
+        $hctFileType = new MHContainer('hctFileType', array($radFileTypeLabel, $radFileType));
+        $hctFileType->setShowLabel(false);
+        $fields[]    = $hctFileType;
+
+        if ( $this->getFormValue('radFileType', $this->radFileType->value) == 'opt2' )
+        {
+                $business           = $MIOLO->getBusiness('selectiveProcess', 'BusSelectiveProcess');
+                $selectiveProcessId = new MComboBox('selectiveProcessId', $this->getFormValue('selectiveProcessId', $data->selectiveProcessId), _M('Selective process',$module), $business->listSelectiveProcess());
+                $selectiveProcessId->setJsHint(_M('Enter the selective process code',$module));
+//          $selectiveProcessId->addAttribute('onChange','document.' . $this->getName() . '.submit()' );
+                $selectiveProcessId->setAutoPostBack(true);
+                $fields[]           = $selectiveProcessId;
+                $validators[]       = new MRequiredValidator('selectiveProcessId');	
+        }
+
+        if ( $this->getFormValue('radFileType', $this->radFileType->value) == 'opt4' )
+        {
+            $pupilFolderLabel = new MText('pupilFolderLabel', _M('Person id of the pupils who you desire to print labels for. If there is more than one person, informs the ids separated by comma', $module) . ' (,):');
+            $fields[]         = $pupilFolderLabel;
+
+            $pupilFolder = new MMultiLineField('pupilFolder', $this->getFormValue('pupilFolder',$data->pupilFolder), '', 40, 5, 60);
+            $fields[]    = $pupilFolder;
+        }
+
+
+        $fields[] = new Separator('');
+
+        $this->setFields($fields);
+        $this->setValidators($validators);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+
+        $this->setClose($MIOLO->getActionURL($module,substr($action,0,strrpos($action,':'))));
+    }
+
+    /**
+     * Event triggered when user chooses Search from the toolbar
+     **/
+    public function tbBtnPrint_click($sender = null)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $data->periodId           = MIOLO::_request('periodId');
+        $data->unitId             = MIOLO::_request('unitId');
+        $data->courseId           = MIOLO::_request('courseId');
+
+        $data->choicePupil        = MIOLO::_request('pupilFolder');
+        $data->radFileType        = MIOLO::_request('radFileType');
+        $data->selectiveProcess   = MIOLO::_request('selectiveProcessId'); 
+        $data->explodeChoicePupil = explode(',', $this->pupilFolder->value);
+
+        if ( $data->radFileType == 'opt3' || $data->radFileType == 'opt4')
+        {
+            $data->stateContractId = STATE_CONTRACT_ID_ENROLLED;	
+        }
+        else
+        {
+            $data->stateContractId = NULL;
+        }
+
+        $businessPupilFolder = $MIOLO->getBusiness($module, 'BusGroup');
+        $pupilFolder         = $businessPupilFolder->getPupilFolderEnrolled($data->courseId, $data->unitId, $data->stateContractId, $data->periodId);
+
+        $data->pupilFolder   = $pupilFolder;
+
+        $MIOLO->uses('classes/RptPupilFolder.class', $module);
+
+        $report = new RptPupilFolder($data);
+        exit;
+
+        $this->page->setAction($MIOLO->getActionURL($module, $action));
+    }
+}
+
+?>

@@ -1,0 +1,238 @@
+<?php
+
+/**
+ * GroupRelease form
+ *
+ * @author William Prigol Lopes [william@solis.coop.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * Rafael Luís Spengler [rafael@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ *
+ * @since
+ * Class created on 25/08/2005
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2005 SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+
+/**
+ * Form to manipulate a center
+ **/
+class FrmGroupRelease extends MForm
+{
+
+    /**
+     * Class constructor
+     **/
+    function __construct()
+    {
+        $module = MIOLO::getCurrentModule();
+        parent::__construct(_M('Group releases', $module));
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+        $this->eventHandler();
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+
+        $toolBar = new MToolBar('toolBar', $MIOLO->getActionURL($module, $action));
+
+        $toolBar->hideButton('tbBtnDelete');
+        $toolBar->hideButton('tbBtnPrint');
+        $toolBar->hideButton('tbBtnSearch');
+
+        $fields[] = $toolBar;
+
+        //Period id 
+        $businessPeriod = $MIOLO->getBusiness($module, 'BusPeriod');
+        if ( is_null($this->getFormValue('periodId', $data->periodId)) || strlen((string)$this->getFormValue('periodId', $data->periodId)) == 0 )
+        {
+            $periodIdValue = CURRENT_PERIOD_ID;
+        }
+        else
+        {
+            $periodIdValue = $this->getFormValue('periodId', $data->periodId);
+        }
+
+        $periodId     = new MSelection('periodId', $periodIdValue, _M('Period',$module), $businessPeriod->listPeriod(), true );
+        $periodId->SetAutoPostBack(true);
+        $fields[]     = $periodId;
+        $validators[] = new MRequiredValidator('periodId');
+
+        if ( strlen((string)$periodIdValue)>0 )
+        {
+            //Person
+            $personLabel  = new MText('personLabel', _M('Professor',$module) . ':');
+            $personLabel->setWidth(FIELD_CONTAINER_SIZE);
+            $personLabel->setClass('m-caption m-caption-required');
+
+            $personId     = new MLookupTextField('personId', $this->getFormValue('personId', $data->personId), '', FIELD_LOOKUPFIELD_SIZE, null, null, 'personName', 'basic', 'PhysicalPersonProfessor', null, null, true);
+            $personId->setJsHint(_M('Enter the professor code', $module));
+            $validators[] = new MIntegerValidator('personId', _M('Professor', $module), 'required');
+
+            $personName   = new MTextField('personName', $this->personName->value, '', FIELD_DESCRIPTION_SIZE);
+            $personName->setReadOnly(true);
+            $personName->setJsHint(_M('Professor name',$module));
+
+            $hctPerson    = new MHContainer('hctPerson', array($personLabel, $personId, $personName));
+            $hctPerson->setShowLabel(true);
+            $fields[]     = $hctPerson;
+
+            $fields[] = new MButton('btnSearch', _M('List professor curricular components', 'academic'));
+
+            if ( strlen((string)$this->getFormValue('personId', $data->personId))>0 )
+            {
+                $filters->periodId    = $periodIdValue;
+                $filters->professorId = $this->getFormValue('personId', $data->personId);
+
+                $business = $MIOLO->getBusiness($module, 'BusGroupRelease');
+                $result   = $business->searchGroupRelease($filters);
+
+                if ( count($result)>0 )
+                {
+                    for ( $x=0; $x<count($result); $x++ )
+                    {
+                        list ( $groupId,
+                               $degreeId,
+                               $degreeDescription,
+                               $degreeLimitDate,
+                               $degreeNumber,
+                               $degreeIsReleased,
+                               $curricularComponentId,
+                               $curricularComponentVersion,
+                               $curricularComponentName,
+                               $courseId,
+                               $courseVersion,
+                               $courseName ) = $result[$x];
+
+                        $nextGroupId = $result[$x+1][0];
+
+                        $isReleasedLabel = new MText('isReleasedLabel' . $groupId . '_' . $degreeId, '<b>' . $degreeDescription . '</b>&nbsp;' . _M('was released',$module) . '?');
+                        $isReleasedLabel->setClass('m-caption m-caption-required');
+
+                        $isReleased = $this->getFormValue('isReleased' . $groupId . '_' . $degreeId, $this->getFormValue('isReleased' . $groupId . '_' . $degreeId, $degreeIsReleased));
+                        $isReleased = new MRadioButtonGroup('isReleased' . $groupId . '_' . $degreeId, '', SAGU::listYesNo(1), $isReleased, null, 'horizontal');
+                        $isReleased->setShowLabel(false);
+
+                        $hctIsReleased = new MHContainer('hctIsReleased' . $groupId . '_' . $degreeId, array($isReleasedLabel, $isReleased));
+                        $flds[]        = $hctIsReleased;
+
+                        //joga na tela os dados do container anterior
+                        if ( $groupId != $nextGroupId )
+                        {
+                            $fields[]       = new MSeparator();
+                            $bsg            = new BaseGroup('bsg' . $groupId, 
+                                                            _M('Course',$module) . ': ' . $courseId . '/' . $courseVersion . ' - ' . $courseName . '&nbsp;&nbsp;-&nbsp;&nbsp;' . 
+                                                            _M('Curricular component',$module) . ': '.  $curricularComponentId . '/' . $curricularComponentVersion .  ' - ' . $curricularComponentName,
+                                                            $flds,
+                                                            'vertical');
+                            $bsg->showLabel = true;
+                            $bsg->width     = '100%';
+                            unset($flds);
+
+                            $fields[]       = $bsg;
+                        }
+                    }
+                }
+            }
+        }
+
+        $fields[] = new Separator();
+
+        $this->setFields($fields);
+        if ( count($validators)>0 )
+        {
+            $this->setValidators($validators);
+        }
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+        $this->setClose($MIOLO->getActionURL($module, substr($action, 0, strrpos($action, ':'))));
+        if ( $function == 'insert' )
+        {
+            $this->page->onLoad('document.' . $this->name . '.centerId.focus();');
+        }
+        else
+        {
+            $this->page->onLoad('document.' . $this->name . '.center.name.focus();');
+        }
+
+    }
+
+    /**
+     * Event triggered when user chooses New from the toolbar
+     **/
+    public function tbBtnNew_click($sender = null)
+    {
+    }
+
+    /**
+     * Event triggered when user chooses Save from the toolbar
+     **/
+    public function tbBtnSave_click($sender = null)
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+
+        $data     = $this->getData();
+        $business = $MIOLO->getBusiness($module, 'BusGroupRelease');
+
+        //percorre todos os registros e atualiza os que já existem e insere os que não existem
+        foreach ( $data as $field => $value )
+        {
+            if ( substr($field, 0, 10) == 'isReleased' && substr($field, 0, 15) != 'isReleasedLabel')
+            {
+                $field2 = substr($field, 10, strlen((string)$field) - 10);
+                list ($filter->groupId, $filter->degreeId) = explode('_', $field2);
+
+                $ok = $business->deleteGroupRelease($filter);
+
+                if ( $value == DB_TRUE )
+                {
+                    $ok = $business->insertGroupRelease($filter);
+                }
+            }
+        }
+        $msg = MSG_RECORD_UPDATED;
+
+        if ( $ok )
+        {
+            $caption = _M('Information', $module);
+            $MIOLO->information($msg, $MIOLO->getActionURL( $module, $action));
+        }
+        else
+        {
+            $msg  = _M('Error executing requested operation.', $module);
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Error', $module);
+            $MIOLO->error( $msg, $goto, $caption );
+        }
+    }
+}
+
+?>

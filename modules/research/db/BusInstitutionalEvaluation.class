@@ -1,0 +1,332 @@
+<?php
+
+/**
+ *
+ * This file handles the connection and actions for research action
+ *
+ * @author Daniel Afonso Heisler [daniel.heisler@gmail.com]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 01/10/2007
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to manipulate the basCountry table
+ **/
+class BusinessResearchBusInstitutionalEvaluation extends Business
+{
+
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic', 'sagu');
+        $module = is_null($module) ? 'research' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+    function getStatistics($periodId, $formId)
+    {
+        $sql = 'SELECT courseId,
+                       courseVersion,
+                       getCourseName(courseId),
+                       turnId,
+                       getTurnDescription(turnId),
+                       unitId,
+                       getUnitDescription(unitId),
+                       count(*) as totalPeople,
+                       ( SELECT COUNT(DISTINCT personId)
+                           FROM rshanswer_institutionalevaluation
+                          WHERE questionId IN ( SELECT questionId
+                                                  FROM rshquestion
+                                                 WHERE formId = ? )
+                            AND courseId = ( SELECT courseId
+                                               FROM acdContract
+                                         INNER JOIN acdEnroll
+                                                 ON ( acdContract.contractId = acdEnroll.contractId )
+                                              WHERE enrollId = rshanswer_institutionalevaluation.enrollId ) 
+                            AND courseVersion = ( SELECT courseVersion
+                                                    FROM acdContract
+                                              INNER JOIN acdEnroll
+                                                      ON ( acdContract.contractId = acdEnroll.contractId )
+                                                   WHERE enrollId = rshanswer_institutionalevaluation.enrollId ) 
+                            AND turnId = ( SELECT turnId
+                                             FROM acdContract
+                                       INNER JOIN acdEnroll
+                                               ON ( acdContract.contractId = acdEnroll.contractId )
+                                            WHERE enrollId = rshanswer_institutionalevaluation.enrollId ) 
+                            AND unitId = ( SELECT unitId
+                                             FROM acdContract
+                                       INNER JOIN acdEnroll
+                                               ON ( acdContract.contractId = acdEnroll.contractId )
+                                            WHERE enrollId = rshanswer_institutionalevaluation.enrollId ) 
+                       ) * 100 / count(*) as percentual
+                  FROM ( 
+
+                SELECT A.contractId,
+                       A.personId,
+                       A.courseId,
+                       A.courseVersion,
+                       A.unitId,
+                       A.turnId,
+                       count(*) as enrolls
+                  FROM acdContract A
+            INNER JOIN acdEnroll B
+                    ON ( A.contractId = B.contractId )
+            INNER JOIN acdGroup C
+                    ON ( B.groupId = C.groupId )
+            INNER JOIN acdLearningPeriod D
+                    ON ( C.learningPeriodId = D.learningPeriodId )
+                 WHERE D.periodId = ?
+                   AND B.statusId NOT IN (' . ENROLL_STATUS_CANCELLED . ',' . ENROLL_STATUS_EXCUSED . ')
+              GROUP BY A.contractId,
+                       A.personId,
+                       A.courseId,
+                       A.courseVersion,
+                       A.unitId,
+                       A.turnId
+              ORDER BY A.courseId,
+                       A.courseVersion,
+                       A.unitId,
+                       A.turnId,
+                       A.contractId,
+                       A.personId
+                       ) as X
+              GROUP BY courseId,
+                       courseVersion,
+                       turnId,
+                       unitId
+              ORDER BY courseId,
+                       courseVersion,
+                       turnId,
+                       unitId';
+
+        $db     = $this->getDatabase();
+        $result = $db->query( SAGU::prepare($sql, array($formId, $periodId)) );
+
+        return $result;
+    }
+
+    function getStatisticsByCurricularComponent($formId, $periodId=null)
+    {
+        $sql = 'SELECT G.curricularComponentId,
+                       G.curricularComponentVersion,
+                       G.name,
+                       A.questionId,
+                       B.description,
+                       A.optionId,
+                       C.description,
+                       count(*),
+                       null,
+                       F.courseId,
+                       F.courseVersion,
+                       getCourseName(F.courseId)
+                  FROM rshAnswer_institutionalEvaluation A
+            INNER JOIN rshQuestion B
+                    ON ( A.questionId = B.questionId )
+            INNER JOIN rshOption C
+                    ON (     B.questionId = C.questionId 
+                         AND A.optionId = C.optionId )
+            INNER JOIN acdEnroll D
+                    ON (     D.enrollId = A.enrollId 
+                         AND D.statusId NOT IN (5, 6) )
+            INNER JOIN acdGroup E
+                    ON ( E.groupId = D.groupId )
+            INNER JOIN acdCurriculum F
+                    ON ( F.curriculumId = E.curriculumId )
+            INNER JOIN acdCurricularComponent G
+                    ON (     G.curricularComponentId      = F.curricularComponentId
+                         AND G.curricularComponentVersion = F.curricularComponentVersion )
+                 WHERE B.formId = ?
+                   AND B.isbycurricularcomponent = true
+                   --AND iscontractout(D.contractId) = false
+                   --AND A.personid in (4200411)
+              GROUP BY F.courseId,
+                       F.courseVersion,
+                       getCourseName(F.courseId),
+                       G.curricularComponentId,
+                       G.curricularComponentVersion,
+                       G.name,
+                       A.questionId,
+                       B.description,
+                       A.optionId,
+                       C.description
+              ORDER BY F.courseId,
+                       F.courseVersion,
+                       getCourseName(F.courseId),
+                       G.curricularComponentId,
+                       G.curricularComponentVersion,
+                       A.questionId,
+                       A.optionId';
+
+        $db     = $this->getDatabase();
+        $result = $db->query( SAGU::prepare($sql, array($formId)) );
+
+        if ( count($result)>0 )
+        {
+            for ( $x=0; $x<count($result); $x++ )
+            {
+                //soma registros pra frente
+                for ( $y=$x; $y<count($result); $y++ )
+                {
+                    if ( $result[$x][0] == $result[$y][0] &&
+                         $result[$x][1] == $result[$y][1] &&
+                         $result[$x][3] == $result[$y][3]
+                       )
+                    {
+                        $total += $result[$y][7];
+                    }
+                    else
+                    {
+                        break;
+                    }
+                }
+
+                //soma registros pra trás
+                for ( $y=($x-10); $y<$x; $y++ )
+                {
+                    if ( $result[$x][0] == $result[$y][0] &&
+                         $result[$x][1] == $result[$y][1] &&
+                         $result[$x][3] == $result[$y][3]
+                       )
+                    {
+                        $total += $result[$y][7];
+                    }
+                }
+                $result[$x][8] = $total;
+                $total = 0;
+            }
+        }
+
+        return $result;
+    }
+
+    function getStatisticsByQuestion($formId, $periodId=null)
+    {
+        $sql = 'SELECT B.questionId,
+                       B.description,
+                       C.optionId,
+                       C.description,                       
+                       (SELECT count(*) as totalQuestaoOpcao
+                          FROM rshAnswer_institutionalEvaluation A2
+                    INNER JOIN acdContract F2
+                            ON ( A2.personId = F2.personId )
+                         WHERE iscontractout(F2.contractId) = false
+                           AND A2.questionId    = B.questionId
+                           AND A2.optionId      = C.optionId
+                           AND F2.courseId      = X.courseId
+                           AND F2.courseVersion = X.courseVersion) as Z,
+                       (SELECT count(*) as totalQuestao
+                          FROM rshAnswer_institutionalEvaluation A3
+                    INNER JOIN acdContract F3
+                            ON ( A3.personId = F3.personId )
+                         WHERE iscontractout(F3.contractId) = false
+                           AND A3.questionId    = B.questionId
+                           AND F3.courseId      = X.courseId
+                           AND F3.courseVersion = X.courseVersion ) as Y,
+                       X.courseId,
+                       X.courseVersion,
+                       X.courseName
+                  FROM rshQuestion B
+             LEFT JOIN rshOption C
+                    ON ( B.questionId = C.questionId )
+            INNER JOIN (SELECT DISTINCT B2.courseId,
+                               B2.courseVersion,
+                               getCourseName(B2.courseId) as courseName,
+                               C2.formId
+                          FROM rshAnswer_institutionalEvaluation A2
+                    INNER JOIN acdContract B2
+                            ON ( A2.personId = B2.personId )
+                    INNER JOIN rshQuestion C2
+                            ON ( A2.questionId = C2.questionId ) 
+                         WHERE iscontractout(B2.contractId) = false ) X
+                    ON ( X.formId = B.formId )
+                 WHERE B.formId = ?
+                   AND B.isbycurricularcomponent = false
+              GROUP BY X.courseId,
+                       X.courseVersion,
+                       X.courseName,
+                       B.questionId,
+                       C.optionId,
+                       B.description,
+                       C.description,
+                       B.formId
+              ORDER BY X.courseId,
+                       X.courseVersion,
+                       B.questionId,
+                       C.optionId';
+
+        $db     = $this->getDatabase();
+        $result = $db->query( SAGU::prepare($sql, array($formId)) );
+
+        return $result;
+    }
+
+    function getStatisticsByComments($formId, $periodId=null)
+    {
+        $sql = 'SELECT A.questionId,
+                       B.description,
+                       \'        \' || A.optiontext as comment,
+                       F.courseId,
+                       F.courseVersion,
+                       getCourseName(F.courseId)
+                  FROM rshAnswer_institutionalEvaluation A
+            INNER JOIN rshQuestion B
+                    ON ( A.questionId = B.questionId )
+            INNER JOIN acdContract F
+                    ON ( A.personId = F.personId )
+                 WHERE B.formId = ?
+                   AND B.isbycurricularcomponent = false
+                   AND B.texttype = true
+                   AND iscontractout(F.contractId) = false
+              GROUP BY A.questionId,
+                       B.description,
+                       A.optiontext,
+                       F.courseId,
+                       F.courseVersion,
+                       getCourseName(F.courseId)
+              ORDER BY F.courseId,
+                       F.courseVersion,
+                       getCourseName(F.courseId),
+                       A.questionId,
+                       comment';
+
+        $db     = $this->getDatabase();
+        $result = $db->query( SAGU::prepare($sql, array($formId)) );
+
+
+        return $result;
+    }
+
+}
+
+?>

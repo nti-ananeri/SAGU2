@@ -1,0 +1,12 @@
+INSERT INTO basdocumenttype (username, datetime, ipaddress, documenttypeid, name, mask, sex, persontype, minage, needdeliver) VALUES ('admin', date(now()), '127.0.0.1', 6, 'DOCUMENTAÇÃO MILITAR', NULL, 'M', 'P', 18, true);
+INSERT INTO basdocumenttype (username, datetime, ipaddress, documenttypeid, name, mask, sex, persontype, minage, needdeliver) VALUES ('admin', date(now()), '127.0.0.1', 1, 'IDENTIDADE', NULL, NULL, 'P', NULL, true);
+INSERT INTO basdocumenttype (username, datetime, ipaddress, documenttypeid, name, mask, sex, persontype, minage, needdeliver) VALUES ('admin', date(now()), '127.0.0.1', 2, 'CPF', NULL, NULL, 'P', NULL, true);
+INSERT INTO basdocumenttype (username, datetime, ipaddress, documenttypeid, name, mask, sex, persontype, minage, needdeliver) VALUES ('admin', date(now()), '127.0.0.1', 3, 'HISTÓRICO ESCOLAR', NULL, NULL, 'P', NULL, true);
+INSERT INTO basdocumenttype (username, datetime, ipaddress, documenttypeid, name, mask, sex, persontype, minage, needdeliver) VALUES ('admin', date(now()), '127.0.0.1', 4, 'TÍTULO DE ELEITOR', NULL, NULL, 'P', 18, true);
+INSERT INTO basdocumenttype (username, datetime, ipaddress, documenttypeid, name, mask, sex, persontype, minage, needdeliver) VALUES ('admin', date(now()), '127.0.0.1', 5, 'QUITAÇÃO ELEITORAL', NULL, NULL, 'P', 18, true);
+INSERT INTO basdocumenttype (username, datetime, ipaddress, documenttypeid, name, mask, sex, persontype, minage, needdeliver) VALUES ('admin', date(now()), '127.0.0.1', 7, 'FOTO', NULL, NULL, 'P', NULL, true);
+INSERT INTO basdocumenttype (username, datetime, ipaddress, documenttypeid, name, mask, sex, persontype, minage, needdeliver) VALUES ('admin', date(now()), '127.0.0.1', 8, 'HISTÓRICO ORIGINAL', NULL, NULL, 'P', NULL, true);
+INSERT INTO basdocumenttype (username, datetime, ipaddress, documenttypeid, name, mask, sex, persontype, minage, needdeliver) VALUES ('admin', date(now()), '127.0.0.1', 9, 'ATESTADO MÉDICO', NULL, NULL, 'P', NULL, true);
+INSERT INTO basdocumenttype (username, datetime, ipaddress, documenttypeid, name, mask, sex, persontype, minage, needdeliver) VALUES ('admin', date(now()), '127.0.0.1', 10, 'DIPLOMA AUTENTICADO', NULL, NULL, 'P', NULL, true);
+INSERT INTO basdocumenttype (username, datetime, ipaddress, documenttypeid, name, mask, sex, persontype, minage, needdeliver) VALUES ('admin', date(now()), '127.0.0.1', 11, 'SOLTEIRO EMANCIPADO', NULL, NULL, 'P', NULL, true);
+SELECT setval('seq_documenttypeid',(SELECT max(documenttypeid) FROM basDocumentType));

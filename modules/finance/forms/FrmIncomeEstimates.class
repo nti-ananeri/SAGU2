@@ -1,0 +1,154 @@
+<?php
+/**
+ *
+ * This file handles view of monthly income
+ *
+ * @author Daniel Afonso Heisler [daniel.heisler@isolution.inf.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Armando Taffarel Neto [taffarel@solis.coop.br]
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 03/06/2008
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ */
+class FrmIncomeEstimates extends MForm
+{
+    private $home;
+    private $module;
+
+    /**
+     * Class constructor
+     */
+    function __construct($data)
+    {
+        $module = MIOLO::getCurrentModule();
+
+        $this->home   = $data->home;
+
+        parent::__construct(_M('Income estimates', $module));
+
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+
+    }
+
+    /**
+     *  Default method to define fields
+     */
+    public function createFields()
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $toolBar = new MToolBar('toolBar',$MIOLO->getActionURL($module,$action));
+        $toolBar->hideButton('tbBtnDelete');
+        $toolBar->hideButton('tbBtnSave');
+        $toolBar->hideButton('tbBtnSearch');
+        $toolBar->hideButton('tbBtnNew');
+
+        //favoritos
+        $enabledImage  = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-20x20.png');
+        $disabledImage = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-disabled-20x20.png');
+        $url           = $MIOLO->getActionURL($module, $this->home, null, array('function' => 'search', 'event' => 'bookmark'));
+        $toolBar->addButton('tbBtnBookmark', _M('Add to bookmarks', 'basic'), $url, null, true, $enabledImage, $disabledImage);
+
+        if ( MIOLO::_request('event') == 'bookmark' )
+        {
+            $MIOLO->getClass('basic', 'access');
+            access::insert('Income estimates', $this->home, 'incomeEstimates-16x16.png', true);
+        }
+        //fim favoritos
+       
+        $fields[] = $toolBar;
+
+        //MES e ANO
+        $monthLabel   = new MText('monthlabel', _M('Month', $module) . '/' . _M('Year', $module));
+        $monthLabel->setClass('m-caption m-caption-required');
+        $monthLabel->setWidth(FIELD_CONTAINER_SIZE);
+
+        $month        = new MMultiSelection('month', strlen((string)$this->getFormValue('month'))>0 ? $this->getFormValue('month') : array(date('n')), '', SAGU::listMonths());
+        $validators[] = new MRequiredValidator('month', _M('Month', $module), 'required');
+
+        $year         = new MTextField('year', strlen((string)$this->getFormValue('year'))>0 ? $this->getFormValue('year') : date('Y'), null, 6);
+        $validators[] = new MIntegerValidator('year', _M('Year', $module), 'required');
+
+        $fields[]     = new MHContainer('hctMonth', array($monthLabel, $month, $year));
+
+        $businessIncomeSource = $MIOLO->getBusiness($module, 'BusIncomeSource');
+        $dataIncomeSource     = $businessIncomeSource->listIncomeSource();
+        $incomeSourceLabel    = new MText('incomeSourceLabel', _M('Income source', $module).':');
+        $incomeSourceLabel->setClass('m-caption m-caption-required');
+        $incomeSourceLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $incomeSource         = new MMultiSelection('incomeSourceId', is_array($this->getFormValue('incomeSourceId', $data->incomeSourceId)) ? $this->getFormValue('incomeSourceId', $data->incomeSourceId) : array($this->getFormValue('incomeSourceId', $data->incomeSourceId)), '', $dataIncomeSource, true, null, 5);
+        $fields[] = new MHContainer('hctIncomeSource', array($incomeSourceLabel, $incomeSource));
+        
+        $validators[]   = new MRequiredValidator('incomeSourceId', _M('Income source', $module), 'required');
+
+        //Report mode
+        $printModeLabel = new MText('printModeLabel', _M('Print mode', $module));
+        $printModeLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $printModeLabel->setClass('m-caption m-caption-required');
+        $listAnalyticalSynthetic[] = array( _M('Analytical', $module), '1');
+        $listAnalyticalSynthetic[] = array( _M('Synthetic', $module), '2');
+        $printMode      = new MRadioButtonGroup('printMode', '', $listAnalyticalSynthetic, $this->GetFormValue('printMode', '2'), null, 'horizontal');
+        $printMode->SetShowLabel(false);
+        $printMode->SetAutoPostBack(false);
+        $hctPrintMode  = new MHContainer('hctPrintMode', array($printModeLabel, $printMode));
+        $hctPrintMode->setShowLabel(false);
+        $fields[]      = $hctPrintMode;
+
+
+        $this->setFields($fields);
+        $this->setValidators($validators);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+        $this->setClose($MIOLO->getActionURL($module, substr($action, 0, strrpos($action, ':'))));
+
+    }
+
+    function tbBtnPrint_click($sender = null)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $data->year       = $this->year->value;
+        $data->month      = $this->month->value;
+        $data->incomeSourceId = $this->incomeSourceId->value;
+        $data->reportType   = $this->printMode->value;
+
+        $MIOLO->uses('classes/RptIncomeEstimatesReport.class', $module);
+        $report = new RptIncomeEstimatesReport($data);
+
+        $this->page->setAction($MIOLO->getActionURL($module, $action));
+    }
+
+}
+
+?>

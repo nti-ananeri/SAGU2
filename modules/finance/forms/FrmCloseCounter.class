@@ -1,0 +1,528 @@
+<?php
+
+/**
+ * Close Counter form
+ *
+ * @author Armando Taffarel Neto [taffarel@solis.coop.br] and Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * Armando Taffarel Neto [taffarel@solis.coop.br]
+ *
+ * @since
+ * Class created on 02/01/2006
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2005 SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+
+/**
+ * Form to manipulate a close counter
+ **/
+class FrmCloseCounter extends MForm
+{
+
+    /**
+     * Class constructor
+     **/
+    function __construct()
+    {
+
+        $module = MIOLO::getCurrentModule();
+
+        if ( MIOLO::_request('function') == 'insert' )
+        {
+            parent::__construct(_M('Insert', $module));
+        }
+        else
+        {
+            parent::__construct(_M('Update', $module));
+        }
+
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+
+        $toolBar = new MToolBar('toolBar',$MIOLO->getActionURL($module,$action));
+
+        if ( $function == 'insert' )
+        {
+            $toolBar->disableButton('tbBtnDelete');
+            $toolBar->disableButton('tbBtnPrint');
+        }
+        elseif ( $function == 'delete' )
+        {
+            $toolBar->disableButton('tbBtnSave');
+        }
+        $fields[] = $toolBar;
+ 
+        if ( in_array($function, array('update', 'delete')) )
+        {
+            $closeCounterId = MIOLO::_request('closeCounterId');
+
+            $business = $MIOLO->getBusiness($module, 'BusCloseCounter');
+            $data     = $business->getCloseCounter($closeCounterId);
+        }
+
+        $closeCounterId = new MHiddenField('closeCounterId');
+        $fields[] = $closeCounterId;
+
+        // Pega informações do usuário logado
+        $loginUser  = $MIOLO->GetLogin();
+
+        //busca dados do usuário na base sagu2
+        $business = $MIOLO->getBusiness('basic','BusPerson');
+        $person   = $business->getPersonByMioloUserName($loginUser->id);
+
+        $loginUser->idperson = $person->personId;
+
+        if ( strlen((string)$person->personId) > 0 )
+        {
+            //busca dados do Caixa
+            $business              = $MIOLO->getBusiness($module, 'BusCounter');
+            $busCounterResponsable = $business->getCounterResponsable($person->personId);
+
+            $data->operatorId           = $person->personId;
+            $data->operatorName         = $person->name;
+
+            $data->counterId            = $busCounterResponsable->counterId;
+            $data->responsableId        = $busCounterResponsable->responsableId;
+            $data->responsableName      = $busCounterResponsable->personName;
+            $data->unitDescription      = $busCounterResponsable->unitDescription;
+        }
+
+/*
+        // Pega informações do usuário logado
+        $loginUser  = $MIOLO->GetLogin();
+         
+		$business = $MIOLO->getBusiness('basic','BusPerson');
+		$user = $business->getPersonByMioloUserName($loginUser->id);
+        if($user->personId != NULL)
+        {
+            //busca dados do usuário na base sagu2
+            //busca dados do Caixa
+            $loginUser->SetIdPerson($user->personId);
+            $business = $MIOLO->getBusiness($module,'BusCounter');
+            $busCounterResponsable = $business->getCounterResponsable($user->personId);
+
+        }
+
+        // seta as informação nas variáveis do form.
+        if (is_object($user))
+        {
+            $data->operatorId   = $user->personId;
+            $data->operatorName = $user->name;
+        }
+        if (is_object($busCounterResponsable) )
+        {
+            $data->counterId            = $busCounterResponsable->counterId;
+            $data->responsableName      = $busCounterResponsable->personName;
+            $data->unitDescription      = $busCounterResponsable->unitDescription;
+        }
+*/
+
+//        else
+//        {
+//            $msg  = _M('Error on get informations user. It enters in contact with the administador of the system.',$module);
+//            $goto = SAGU::getStackBackUrl();
+//            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+//            $caption = _M('Error',$module);
+//            $MIOLO->error( $msg, $goto, $caption );
+//        }
+
+        $operatorIdLabel = new MText('operatorIdLabel', _M('Operator',$module).':');
+        $operatorIdLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $operatorIdLabel->setClass('m-caption m-caption-required');
+        $flds[]           = $operatorIdLabel;
+
+        $operatorId = new MLookupTextField('operatorId', $this->getFormValue('operatorId',$data->operatorId), _M('',$module), FIELD_ID_SIZE, null, null, 'operatorName', 'basic', 'PhysicalPerson', null, null, true);
+        $operatorId->setJsHint(_M('Enter the operator id',$module));
+        if($loginUser->idperson != NULL || $user->personId != NULL)
+        {
+            $operatorId->setReadOnly(true);
+        }
+        $validators[] = new MIntegerValidator('operatorId', _M('Operator',$module), 'required');
+        $flds[]           = $operatorId;
+
+
+
+        $operatorName = new MTextField('operatorName', $this->getFormValue('operatorName',$data->operatorName), _M('',$module), FIELD_DESCRIPTION_SIZE);
+        $operatorName->setReadOnly(true);
+        $flds[]             = $operatorName;
+
+        $hctOperator = new MHContainer('hctOperator', $flds);
+        $hctOperator->setShowLabel(true);
+        $fields[]  = $hctOperator;
+        unset($flds);
+        
+        $counterIdLabel = new MText('counterIdLabel', _M('Counter',$module).':');
+        $counterIdLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $counterIdLabel->setClass('m-caption m-caption-required');
+        $flds[]           = $counterIdLabel;
+
+        $counterId = new MLookupTextField('counterId', $this->getFormValue('counterId',$data->counterId), _M('',$module), FIELD_ID_SIZE,
+                         null, null, 'limbo, responsableName, limbo, unitDescription', $module, 'Counter', null, null, true);
+        $counterId->setJsHint(_M('Enter the counter code',$module));
+        if($loginUser->idperson != NULL || $user->personId != NULL)
+        {
+            $counterId->setReadOnly(true);
+        }
+
+        $validators[] = new MIntegerValidator('counterId', _M('Counter',$module), 'required');
+        $flds[]    = $counterId;
+
+        $responsableName = new MTextField('responsableName', $this->getFormValue('responsableName',$data->responsableName), _M('',$module), FIELD_DESCRIPTION_SIZE);
+        $responsableName->setReadOnly(true);
+        $flds[]            = $responsableName;
+ 
+        $hctCounter = new MHContainer('hctCounter', $flds);
+        $hctCounter->setShowLabel(true);
+        $fields[]   = $hctCounter;
+        unset($flds);
+     
+        $unitDescriptionLabel = new MText('unitDescriptionLabel', _M('Unit description',$module).':');
+        $unitDescriptionLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $flds[]           = $unitDescriptionLabel;
+
+        $unitDescription = new MTextField('unitDescription', $this->getFormValue('unitDescription',$data->unitDescription), _M('',$module), FIELD_DESCRIPTION_SIZE);
+        $unitDescription->setReadOnly(true);
+        $flds[]            = $unitDescription;
+        unset($flds);
+
+        $valueLabel = new MText('valueLabel', _M('Value',$module).':');
+        $valueLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $valueLabel->setClass('m-caption m-caption-required');
+        $flds[]           = $valueLabel;
+
+        $value = new MTextField('value', $this->getFormValue('value',$data->value), _M('',$module), FIELD_MONETARY_SIZE);
+        $value->setJsHint(_M('Enter the value',$module));
+
+        $validators[] = new MFloatValidator('value', _M('Value',$module), FLOAT_SEPARATOR, REAL_ROUND_VALUE, 'required');
+
+        $flds[] = $value;
+
+        $hctValue = new MHContainer('hctValue', $flds);
+        $fields[]  = $hctValue;
+        unset($flds);   
+        
+
+        $business = $MIOLO->getBusiness($module,'BusOperation');
+        //pega mensagem de débito ou crédito  | 0 para Selection e 1 para RadioBottonGroup
+        $messagesType = $business->listOperationTypeId(1);
+
+        $operationLabel = new MText('operationLabel', _M('Operation',$module).':');
+        $operationLabel->setClass('m-caption m-caption-required');
+        $operationLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $operation = $this->GetFormValue('operation',$data->operation);
+        
+        $operation = new MRadioButtonGroup('operation', '', $messagesType, ($operation ? $operation :$operation = 'C') , null, 'horizontal');
+        $operation->SetShowLabel(false);
+
+        $hctOperation = new MHContainer('hctOperation', array($operationLabel, $operation));
+        $fields[]  = $hctOperation;
+
+      
+        if ( $function == 'update' )
+        {
+            $fields[] = new MTextLabel('lastModification', '[' . $data->userName . ' - ' . $data->dateTime . ']', _M('Last modification',$module));
+
+        }
+        
+        $fields[] = new Separator('');
+
+        $this->setFields($fields);
+        $this->setValidators($validators);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+        $this->setClose($MIOLO->getActionURL($module,substr($action,0,strrpos($action,':'))));
+        $this->page->onLoad('document.' . $this->name . '.operatorId.focus();');
+    }
+
+    /**
+     * Event triggered when user chooses New from the toolbar
+     **/
+    public function tbBtnNew_click($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $data = $this->getTypesData();
+        $vars = get_object_vars($data);
+        foreach ( $vars as $var => $value )
+        {
+            if ( $this->$var && $var != 'title' )
+            {
+//                $this->$var->value = $this->getFormValue($var.'S') ? $this->getFormValue($var.'S') : '';
+            }
+        }
+
+    }
+
+    /**
+     * Event triggered when user chooses Delete from the toolbar
+     **/
+    public function tbBtnDelete_click($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $data   = $this->getTypesData();
+        $opts   = array('event'      =>'tbBtnDelete_confirm',
+                        'function'     =>'delete',
+                        'closeCounterId'   =>MIOLO::_request('closeCounterId')
+                         );
+
+        $gotoYes = $MIOLO->getActionURL( $module, $action, null, $opts );
+        $goto    = SAGU::getStackBackUrl();
+        $gotoNo  = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+        $msg     = MSG_CONFIRM_RECORD_DELETE;
+        $caption = _M('Question',$module);
+        $MIOLO->question($msg, $gotoYes, $gotoNo);
+    }
+
+    /**
+     * Event triggered when user chooses Yes from the Delete prompt dialog
+     **/
+    public function tbBtnDelete_confirm($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $closeCounterId = MIOLO::_request('closeCounterId');
+
+        $business = $MIOLO->getBusiness($module, 'BusCloseCounter');
+        $ok = $business->deleteCloseCounter($closeCounterId);
+
+        if ( $ok )
+        {
+            $msg  = MSG_RECORD_DELETED;
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Information',$module);
+            $MIOLO->information($msg, $goto);
+        }
+        else
+        {
+            $msg  = _M('Error executing requested operation.',$module);
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Error',$module);
+            $MIOLO->error( $msg, $goto, $caption );
+        }
+    }
+
+    /**
+    * Event triggered when user chooses Insert from the toolbar
+    **/
+    public function tbBtnSave_click($sender=NULL)
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+
+        $data   = $this->getTypesData();
+        $business = $MIOLO->getBusiness($module, 'BusCounterMovement');
+        $data->date = date(MASK_DATE_PHP);
+        
+        //pega valor total de "C" creditos na data atual da tabela finCounterMovement
+        $valueCredit = $business->getValue($data->operatorId, $data->date, 'C', $data->counterId);
+        //pega valor total de "D" débitos na data atual da tabela finCounterMovement
+        $valueDebit  = $business->getValue($data->operatorId, $data->date, 'D', $data->counterId);
+        //faz o calculo total dos valores
+        $totalValue  = $business->totalValue($valueCredit, $valueDebit);
+
+        $business = $MIOLO->getBusiness($module, 'BusCloseCounter');
+        //pega valor total de "C" creditos na data atual da tabela finCloseCounter
+        $closeCounterValueCredit = $business->getValue($data->operatorId, $data->date, 'C', $data->counterId);
+        //pega valor total de "D" débitos na data atual da tabela finCloseCounter
+        $closeCounterValueDebit  = $business->getValue($data->operatorId, $data->date, 'D', $data->counterId);
+        //faz o calculo total dos valores
+        $closeCounterTotalValue  = $business->totalValue($closeCounterValueCredit, $closeCounterValueDebit);
+        // Calcula quanto ainda está em aberto.
+        $total  = $business->totalValue($totalValue, $closeCounterTotalValue);
+        $business = $MIOLO->getBusiness($module, 'BusCounterMovement');
+        if($data->operation == 'D')
+        {
+            $difference  = $business->totalValueD($total , $data->value);
+        }
+        else
+        {
+            $difference  = $business->totalValue($total , $data->value);
+        }
+
+
+        if ( $function == 'insert' )
+        {
+            $opts   = array('event'              =>'tbBtnSave_confirm',
+                            'function'           =>'insert',
+                            'operatorId'         => $data->operatorId,
+                            'value'              => $data->value,
+                            'date'               => $data->date,
+                            'operation'          => $data->operation,
+                            'counterId'          => $data->counterId,
+                             );
+        }
+        
+        if ( $function == 'update' )
+        {
+            $opts   = array('event'              =>'tbBtnSave_confirm',
+                            'function'           =>'update',
+                            'closeCounterId'     => $data->closeCounterId,
+                            'operatorId'         => $data->operatorId,
+                            'value'              => $data->value,
+                            'date'               => $data->date,
+                            'operation'          => $data->operation,
+                            'counterId'          => $data->counterId,
+                             );
+        }
+
+        // Pega dados da moeda corrente
+        $business       = $MIOLO->getBusiness($module,'BusPrintInvoice');
+        $resultsComp    = $business->getCompany(DEFAULT_COMPANY_CONF);
+
+
+
+        if(SAGU::formatNumber($data->value) !== SAGU::formatNumber($total))
+        {
+            $msg     = _M('Attention! The launched value does not correspond to the value of the counter movement.', $module) . '<br>' .
+                       _M('Lauched value', $module) .' '.  $resultsComp->currencySymbol . ' ' . $data->value . ' ' . $data->operation . '<br>'.
+                       _M('Counter movement', $module) . ' ' . $resultsComp->currencySymbol .' '. $totalValue . '<br>' .
+                       _M('Previous registers', $module) . ' ' . $resultsComp->currencySymbol .' '.  $closeCounterTotalValue  . '<br>' .
+                       _M('Total movements and registers', $module) . ' ' . $resultsComp->currencySymbol .' '. $total  . '<br>' .
+                       _M('Difference', $module) . ' ' . $resultsComp->currencySymbol .' '. $difference . '<br><br>' .
+                       _M('Would you like to conclude this process anyway?', $module);
+            
+        }
+        else 
+        {
+            $msg     = _M('The launched value closed correctly with the counter movement.', $module) . '<br>' .                       
+                       _M('Lauched value', $module) .' '.  $resultsComp->currencySymbol . ' ' . $data->value . '<br>'.
+                       _M('Counter movement', $module) . ' ' . $resultsComp->currencySymbol .' '. $totalValue . '<br>' .
+                       _M('Previous registers', $module) . ' ' . $resultsComp->currencySymbol .' '. $closeCounterTotalValue  . '<br>' .
+                       _M('Total movements and registers', $module) . ' ' . $resultsComp->currencySymbol .' '. $total  . '<br>' .
+                       _M('Difference', $module) . ' ' . $resultsComp->currencySymbol .' '. $difference . '<br><br>' .
+                       _M('Do you confirms this process?', $module);
+        }
+
+
+        $gotoYes = $MIOLO->getActionURL( $module, $action, null, $opts );
+        $goto    = SAGU::getStackBackUrl();
+        $gotoNo  = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+        $caption = _M('Question',$module);
+        $MIOLO->question($msg, $gotoYes, $gotoNo);
+    }
+
+
+    /**
+     * Event triggered when user chooses Save from the toolbar
+     **/
+    public function tbBtnSave_confirm($sender=NULL)
+    {
+        $MIOLO                = MIOLO::getInstance();
+        $module               = MIOLO::getCurrentModule();
+        $action               = MIOLO::getCurrentAction();
+        $function             = MIOLO::_request('function');
+        $data->closeCounterId = MIOLO::_request('closeCounterId');
+        $data->operatorId     = MIOLO::_request('operatorId');
+        $data->value          = MIOLO::_request('value');
+        $data->date           = MIOLO::_request('date');
+        $data->operation      = MIOLO::_request('operation');
+        $data->counterId      = MIOLO::_request('counterId');
+
+//        $data     = $this->getTypesData();
+
+        $business = $MIOLO->getBusiness($module, 'BusCloseCounter');
+
+        if ( $function == 'update' )
+        {
+            $ok  = $business->updateCloseCounter($data);
+            $msg = MSG_RECORD_UPDATED;
+        }
+        else
+        {
+            $ok  = $business->insertCloseCounter($data);
+            $msg = MSG_RECORD_INSERTED;
+        }
+
+        if ( $ok )
+        {
+            $opts = array('closeCounterId'=>$data->closeCounterId);
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL( $module, $action, null, $opts);
+            if ( $function == 'update' )
+            {
+                $MIOLO->information($msg, $goto);
+            }
+            else
+            {
+                $opts    = array('event'=>'tbBtnNew_click',
+                                 'function'=>'insert');
+
+                $gotoYes = $MIOLO->getActionURL($module, $action, null, $opts);
+                $MIOLO->question($msg, $gotoYes, $goto);
+            }
+        }
+        else
+        {
+            $msg  = _M('Error executing requested operation.',$module);
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Error',$module);
+            $MIOLO->error( $msg, $goto, $caption );
+        }
+    }
+
+    /**
+     * Method to gather all information from the form fields
+     * and put them on a database compatible object
+     **/
+    public function getTypesData()
+    {
+        $data = new FinCloseCounter();
+        $vars = get_object_vars($data);
+        foreach ( $vars as $var => $value )
+        {
+            if ( $this->$var )
+            {
+                eval('$data->' . $var . ' = $this->' . $var . '->value;');
+            }
+
+        }
+
+        return $data;
+    }
+}
+
+?>

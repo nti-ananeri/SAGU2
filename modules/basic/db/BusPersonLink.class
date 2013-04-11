@@ -1,0 +1,491 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for basPersonLink table
+ *
+ * @author Daniel Afonso Heisler [daniel@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 12/09/2005
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to manipulate the basPersonLink table
+ **/
+class BusinessBasicBusPersonLink extends Business
+{
+
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module = is_null($module) ? 'basic' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+    
+    /**
+     * Return a specific record from the database
+     *
+     * @param $personId (integer): Primary key of the record to be retrieved
+     *
+     * @return (object): Return an object of the type handled by the class
+     *
+     **/
+    public function getPersonLink($personId, $linkId)
+    {
+        $sql = 'SELECT A.personId,
+                       C.name,
+                       A.linkId,
+                       B.description,
+                       TO_CHAR(A.dateValidate,\'' . MASK_DATE . '\'),
+                       A.userName,
+                       TO_CHAR(A.dateTime,\'' . MASK_TIMESTAMP . '\'),
+                       A.ipAddress
+                  FROM basPersonLink A
+             LEFT JOIN basLink B
+                 USING (linkId)
+        LEFT JOIN ONLY basPhysicalPerson C
+                 USING (personId)
+                 WHERE A.personId = ?
+                   AND A.linkId   = ?';
+
+        $db     = $this->getDatabase();
+
+        $args = array($personId, $linkId);
+        $result = $db->query(SAGU::prepare($sql, $args));
+        //$db->close();
+
+        $personLink = new basPersonLink();
+        list ( $personLink->personId,
+               $personLink->personName,
+               $personLink->linkId,
+               $personLink->linkDescription,
+               $personLink->dateValidate,
+               $personLink->userName,
+               $personLink->dateTime,
+               $personLink->ipAddress ) = $result[0];
+
+        return $personLink;
+    }
+    
+    /**
+     * Do a search on the database table handled by the class
+     *
+     * @param $filters (object): Search filters
+     *
+     * @return (array): An array containing the search results
+     **/
+    public function searchPersonLink($filters)
+    {
+        $sql = 'SELECT A.personId,
+                       C.name,
+                       A.linkId,
+                       B.description,
+                       TO_CHAR(A.dateValidate,\'' . MASK_DATE . '\'),
+                       A.userName,
+                       TO_CHAR(A.dateTime,\'' . MASK_TIMESTAMP . '\'),
+                       A.ipAddress
+                  FROM basPersonLink A
+             LEFT JOIN basLink B
+                 USING (linkId)
+       INNER JOIN ONLY basPhysicalPerson C
+                 USING (personId) ';
+
+        if ( strlen((string)$filters->personId) > 0 )
+        {
+            $where .= ' AND personId = ? ';
+            $args[] = $filters->personId;
+        }
+
+        if ( strlen((string)$filters->personName) > 0 )
+        {
+            $where .= ' AND TO_ASCII(C.name) ILIKE TO_ASCII(?) ';
+            $args[] = $filters->personName . '%';
+        }
+
+        if ( strlen((string)$filters->linkId) > 0 )
+        {
+            $where .= ' AND A.linkId= ? ';
+            $args[] = $filters->linkId;
+        }
+
+        if ( strlen((string)$filters->linkDescription) > 0 )
+        {
+            $where .= ' AND TO_ASCII(B.description) ILIKE TO_ASCII(?) ';
+            $args[] = $filters->linkDescription . '%';
+        }
+
+        unset($result);
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE ' . substr($where, 4) . ' ORDER BY C.name, B.description';
+            $db = $this->getDatabase();
+            $result = $db->query(SAGU::prepare($sql, $args));
+            //$db->close();
+        }
+
+        return $result;
+    }
+
+    /**
+     * Insert a new record
+     *
+     * @param $data (object): An object of the type handled by the class
+     *
+     * @return True if succed, otherwise False
+     *
+     **/
+    public function insertPersonLink($data)
+    {
+        $sql = 'INSERT INTO basPersonLink
+                            (
+                             personId,
+                             linkId,
+                             dateValidate)
+                     VALUES (?,?,TO_DATE(?,\'' . MASK_DATE . '\'))';
+
+        $args = array( 
+                       $data->personId,
+                       $data->linkId,
+                       $data->dateValidate);
+
+        $db     = $this->getDatabase();
+        $result = $db->execute(SAGU::prepare($sql, $args));
+        //$db->close();
+
+        return $result;
+    }
+
+    /**
+     * Update data from a specific record
+     *
+     * @param $data (object): Data which will replace the old record data
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+    public function updatePersonLink($data)
+    {
+        $sql = 'UPDATE basPersonLink
+                   SET 
+                       dateValidate = TO_DATE(?, \'' . MASK_DATE . '\')
+                 WHERE personId     = ?
+                   AND linkId       = ?';
+
+        $args = array( 
+                       $data->dateValidate,
+                       $data->personId,
+                       $data->linkId );
+
+        $db   = $this->getDatabase();
+        $sqls = SAGU::prepare($sql, $args);
+
+        for ( $i=0; $i<count($sqls); $i++ )
+        {
+            $result = $db->execute($sqls[$i]);
+        }
+
+        //$db->close();
+
+        return $result;
+    }
+
+    /**
+     * Delete a record
+     *
+     * @param $personId (string): Primary key for deletion
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+    public function deletePersonLink($personId, $linkId)
+    {
+        $sql = 'DELETE FROM basPersonLink
+                      WHERE personId = ?
+                        AND linkId   = ?';
+
+        $db     = $this->getDatabase();
+
+        $args = array($personId, $linkId);
+        $result = $db->execute(SAGU::prepare($sql, $args));
+        //$db->close();
+
+        return $result;
+    }
+
+    /**
+     * Do a search on the database table handled by the class name
+     *
+     * @param $periodId (varchar): Primary key of the record to be retrieved
+     *
+     * @return (object): Return an object of the type handled by the class
+     *
+     **/
+    public function listProfessors($periodId, $situation)
+    {
+        $db = $this->getDatabase();
+
+        if ( $situation == 'ALL' )
+        {
+            $sql = 'SELECT A.personId
+                      FROM basPhysicalPersonProfessor A
+                  ORDER BY A.personId';
+            $res = $db->query(SAGU::prepare($sql, $args));
+        }
+        elseif ( $situation == 'ACTIVE' )
+        {
+            $sql = 'SELECT DISTINCT A.personId
+                      FROM basPhysicalPersonProfessor A
+                INNER JOIN acdScheduleProfessor B
+                        ON ( A.personId = B.professorId )
+                INNER JOIN acdSchedule C
+                        ON ( B.scheduleId = C.scheduleId )
+                INNER JOIN acdScheduleLearningPeriod D
+                        ON ( C.scheduleLearningPeriodId = D.scheduleLearningPeriodId )
+                INNER JOIN acdLearningPeriod E
+                        ON ( D.learningPeriodId = E.learningPeriodId )
+                     WHERE E.periodId = ?
+                       AND B.professorId IS NOT NULL
+                  ORDER BY A.personId';
+            $res = $db->query(SAGU::prepare($sql, $periodId));
+        }
+        elseif ( $situation == 'INACTIVE' )
+        {
+            $sql = 'SELECT A.personId
+                      FROM basPhysicalPersonProfessor A
+                     WHERE A.personId NOT IN (
+                                               SELECT B.professorId
+                                                 FROM acdScheduleProfessor B
+                                           INNER JOIN acdSchedule C
+                                                   ON ( B.scheduleId = C.scheduleId )
+                                           INNER JOIN acdScheduleLearningPeriod D
+                                                   ON ( C.scheduleLearningPeriodId = D.scheduleLearningPeriodId )
+                                           INNER JOIN acdLearningPeriod E
+                                                   ON ( D.learningPeriodId = E.learningPeriodId )
+                                                WHERE E.periodId = ?
+                                                  AND B.professorId IS NOT NULL
+                                             )
+                  ORDER BY A.personId';
+            $res = $db->query(SAGU::prepare($sql, $periodId));
+        }
+
+        return $res;
+    }
+
+    /**
+     * Do a search on the database table handled by the class name
+     *
+     * @param $periodId (varchar): Primary key of the record to be retrieved
+     *
+     * @return (object): Return an object of the type handled by the class
+     *
+     **/
+    public function listEmployees($periodId, $situation)
+    {
+        $db = $this->getDatabase();
+
+        if ( $situation == 'ALL' )
+        {
+            $sql = 'SELECT A.personId
+                      FROM basPhysicalPersonEmployee A
+                  ORDER BY A.personId';
+            $res = $db->query(SAGU::prepare($sql, $args));
+        }
+        elseif ( $situation == 'ACTIVE' )
+        {
+            $sql = 'SELECT DISTINCT A.personId
+                      FROM basPhysicalPersonEmployee A
+                INNER JOIN basEmployee B
+                        ON ( A.personId = B.personId )
+                     WHERE (    B.endDate IS NULL
+                             OR B.endDate <= ( SELECT min(beginDate)
+                                                 FROM acdLearningPeriod
+                                                WHERE periodId = ? ) )
+                  ORDER BY A.personId';
+            $res = $db->query(SAGU::prepare($sql, $periodId));
+        }
+        elseif ( $situation == 'INACTIVE' )
+        {
+            $sql = 'SELECT A.personId
+                      FROM basPhysicalPersonEmployee A
+                     WHERE A.personId NOT IN (
+                                               SELECT DISTINCT A.personId
+                                                 FROM basPhysicalPersonEmployee A
+                                           INNER JOIN basEmployee B
+                                                   ON ( A.personId = B.personId )
+                                                WHERE (    B.endDate IS NULL
+                                                        OR B.endDate <= ( SELECT min(beginDate)
+                                                                            FROM acdLearningPeriod
+                                                                           WHERE periodId = ? ) )
+                                             )
+                  ORDER BY A.personId';
+            $res = $db->query(SAGU::prepare($sql, $periodId));
+        }
+
+        return $res;
+    }
+
+    /**
+     * Do a search on the database table handled by the class name
+     *
+     * @param $periodId (varchar): Primary key of the record to be retrieved
+     *
+     * @return (object): Return an object of the type handled by the class
+     *
+     **/
+    public function listStudents($periodId, $situation)
+    {
+        $db = $this->getDatabase();
+
+        if ( $situation == 'ALL' )
+        {
+            $sql = 'SELECT A.personId
+                      FROM basPhysicalPersonStudent A
+                  ORDER BY A.personId';
+            $res = $db->query(SAGU::prepare($sql, $args));
+        }
+        elseif ( $situation == 'ACTIVE' )
+        {
+            $sql = 'SELECT DISTINCT A.personId
+                      FROM basPhysicalPersonStudent A
+                INNER JOIN acdContract B
+                        ON (     A.personId = B.personId 
+                             AND iscontractout(B.contractId) = \'' . DB_FALSE . '\')
+                INNER JOIN acdEnroll C
+                        ON (     B.contractId = C.contractId
+                             AND C.statusId NOT IN (\'' . ENROLL_STATUS_CANCELLED . '\') )
+                INNER JOIN acdGroup D
+                        ON ( C.groupId  = D.groupId )
+                INNER JOIN acdLearningPeriod E
+                        ON ( D.learningPeriodId = E.learningPeriodId )
+                     WHERE E.periodId = ?
+                  ORDER BY A.personId';
+            $res = $db->query(SAGU::prepare($sql, $periodId));
+        }
+        elseif ( $situation == 'INACTIVE' )
+        {
+            $sql = 'SELECT A.personId
+                      FROM basPhysicalPersonStudent A
+                     WHERE A.personId NOT IN (
+                                               SELECT B.personId
+                                                 FROM basPhysicalPersonStudent A
+                                           INNER JOIN acdContract B
+                                                   ON (     A.personId = B.personId 
+                                                        AND iscontractout(B.contractId) = \'' . DB_FALSE . '\')
+                                           INNER JOIN acdEnroll C
+                                                   ON (     B.contractId = C.contractId
+                                                        AND C.statusId NOT IN (\'' . ENROLL_STATUS_CANCELLED . '\') )
+                                           INNER JOIN acdGroup D
+                                                   ON ( C.groupId  = D.groupId )
+                                           INNER JOIN acdLearningPeriod E
+                                                   ON ( D.learningPeriodId = E.learningPeriodId )
+                                                WHERE E.periodId = ?
+                                             ORDER BY A.personId
+                                             )
+                  ORDER BY A.personId';
+            $res = $db->query(SAGU::prepare($sql, $periodId));
+        }
+
+        return $res;
+    }
+
+    /**
+     * Return a specific record from the database
+     *
+     * @param $periodId (varchar): Foreign key of the record to be retrieved
+     *
+     * @return (date): Return the max end date from learning period
+     *
+     **/
+    public function getMaxDate($periodId)
+    {
+        $db = $this->getDatabase();
+        $sql = 'SELECT TO_CHAR(max(endDate),\'' . MASK_DATE . '\')
+                  FROM acdLearningPeriod
+                 WHERE periodId = ?';
+        $res = $db->query(SAGU::prepare($sql, $periodId));
+        return $res[0][0];
+    }
+
+    /**
+     * Insert all professors records
+     *
+     * @param $data (array):       An object of the type handled by the class
+     * @param $periodId (varchar): Foreign key of the record to be retrieved
+     *
+     * @return True if succed, otherwise False
+     *
+     **/
+    public function insertMultimpleLinks($data, $periodId, $linkId)
+    {
+        $sql = 'INSERT INTO basPersonLink
+                            ( personId,
+                              linkId,
+                              dateValidate)
+                     VALUES ( ?, ?, TO_DATE(?,\'' . MASK_DATE . '\'))';
+
+        //pega a maior data do periodo selecionado para usá-la como data de fim de vínculo
+        $dateValidate = $this->getMaxDate($periodId);
+
+        $db = $this->getDatabase();
+
+        $db->execute('BEGIN TRANSACTION');
+
+        foreach ( $data as $professorId )
+        {
+            $args = array( 
+                           $professorId[0],
+                           $linkId,
+                           $dateValidate);
+
+            if ( ! $db->execute(SAGU::prepare($sql, $args)) )
+            {
+                $db->execute('ROLLBACK');
+                return false;
+            }
+        }
+
+        $res = $db->execute('COMMIT');
+        if ( $res )
+        {
+            return count($data);
+        }
+        else
+        {
+            return $res;
+        }
+    }
+
+}
+
+?>

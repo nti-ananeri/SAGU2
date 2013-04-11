@@ -1,0 +1,367 @@
+<?php
+
+/**
+ * Enroll person form
+ *
+ * @author Daniel Afonso Heisler [daniel@solis.coop.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ *
+ * @since
+ * Class created on 06/10/2005
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2005 SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+
+/**
+ * Form to manipulate an enroll
+ **/
+class FrmEnrollPerson extends MForm
+{
+
+    var $enrollData;
+
+    /**
+     * Class constructor
+     **/
+    function __construct()
+    {
+
+        $action = MIOLO::getCurrentAction();
+        $module = MIOLO::getCurrentModule();
+        $MIOLO  = MIOLO::getInstance();
+
+        $this->enrollData = unserialize(urldecode(stripslashes(MIOLO::_request('enrollData'))));
+
+        parent::__construct(_M('Person', $module));
+
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+        
+        $mioloUserName = trim($MIOLO->getLogin()->id);
+        $busPerson     = $MIOLO->getBusiness('basic', 'BusPerson');
+
+        //se for um usuário do sistema logado
+        if ( strlen((string)$mioloUserName) >  0 )
+        {
+            $personData = $busPerson->getPersonByMioloUserName($mioloUserName);
+        }
+        else //caso for um aluno
+        {
+            $personData->personId = $MIOLO->session->getValue('loginUid');
+        }
+        $personId = $personData->personId;
+        
+        $busContract        = $MIOLO->getBusiness('academic', 'BusContract');
+        $availableContracts = $busContract->listAvailableContractsForEnroll($personId);
+        
+        if (count($availableContracts) == 0)
+        {
+            $msg = _M('There is not any contract available. Please, contact the pupil attendance sector.', $module);
+            
+            $MIOLO->error($msg, $MIOLO->getActionURL($module, 'main:process:enroll'), _M('Error', $module));
+        }
+
+        $business = $MIOLO->getBusiness('basic', 'BusPhysicalPerson');
+        $data     = $business->getPhysicalPerson($personId);
+
+        $fields[] = new MHiddenField('limbo');
+        $fields[] = new MHiddenField('personId', isset($this->enrollData->personId) ? $this->enrollData->personId : $data->personId);
+
+        //BaseGroup 1
+        $personName   = new MTextField('personName', isset($this->enrollData->personName) ? $this->enrollData->personName : $data->name, _M('Name',$module), FIELD_DESCRIPTION_SIZE);
+        $validators[] = new MRequiredValidator('personName');
+        $flds[]       = $personName;
+        $personName->setJsHint(_M('Enter the person name',$module));
+        $personName->setReadOnly(true);
+
+        $zipCode      = new MLookupTextField('zipCode', isset($this->enrollData->zipCode) ? $this->enrollData->zipCode : $data->zipCode, _M('Zip code',$module), FIELD_ZIPCODE_SIZE, null, null, 'location1, limbo, countryName, limbo, stateName, cityId, cityName, limbo, neighborhood', 'basic', 'Location', null, null, $this->page->isPostBack() );
+        $zipCode->setJsHint(_M('Enter the zip code',$module));
+        $validators[] = new MRangeValidator('zipCode', '', '10000000', '99999999', 'i', 'optional');
+        //$validators[] = new MCepValidator('zipCode');
+        $flds[]       = $zipCode;
+
+        $location1 = new MHiddenField('location1', $this->getFormValue('location1', $location1));
+        $fields[]  = $location1;
+
+        if ( (strlen((string)$location1->value) > 0) && (!(strlen((string)$this->enrollData->location)>0)) && (!(strlen((string)$data->location)>0)))
+        {
+            $data->location = $location1->value;
+        }
+
+        $cityId       = new MLookupTextField('cityId', isset($this->enrollData->cityId) ? $this->enrollData->cityId : $data->cityId, _M('City id',$module), FIELD_LOOKUPFIELD_SIZE, null, null, 'cityName, limbo, stateName, limbo, countryName, zipCode', 'basic', 'City', null, null, true);
+        $cityId->setJsHint(_M('Enter the person city code',$module));
+        $validators[] = new MRequiredValidator('cityId');
+        $flds[]       = $cityId;
+ 
+        $cityName     = new MTextField('cityName', isset($this->enrollData->cityName) ? $this->enrollData->cityName : $data->cityName, _M('City name',$module), 20);
+        $cityName->setReadOnly(true);
+        $flds[]       = $cityName;
+
+        $stateName    = new MTextField('stateName', isset($this->enrollData->stateName) ? $this->enrollData->stateName : $data->stateName, _M('State name',$module), 20);
+        $stateName->setReadOnly(true);
+        $flds[]       = $stateName;
+ 
+        $countryName  = new MTextField('countryName', isset($this->enrollData->countryName) ? $this->enrollData->countryName : $data->countryName, _M('Country name',$module), 20);
+        $countryName->setReadOnly(true);
+        $flds[]       = $countryName;
+
+        $location     = new MTextField('location', isset($this->enrollData->location) ? $this->enrollData->location : $data->location, _M('Location',$module), 30);
+        $location->setJsHint(_M('Enter the person location',$module));
+        $validators[] = new MRequiredValidator('location');
+        
+        $number       = new MTextField('number', isset($this->enrollData->number) ? $this->enrollData->number : $data->number, _M('Number', $module), 5);
+        $number->setJsHint(_M('Enter the person address number'));
+        
+        $lochct            = new MHContainer('lochct', array($location, $number));
+        $lochct->showLabel = true;
+        
+        $flds[]       = $lochct;
+
+        $complement   = new MTextField('complement', isset($this->enrollData->complement) ? $this->enrollData->complement : $data->complement, _M('Complement',$module), 10);
+        $complement->setJsHint(_M('Enter the location complement',$module));
+        $flds[]       = $complement;
+
+        $neighborhood = new MTextField('neighborhood', isset($this->enrollData->neighborhood) ? $this->enrollData->neighborhood : $data->neighborhood, _M('Neighborhood',$module), 20);
+        $neighborhood->setJsHint(_M('Enter the person neighborhood',$module));
+        $flds[]       = $neighborhood;
+
+        $bsg1 = new BaseGroup('bsg1',_M('Address',$module),$flds,'vertical');
+        $bsg1->showLabel = false;
+        $bsg1->width = '97%';
+        unset($flds);
+
+        //BaseGroup 2
+        $residentialPhone = new MTextField('residentialPhone', isset($this->enrollData->residentialPhone) ? $this->enrollData->residentialPhone : $data->residentialPhone, _M('Residential Phone',$module), 20);
+        $residentialPhone->setJsHint(_M('Enter the residential phone',$module));
+        $flds[]       = $residentialPhone;
+
+        $workPhone    = new MTextField('workPhone', isset($this->enrollData->workPhone) ? $this->enrollData->workPhone : $data->workPhone, _M('Work Phone',$module), 20);
+        $workPhone->setJsHint(_M('Enter the work phone',$module));
+        $flds[]       = $workPhone;
+
+        $cellPhone    = new MTextField('cellPhone', isset($this->enrollData->cellPhone) ? $this->enrollData->cellPhone : $data->cellPhone, _M('Cell Phone',$module), 20);
+        $cellPhone->setJsHint(_M('Enter the cell phone',$module));
+        $flds[]       = $cellPhone;
+
+        $messagePhone = new MTextField('messagePhone', isset($this->enrollData->messagePhone) ? $this->enrollData->messagePhone : $data->messagePhone, _M('Message Phone',$module), 20);
+        $messagePhone->setJsHint(_M('Enter the message phone',$module));
+        $flds[]       = $messagePhone;
+
+        $email        = new MTextField('email', isset($this->enrollData->email) ? $this->enrollData->email : $data->email, _M('E-mail',$module), 30);
+        $email->setJsHint(_M('Enter the person e-mail',$module));
+        $validators[] = new MEmailValidator('email','','optional');
+        $flds[]       = $email;
+
+        $emailAlternative = new MTextField('emailAlternative', isset($this->enrollData->emailAlternative) ? $this->enrollData->emailAlternative : $data->emailAlternative, _M('E-mail alternative',$module), 30);
+        $emailAlternative->setJsHint(_M('Enter the person alternative e-mail',$module));
+        $validators[] = new MEmailValidator('emailAlternative','','optional');
+        $flds[]       = $emailAlternative;
+
+        $bsg2            = new BaseGroup('bsg2',_M('Contacts',$module),$flds,'vertical');
+        $bsg2->showLabel = false;
+        $bsg2->width     = '97%';
+        unset($flds);
+
+        //BaseGroup 3
+        $carPlate     = new MTextField('carPlate', isset($this->enrollData->carPlate) ? $this->enrollData->carPlate : $data->carPlate, _M('Car plate',$module), 20);
+        $carPlate->setJsHint(_M('Enter the plate car',$module));
+        $flds[]       = $carPlate;
+
+        $business     = $MIOLO->getBusiness('basic', 'BusEthnicOrigin');
+        $flds[]       = new MComboBox('ethnicOriginId', isset($this->enrollData->ethnicOriginId) ? $this->enrollData->ethnicOriginId : $data->ethnicOriginId, _M('Enter the ethnic origin code',$module), $business->listEthnicOrigin());
+
+        $business     = $MIOLO->getBusiness('basic', 'BusSpecialNecessity');
+        $flds[]       = new MComboBox('specialNecessityId', isset($this->enrollData->specialNecessityId) ? $this->enrollData->specialNecessityId : $data->specialNecessityId, _M('Special necessity id',$module), $business->listSpecialNecessity());
+
+        $specialNecessityDescription = new MTextField('specialNecessityDescription', isset($this->enrollData->specialNecessityDescription) ? $this->enrollData->specialNecessityDescription : $data->specialNecessityDescription, _M('Special necessity description',$module), 30);
+        $specialNecessityDescription->setJsHint(_M('Enter the person special necessity description',$module));
+        $flds[]       = $specialNecessityDescription;
+
+        $bsg3            = new BaseGroup('bsg3', _M('General data',$module), $flds, 'vertical');
+        $bsg3->showLabel = false;
+        $bsg3->width     = '97%';
+        unset($flds);
+
+        //VerticalContainer 1: BaseGroup 2 + BaseGroup 3
+        $vct1            = new MVContainer('vct1', array($bsg2, $bsg3));
+        $vct1->showLabel = false;
+        $vct1->width     = '49%';
+
+        //VerticalContainer 2: BaseGroup 1
+        $vct2            = new MVContainer('vct2', array($bsg1));
+        $vct2->showLabel = false;
+        $vct2->width     = '49%';
+
+        //HorizontalContainer 1: VerticalContainer 2 + VerticalContainer 1
+        $hct1            = new MHContainer('hct1', array($vct2, $vct1));
+        $hct1->width     = '100%';
+        $hct1->showLabel = false;
+        
+        //Error container
+        $divError        = new MDiv('divError', $lblMsg, null, 'align=center');
+
+        //Div 2
+        $btn1[] = new MButton('btnPrev', '<< ' . _M('Previous', $module), 'RETURN');
+        $btn1[] = new MButton('btnNext', _M('Next', $module) . ' >>');
+        $div2   = new MDiv('div2', $btn1, null, 'align=center');
+
+        //VeticalContainer 3: HorizontalContainer 1 + ErrorDiv + Div 2
+        $vct3            = new MVContainer('vct2', array($hct1, $divError, $div2));
+        $vct3->width     = '100%';
+        $vct3->showLabel = false;
+
+        $fields[] = $vct3;
+        
+
+        $this->page->onLoad('document.' . $this->name . '.personName.focus();');
+
+        $this->setFields($fields);
+        $this->setValidators($validators);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+        //$this->setClose($MIOLO->getActionURL($module,substr($action,0,strrpos($action,':'))));
+
+    }
+
+    /**
+     * Event triggered when user click next
+     **/
+    public function btnNext_click($sender = null)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        //collect all form data
+        $physicalPerson->personId                    = $this->personId->value;
+        $physicalPerson->name                        = $this->personName->value;
+        $physicalPerson->zipCode                     = $this->zipCode->value;
+        $physicalPerson->cityId                      = $this->cityId->value;
+        $physicalPerson->location                    = $this->location->value;
+        $physicalPerson->number                      = $this->number->value;
+        $physicalPerson->complement                  = $this->complement->value;
+        $physicalPerson->neighborhood                = $this->neighborhood->value;
+        $physicalPerson->residentialPhone            = $this->residentialPhone->value;
+        $physicalPerson->workPhone                   = $this->workPhone->value;
+        $physicalPerson->cellPhone                   = $this->cellPhone->value;
+        $physicalPerson->messagePhone                = $this->messagePhone->value;
+        $physicalPerson->email                       = strtolower($this->email->value);
+        $physicalPerson->emailAlternative            = strtolower($this->emailAlternative->value);
+        $physicalPerson->carPlate                    = $this->carPlate->value;
+        $physicalPerson->ethnicOriginId              = $this->ethnicOriginId->value;
+        $physicalPerson->specialNecessityId          = $this->specialNecessityId->value;
+        $physicalPerson->specialNecessityDescription = $this->specialNecessityDescription->value;
+
+        //create cvsLog object
+        $cvsLog                 = new BasCvsLog();
+        $cvsLog->tablePkey      = 'personId';
+        $cvsLog->tablePkeyValue = $physicalPerson->personId;
+
+        //create an array with all person attributes
+        $person = new BasPerson();
+        $vars2  = get_object_vars($person);
+        $vars2  = array_keys($vars2);
+
+        //get the person old values
+        $business = $MIOLO->getBusiness('basic', 'BusPhysicalPerson');
+        $data     = $business->getPhysicalPerson($physicalPerson->personId);
+
+        //get the person old values
+        $business2 = $MIOLO->getBusiness('basic', 'BusCvsLog');
+
+        //update the person
+        $ok1 = $business->updatePhysicalPersonToInscriptions($physicalPerson);
+
+        if ( $ok1 == true )
+        {
+            //look each element if exist a diference
+            $vars = get_object_vars($physicalPerson);
+            foreach ( $vars as $var => $value )
+            {
+                if ( $physicalPerson->$var != $data->$var )
+                {
+                    if ( in_array($var,$vars2) )
+                    {
+                        $cvsLog->tableName = 'basPerson';
+                    }
+                    else
+                    {
+                        $cvsLog->tableName = 'basPhysicalPerson';
+                    }
+                    $cvsLog->fieldName = $var;
+                    $cvsLog->oldValue  = $data->$var;
+
+                    //save the logs
+                    $ok2 = $business2->insertCvsLog($cvsLog);
+
+                    if ( $ok2 != true )
+                    {
+                        $ok1 = false;
+                    }
+                }
+            }
+        }
+
+        //if personal data are saved with sucess and none insert in cvsLog generate errors
+        if ( $ok1 == true )
+        {
+            $data = $this->getData();
+
+            foreach ( $data as $k => $v )
+            {
+                $this->enrollData->$k = $v;
+            }
+
+            $vars = array ( 'returnTo' => $action,
+                            'enrollData' => urlencode(serialize($this->enrollData)) );
+            $postAction = substr($action,0,strrpos($action,':')) . ':enrollContract';
+            $this->page->mGoto($MIOLO->getActionURL($module, $postAction, null, $vars));
+        }
+        else
+        {
+            $msg           = _M('Incorrect data',$module);
+
+            $lblMsg        = new MText('lblMsg',$msg);
+            $lblMsg->color = 'red';
+
+            $flds[]        = $lblMsg;
+            $flds[]        = new Separator('');
+
+            $this->divError->addControl($flds);
+        }
+    }
+
+}
+
+?>

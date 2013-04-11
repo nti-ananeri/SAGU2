@@ -1,0 +1,457 @@
+<?php
+
+/**
+ * Physical person form
+ *
+ * @author Daniel Afonso Heisler [daniel@solis.coop.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ *
+ * @since
+ * Class created on 29/08/2005
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2005 SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+
+/**
+ * Form to manipulate tabbs
+ **/
+ 
+class FrmPhysicalPerson extends MForm
+{
+
+    private $data;
+    private $documents;
+
+    /**
+     * Class constructor
+     **/
+    function __construct($data=null)
+    {
+        $MIOLO           = MIOLO::getInstance();
+        $module          = MIOLO::getCurrentModule();
+        $this->data      = $data;
+        $this->documents = unserialize(urldecode(stripslashes(MIOLO::_request('documents'))));
+
+
+        if ( MIOLO::_request('function') == 'insert' )
+        {
+            parent::__construct(_M('Insert', $module) . ' ' . _M('physical person',$module));
+        }
+        else
+        {
+            parent::__construct(_M('Update', $module) . ' ' .  _M('physical person',$module));
+        }
+
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+        $data     = $this->data;
+
+        $toolBar = new MToolBar('toolBar',$MIOLO->getActionURL($module,$action));
+
+        $toolBar->disableButton('tbBtnPrint');
+        if ( $function == 'insert' )
+        {
+            $toolBar->disableButton('tbBtnDelete');
+            $toolBar->disableButton('tbBtnSave');
+        }
+        elseif ( $function == 'delete' )
+        {
+            $toolBar->disableButton('tbBtnSave');
+        }
+        $fields[] = $toolBar;
+
+        $fields[] = new MHiddenField('limbo');
+
+        //define os valores para os dados da pessoa
+        $person = new BasPerson();
+        $vars   = get_object_vars($person);
+        foreach ( $vars as $var => $value )
+        {
+            if ( $var != 'name' )
+            {
+                $fields[]  = new MHiddenField($var, $data->$var);
+            }
+        }
+        $fields[]  = new MHiddenField('personName', $data->name);
+
+        //BaseGroup 1
+        $residentialPhone = new MTextField('residentialPhone', $this->getFormValue('residentialPhone',$data->residentialPhone), _M('Residential',$module), 20);
+        $residentialPhone->setJsHint(_M('Enter the residential phone',$module));
+        $flds[]       = $residentialPhone;
+
+        $workPhone    = new MTextField('workPhone', $this->getFormValue('workPhone',$data->workPhone), _M('Work',$module), 20);
+        $workPhone->setJsHint(_M('Enter the work phone',$module));
+        $flds[]       = $workPhone;
+
+        $cellPhone    = new MTextField('cellPhone', $this->getFormValue('cellPhone',$data->cellPhone), _M('Cell',$module), 20);
+        $cellPhone->setJsHint(_M('Enter the cell phone',$module));
+        $flds[]       = $cellPhone;
+
+        $messagePhone = new MTextField('messagePhone', $this->getFormValue('messagePhone',$data->messagePhone), _M('Message',$module), 20);
+        $messagePhone->setJsHint(_M('Enter the message phone',$module));
+        $flds[]       = $messagePhone;
+
+        $bsg1            = new BaseGroup('bsg1',_M('Phones',$module),$flds,'vertical');
+        $bsg1->showLabel = true;
+        $bsg1->width     = '120%';
+        unset($flds);
+
+        //BaseGroup 2
+        $WIDTH = 137;
+        $flds[]       = new MSelection('sex', $this->getFormValue('sex', $data->sex), _M('Sex',$module), SAGU::listSex());
+        $validators[] = new MRequiredValidator('sex');
+
+        $business     = $MIOLO->GetBusiness($module, 'BusMaritalStatus');
+        $flds[]       = new MComboBox('maritalStatusId', $this->getFormValue('maritalStatusId', $data->maritalStatusId), _M('Marital status',$module), $business->listMaritalStatus());
+        $validators[] = new MRequiredValidator('maritalStatusId');
+
+        $dateBirth    = new MCalendarField('dateBirth', $this->getFormValue('dateBirth',$data->dateBirth), _M('Birth date',$module), FIELD_DATE_SIZE);
+        $validators[] = new MDateDMYValidator('dateBirth','','required');
+        $dateBirth->setJsHint(_M('Enter the birth date',$module));
+        $flds[]       = $dateBirth;
+
+        $cityIdBirth  = new MLookupTextField('cityIdBirth', $this->getFormValue('cityIdBirth',$data->cityIdBirth), _M('Birth city',$module), FIELD_LOOKUPFIELD_SIZE, null, null, 'cityNameBirth, limbo, stateBirthName, limbo, countryBirthName', $module, 'City', null, null, true);
+        $validators[] = new MRequiredValidator('cityIdBirth');
+        $cityIdBirth->setJsHint(_M('Enter the birth city code',$module));
+        $cityIdBirth->setWidth($WIDTH);
+
+        $cityNameBirth = new MTextField('cityNameBirth', $this->getFormValue('cityNameBirth',$data->cityNameBirth), _M('Birth city name',$module), 25);
+        $cityNameBirth->setReadOnly(true);
+
+        $hctCityBirth            = new MHContainer('hctCityBirth',array($cityIdBirth,$cityNameBirth));
+        $hctCityBirth->showLabel = true;
+        $flds[]                  = $hctCityBirth;
+
+        $fatherId     = new MLookupTextField('fatherId', $this->getFormValue('fatherId',$data->fatherId), _M('Father id',$module), FIELD_ID_SIZE, null, null, 'fatherName', $module, 'PhysicalPerson', null, null, true);
+        $fatherId->setJsHint(_M('Enter the father code',$module));
+        $fatherId->setWidth($WIDTH);
+
+        $fatherName   = new MTextField('fatherName', $this->getFormValue('fatherName',$data->fatherName), _M('Father name',$module), 25);
+        $fatherName->setReadOnly(true);
+
+        $hctFather            = new MHContainer('hctFather',array($fatherId,$fatherName));
+        $hctFather->showLabel = true;
+        $flds[]               = $hctFather;
+
+        $motherId     = new MLookupTextField('motherId', $this->getFormValue('motherId',$data->motherId), _M('Mother id',$module), FIELD_ID_SIZE, null, null, 'motherName', $module, 'PhysicalPerson', null, null, true);
+        $motherId->setJsHint(_M('Enter the mother code',$module));
+        $motherId->setWidth($WIDTH);
+
+        $motherName   = new MTextField('motherName', $this->getFormValue('motherName',$data->motherName), _M('Mother name',$module), 25);
+        $motherName->setReadOnly(true);
+
+        $hctMother            = new MHContainer('hctMother',array($motherId,$motherName));
+        $hctMother->showLabel = true;
+        $flds[]               = $hctMother;
+
+        $responsableLegalId = new MLookupTextField('responsableLegalId', $this->getFormValue('responsableLegalId',$data->responsableLegalId), _M('Responsable',$module), FIELD_ID_SIZE, null, null, 'responsableLegalName', $module, 'Person', null, null, true);
+        $responsableLegalId->setJsHint(_M('Enter the responsable legal code',$module));
+        $responsableLegalId->setWidth($WIDTH);
+
+        $responsableLegalName = new MTextField('responsableLegalName', $this->getFormValue('responsableLegalName',$data->responsableLegalName), _M('Responsable legal name',$module), 25);
+        $responsableLegalName->setReadOnly(true);
+
+        $hctResponsableLegal            = new MHContainer('hctResponsableLegal',array($responsableLegalId,$responsableLegalName));
+        $hctResponsableLegal->showLabel = true;
+        $flds[]                         = $hctResponsableLegal;
+
+        $carPlate     = new MTextField('carPlate', $this->getFormValue('carPlate',$data->carPlate), _M('Car plate',$module), 10);
+        $residentialPhone->setJsHint(_M('Enter the plate car',$module));
+        $flds[]       = $carPlate;
+
+        $business     = $MIOLO->GetBusiness($module, 'BusEthnicOrigin');
+        $flds[]       = new MComboBox('ethnicOriginId', $this->getFormValue('ethnicOriginId', $data->ethnicOriginId), _M('Ethnic origin',$module), $business->listEthnicOrigin());
+
+        $business     = $MIOLO->GetBusiness($module, 'BusSpecialNecessity');
+        $flds[]       = new MComboBox('specialNecessityId', $this->getFormValue('specialNecessityId', $data->specialNecessityId), _M('Special necessity',$module), $business->listSpecialNecessity());
+
+        $specialNecessityDescription = new MTextField('specialNecessityDescription', $this->getFormValue('specialNecessityDescription',$data->specialNecessityDescription), _M('Special necessity description',$module), FIELD_DESCRIPTION_SIZE);
+        $specialNecessityDescription->setJsHint(_M('Enter the person special necessity description',$module));
+        $flds[]       = $specialNecessityDescription;
+
+        $dateDeath    = new MCalendarField('dateDeath', $this->getFormValue('dateDeath',$data->dateDeath), _M('Death date',$module), FIELD_DATE_SIZE);
+        $dateDeath->setJsHint(_M('Enter the death date',$module));
+        $validators[] = new MDateDMYValidator('dateDeath','');
+        $flds[]       = $dateDeath;
+
+        $bsg2            = new BaseGroup('bsg2',_M('General data',$module),$flds,'vertical');
+        $bsg2->showLabel = true;
+        $bsg2->width     = '45%';
+        unset($flds);
+
+        //BaseGroup 3
+        if ( $function == 'update' )
+        {
+            $zipCodeWork  = new MTextField('zipCodeWork', $this->getFormValue('zipCodeWork',$data->zipCodeWork), _M('Zip code',$module), 10 );
+        }
+        else
+        {
+            $zipCodeWork  = new MLookupTextField('zipCodeWork', $this->getFormValue('zipCodeWork',$data->zipCodeWork), _M('Zip code',$module), 10, null, null, 'locationWork, limbo, countryNameWork, limbo, stateNameWork, cityIdWork, cityNameWork, limbo, neighborhoodWork', 'basic', 'Location', null, null, $this->page->isPostBack());
+        }
+        $zipCodeWork->setJsHint(_M('Enter the work zip code',$module));
+        //$validators[] = new MCepValidator('zipCodeWork');
+        $flds[]       = $zipCodeWork;
+
+        if ( ! isset($data->zipCodeWork) )
+        {
+            $cityIdWork   = new MLookupTextField('cityIdWork', $this->getFormValue('cityIdWork',$data->cityIdWork), _M('City id',$module), FIELD_ID_SIZE, null, null, 'cityNameWork, limbo, stateNameWork, limbo, countryNameWork, zipCodeWork', $module, 'City', null, null, true);
+        }
+        else
+        {
+            $cityIdWork   = new MLookupTextField('cityIdWork', $this->getFormValue('cityIdWork',$data->cityIdWork), _M('City',$module), FIELD_ID_SIZE, null, null, 'cityNameWork, limbo, stateNameWork, limbo, countryNameWork', $module, 'City', null, null, true);
+        }
+//        $validators[] = new MRequiredValidator('cityIdWork');
+        $cityIdWork->setWidth($WIDTH);
+        $cityIdWork->setJsHint(_M('Enter the work city code',$module));
+        $flds[]       = $cityIdWork;
+ 
+        $cityNameWork = new MTextField('cityNameWork', $this->getFormValue('cityNameWork',$data->cityNameWork), _M('City name',$module), 20);
+        $cityNameWork->setReadOnly(true);
+        $flds[]       = $cityNameWork;
+ 
+        $stateNameWork = new MTextField('stateNameWork', $this->getFormValue('stateNameWork',$data->stateNameWork), _M('State name',$module), 20);
+        $stateNameWork->setReadOnly(true);
+        $flds[]       = $stateNameWork;
+ 
+        $countryNameWork = new MTextField('countryNameWork', $this->getFormValue('countryNameWork',$data->countryNameWork), _M('Country name',$module), 20);
+        $countryNameWork->setReadOnly(true);
+        $flds[]       = $countryNameWork;
+
+        $locationWork = new MTextField('locationWork', $this->getFormValue('locationWork',$data->locationWork), _M('Location',$module), 30);
+        $locationWork->setJsHint(_M('Enter the work location',$module));
+        $flds[]       = $locationWork;
+
+        $complementWork = new MTextField('complementWork', $this->getFormValue('complementWork',$data->complementWork), _M('Complement',$module), 10);
+        $locationWork->setJsHint(_M('Enter the location complement',$module));
+        $flds[]       = $complementWork;
+
+        $neighborhoodWork = new MTextField('neighborhoodWork', $this->getFormValue('neighborhoodWork',$data->neighborhoodWork), _M('Neighborhood',$module), 20);
+        $neighborhoodWork->setJsHint(_M('Enter the work neighborhood',$module));
+        $flds[]       = $neighborhoodWork;
+
+        $bsg3            = new BaseGroup('bsg3',_M('Work',$module),$flds,'vertical');
+        $bsg3->showLabel = true;
+        $bsg3->width     = '120%';
+        unset($flds);
+
+        //VerticalContainer 1: BaseGroup 1 + BaseGroup 3
+        $vct1  = new MVContainer('vct1',array($bsg1,$bsg3));
+        $vct1->showLabel = false;
+
+        //HorizontalContainer 1: BaseGroup 2 + VerticalContainer 1
+        $hct1            = new MHContainer('hct1',array($bsg2,$vct1));
+        $hct1->showLabel = true;
+        $fields[]        = $hct1;
+
+        $fields[] = new Separator();
+        $btn1[]   = new MButton('btnPrev',  '<< ' . _M('Previous', $module));
+        $btn1[]   = new MButton('btnNext', _M('Next', $module) . ' >>');
+
+        $div1     = new MDiv('div1', $btn1, null, 'align=center');
+        $fields[] = $div1;
+
+        $this->setFields($fields);
+        $this->setValidators($validators);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+        $this->setClose($MIOLO->getActionURL($module,substr($action,0,strrpos($action,':'))));
+    }
+
+    /**
+     * Event triggered when user click next
+     **/
+    public function btnPrev_click($sender = null)
+    {
+
+        $MIOLO      = MIOLO::getInstance();
+        $module     = MIOLO::getCurrentModule();
+        $action     = MIOLO::getCurrentAction();
+        $function   = MIOLO::_request('function');
+
+        $personData = serialize($this->getTypesData($action));
+
+        $args = array(
+                       'function'   => $function,
+                       'page'       => 1,
+                       'personData' => $personData,
+                       'documents'  => urlencode(serialize($this->documents))
+                     );
+
+        $this->page->mGoto($MIOLO->getActionURL($module, $postAction, NULL, $args));
+
+    }
+
+    /**
+     * Event triggered when user click next
+     **/
+    public function btnNext_click($sender = null)
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+
+        $personData = serialize($this->getTypesData($action));
+
+        $args = array(
+                       'function'   => $function,
+                       'page'       => 3,
+                       'personData' => $personData,
+                       'documents'  => urlencode(serialize($this->documents))
+                     );
+
+        $this->page->mGoto($MIOLO->getActionURL($module, $postAction, NULL, $args));
+    }
+
+    /**
+     * Event triggered when user chooses Save from the toolbar
+     **/
+    public function tbBtnSave_click($sender=NULL)
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+
+        $data     = $this->getTypesData();
+        $business = $MIOLO->getBusiness($module, 'BusPhysicalPerson');
+        $ok       = $business->updatePhysicalPerson($data);
+
+        $msg = MSG_RECORD_UPDATED;
+
+        if ( $ok )
+        {
+            $opts = array('personIdS'=>$data->personId);
+            if ( $function == 'update' )
+            {
+                $caption = _M('Information', $module);
+                $MIOLO->information($msg, $MIOLO->getActionURL( $module, $action, null, $opts));
+            }
+        }
+        else
+        {
+            $msg  = _M('Error executing requested operation.',$module);
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Error',$module);
+            $MIOLO->error( $msg, $goto, $caption );
+        }
+    }
+
+    /**
+     * Event triggered when user chooses Delete from the toolbar
+     **/
+    public function tbBtnDelete_click($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $data   = $this->getTypesData();
+        $opts   = array('event'    => 'tbBtnDelete_confirm',
+                        'function' => 'delete',
+                        'personId' => MIOLO::_request('personId'));
+
+        $gotoYes = $MIOLO->getActionURL( $module, $action, null, $opts );
+        $goto    = SAGU::getStackBackUrl();
+        $gotoNo  = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+        $msg     = MSG_CONFIRM_RECORD_DELETE;
+        $caption = _M('Question',$module);
+        $MIOLO->question($msg, $gotoYes, $gotoNo);
+    }
+
+    /**
+     * Event triggered when user chooses Yes from the Delete prompt dialog
+     **/
+    public function tbBtnDelete_confirm($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $business = $MIOLO->getBusiness($module, 'BusPhysicalPerson');
+        $ok       = $business->deletePhysicalPerson($this->personId->value);
+
+        if ( $ok )
+        {
+            $msg  = MSG_RECORD_DELETED;
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Information',$module);
+            $MIOLO->information($msg, $goto);
+        }
+        else
+        {
+            $msg  = _M('Error executing requested operation.',$module);
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Error',$module);
+            $MIOLO->error( $msg, $goto, $caption );
+        }
+    }
+
+    /**
+     * Method to gather all information from the form fields
+     * and put them on a database compatible object
+     **/
+    public function getTypesData($action = NULL)
+    {
+
+        if ( strlen((string)$action) == 0 )
+        {
+            $data = new BasPerson();
+        }
+        elseif ( strstr(strtolower($action), 'physical') )
+        {
+            $data = new BasPhysicalPerson();
+        }
+        elseif ( strstr(strtolower($action), 'legal') )
+        {
+            $data = new BasLegalPerson();
+        }
+
+        $vars = get_object_vars($data);
+        foreach ( $vars as $var => $value )
+        {
+            if ( $this->$var && $var != 'name' )
+            {
+                eval('$data->' . $var . ' = $this->' . $var . '->value;');
+            }
+        }
+        $data->name           = $this->personName->value;
+
+        return $data;
+    }
+
+}

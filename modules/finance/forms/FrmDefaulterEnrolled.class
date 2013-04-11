@@ -1,0 +1,864 @@
+<?php
+
+/**
+ * Defaulter form
+ *
+ * @author Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ *
+ * @since
+ * Class created on 22/12/2005
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2005 SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+
+/**
+ * Form to manipulate a Defaulter Enrolled
+ **/
+class FrmDefaulterEnrolled extends MForm
+{
+    private $home;
+    public $showForm;
+
+    /**
+     * Class constructor
+     **/
+    function __construct($data)
+    {
+        $this->showForm = true;
+        $module = MIOLO::getCurrentModule();
+
+        $this->home   = $data->home;
+
+        parent::__construct(_M('Defaulter enrolled', $module));
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+
+        $toolBar = new MToolBar('toolBar', $MIOLO->getActionURL($module, $action));
+
+        $toolBar->disableButton('tbBtnDelete');
+        $toolBar->disableButton('tbBtnPrint');
+        $toolBar->disableButton('tbBtnSave');
+        $toolBar->disableButton('tbBtnNew');
+        $toolBar->disableButton('tbBtnSearch');
+
+        //favoritos
+        $enabledImage  = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-20x20.png');
+        $disabledImage = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-disabled-20x20.png');
+        $url           = $MIOLO->getActionURL($module, $this->home, null, array('function' => 'search', 'event' => 'bookmark'));
+        $toolBar->addButton('tbBtnBookmark', _M('Add to bookmarks', 'basic'), $url, null, true, $enabledImage, $disabledImage);
+
+        if ( MIOLO::_request('event') == 'bookmark' )
+        {
+            $MIOLO->getClass('basic', 'access');
+            access::insert('Defaulter enrolled', $this->home, 'defaulter-16x16.png', true);
+        }
+        //fim favoritos
+
+        $fields[] = $toolBar;
+        
+        // início do 3° grupo
+        $businessPeriod = $MIOLO->getBusiness('academic', 'BusPeriod');
+        $dataPeriod = $businessPeriod->listPeriod();
+
+        // MComboBox Period
+        // $dataPeriod  : Dados obtidos do list do business period
+        $grp3PeriodLabel = new MText('grp3PeriodLabel', _M('Invoice period', $module).':');
+        $grp3PeriodLabel->setWidth(FIELD_CONTAINER_SIZE);
+//        $business = $MIOLO->getBusiness('finance','BusCollectionType');
+        $grp3PeriodId = new MComboBox('grp3PeriodId', $this->grp3PeriodId->value, '', $dataPeriod, false, '', FIELD_ID_SIZE);
+        $grp3PeriodId->setJsHint( _M('Choose the period',$module) );
+        $grp3HctPeriod = new MHContainer('grp3HctPeriod', array($grp3PeriodLabel,$grp3PeriodId));
+        $grp3HctPeriod->setShowLabel(true);
+        $field1[]   = $grp3HctPeriod;
+
+        // data final
+        $grp3EndDateLabel = new MText('grp3EndDateLabel', _M('End date',$module).':');
+        $grp3EndDateLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $grp3EndDate = new MCalendarField('grp3EndDate', $this->getFormValue('endDate', $data->endDate), _M('',$module), FIELD_DATE_SIZE);
+        $grp3EndDate->setJsHint(_M('Enter the end date',$module));
+        $validators[] = new MDATEDMYValidator('grp3EndDate');
+        $hctGrp3EndDate = new MHContainer('hctGrp3EndDate', array($grp3EndDateLabel, $grp3EndDate));
+        $hctGrp3EndDate->setShowLabel(true);
+        $field1[] = $hctGrp3EndDate;
+
+        // INICIO 
+        // Sub fields usado caso ele opte pelo LetterA
+        //
+
+        // Periodo do semestre atual, onde o usuário deve preencher.
+        // $dataPeriod  : Dados obtidos do list do business period
+        $sub1Grp3ActualPeriodLabel = new MText('sub1Grp3ActualPeriodLabel', _M('What is the actual period ?', $module));
+        $sub1Grp3ActualPeriodLabel->setWidth(FIELD_CONTAINER_SIZE);
+//        $business = $MIOLO->getBusiness('finance','BusCollectionType');
+        $sub1Grp3ActualPeriodId = new MComboBox('sub1Grp3ActualPeriodId', $this->sub1Grp3ActualPeriodId->value, '', $dataPeriod, false, '', 2);
+        $sub1Grp3ActualPeriodId->setJsHint( _M('Choose the period',$module) );
+        $sub1Grp3HctActualPeriod = new MHContainer('sub1Grp3HctActualPeriod', array($sub1Grp3ActualPeriodLabel,$sub1Grp3ActualPeriodId));
+        $sub1Grp3HctActualPeriod->setShowLabel(true);
+        $field2[]   = $sub1Grp3HctActualPeriod;
+
+        // Data de prazo para quitar as mensalidades, senão não receberá boleto no semestre atual.
+        $sub1Grp3MaturityDateLabel = new MText('sub1Grp3MaturityDateLabel', _M('What is the due date to pay parcels of actual semester ( if not paid the invoice of actual semester will not be sent) ?',$module));
+        $sub1Grp3MaturityDateLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $sub1Grp3MaturityDate = new MCalendarField('sub1Grp3MaturityDate', $this->getFormValue('maturityDate', $data->maturityDate), _M('',$module), FIELD_DATE_SIZE);
+        $sub1Grp3MaturityDate->setJsHint(_M('Enter the date',$module));
+        $validators[] = new MDATEDMYValidator('sub1Grp3MaturityDate');
+        $sub1HctGrp3MaturityDate = new MHContainer('sub1HctGrp3MaturityDate', array($sub1Grp3MaturityDateLabel, $sub1Grp3MaturityDate));
+        $sub1HctGrp3MaturityDate->setShowLabel(true);
+//        $hctGrp3EEndDate->addBoxStyle('display', 'none');
+        $field2[] = $sub1HctGrp3MaturityDate;
+
+
+        // Data de vencimento da primeira parcela
+        $sub1Grp3FirstMaturityDateLabel = new MText('sub1Grp3FirstMaturityDateLabel', _M('What is the fist due date of parcel of the actual semester ?',$module));
+        $sub1Grp3FirstMaturityDateLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $sub1Grp3FirstMaturityDate = new MCalendarField('sub1Grp3FirstMaturityDate', $this->getFormValue('firstMaturityDate', $data->firstMaturityDate), _M('',$module), FIELD_DATE_SIZE);
+        $sub1Grp3FirstMaturityDate->setJsHint(_M('Enter the date',$module));
+        $validators[] = new MDATEDMYValidator('sub1Grp3FirstMaturityDate');
+        $sub1HctGrp3FirstMaturityDate = new MHContainer('sub1HctGrp3FirstMaturityDate', array($sub1Grp3FirstMaturityDateLabel, $sub1Grp3FirstMaturityDate));
+        $sub1HctGrp3FirstMaturityDate->setShowLabel(true);
+        $field2[] = $sub1HctGrp3FirstMaturityDate;
+
+        $MVContainerLetterA = new MVContainer('MVContainerLetterA', $field2);
+        // Seta container como não ativo no form.
+        $MVContainerLetterA->addBoxStyle('display', 'none');
+        // $subFieldsLetterA será setada após o $field1 no $fields1
+//        $subFieldsLetterA[] = $MVContainerLetterA;
+
+        // FIM
+        // Fim dos Sub fields LetterA
+        // 
+
+        // INICIO 
+        // Sub fields usado caso ele opte pelo LetterB
+        //
+        unset($field2);
+       // Data inicial das férias.
+        $sub2Grp3BeginVacationDateLabel = new MText('sub2Grp3BeginVacationDateLabel', _M('What is a begin date of vacation ?',$module));
+        $sub2Grp3BeginVacationDateLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $sub2Grp3BeginVacationDate = new MCalendarField('sub2Grp3BeginVacationDate', $this->getFormValue('beginVacationDate', $data->beginVacationDate), _M('',$module), FIELD_DATE_SIZE);
+        $sub2Grp3BeginVacationDate->setJsHint(_M('Enter the date',$module));
+        $validators[] = new MDATEDMYValidator('sub2Grp3BeginVacationDate');
+        $sub2HctGrp3BeginVacationDate = new MHContainer('sub2HctGrp3BeginVacationDate', array($sub2Grp3BeginVacationDateLabel, $sub2Grp3BeginVacationDate));
+        $sub2HctGrp3BeginVacationDate->setShowLabel(true);
+//        $hctGrp3EEndDate->addBoxStyle('display', 'none');
+        $field2[] = $sub2HctGrp3BeginVacationDate;
+
+        // Data final das férias.
+        $sub2Grp3EndVacationDateLabel = new MText('sub2Grp3EndVacationDateLabel', _M('What is a end date of vacation ?',$module));
+        $sub2Grp3EndVacationDateLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $sub2Grp3EndVacationDate = new MCalendarField('sub2Grp3EndVacationDate', $this->getFormValue('endVacationDate', $data->endVacationDate), _M('',$module), FIELD_DATE_SIZE);
+        $sub2Grp3BeginVacationDate->setJsHint(_M('Enter the date',$module));
+        $validators[] = new MDATEDMYValidator('sub2Grp3EndVacationDate');
+        $sub2HctGrp3EndVacationDate = new MHContainer('sub2HctGrp3EndVacationDate', array($sub2Grp3EndVacationDateLabel, $sub2Grp3EndVacationDate));
+        $sub2HctGrp3EndVacationDate->setShowLabel(true);
+//        $hctGrp3EEndDate->addBoxStyle('display', 'none');
+        $field2[] = $sub2HctGrp3EndVacationDate;
+
+        // Data de prazo para quitar as mensalidades, senão não terá matrícula lançada no sistema
+        $sub2Grp3MaturityEnrollDateLabel = new MText('sub2Grp3MaturityEnrollDateLabel', _M('What is the due date to pay parcels of the actual semester (if not enrollment will not lauch on the sistem) ?',$module));
+        $sub2Grp3MaturityEnrollDateLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $sub2Grp3MaturityEnrollDate = new MCalendarField('sub2Grp3MaturityEnrollDate', $this->getFormValue('maturityEnrollDate', $data->maturityEnrollDate), _M('',$module), FIELD_DATE_SIZE);
+        $sub2Grp3MaturityEnrollDate->setJsHint(_M('Enter the date',$module));
+        $validators[] = new MDATEDMYValidator('sub2Grp3MaturityEnrollDate');
+        $sub2HctGrp3MaturityEnrollDate = new MHContainer('sub2HctGrp3MaturityEnrollDate', array($sub2Grp3MaturityEnrollDateLabel, $sub2Grp3MaturityEnrollDate));
+        $sub2HctGrp3MaturityEnrollDate->setShowLabel(true);
+//        $hctGrp3EEndDate->addBoxStyle('display', 'none');
+        $field2[] = $sub2HctGrp3MaturityEnrollDate;
+
+        // Data de prazo para quitar as mensalidades, senão não receberá boleto no semestre atual.
+        $sub2Grp3MaturityDateLabel = new MText('sub2Grp3MaturityDateLabel', _M('What is the due date to pay parcels of actual semester ( if not paid the invoice of actual semester will not be sent) ?',$module));
+        $sub2Grp3MaturityDateLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $sub2Grp3MaturityDate = new MCalendarField('sub2Grp3MaturityDate', $this->getFormValue('MaturityDate', $data->MaturityDate), _M('',$module), FIELD_DATE_SIZE);
+        $sub2Grp3MaturityDate->setJsHint(_M('Enter the date',$module));
+        $validators[] = new MDATEDMYValidator('sub2Grp3MaturityDate');
+        $hctGrp3MaturityDate = new MHContainer('hctGrp3MaturityDate', array($sub2Grp3MaturityDateLabel, $sub2Grp3MaturityDate));
+        $hctGrp3MaturityDate->setShowLabel(true);
+//        $hctGrp3EEndDate->addBoxStyle('display', 'none');
+        $field2[] = $hctGrp3MaturityDate;
+
+
+        // Periodo do próximo semestre.
+        // $dataPeriod  : Dados obtidos do list do business period
+        $sub2Grp3NextPeriodLabel = new MText('sub2Grp3NextPeriodLabel', _M('What is the next period ?', $module));
+        $sub2Grp3NextPeriodLabel->setWidth(FIELD_CONTAINER_SIZE);
+//        $business = $MIOLO->getBusiness('finance','BusCollectionType');
+        $sub2Grp3NextPeriodId = new MComboBox('sub2Grp3NextPeriodId', $this->sub2Grp3NextPeriodId->value, '', $dataPeriod, false, '', 2);
+        $sub2Grp3NextPeriodId->setJsHint( _M('Choose the period',$module) );
+        $sub2Grp3HctActualPeriod = new MHContainer('sub2Grp3HctActualPeriod', array($sub2Grp3NextPeriodLabel,$sub2Grp3NextPeriodId));
+        $sub2Grp3HctActualPeriod->setShowLabel(true);
+        $field2[]   = $sub2Grp3HctActualPeriod;
+
+        // Data de vencimento da primeira parcela
+        $sub2Grp3NextMaturityDateLabel = new MText('sub2Grp3NextMaturityDateLabel', _M('What is the due date of the first parcel of the next semester ?',$module));
+        $sub2Grp3NextMaturityDateLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $sub2Grp3NextMaturityDate = new MCalendarField('sub2Grp3NextMaturityDate', $this->getFormValue('nextMaturityDate', $data->nextMaturityDate), _M('',$module), FIELD_DATE_SIZE);
+        $sub2Grp3NextMaturityDate->setJsHint(_M('Enter the date',$module));
+        $validators[] = new MDATEDMYValidator('sub2Grp3NextMaturityDate');
+        $sub2HctGrp3FirstMaturityDate = new MHContainer('sub2HctGrp3FirstMaturityDate', array($sub2Grp3NextMaturityDateLabel, $sub2Grp3NextMaturityDate));
+        $sub2HctGrp3FirstMaturityDate->setShowLabel(true);
+        $field2[] = $sub2HctGrp3FirstMaturityDate;
+
+        // Data de retorno das férias
+        $sub2Grp3ReturnVacationDateLabel = new MText('sub2Grp3ReturnVacationDateLabel', _M('What is the vacation return date ?',$module));
+        $sub2Grp3ReturnVacationDateLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $sub2Grp3ReturnVacationDate = new MCalendarField('sub2Grp3ReturnVacationDate', $this->getFormValue('returnVacationDate', $data->returnVacationDate), _M('',$module), FIELD_DATE_SIZE);
+        $sub2Grp3ReturnVacationDate->setJsHint(_M('Enter the date',$module));
+        $validators[] = new MDATEDMYValidator('sub2Grp3ReturnVacationDate');
+        $sub2HctGrp3ReturnMaturityDate = new MHContainer('sub2HctGrp3ReturnMaturityDate', array($sub2Grp3ReturnVacationDateLabel, $sub2Grp3ReturnVacationDate));
+        $sub2HctGrp3FirstMaturityDate->setShowLabel(true);
+        $field2[] = $sub2HctGrp3ReturnMaturityDate;
+
+
+        $MVContainerLetterB = new MVContainer('MVContainerLetterB', $field2);
+        // Seta container como não ativo no form.
+        $MVContainerLetterB->addBoxStyle('display', 'none');
+        // $subFieldsLetterA será setada após o $field1 no $fields1
+//        $subFieldsLetterA[] = $MVContainerLetterA;
+
+        // FIM
+        // Fim dos Sub fields LetterB
+        // 
+
+
+        // INICIO
+        // Sub fields usado caso ele opte pelo enrollRejected
+        //
+        unset($field2);
+
+        // Label 
+        // Data limite para regularizar a situação 
+        $sub3Grp3MaturityEnrollDateLabel = new MText('sub3Grp3MaturityEnrollDateLabel', _M('Limit date for enrollment re-application for the students with valid financial situation ?',$module));
+        $sub3Grp3MaturityEnrollDateLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $sub3Grp3MaturityEnrollDate = new MCalendarField('sub3Grp3MaturityEnrollDate', $this->getFormValue('maturityEnrollDate', $data->maturityEnrollDate), _M('',$module), FIELD_DATE_SIZE);
+        $sub3Grp3MaturityEnrollDate->setJsHint(_M('Enter the date',$module));
+        $validators[] = new MDATEDMYValidator('sub3Grp3MaturityEnrollDate');
+        $sub3HctGrp3MaturityEnrollDate = new MHContainer('sub3HctGrp3MaturityEnrollDate', array($sub3Grp3MaturityEnrollDateLabel, $sub3Grp3MaturityEnrollDate));
+        $sub3HctGrp3MaturityEnrollDate->setShowLabel(true);
+        $field2[] = $sub3HctGrp3MaturityEnrollDate;
+
+        // Data inicial das férias.
+        $sub3Grp3BeginVacationDateLabel = new MText('sub3Grp3BeginVacationDateLabel', _M('What is a begin date of vacation ?',$module));
+        $sub3Grp3BeginVacationDateLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $sub3Grp3BeginVacationDate = new MCalendarField('sub3Grp3BeginVacationDate', $this->getFormValue('beginVacationDate', $data->beginVacationDate), _M('',$module), FIELD_DATE_SIZE);
+        $sub3Grp3BeginVacationDate->setJsHint(_M('Enter the date',$module));
+        $validators[] = new MDATEDMYValidator('sub3Grp3BeginVacationDate');
+        $sub3HctGrp3BeginVacationDate = new MHContainer('sub3HctGrp3BeginVacationDate', array($sub3Grp3BeginVacationDateLabel, $sub3Grp3BeginVacationDate));
+        $sub3HctGrp3BeginVacationDate->setShowLabel(true);
+        $field2[] = $sub3HctGrp3BeginVacationDate;
+
+        // Data final das férias.
+        $sub3Grp3EndVacationDateLabel = new MText('sub3Grp3EndVacationDateLabel', _M('What is a end date of vacation ?',$module));
+        $sub3Grp3EndVacationDateLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $sub3Grp3EndVacationDate = new MCalendarField('sub3Grp3EndVacationDate', $this->getFormValue('endVacationDate', $data->endVacationDate), _M('',$module), FIELD_DATE_SIZE);
+        $sub3Grp3BeginVacationDate->setJsHint(_M('Enter the date',$module));
+        $validators[] = new MDATEDMYValidator('sub3Grp3EndVacationDate');
+        $sub3HctGrp3EndVacationDate = new MHContainer('sub3HctGrp3EndVacationDate', array($sub3Grp3EndVacationDateLabel, $sub3Grp3EndVacationDate));
+        $sub3HctGrp3EndVacationDate->setShowLabel(true);
+        $field2[] = $sub3HctGrp3EndVacationDate;
+
+
+        // Dia limite para pagamento se não não recebá o boleto bancário.
+        $sub3Grp3MaturityLimitDateLabel = new MText('sub3Grp3MaturityLimitDateLabel', _M('What is the limit date to anormalize situation ?',$module));
+        $sub3Grp3MaturityLimitDateLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $sub3Grp3MaturityLimitDate = new MCalendarField('sub3Grp3MaturityLimitDate', $this->getFormValue('maturityLimitDate', $data->maturityLimitDate), _M('',$module), FIELD_DATE_SIZE);
+        $sub3Grp3MaturityLimitDate->setJsHint(_M('Enter the date',$module));
+        $validators[] = new MDATEDMYValidator('sub3Grp3MaturityLimitDate');
+        $sub3HctGrp3MaturityLimitDate = new MHContainer('sub3HctGrp3MaturityLimitDate', array($sub3Grp3MaturityLimitDateLabel, $sub3Grp3MaturityLimitDate));
+        $sub3HctGrp3MaturityLimitDate->setShowLabel(true);
+        $field2[] = $sub3HctGrp3MaturityLimitDate;
+
+
+
+        // Periodo do próximo semestre.
+        // $dataPeriod  : Dados obtidos do list do business period
+        $sub3Grp3NextPeriodLabel = new MText('sub3Grp3NextPeriodLabel', _M('What is the next period ?', $module));
+        $sub3Grp3NextPeriodLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $sub3Grp3NextPeriodId = new MComboBox('sub3Grp3NextPeriodId', $this->sub3Grp3NextPeriodId->value, '', $dataPeriod, false, '', 2);
+        $sub3Grp3NextPeriodId->setJsHint( _M('Choose the period',$module) );
+        $sub3Grp3HctNextPeriod = new MHContainer('sub3Grp3HctNextPeriod', array($sub3Grp3NextPeriodLabel,$sub3Grp3NextPeriodId));
+        $sub3Grp3HctNextPeriod->setShowLabel(true);
+        $field2[]   = $sub3Grp3HctNextPeriod;
+
+        // Data de vencimento da primeira parcela
+        $sub3Grp3NextMaturityDateLabel = new MText('sub3Grp3NextMaturityDateLabel', _M('What is the due date of the first parcel of the next semester ?',$module).':');
+        $sub3Grp3NextMaturityDateLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $sub3Grp3NextMaturityDate = new MCalendarField('sub3Grp3NextMaturityDate', $this->getFormValue('nextMaturityDate', $data->nextMaturityDate), _M('',$module), FIELD_DATE_SIZE);
+        $sub3Grp3NextMaturityDate->setJsHint(_M('Enter the date',$module));
+        $validators[] = new MDATEDMYValidator('sub3Grp3NextMaturityDate');
+        $sub3HctGrp3FirstMaturityDate = new MHContainer('sub3HctGrp3FirstMaturityDate', array($sub3Grp3NextMaturityDateLabel, $sub3Grp3NextMaturityDate));
+        $sub3HctGrp3FirstMaturityDate->setShowLabel(true);
+        $field2[] = $sub3HctGrp3FirstMaturityDate;
+
+        // Data de retorno das férias
+        $sub3Grp3ReturnVacationDateLabel = new MText('sub3Grp3ReturnVacationDateLabel', _M('What is the vacation return date ?',$module));
+        $sub3Grp3ReturnVacationDateLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $sub3Grp3ReturnVacationDate = new MCalendarField('sub3Grp3ReturnVacationDate', $this->getFormValue('returnVacationDate', $data->returnVacationDate), _M('',$module), FIELD_DATE_SIZE);
+        $sub3Grp3ReturnVacationDate->setJsHint(_M('Enter the date',$module));
+        $validators[] = new MDATEDMYValidator('sub3Grp3ReturnVacationDate');
+        $sub3HctGrp3ReturnMaturityDate = new MHContainer('sub3HctGrp3ReturnMaturityDate', array($sub3Grp3ReturnVacationDateLabel, $sub3Grp3ReturnVacationDate));
+        $sub3HctGrp3FirstMaturityDate->setShowLabel(true);
+        $field2[] = $sub3HctGrp3ReturnMaturityDate;
+
+        $MVContainerEnrollRejected = new MVContainer('MVContainerEnrollRejected', $field2);
+        // Seta container como não ativo no form.
+        $MVContainerEnrollRejected->addBoxStyle('display', 'none');
+        // FIM
+        // Fim dos sub fields EnrollRejected
+        //
+
+
+        // INICIO 
+        // Sub fields usado caso ele opte pelo firstSemEnroll
+        //
+        unset($field2);
+
+        // Data limite para regularizar a situação 
+        $sub4Grp3MaturityEnrollDateLabel = new MText('sub4Grp3MaturityEnrollDateLabel', _M('What is the limit date to normalize situation ?',$module));
+        $sub4Grp3MaturityEnrollDateLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $sub4Grp3MaturityEnrollDate = new MCalendarField('sub4Grp3MaturityEnrollDate', $this->getFormValue('maturityEnrollDate', $data->maturityEnrollDate), _M('',$module), FIELD_DATE_SIZE);
+        $sub4Grp3MaturityEnrollDate->setJsHint(_M('Enter the date',$module));
+        $validators[] = new MDATEDMYValidator('sub4Grp3MaturityEnrollDate');
+        $sub4HctGrp3MaturityEnrollDate = new MHContainer('sub4HctGrp3MaturityEnrollDate', array($sub4Grp3MaturityEnrollDateLabel, $sub4Grp3MaturityEnrollDate));
+        $sub4HctGrp3MaturityEnrollDate->setShowLabel(true);
+        $field2[] = $sub4HctGrp3MaturityEnrollDate;
+
+        // Data inicial das férias.
+        $sub4Grp3BeginVacationDateLabel = new MText('sub4Grp3BeginVacationDateLabel', _M('What is a begin date of vacation ?',$module));
+        $sub4Grp3BeginVacationDateLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $sub4Grp3BeginVacationDate = new MCalendarField('sub4Grp3BeginVacationDate', $this->getFormValue('beginVacationDate', $data->beginVacationDate), _M('',$module), FIELD_DATE_SIZE);
+        $sub4Grp3BeginVacationDate->setJsHint(_M('Enter the date',$module));
+        $validators[] = new MDATEDMYValidator('sub4Grp3BeginVacationDate');
+        $sub4HctGrp3BeginVacationDate = new MHContainer('sub4HctGrp3BeginVacationDate', array($sub4Grp3BeginVacationDateLabel, $sub4Grp3BeginVacationDate));
+        $sub4HctGrp3BeginVacationDate->setShowLabel(true);
+        $field2[] = $sub4HctGrp3BeginVacationDate;
+
+        // Data final das férias.
+        $sub4Grp3EndVacationDateLabel = new MText('sub4Grp3EndVacationDateLabel', _M('What is a end date of vacation ?',$module));
+        $sub4Grp3EndVacationDateLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $sub4Grp3EndVacationDate = new MCalendarField('sub4Grp3EndVacationDate', $this->getFormValue('endVacationDate', $data->endVacationDate), _M('',$module), FIELD_DATE_SIZE);
+        $sub4Grp3BeginVacationDate->setJsHint(_M('Enter the date',$module));
+        $validators[] = new MDATEDMYValidator('sub4Grp3EndVacationDate');
+        $sub4HctGrp3EndVacationDate = new MHContainer('sub4HctGrp3EndVacationDate', array($sub4Grp3EndVacationDateLabel, $sub4Grp3EndVacationDate));
+        $sub4HctGrp3EndVacationDate->setShowLabel(true);
+        $field2[] = $sub4HctGrp3EndVacationDate;
+
+        $MVContainerFirstSemEnroll = new MVContainer('MVContainerFirstSemEnroll', $field2);
+        // Seta container como não ativo no form.
+        $MVContainerFirstSemEnroll->addBoxStyle('display', 'none');
+        // $subFieldsLetterA será setada após o $field1 no $fields1
+//        $subFieldsLetterA[] = $MVContainerLetterA;
+
+        // FIM
+        // Fim dos Sub fields firstSemEnroll
+        // 
+
+
+
+
+
+    // Criação do Radio Button.
+        $messagesType[0][0] = _M('Letter A',$module);
+        $messagesType[0][1] = 'letterA';
+        $messagesType[1][0] = _M('Letter B',$module);
+        $messagesType[1][1] = 'letterB';
+        $messagesType[2][0] = _M('Enroll rejected',$module);
+        $messagesType[2][1] = 'enrollRejected';
+        $messagesType[3][0] = _M('First Sem/Enroll',$module);
+        $messagesType[3][1] = 'firstSemEnroll';
+
+        $options = ($messagesType[0][1].','.
+                    $messagesType[1][1].','.
+                    $messagesType[2][1].','.
+                    $messagesType[3][1]);
+        
+        $nameFields = ('MVContainerLetterA,'.
+                       'MVContainerLetterB,'.
+                       'MVContainerEnrollRejected,'.
+                       'MVContainerFirstSemEnroll');
+        $grp3GenerateOptionLabel = new MText('grp3GenerateOptionLabel', _M('Generate option',$module).':');
+        $grp3GenerateOptionLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $grp3GenerateOption = $this->GetFormValue('grp3GenerateOption', $data->generateOption) ? $this->GetFormValue('generateOption', $data->generateOption) : '';
+        $grp3GenerateOption = new MRadioButtonGroup('grp3GenerateOption', '', $messagesType, $grp3GenerateOption, null, 'horizontal');
+        $grp3GenerateOption->SetShowLabel(false);
+ 
+        $url = $MIOLO->getActionURL( 'basic', 'html:scripts:DocSelectedRadioButton.js' );
+        $this->page->scripts->add($url);
+        $grp3GenerateOption->addAttribute('onClick', 'DocSelectedRadioButton( \''. $grp3GenerateOption->name . '\', \''. $nameFields . '\', \'' . $options .  '\'  )');
+        $hctGenerateOption = new MHContainer('hctGenerateOption', array($grp3GenerateOptionLabel, $grp3GenerateOption));
+        $field1[]  = $hctGenerateOption;
+
+//       $noteField      = new MTextField('noteField[' . $row[0] . ']', ($enrollGradesData[0][0] > 0 ? $enrollGradesData[0][0] : ''), '', 10);
+        $mType[0][0] = _M('sxw',$module);
+        $mType[0][1] = DB_TRUE;
+        $mType[1][0] = _M('pdf',$module);
+        $mType[1][1] = DB_FALSE;
+
+
+        $fileOptionLabel = new MText('fileOptionLabel', _M('File generate option',$module).':');
+        $fileOptionLabel->setWidth(FIELD_CONTAINER_SIZE);
+//        $isActiveLabel->setClass('m-caption m-caption-required');
+        $fileOption = $this->GetFormValue('fileOption', $data->fileOption) ? $this->GetFormValue('fileOption', $data->fileOption) : DB_TRUE;
+
+        $fileOption = new MRadioButtonGroup('fileOption', '', $mType, $fileOption, null, 'horizontal');
+        $fileOption->SetShowLabel(false);
+        $hctFileOption = new MHContainer('hctFileOption', array($fileOptionLabel, $fileOption));
+        $field1[]  = $hctFileOption;
+
+
+
+        // terceiro grupo 
+        $field1[]  = new MHiddenField('limbo', $this->getFormValue('limbo', $data->limbo));
+        $fields1[] = new MVContainer('container3', $field1);
+        $fields1[] = new MSeparator('');
+        $fields1[] = $MVContainerLetterA;
+        $fields1[] = $MVContainerLetterB;
+        $fields1[] = $MVContainerEnrollRejected;
+        $fields1[] = $MVContainerFirstSemEnroll;
+        $fields[]  = new MBaseGroup('mbgDefaulter', _M('Defaulter enrolled', $module), $fields1);
+        // Botões do terceiro Grupo.
+        $btnGrp3  = new MButton('btnGrp3', _M('Generate', $module));
+//        $btnEnrollRejected = new MButton('btnEnrollRejected', _M('Enroll rejected', $module));
+//        $btnFirstEnroll = new MButton('btnFirstEnroll', _M('First Sem/Enroll ', $module));
+//        $fieldss1[] = new MHContainer('hctBtn3', array($btnLetterA, $btnLetterB, $btnEnrollRejected, $btnFirstEnroll ));
+        $fieldss1[] = new MHContainer('hctBtn3', array($btnGrp3 ));
+        $fields[]  = $fieldss1;
+
+        $fields[]          = new MSeparator('');
+
+        unset($field1);
+        unset($fields1);
+        unset($fieldss1);
+
+        // fim do 3° grupo
+
+        $fields[] = new MSeparator('');
+        $this->setShowPostButton(false);
+
+        $this->setFields($fields);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setValidators($validators);
+
+        $this->setClose($MIOLO->getActionURL($module, substr($action, 0, strrpos($action, ':'))));
+        $this->page->onLoad('document.' . $this->name . '.grp3PeriodId.focus();');
+    }
+
+
+    /**
+     * Event triggered when button search is clicked 
+     */
+     public function btnGrp3_click($sender = null)
+     {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        
+        $data->endDate        = $this->getFormValue('grp3EndDate');
+        $data->periodId       = $this->getFormValue('grp3PeriodId');
+        $data->generateOption = $this->getFormValue('grp3GenerateOption');
+        $data->fileOption     = $this->getFormValue('fileOption');
+
+        switch( $data->generateOption )
+        {
+            case "letterA":
+  
+                  $data->actualPeriodId    = $this->getFormValue('sub1Grp3ActualPeriodId');
+                  $data->maturityDate      = $this->getFormValue('sub1Grp3MaturityDate');
+                  $data->firstMaturityDate = $this->getFormValue('sub1Grp3FirstMaturityDate');
+ 
+                  $business = $MIOLO->getBusiness($module, 'BusDefaulter');
+                  // pega dados de inadimplentes
+                  $returnData   = $business->getRelateDefaulterLetterA($data);
+                  set_time_limit(0);
+
+                  if ( is_array($returnData) != true )
+                  {
+                       $goto = strlen((string) $goto ) > 0 ? $goto : $MIOLO->getActionURL($module, $action);
+                       $caption = _M('Error', $module );
+                       $msg     = _M('No results for this query, try another period !', $module);
+                       $MIOLO->error( $msg, $goto, $caption );
+                  }
+
+                  $returnNumber = count($returnData) ;
+                  $dateNow      = SAGU::getDateNow();
+                  $actualDate   = SAGU::getDateByExtense($dateNow);
+
+                  $index = 0;
+                  for( $option = 0 ; $option < $returnNumber; $option++) 
+                  {
+                       $data->personId = $returnData[$index][0];
+                       // pega título do inadimplente corrente do código.
+                       $invoiceData  = $business->getRelateDefaulterInvoice($data);
+                       // Cabeçario do documento.
+                       $array[$index] = array($actualDate,
+                                              $invoiceData[0][0],
+                                              $invoiceData[0][1],
+                                              $invoiceData[0][8],
+                                              $invoiceData[0][14],
+                                              $invoiceData[0][15],
+                                              $invoiceData[0][9],
+                                              $invoiceData[0][10],
+                                              $invoiceData[0][11],
+                                              $invoiceData[0][12],
+                                              $invoiceData[0][2],
+                                              $invoiceData[0][3],
+                                              $data->actualPeriodId,
+                                              $data->maturityDate,
+                                              $data->actualPeriodId,
+                                              $data->firstMaturityDate);
+
+                       for( $option2 = 0 ; $option2 < count($invoiceData); $option2++)
+                       {          
+                          $arrayTotal[$index][0]  = SAGU::calcNumber($arrayTotal[$index][0] .'+'. $invoiceData[$option2][21]);
+                          $arrayS[0][$index][]    = array($invoiceData[$option2][16],$invoiceData[$option2][17], $invoiceData[$option2][18], $invoiceData[$option2][19], $invoiceData[$option2][20], $invoiceData[$option2][21]);
+                    
+                       }
+                       $index++;
+                   }
+                   $MIOLO->uses('/core/AgataAPI.class');
+
+                   $api = new AgataAPI;
+
+                    $api->setLanguage($MIOLO->getConf('i18n.language'));
+                    $api->setOutputPath(TEMP_DIR . '/defaulterLetterA.sxw');
+                    $api->setDataArray($array);
+                    $api->setSubDataArray($arrayS);
+                    $ok = $api->parseOpenOffice($MIOLO->getModulePath('basic', '/documents/defaulterLetterA.sxw'));
+
+                    if( $ok && $data->fileOption == DB_FALSE)
+                    {
+                        $api->setOutputPath(TEMP_DIR . '/defaulterLetterA.pdf');
+                        $ok = $api->openOffice2pdf(TEMP_DIR . '/defaulterLetterA.sxw');
+                    }
+
+
+                    //se não conseguiu gerar o arquivo
+                    if ( !$ok )
+                    {
+                        $lblAgataError        = new MText('lblMsg1', $api->getError());
+                        $lblAgataError->color = 'red';
+                        $sep1                 = new Separator('');
+                        $cntErrors            = new MVContainer('cntErrors', array($lblAgataError,$sep));
+                        $this->divError->addControl($cntErrors);
+                    }
+                    else
+                    {
+                        $api->fileDialog();
+                   }
+            break;
+            case "letterB":
+
+                  $data->beginVacationDate  = $this->getFormValue('sub2Grp3BeginVacationDate');
+                  $data->endVacationDate    = $this->getFormValue('sub2Grp3EndVacationDate');
+                  $data->maturityEnrollDate = $this->getFormValue('sub2Grp3MaturityEnrollDate');
+                  $data->maturityDate       = $this->getFormValue('sub2Grp3MaturityDate');
+                  $data->nextPeriodId       = $this->getFormValue('sub2Grp3NextPeriodId');
+                  $data->nextMaturityDate   = $this->getFormValue('sub2Grp3NextMaturityDate');
+                  $data->returnVacationDate = $this->getFormValue('sub2Grp3ReturnVacationDate');
+
+                  $business = $MIOLO->getBusiness($module, 'BusDefaulter');
+                  set_time_limit(0);
+                  // pega dados de inadimplentes
+                  $returnData   = $business->getRelateDefaulterLetterA($data);
+
+//                $returnData[0][0] = '202585';
+                                    
+
+                  if ( is_array($returnData) != true )
+                  {
+                        $goto = strlen((string) $goto ) > 0 ? $goto : $MIOLO->getActionURL($module, $action);
+                        $caption = _M('Error', $module );
+                        $msg     = _M('No results for this query, try another period !', $module);
+                        $MIOLO->error( $msg, $goto, $caption );
+                  }
+
+                  $returnNumber = count($returnData) ;
+                  $dateNow      =  SAGU::getDateNow();
+                  $actualDate   =  SAGU::getDateByExtense($dateNow);
+
+                  $index = 0;
+                  for( $option = 0 ; $option < $returnNumber; $option++) 
+                  {
+                       $data->personId = $returnData[$index][0];
+                       // pega título do inadimplente corrente do código.
+                       $invoiceData  = $business->getRelateDefaulterInvoice($data);
+                       // Cabeçario do documento.
+                       $array[$index] = array($actualDate,
+                                              $invoiceData[0][0],
+                                              $invoiceData[0][1],
+                                              $invoiceData[0][8],
+                                              $invoiceData[0][14],
+                                              $invoiceData[0][15],
+                                              $invoiceData[0][9],
+                                              $invoiceData[0][10],
+                                              $invoiceData[0][11],
+                                              $invoiceData[0][12],
+                                              $invoiceData[0][2],
+                                              $invoiceData[0][3],
+                                              $data->beginVacationDate,
+                                              $data->endVacationDate,
+                                              $data->maturityEnrollDate,
+                                              $data->maturityDate,
+                                              $data->nextPeriodId,
+                                              $data->nextMaturityDate,
+                                              $data->returnVacationDate);
+
+                      for( $option2 = 0 ; $option2 < count($invoiceData); $option2++)
+                      {          
+                          $arrayTotal[$index][0]  = SAGU::calcNumber($arrayTotal[$index][0] .'+'. $invoiceData[$option2][21]);
+                          $arrayS[0][$index][]    = array($invoiceData[$option2][16],$invoiceData[$option2][17], $invoiceData[$option2][18], $invoiceData[$option2][19], $invoiceData[$option2][20], $invoiceData[$option2][21]);
+                      }
+                      $index++;
+                    }
+                    $MIOLO->uses('/core/AgataAPI.class');
+
+                    $api = new AgataAPI;
+
+                    $api->setLanguage($MIOLO->getConf('i18n.language'));
+                    $api->setOutputPath(TEMP_DIR . '/defaulterLetterB.sxw');
+                    $api->setDataArray($array);
+                    $api->setSubDataArray($arrayS);
+                    $ok = $api->parseOpenOffice($MIOLO->getModulePath('basic', '/documents/defaulterLetterB.sxw'));
+
+                    if( $ok && $data->fileOption == DB_FALSE)
+                    {
+                        $api->setOutputPath(TEMP_DIR . '/defaulterLetterB.pdf');
+                        $ok = $api->openOffice2pdf(TEMP_DIR . '/defaulterLetterB.sxw');
+                    }
+
+                    //se não conseguiu gerar o arquivo
+                    if ( !$ok )
+                    {
+                        $lblAgataError        = new MText('lblMsg1', $api->getError());
+                        $lblAgataError->color = 'red';
+                        $sep1                 = new Separator('');
+                        $cntErrors            = new MVContainer('cntErrors', array($lblAgataError,$sep));
+                        $this->divError->addControl($cntErrors);
+                    }
+                    else
+                    {
+                        $api->fileDialog();
+                   }
+            break;
+            case "enrollRejected":
+              
+                  $data->maturityEnrollDate = $this->getFormValue('sub3Grp3MaturityEnrollDate');
+                  $data->beginVacationDate  = $this->getFormValue('sub3Grp3BeginVacationDate');
+                  $data->endVacationDate    = $this->getFormValue('sub3Grp3EndVacationDate');
+                  $data->maturityLimitDate  = $this->getFormValue('sub3Grp3MaturityLimitDate');
+                  $data->nextPeriodId       = $this->getFormValue('sub3Grp3NextPeriodId'); 
+                  $data->nextMaturityDate   = $this->getFormValue('sub3Grp3NextMaturityDate');
+                  $data->returnVacationDate = $this->getFormValue('sub3Grp3ReturnVacationDate');
+                  $business = $MIOLO->getBusiness($module, 'BusDefaulter');
+                  set_time_limit(0);
+                  // pega dados de inadimplentes
+                  $returnData   = $business->getRelateDefaulterLetterA($data);
+
+                  if ( is_array($returnData) != true )
+                  {
+                        $goto = strlen((string) $goto ) > 0 ? $goto : $MIOLO->getActionURL($module, $action);
+                        $caption = _M('Error', $module );
+                        $msg     = _M('No results for this query, try another period !', $module);
+                        $MIOLO->error( $msg, $goto, $caption );
+                  }
+
+                  $returnNumber = count($returnData) ;
+                  $dateNow      =  SAGU::getDateNow();
+                  $actualDate   =  SAGU::getDateByExtense($dateNow);
+
+                  $index = 0;
+                  for( $option = 0 ; $option < $returnNumber; $option++) 
+                  {
+                       $data->personId = $returnData[$index][0];
+                       // pega título do inadimplente corrente do código.
+                       $invoiceData  = $business->getRelateDefaulterInvoice($data);
+                       // Cabeçario do documento.
+                       $array[$index] = array($actualDate,
+                                              $invoiceData[0][0],
+                                              $invoiceData[0][1],
+                                              $invoiceData[0][8],
+                                              $invoiceData[0][14],
+                                              $invoiceData[0][15],
+                                              $invoiceData[0][9],
+                                              $invoiceData[0][10],
+                                              $invoiceData[0][11],
+                                              $invoiceData[0][12],
+                                              $invoiceData[0][2],
+                                              $invoiceData[0][3],
+                                              $data->maturityEnrollDate,
+                                              $data->beginVacationDate,
+                                              $data->endVacationDate,
+                                              $data->maturityLimitDate,
+                                              $data->nextPeriodId,
+                                              $data->nextMaturityDate,
+                                              $data->returnVacationDate);
+
+                      for( $option2 = 0 ; $option2 < count($invoiceData); $option2++)
+                      {          
+                          $arrayTotal[$index][0]  = SAGU::calcNumber($arrayTotal[$index][0] .'+'. $invoiceData[$option2][21]);
+                          $arrayS[0][$index][]    = array($invoiceData[$option2][16],$invoiceData[$option2][17], $invoiceData[$option2][18], $invoiceData[$option2][19], $invoiceData[$option2][20], $invoiceData[$option2][21]);
+                      }
+                      $index++;
+                    }
+
+                    $MIOLO->uses('/core/AgataAPI.class');
+
+                    $api = new AgataAPI;
+                    $api->setLanguage($MIOLO->getConf('i18n.language'));
+                    $api->setOutputPath(TEMP_DIR . '/defaulterEnrollRejected.sxw');
+                    $api->setDataArray($array);
+                    $api->setSubDataArray($arrayS);
+                    $ok = $api->parseOpenOffice($MIOLO->getModulePath('basic', '/documents/defaulterEnrollRejected.sxw'));
+
+                    if( $ok && $data->fileOption == DB_FALSE)
+                    {
+                        $api->setOutputPath(TEMP_DIR . '/defaulterEnrollRejected.pdf');
+                        $ok = $api->openOffice2pdf(TEMP_DIR . '/defaulterEnrollRejected.sxw');
+                    }
+
+                    //se não conseguiu gerar o arquivo
+                    if ( !$ok )
+                    {
+                        $lblAgataError        = new MText('lblMsg1', $api->getError());
+                        $lblAgataError->color = 'red';
+                        $sep1                 = new Separator('');
+                        $cntErrors            = new MVContainer('cntErrors', array($lblAgataError,$sep));
+                        $this->divError->addControl($cntErrors);
+                    }
+                    else
+                    {
+                        $api->fileDialog();
+                    }
+            
+            break;
+            case "firstSemEnroll":
+
+                  $data->maturityEnrollDate = $this->getFormValue('sub4Grp3MaturityEnrollDate');
+                  $data->beginVacationDate  = $this->getFormValue('sub4Grp3BeginVacationDate');
+                  $data->endVacationDate    = $this->getFormValue('sub4Grp3EndVacationDate');
+
+                  set_time_limit(0);
+                  $business = $MIOLO->getBusiness($module, 'BusDefaulter');
+                  // variável que define o número máximo de linhas 
+                  $number = 5000;  
+                  // Faz chamada inicial
+                  $business->beginTransaction();
+                  // Executa o sql gerando na memória todo resultado para foturas solicitações.
+                  $ok =  $business->getRelateDefaulterFirstEnroll($data);
+                  if( $ok )
+                  {
+                        // pega dados de inadimplentes para as primeiras 5000 linhas
+                        $returnData   = $business->fetchData($number);
+                  }
+                  
+                  $dateNow      =  SAGU::getDateNow();
+                  $actualDate   =  SAGU::getDateByExtense($dateNow);
+                  $index = 0;
+
+                  while( is_array($returnData) )
+                  {
+                      $returnNumber = count($returnData) ;
+                      for( $option = 0 ; $option < $returnNumber; $option++) 
+                      {
+                           $array[$index] = array($actualDate,
+                                                  $returnData[$option][0],
+                                                  $returnData[$option][1],
+                                                  $returnData[$option][8],
+                                                  $returnData[$option][14],
+                                                  $returnData[$option][15],
+                                                  $returnData[$option][9],
+                                                  $returnData[$option][10],
+                                                  $returnData[$option][11],
+                                                  $returnData[$option][12],
+                                                  $returnData[$option][2],
+                                                  $returnData[$option][3],
+                                                  $data->maturityEnrollDate,
+                                                  $data->beginVacationDate,
+                                                  $data->endVacationDate);
+
+                           $index++;
+                      }
+                      // pega dados de inadimplentes, próximas 5000 linhas
+                      $returnData   = $business->fetchData($number);
+                  }
+    
+                  // Faz fechamento de conecção liberando a memória.
+                  $business->commit();
+
+
+                  if ( is_array($array) != true )
+                  {
+                        $goto = strlen((string) $goto ) > 0 ? $goto : $MIOLO->getActionURL($module, $action);
+                        $caption = _M('Error', $module );
+                        $msg     = _M('No results for this query, try another period !', $module);
+                        $MIOLO->error( $msg, $goto, $caption );
+                  }
+
+
+                  $MIOLO->uses('/core/AgataAPI.class');
+                  $api = new AgataAPI;
+
+                  $api->setLanguage($MIOLO->getConf('i18n.language'));
+                  $api->setOutputPath(TEMP_DIR . '/defaulterEnrollFirstSem.sxw');
+                  $api->setDataArray($array);
+                  $array[0][0] = '';
+           //       $api->setSubDataArray($array);
+    
+                  $ok = $api->parseOpenOffice($MIOLO->getModulePath('basic', '/documents/defaulterEnrollFirstSem.sxw'));
+
+                  if( $ok && $data->fileOption == DB_FALSE)
+                  {
+                      $api->setOutputPath(TEMP_DIR . '/defaulterEnrollFirstSem.pdf');
+                      $ok = $api->openOffice2pdf(TEMP_DIR . '/defaulterEnrollFirstSem.sxw');
+                  }
+                    //se não conseguiu gerar o arquivo
+                  if ( !$ok )
+                  {
+                        $lblAgataError        = new MText('lblMsg1', $api->getError());
+                        $lblAgataError->color = 'red';
+                        $sep1                 = new Separator('');
+                        $cntErrors            = new MVContainer('cntErrors', array($lblAgataError,$sep));
+                        $this->divError->addControl($cntErrors);
+                  }
+                  else
+                  {
+                      $api->fileDialog();
+                  }
+
+            break;
+        }
+     }
+}
+?>

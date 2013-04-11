@@ -1,0 +1,280 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for finBankReturn table
+ *
+ * @author Giovani Murilo Dantas Correa [gmurilo@gmail.com]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * Rafael Luís Spengler [rafael@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+ *
+ * @since
+ * Class created on 09/10/2007
+ *
+ * \b Organization: \n
+ * iSolution - Soluções de Internet \n
+ * The iSolution TEAM
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2007 iSolution - Soluções de Internet \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to manipulate the Bank Return Segments
+ **/
+class BusinessFinanceBusBankReturnShareSegment extends MBusiness
+{
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module = is_null($module) ? 'finance' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+
+    /**
+     * List all records from table finBankReturnShare
+     *
+     * @param: None
+     *
+     * @returns (array): Return an array with the entire table
+     *
+     **/
+    public function listBankReturnShare()
+    {
+        $sql = ' SELECT A.returnShareId,
+                        A.description
+                        FROM finBankReturnShare A
+               ORDER BY 2';
+
+        $db = $this->getDatabase();
+        
+        $return = $db->query($sql);
+
+        return $return;
+    }
+    
+    /**
+     * Return a specific record from the database
+     *
+     * @param $paymentPlaceId (integer): Primary key of the record to be retrieved
+     *
+     * @return (object): Return an object of the type handled by the class
+     *
+     **/
+    public function getBankReturnShareSegment($returnShareId,$segment,$bankAccountId)
+    {
+        $sql = 'SELECT A.returnShareId,
+        			   A.segment,
+        			   A.bankAccountId,
+                       A.required,
+                       A.ord,
+                       A.userName,
+                       TO_CHAR(A.dateTime,\'' . MASK_TIMESTAMP . '\')
+                  FROM finBankReturnShareSegment A
+                 WHERE A.returnShareId = ? 
+                 AND A.segment = ? 
+                 AND A.bankAccountId = ?';
+
+        $db = $this->getDatabase();
+        $args = Array($returnShareId,$segment,$bankAccountId);
+        $sqls = SAGU::prepare($sql,$args);
+
+        $result = $db->query($sqls);
+
+        $bankReturnShareSegment = new FinBankReturnShareSegment();
+
+        list ( $bankReturnShareSegment->returnShareId,
+               $bankReturnShareSegment->segment,
+               $bankReturnShareSegment->bankAccountId,
+               $bankReturnShareSegment->required,
+               $bankReturnShareSegment->ord,
+               $bankReturnShareSegment->userName,
+               $bankReturnShareSegment->dateTime ) = $result[0];
+
+        return $bankReturnShareSegment;
+    }
+
+    /**
+     * Do a search on the database table handled by the class
+     *
+     * @param $filters (object): Search filters
+     *
+     * @last modification: William Prigol Lopes [william@solis.coop.br]
+     *                     Make the search capable to get partial words with % in varchar fields
+     *
+     * @return (array): An array containing the search results
+     **/
+    public function searchBankReturnShareSegment($data)
+    {
+
+
+        $sql = 'SELECT A.segment,
+                       B.description as Account,
+                       C.description as Lote,
+                       (CASE WHEN required = TRUE THEN \'Requerido\' ELSE \'Opcional\' END),
+                       A.returnShareId,
+                       A.bankAccountId
+                 FROM finBankReturnShareSegment A               
+                 INNER JOIN finBankAccount B using(bankAccountId)
+                 INNER JOIN finBankReturnShare C using(returnShareId)';
+
+        $where = '';
+        unset($args);
+        if ( strlen((string)$data->returnShareId) > 0 )
+        {
+            $where .= '    AND   A.returnShareId = ?';
+            $args[] = $data->returnShareId;
+        }
+        if ( strlen((string)$data->segment) > 0 )
+        {
+            $where .= '    AND   A.segment = ?';
+            $args[] = $data->segment;
+        }
+        if ( strlen((string)$data->required) > 0 )
+        {
+            $where .= '    AND   A.required = ?';
+            $args[] = $data->required;
+        }
+        if ( strlen((string)$data->bankAccountId) > 0 )
+        {
+            $where .= '    AND   A.bankAccountId = ?';
+            $args[] = $data->bankAccountId;
+        }
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE ' . substr($where,8) .
+                    ' ORDER BY 2,A.ord,3';
+
+            $db     = $this->getDatabase();
+            $sqls   = SAGU::prepare($sql,$args);
+            $result = $db->query($sqls);
+        }
+
+        return $result;
+    }
+
+    /**
+     * Insert a new record
+     *
+     * @param $data (object): An object of the type handled by the class
+     *
+     * @return True if succed, otherwise False
+     *
+     **/
+    public function insertBankReturnShareSegment($data)
+    {
+        $db = $this->getDatabase();
+
+        $sql = 'INSERT INTO finBankReturnShareSegment
+                            (returnShareId,
+                             segment,
+                             required,
+                             ord,
+                             bankAccountId)
+                        VALUES (?,?,?,?,?)';
+
+        $args = array($data->returnShareId,
+        			  $data->segment,
+                      $data->required,
+                      $data->ord,
+                      $data->bankAccountId);
+
+        $return = $db->execute(SAGU::prepare($sql, $args));
+        return $return;
+
+    }
+
+    /**
+     * Update data from a specific record
+     *
+     * @param $data (object): Data which will replace the old record data
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+    public function updateBankReturnShareSegment($data)
+    {
+		//print_r($data);
+    	$sql = 'UPDATE finBankReturnShareSegment
+                   SET segment = ?,
+                   	   bankAccountId = ?,
+                       required    = ?,
+                       ord    = ?
+                 WHERE returnShareId = ? 
+                 AND segment = ? 
+                 AND bankAccountId = ?';
+
+        $args = array($data->segment,
+        			  $data->bankAccountId,
+                      $data->required,
+                      $data->ord,
+                      $data->returnShareId,
+                      $data->segment,
+                      $data->bankAccountId);
+
+        $db = $this->getDatabase();
+        $sqls = SAGU::prepare($sql,$args);
+
+        for ( $i=0; $i<count($sqls); $i++ )
+        {
+            $result = $db->execute($sqls[$i]);
+        }
+        //$this->checkError($db);
+        //$db->close();
+
+        return $result;
+    }
+
+    /**
+     * Delete a record
+     *
+     * @param $bankReturnId(integer): Primary key for deletion
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+    public function deleteBankReturn($bankReturnId)
+    {
+        $sql = 'DELETE FROM finBankReturnShareSegment
+                      WHERE A.returnShareId = ? 
+                 AND A.segment = ? 
+                 AND A.bankAccountId = ?';
+
+        $args = array($bankReturnId);
+
+        $db = $this->getDatabase();
+        $result = $db->execute(SAGU::prepare($sql,$args));
+        //$this->checkError($db);
+        //$db->close();
+
+        return $result;
+    }
+
+
+}
+
+?>

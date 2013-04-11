@@ -1,0 +1,316 @@
+<?php
+
+/**
+ * Place form
+ *
+ * @author Daniel Afonso Heisler [daniel@solis.coop.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ *
+ * @since
+ * Class created on 22/08/2005
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2005 SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+
+/**
+ * Form to manipulate a place
+ **/
+class FrmPlace extends MForm
+{
+
+    /**
+     * Class constructor
+     **/
+    function __construct()
+    {
+
+        $module = MIOLO::getCurrentModule();
+
+        if ( MIOLO::_request('function') == 'insert' )
+        {
+            parent::__construct(_M('Insert', $module));
+        }
+        else
+        {
+            parent::__construct(_M('Update', $module));
+        }
+
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+
+        $toolBar = new MToolBar('toolBar',$MIOLO->getActionURL($module,$action));
+
+        if ( $function == 'insert' )
+        {
+            $toolBar->disableButton('tbBtnDelete');
+            $toolBar->disableButton('tbBtnPrint');
+        }
+        elseif ( $function == 'delete' )
+        {
+            $toolBar->disableButton('tbBtnSave');
+        }
+        $fields[] = $toolBar;
+
+        if ( in_array($function,array('update','delete')) )
+        {
+            $placeId   = $_GET['placeId'] ? $_GET['placeId'] : $_POST['placeId'];
+            $fields[] = new MTextLabel('placeId', $placeId, _M('Place id',$module));
+            $fields[] = new MHiddenField('placeId', $placeId);
+            
+            $business = $MIOLO->getBusiness($module,'BusPlace');
+            $data     = $business->getPlace($placeId);
+        }
+
+
+        $personLabel = new MText('personLabel', _M('Legal person',$module) . ':');
+        $personLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $personLabel->setClass('m-caption m-caption-required');
+
+        $personId = new MLookupTextField('personId', $this->getFormValue('personId', $data->personId), '', FIELD_LOOKUPFIELD_SIZE, null, null, array('personName', 'location', 'complement', 'neighborhood', 'cityId', 'cityName'), 'basic', 'LegalPerson', null, null, true);
+        $personId->setJsHint(_M('Enter the legal person code',$module));
+        $validators[] = new MIntegerValidator('personId', _M('Legal person',$module), 'required');
+
+        $personName = new MTextField('personName', $this->getFormValue('personName', $data->personName), '', FIELD_DESCRIPTION_SIZE);
+        $personName->setReadOnly(true);
+
+        $hctPerson = new MHContainer('hctPerson', array($personLabel, $personId, $personName));
+        $hctPerson->setShowLabel(true);
+        $fields[]  = $hctPerson;
+
+        $data->placeDescription = $this->getFormValue('placeDescription', $data->description);
+        $fields[] = new MTextField('placeDescription', $data->placeDescription, _M('Description',$module), FIELD_DESCRIPTION_SIZE);
+        $validators[] = new MRequiredValidator('placeDescription');
+
+        $fields[] = new MTextField('shortDescription', $this->getFormValue('shortDescription', $data->shortDescription), _M('Short description',$module), 8, _M('5 characters maximum',$module));
+        $validators[] = new MRequiredValidator('shortDescription');
+
+        $fields[] = new MLookupTextField('zipCode', $this->getFormValue('zipCode',$data->zipCode), _M('Zip code',$module), FIELD_LOOKUPFIELD_SIZE, null, null, 'location, limbo, limbo, limbo, limbo, cityId, cityName, limbo, neighborhood', 'basic', 'Location', null, null, !$this->page->isPostBack());
+
+        $fields[] = new MHiddenField('limbo');
+
+        $cityLabel = new MText('cityLabel', _M('City',$module) . ':');
+        $cityLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $cityLabel->setClass('m-caption m-caption-required');
+
+//        $fields[] = new MLookupTextField('cityId', $this->getFormValue('cityId',$data->cityId), _M('City id',$module), 10, null, null, 'cityName', 'basic', 'City', null, null, true);
+        $cityId = new MLookupTextField('cityId', $this->getFormValue('cityId',$data->cityId), '', FIELD_LOOKUPFIELD_SIZE, null, null, 'cityName', 'basic', 'City', null, null, true);
+        $cityId->setJsHint(_M('Enter the city id',$module));
+
+        $validators[] = new MIntegerValidator('cityId', _M('City',$module), 'required');
+
+//        $fields[] = new MTextField('cityName', $this->getFormValue('cityName',$data->cityName), _M('City name',$module), 30);
+        $cityName = new MTextField('cityName', $this->getFormValue('cityName', $data->cityName), '', FIELD_DESCRIPTION_SIZE);
+        $cityName->setReadOnly(true);
+        $cityName->setJsHint(_M('City name',$module));
+
+        $hctCity = new MHContainer('hctCity', array( $cityLabel, $cityId, $cityName) );
+        $hctCity->setShowLabel(true);
+        $fields[]  = $hctCity;
+
+        $location = new MTextField('location', $this->getFormValue('location', $data->location), _M('Location',$module), FIELD_DESCRIPTION_SIZE);
+        $fields[] = $location; 
+
+        $fields[] = new MTextField('complement', $this->getFormValue('complement',$data->complement), _M('Complement',$module), 10);
+
+        $neighborhood = new MTextField('neighborhood', $this->getFormValue('neighborhood', $data->neighborhood), _M('Neighborhood',$module), 20);
+        $fields[] = $neighborhood;
+        //$validators[] = new MReadOnly('cityName');
+
+        if ( $function == 'update' )
+        {
+            $fields[] = new MTextLabel('lastModification', '[' . $data->userName . ' - ' . $data->dateTime . ']', _M('Last modification',$module));
+
+        }
+        
+        $fields[] = new Separator('');
+
+        $this->setFields($fields);
+        $this->setValidators($validators);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+        $this->setClose($MIOLO->getActionURL($module,substr($action,0,strrpos($action,':'))));
+        $this->page->onLoad('document.' . $this->name . '.placeDescription.focus();');
+
+    }
+
+    /**
+     * Event triggered when user chooses New from the toolbar
+     **/
+    public function tbBtnNew_click($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $data = $this->getTypesData();
+        $vars = get_object_vars($data);
+        foreach ( $vars as $var => $value )
+        {
+            if ( $this->$var && $var != 'name' )
+            {
+                eval('$this->' . $var . '->value = $this->getFormValue(\'' . $var . 'S\') ? $this->getFormValue(\'' . $var . 'S\') : \'\';');
+            }
+        }
+        $this->placeDescription->value = $this->getFormValue('placeDescriptionS') ? $this->getFormValue('placeDescriptionS') : '';
+    }
+
+    /**
+     * Event triggered when user chooses Delete from the toolbar
+     **/
+    public function tbBtnDelete_click($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $data   = $this->getTypesData();
+        $opts   = array('event'=>'tbBtnDelete_confirm',
+                        'function'=>'delete',
+                        'placeId'=>MIOLO::_request('placeId'));
+
+        $gotoYes = $MIOLO->getActionURL( $module, $action, null, $opts );
+        $goto    = SAGU::getStackBackUrl();
+        $gotoNo  = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+        $msg     = _M(MSG_CONFIRM_RECORD_DELETE,$module);
+        $caption = _M('Question',$module);
+        $MIOLO->question($msg, $gotoYes, $gotoNo);
+    }
+
+    /**
+     * Event triggered when user chooses Yes from the Delete prompt dialog
+     **/
+    public function tbBtnDelete_confirm($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $business = $MIOLO->getBusiness($module, 'BusPlace');
+        $ok = $business->deletePlace($this->placeId->value);
+
+        if ( $ok )
+        {
+            $msg  = _M(MSG_RECORD_DELETED,$module);
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Information',$module);
+            $MIOLO->information($msg, $goto);
+        }
+        else
+        {
+            $msg  = _M('Error executing requested operation.',$module);
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Error',$module);
+            $MIOLO->error( $msg, $goto, $caption );
+        }
+    }
+
+    /**
+     * Event triggered when user chooses Save from the toolbar
+     **/
+    public function tbBtnSave_click($sender=NULL)
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+
+        $data     = $this->getTypesData();
+        $business = $MIOLO->getBusiness($module, 'BusPlace');
+
+        if ( $function == 'update' )
+        {
+            $ok  = $business->updatePlace($data);
+            $msg = _M(MSG_RECORD_UPDATED,$module);
+        }
+        else
+        {
+            $ok  = $business->insertPlace($data);
+            $msg = _M(MSG_RECORD_INSERTED,$module);
+        }
+
+        if ( $ok )
+        {
+            $opts = array('placeIdS'=>$data->placeId);
+
+            if ( $function == 'update' )
+            {
+                $caption = _M('Information', $module);
+                $MIOLO->information($msg, $MIOLO->getActionURL( $module, $action, null, $opts));
+            }
+            else
+            {
+                unset($opts);
+                $goto = SAGU::getStackBackUrl();
+                $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL( $module, $action, null, $opts);
+                $opts = array('function'=>'insert');
+
+                $gotoYes = $MIOLO->getActionURL($module, $action, null, $opts);
+                $caption = _M('Question',$module);
+                $MIOLO->question($msg, $gotoYes, $goto);
+            }
+        }
+        else
+        {
+            $msg  = _M('Error executing requested operation.',$module);
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action, null, $opts);
+            $caption = _M('Error',$module);
+            $MIOLO->error( $msg, $goto, $caption );
+        }
+    }
+
+    /**
+     * Method to gather all information from the form fields
+     * and put them on a database compatible object
+     **/
+    public function getTypesData()
+    {
+        $data = new SprPlace();
+        $vars = get_object_vars($data);
+        foreach ( $vars as $var => $value )
+        {
+            if ( $this->$var && $var != 'name' )
+            {
+                eval('$data->' . $var . ' = $this->' . $var . '->value;');
+            }
+        }
+        $data->description = $this->placeDescription->value;
+
+        return $data;
+    }
+}
+
+?>

@@ -1,0 +1,178 @@
+<?php
+/**
+ * 
+ * 
+ *
+ * @author Leovan Tavares da Silva [leovan@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 01/02/2005
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+
+
+/**
+ * Class containing necessary methods for the enroll cancelation process
+ **/
+class BusinessAcademicBusEnrollCancelation extends Business
+{
+
+    var $db;
+
+    function BusinessAcademicBusEnrollCancelation()
+    {
+        $this->db = $this->getDatabase();
+    }
+
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module = is_null($module) ? 'academic' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+    /**
+     * Cancell a enroll
+     * 
+     * @param $enrollId (integer): the enroll id
+     *
+     * @return (boolean): TRUE if enroll is canceled sucessfull. Otherwise FALSE
+     **/
+    public function cancellEnroll($enrollId, $reasonCancellationId)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+
+        $dateCancellation = date(MASK_DATE_PHP);
+        $hourCancellation = date(MASK_TIME_PHP);
+
+        $sql = 'UPDATE acdenroll 
+                   SET statusId = ' . ENROLL_STATUS_CANCELLED . ',
+                       dateCancellation = TO_DATE(?, \'' . MASK_DATE . '\'),
+                       hourCancellation = TO_TIMESTAMP(?, \'' . MASK_TIME . '\'),
+                       reasonCancellationId = ?
+                 WHERE enrollId = ?';
+
+        $args = array($dateCancellation, $hourCancellation, $reasonCancellationId, $enrollId);
+
+        $result = $this->db->execute(SAGU::prepare($sql, $args));
+
+        return $result;
+    }
+
+    public function listPersonEnrolls($contractId, $periodId, $enrollId = null)
+    {
+        $sql = 'SELECT A.enrollId,
+                       D.groupId,
+                       B.curricularComponentId,
+                       B.curricularComponentVersion,
+                       CASE WHEN C.name = J.name THEN C.name
+                       ELSE C.name || \' (\' || J.name || \')\' END AS curricularComponentName,
+                       A.curriculumId,
+                       F.weekDayId,
+                       F.description AS weekDay,
+                       TO_CHAR(G.beginHour, \'' . MASK_TIME . '\'),
+                       TO_CHAR(G.endHour, \'' . MASK_TIME . '\'),
+                       H.description,
+                       CASE WHEN A.statusId IN (' . ENROLL_STATUS_CANCELLED . ') 
+                            THEN L.description || \' [\' || TO_CHAR(dateCancellation, \'' . MASK_DATE . '\') || \']\'
+                            ELSE L.description END,
+                       A.statusId
+                  FROM acdEnroll A
+            INNER JOIN acdCurriculum B
+                    ON (B.curriculumId = A.curriculumId)
+            INNER JOIN acdCurricularComponent C
+                    ON (C.curricularComponentId = B.curricularComponentId
+                        AND C.curricularComponentVersion = B.curricularComponentVersion)
+            INNER JOIN acdGroup D
+                    ON (D.groupId = A.groupId)
+            INNER JOIN acdSchedule E
+                    ON (D.groupId = E.groupId)
+            INNER JOIN basWeekDay F
+                    ON (E.weekDayId = F.weekDayId)
+            INNER JOIN acdScheduleLearningPeriod G
+                    ON (G.scheduleLearningPeriodId = E.scheduleLearningPeriodId)
+            INNER JOIN basTurn H
+                    ON (H.turnId = G.turnId)
+            INNER JOIN acdCurriculum I
+                    ON (D.curriculumId = I.curriculumId)
+            INNER JOIN acdCurricularComponent J
+                    ON (J.curricularComponentId = I.curricularComponentId AND
+                        J.curricularComponentVersion = I.curricularComponentVersion)
+            INNER JOIN acdEnrollStatus L
+                    ON (L.statusId = A.statusId)
+            INNER JOIN acdLearningPeriod M
+                    ON (M.learningPeriodId = D.learningPeriodId AND M.periodId = ?)
+                 WHERE A.contractId = ?
+                   AND M.periodId = ?
+                   AND A.statusId IN(' . ENROLL_STATUS_ENROLLED . ',' . ENROLL_STATUS_CANCELLED . ')';
+
+
+        if ( isset($enrollId) )
+        {
+            $sql .= ' AND A.enrollId = ?';
+        }
+
+        $sql .= ' ORDER BY F.weekDayId';
+
+        $args = array (
+                        $periodId,
+                        $contractId,
+                        $periodId
+                      );
+        
+        if ( isset($enrollId) )
+        {
+            $args[] = $enrollId;
+        }
+
+        $result = $this->db->query(SAGU::prepare($sql,$args));
+
+        return $result;
+    }
+    
+    public function beginTransaction()
+    {
+        $db = $this->getDatabase();
+        $db->execute('BEGIN TRANSACTION');
+    }
+    
+    public function commit()
+    {
+        $db = $this->getDatabase();
+        $db->execute('COMMIT');
+    }
+}
+
+?>

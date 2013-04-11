@@ -1,0 +1,409 @@
+<?php
+
+/**
+ * Employee form
+ *
+ * @author Daniel Afonso Heisler [daniel@solis.coop.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ *
+ * @since
+ * Class created on 12/09/2005
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2005 SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+
+/**
+ * Form to manipulate a employee
+ **/
+class FrmEmployee extends MForm
+{
+
+    /**
+     * Class constructor
+     **/
+    function __construct()
+    {
+
+        $module = MIOLO::getCurrentModule();
+
+        if ( MIOLO::_request('function') == 'insert' )
+        {
+            parent::__construct(_M('Insert', $module));
+        }
+        else
+        {
+            parent::__construct(_M('Update', $module));
+        }
+
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+
+        $toolBar = new MToolBar('toolBar',$MIOLO->getActionURL($module,$action));
+
+        if ( $function == 'insert' )
+        {
+            $toolBar->disableButton('tbBtnDelete');
+            $toolBar->disableButton('tbBtnPrint');
+        }
+        elseif ( $function == 'delete' )
+        {
+            $toolBar->disableButton('tbBtnSave');
+        }
+
+        if ( INCREASE_SECURITY_LEVEL == 'YES' )
+        {
+            $toolBar->disableButton('tbBtnDelete');
+        }
+
+        $fields[] = $toolBar;
+
+        if ( in_array($function,array('update','delete')) )
+        {
+            $employeeId = $_GET['employeeId'] ? $_GET['employeeId'] : $_POST['employeeId'];
+            $fields[]   = new MTextLabel('employeeId', $employeeId, _M('Employee id',$module));
+            $fields[]   = new MHiddenField('employeeId', $employeeId);
+            
+            $business = $MIOLO->getBusiness($module,'BusEmployee');
+            $data     = $business->getEmployee($employeeId);
+        }
+
+        $personLabel = new MText('personLabel', _M('Person id',$module).':');
+        $personLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $personLabel->setClass('m-caption m-caption-required');
+
+        $personId     = new MLookupTextField('personId', $this->getFormValue('personId', $data->personId), '', FIELD_ID_SIZE, null, null, 'personName', 'basic', 'PhysicalPerson', null, null, true);
+        $personId->setJsHint(_M('Enter the person code',$module));
+        $validators[] = new MIntegerValidator('personId', _M('Person id',$module), 'required');
+
+        $personName   = new MTextField('personName', $this->getFormValue('personName', $data->personName), '', FIELD_DESCRIPTION_SIZE);
+        $personName->setReadOnly(true);
+
+        $hctPerson = new MHContainer('hctPerson', array($personLabel, $personId, $personName));
+        $hctPerson->setShowLabel(true);
+        $fields[]  = $hctPerson;
+
+
+        $sectorLabel = new MText('sectorLabel', _M('Sector id',$module).':');
+        $sectorLabel->setWidth(FIELD_CONTAINER_SIZE);
+
+        $sectorId     = new MLookupTextField('sectorId', $this->getFormValue('sectorId', $data->sectorId), '', FIELD_ID_SIZE, null, null, 'sectorName', 'basic', 'Sector', null, null, true);
+        $sectorId->setJsHint(_M('Enter the sector code',$module));
+        $validators[] = new MIntegerValidator('sectorId', '', 'optional');
+        //$fields[]     = $sectorId;
+
+        $sectorName   = new MTextField('sectorName', $this->getFormValue('sectorName', $data->sectorName), '', FIELD_DESCRIPTION_SIZE);
+        $sectorName->setReadOnly(true);
+        //$fields[]     = $sectorName;
+
+        $hctSector = new MHContainer('hctSector', array($sectorLabel, $sectorId, $sectorName));
+        $hctSector->setShowLabel(true);
+        $fields[]  = $hctSector;
+
+        $externalId   = new MTextField('externalId', $this->getFormValue('externalId', $data->externalId), _M('External id',$module), FIELD_ID_SIZE);
+        $fields[]     = $externalId;
+        $validators[] = new MIntegerValidator('externalId', _M('External id',$module), 'optional');
+
+        $salary       = new MTextField('salary', $this->getFormValue('salary', $data->salary), _M('Salary',$module), 10);
+        $fields[]     = $salary;
+
+        $valueHour    = new MSelection('valueHour', $this->getFormValue('valueHour', $data->valueHour) , _M('Is your salary equivalent to the valour hour?',$module), SAGU::listYesNo(0)/*array('t' => _M('Yes',$module),'f' => _M('No',$module))*/);
+        $fields[]     = $valueHour;
+        $validators[] = new MRequiredValidator('valueHour');
+
+        $weeklyhours  = new MTextField('weeklyhours', $this->getFormValue('weeklyhours', $data->weeklyhours), _M('Weekly hours',$module), 10);
+        $fields[]     = $weeklyhours;
+        $validators[] = new MFloatValidator('weeklyhours', '', FLOAT_SEPARATOR, REAL_ROUND_VALUE, 'required');
+
+        $beginDate    = new MCalendarField('beginDate', $this->getFormValue('beginDate',$data->beginDate), _M('Begin date',$module), FIELD_DATE_SIZE);
+        $validators[] = new MDateDMYValidator('beginDate','','optional');
+        $beginDate->setJsHint(_M('Enter the begin date',$module));
+        $fields[]       = $beginDate;
+
+        if ( in_array($function,array('update')) )
+        {
+            $endDate    = new MCalendarField('endDate', $this->getFormValue('endDate',$data->endDate), _M('End date',$module), FIELD_DATE_SIZE);
+            $validators[] = new MDateDMYValidator('endDate','','optional');
+            $endDate->setJsHint(_M('Enter the begin date',$module));
+            $fields[]       = $endDate;
+        }
+
+        $busEmployeeType = $MIOLO->getBusiness($module, 'BusEmployeeType');
+        $employeeTypeId = new MSelection('employeeTypeId', $this->getFormValue('employeeTypeId', $data->employeeTypeId) , _M('Employee type id',$module), $busEmployeeType->listEmployeeType());
+        $fields[]     = $employeeTypeId;
+        $validators[] = new MRequiredValidator('employeeTypeId');
+
+        $bankLabel = new MText('bankLabel', _M('Bank id',$module).':');
+        $bankLabel->setWidth(FIELD_CONTAINER_SIZE);
+
+        $bankId     = new MLookupTextField('bankId', $this->getFormValue('bankId', $data->bankId), '', FIELD_ID_SIZE, null, null, 'bankDescription', 'finance', 'Bank', null, null, true);
+        $bankId->setJsHint(_M('Enter the bank code',$module));
+        $validators[] = new MIntegerValidator('bankId', '', 'requered');
+
+        //$fields[]     = $bankId;
+
+        $bankDescription   = new MTextField('bankDescription', $this->getFormValue('bankDescription', $data->bankDescription), '', FIELD_DESCRIPTION_SIZE);
+        $bankDescription->setReadOnly(true);
+
+        $hctBankDescription = new MHContainer('hctBankDescription', array($bankLabel, $bankId, $bankDescription));
+        $hctBankDescription->setShowLabel(true);
+        $fields[]  = $hctBankDescription;
+
+        $branchNumberLabel = new MText('sectorLabel', _M('Branch number',$module).':');
+        $branchNumberLabel->setWidth(FIELD_CONTAINER_SIZE);
+
+        $branchNumber       = new MTextField('branchNumber', $this->getFormValue('branchNumber', $data->branchNumber), '', 10);
+        $branchNumber->setJsHint(_M('Enter the branch number code',$module));
+        $validators[] = new MRangeValidator('branchNumber', _M('Branch number',$module), '0', '9999', 'i');
+
+        $branchNumberDigit       = new MTextField('branchNumberDigit', $this->getFormValue('branchNumberDigit', $data->branchNumberDigit), '', 3);
+        $branchNumberDigit->setJsHint(_M('Enter the branch number digit',$module));
+
+        $hctbranchNumberDigit = new MHContainer('hctbranchNumberDigit', array($branchNumberLabel, $branchNumber, $branchNumberDigit));
+        $hctbranchNumberDigit->setShowLabel(true);
+        $fields[]  = $hctbranchNumberDigit;
+
+        $accountLabel = new MText('accountLabel', _M('Account number',$module).':');
+        $accountLabel->setWidth(FIELD_CONTAINER_SIZE);
+
+        $accountNumber       = new MTextField('accountNumber', $this->getFormValue('accountNumber', $data->accountNumber), '', 10);
+        $validators[] = new MRangeValidator('accountNumber', '', '1', '9999999999999', 'i');
+
+        $accountNumberDigit       = new MTextField('accountNumberDigit', $this->getFormValue('accountNumberDigit', $data->accountNumberDigit), '', 3);
+        $accountNumberDigit->setJsHint(_M('Enter the account number digit',$module));
+        $validators[] = new MRangeValidator('accountNumberDigit', '', 0, 99, 'i'); 
+
+        $hctaccountNumber = new MHContainer('hctaccountNumber', array($accountLabel, $accountNumber, $accountNumberDigit));
+        $hctaccountNumber->setShowLabel(true);
+        $fields[]  = $hctaccountNumber;
+
+
+        $isActiveAccountLabel = new MText('isActiveAccount', _M('Is it an active account',$module) . '?');
+        $isActiveAccountLabel->setWidth(FIELD_LABEL_SIZE);
+
+        if ( ! strlen((string)$data->isActiveAccount) > 0 )
+        {
+            $data->isActiveAccount = DB_FALSE;
+        }
+
+        $isActiveAccount = $this->GetFormValue('isActiveAccount', $data->isActiveAccount);
+
+        $isActiveAccount = new MRadioButtonGroup('isActiveAccount', '', SAGU::listYesNo(1), $isActiveAccount, null, 'horizontal');
+        $isActiveAccount->SetShowLabel(false);
+
+        $hctIsActiveAccount = new MHContainer('hctIsActiveAccount', array($isActiveAccountLabel, $isActiveAccount));
+        $fields[]  = $hctIsActiveAccount;
+
+//        $accountType       = new MTextField('accountType', $this->getFormValue('accountType', $data->accountType), _M('Account type',$module), 10);
+        $accountType =  new MSelection('accountType', $this->getFormValue('accountType', $data->accountType), _M('Account type',$module), SAGU::listAccountTypes());
+        $fields[]       = $accountType;
+
+        $clearingHouse       = new MTextField('clearingHouse', $this->getFormValue('clearingHouse', $data->clearingHouse), _M('Clearing house',$module), 10);
+        $fields[]       = $clearingHouse;
+
+        if ( $function == 'update' )
+        {
+            $fields[] = new MTextLabel('lastModification', '[' . $data->userName . ' - ' . $data->dateTime . ']', _M('Last modification',$module));
+
+        }
+        
+        $fields[] = new Separator('');
+
+        $this->setFields($fields);
+        $this->setValidators($validators);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+        $this->setClose($MIOLO->getActionURL($module,substr($action,0,strrpos($action,':'))));
+        $this->page->onLoad('document.' . $this->name . '.personId.focus()');
+
+    }
+
+    /**
+     * Event triggered when user chooses New from the toolbar
+     **/
+    public function tbBtnNew_click($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $data = $this->getTypesData();
+        $vars = get_object_vars($data);
+        foreach ( $vars as $var => $value )
+        {
+            if ( $this->$var && $var != 'name' )
+            {
+                eval('$this->' . $var . '->value = $this->getFormValue(\'' . $var . 'S\') ? $this->getFormValue(\'' . $var . 'S\') : \'\';');
+            }
+        }
+    }
+
+    /**
+     * Event triggered when user chooses Delete from the toolbar
+     **/
+    public function tbBtnDelete_click($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $data   = $this->getTypesData();
+        $opts   = array('event'      => 'tbBtnDelete_confirm',
+                        'function'   => 'delete',
+                        'employeeId' => MIOLO::_request('employeeId'));
+
+        $gotoYes = $MIOLO->getActionURL( $module, $action, null, $opts );
+        $goto    = SAGU::getStackBackUrl();
+        $gotoNo  = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+        $msg     = MSG_CONFIRM_RECORD_DELETE;
+        $caption = _M('Question',$module);
+        $MIOLO->question($msg, $gotoYes, $gotoNo);
+    }
+
+    /**
+     * Event triggered when user chooses Yes from the Delete prompt dialog
+     **/
+    public function tbBtnDelete_confirm($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $business = $MIOLO->getBusiness($module, 'BusEmployee');
+        $ok = $business->deleteEmployee($this->employeeId->value);
+
+        if ( $ok )
+        {
+            $msg  = MSG_RECORD_DELETED;
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Information',$module);
+            $MIOLO->information($msg, $goto);
+        }
+        else
+        {
+            $msg  = _M('Error executing requested operation.',$module);
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Error',$module);
+            $MIOLO->error( $msg, $goto, $caption );
+        }
+    }
+
+    /**
+     * Event triggered when user chooses Save from the toolbar
+     **/
+    public function tbBtnSave_click($sender=NULL)
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+
+        $data     = $this->getTypesData();
+        $business = $MIOLO->getBusiness($module, 'BusEmployee');
+
+        if ( $function == 'update' )
+        {
+            $ok  = $business->updateEmployee($data);
+            $msg = MSG_RECORD_UPDATED;
+        }
+        else
+        {
+            $business2 = $MIOLO->getBusiness($module, 'BusPhysicalPersonEmployee');
+            $data2     = $business2->getPhysicalPerson($data->personId);
+            $data3     = $business2->getPhysicalPersonEmployee($data->personId);
+
+            if ( strlen((string)$data3->name) == 0 )
+            {
+                $ok2       = $business2->insertPhysicalPersonEmployee($data2);
+            }
+            $data2     = $business2->getPhysicalPersonEmployee($data2->personId);
+            if ( $data2 )
+            {
+                $ok  = $business->insertEmployee($data);
+                $msg = MSG_RECORD_INSERTED;
+            }
+        }
+
+        if ( $ok )
+        {
+            $opts = array('employeeIdS'=>$data->employeeId);
+            if ( $function == 'update' )
+            {
+                $caption = _M('Information', $module);
+                $MIOLO->information($msg, $MIOLO->getActionURL( $module, $action, null, $opts));
+            }
+            else
+            {
+                unset($opts);
+                $goto = SAGU::getStackBackUrl();
+                $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL( $module, $action, null, $opts);
+                $opts = array('function'=>'insert');
+
+                $gotoYes = $MIOLO->getActionURL($module, $action, null, $opts);
+                $caption = _M('Question',$module);
+                $MIOLO->question($msg, $gotoYes, $goto);
+            }        }
+        else
+        {
+            $msg  = _M('Error executing requested operation.',$module);
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Error',$module);
+            $MIOLO->error( $msg, $goto, $caption );
+        }
+    }
+
+    /**
+     * Method to gather all information from the form fields
+     * and put them on a database compatible object
+     **/
+    public function getTypesData()
+    {
+        $data = new BasEmployee();
+        $vars = get_object_vars($data);
+        foreach ( $vars as $var => $value )
+        {
+            if ( $this->$var && $var != 'name' )
+            {
+                eval('$data->' . $var . ' = $this->' . $var . '->value;');
+            }
+        }
+
+        return $data;
+    }
+
+}
+
+?>

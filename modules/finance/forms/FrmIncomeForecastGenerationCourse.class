@@ -1,0 +1,249 @@
+<?php
+
+/**
+ * IncomeForecastGenerationCourse form
+ *
+ * @author Armando Taffarel Neto [taffarel@solis.coop.br]
+ * @maintainer William Prigol Lopes [william@solis.coop.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * Armando Taffarel Neto [taffarel@solis.coop.br]
+ *
+ * @since
+ * Class created on 23/05/2006
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2005 SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+
+/**
+ * Form to generate Multiple Price
+ **/
+class FrmIncomeForecastGenerationCourse extends MForm
+{
+    private $home;
+    public $filters;
+    /**
+     * Class constructor
+     **/
+    function __construct($data)
+    {
+
+        $module = MIOLO::getCurrentModule();
+
+        $this->home   = $data->home;
+
+        parent::__construct(_M('Income forecast generation', $module));
+
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+    	// Period id
+	    $periodIdLabel  = new MText('periodIdLabel', _M('Period id', $module).': ');
+    	$periodIdLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $businessPeriod = $MIOLO->getBusiness('academic', 'BusPeriod');
+        $periodId       = new MComboBox('periodId', strlen((string)$this->getFormValue('periodId', $data->periodId))>0 ? $this->getFormValue('periodId', $data->periodId) : CURRENT_PERIOD_ID, '', $businessPeriod->listPeriod() );
+        $validators[]   = new MRequiredValidator('periodId');
+      	$fieldsS[]      = new MHContainer('hctPeriodId', array($periodIdLabel, $periodId)); 
+
+    	// Formation level
+    	$formationLevelIdLabel = new MText('formationLevelIdLabel', _M('Formation level id', $module).': ');
+	    $formationLevelIdLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $business              = $MIOLO->getBusiness('academic', 'BusFormationLevel');
+        $formationLevelId      = new MComboBox('formationLevelId', $this->getFormValue('formationLevelId',$data->formationLevelId), '', $business->listFormationLevel());
+
+    	// Container 1
+        $hctForm  = new MHContainer('hctForm', array($formationLevelIdLabel, $formationLevelId));
+        $hctForm->setShowLabel(true);
+        $fieldsS[]  = $hctForm;
+
+        // Course id
+    	$courseIdLabel      = new MText('courseIdLabel', _M('Course id', $module).': ');
+	    $courseIdLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $courseId           = new MLookupTextField('courseId', $this->getFormValue('courseId',$data->courseId), '', FIELD_ID_SIZE, null, null, array('courseVersion','courseName','accountSchemeId','accountSchemeDescription','costCenterId','costCenterDescription'), $module, 'CourseAccountSchemeCostCenter', null, array('courseId' => 'courseId'), true);
+        $courseId->setJsHint(_M('Select the course id', $module));
+        $courseVersion      = new MTextField('courseVersion', $this->getFormValue('courseVersion',$data->courseVersion), '', FIELD_ID_SIZE);
+        $courseName         = new MTextField('courseName', $this->getFormValue('courseName',$data->courseName), '', FIELD_DESCRIPTION_SIZE);
+        $courseName->setReadOnly(true);
+        $hctCourse          = new MHContainer('hctCourse', array($courseIdLabel, $courseId, $courseVersionLabel, $courseVersion, $courseName));
+        $fieldsS[]          = $hctCourse;
+
+	    // Button to filter
+        $field[]     = new MVContainer('vctMain', $fieldsS);
+	    $fields[]    = new MBaseGroup('bgrForm', _M('Filter information', $module), $field);
+        $fields[]    = new MButton('btnFilter', _M('Filter', $module));
+    	$fields[]    = new MSeparator('');
+
+        
+        $this->setFields($fields);
+        $this->setValidators($validators);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+        $this->setClose($MIOLO->getActionURL($module,substr($action,0,strrpos($action,':'))));
+        
+        $this->filters->formationLevelId = $this->formationLevelId->value;
+        $this->filters->periodId         = $this->periodId->value;
+        $this->filters->courseId         = $this->courseId->value;
+        $this->filters->courseVersion    = $this->courseVersion->value;
+    }
+
+    /**
+     * Event triggered when user chooses Generate from the toolbar
+     **/
+    public function btnFilter_click($sender = null)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $btn2       = new MButton('btnInvertSelection', _M('Invert selection', $module), 'invertSelection()');
+        $fields[]   = new MDiv('divBtn2', array($btn2), null, 'align="center"');
+
+        $business   = $MIOLO->getBusiness($module,'BusIncomeForecast');
+        $data       = $business->getLearningPeriods($this->filters);
+        
+        // Filter learning periods that have needs to register course account
+        if (is_array($data[0]))
+        {
+            foreach ($data as $d)
+            {
+                // If have course account, put on array to process
+                if (strlen((string)$d[9])>0)
+                {
+                    $dataToProcess[] = $d;
+                }
+                // Else, generate a link and table to easy access to courseAccount edit for these registers
+                else
+                {
+                    $opts = array( 'courseId'      => $d[5], 
+                                   'courseVersion' => $d[6], 
+                                   'unitId'        => $d[7], 
+                                   'function'      => 'insert', 
+                                   'goto'          => urlencode('javascript:closeAndReload()')
+                                 );
+                                 
+                    $lnkWindow = $MIOLO->getActionURL('accountancy', 'main:register:courseAccount', null, $opts);
+                    $lnk       = new MOpenWindow('courseAccount'.sizeof($dataToAdjust), $d[2], $lnkWindow);
+                    $d_[0]      = $lnk->generate();
+                    $d_[1]      = $d[3];
+                    $dataToAdjust[] = $d_;
+                    unset($d_);
+                }
+            }
+            //$dataToAdjust = is_array($dataToAdjust) ? array_unique($dataToAdjust) : null;
+            // A funcao array_unique nao pode ser usada com array de arrays. Nao Funciona.
+        }
+        
+        // If not found, make a message that not found, of course. =)
+        else
+        {
+            $msg = new MText('warnMsg', '<b>'._M('No enroll summary found to process', $module).'</b>', 'red');
+            $this->addField(new MDiv('warnDiv', array($msg), null, 'align="center"'));
+        }
+
+
+        if ( is_array( $dataToProcess ) )
+        {
+            $this->addField($fields);
+            $grdResults = $MIOLO->getUI()->getGrid($module,'GrdIncomeForecastGeneration',$this->filters);
+	        $grdResults->setTitle(_M('Income forecasts to generate filtering by course', $module));
+	        $grdResults->setClose(null);
+            $grdResults->setData($dataToProcess);
+            $this->addField($grdResults);
+            unset($fields);
+        }
+
+        if ( is_array( $dataToAdjust ) )
+        {
+            unset($fields);
+            $sep = new MSeparator('<hr>');
+            $sep->setWidth('99%');
+            $this->addField($sep);
+            $this->addField(new MText('spanWarning', _M('The courses listed below have enroll summaries to process but do not have account scheme registered. If you want to process that enroll summaries, please, register the course account for courses below', $module), 'red'));
+            $cols      = array(_M('Course', $module), 
+                               _M('Unit',   $module)
+                              );
+            $toProcess = new MTableRaw(_M('Courses without account scheme registered', $module), $dataToAdjust, $cols);
+            $toProcess->setAlternate(true);
+            $this->addField($toProcess);
+        }
+        unset($fields);
+        
+        if ( is_array( $dataToProcess ) )
+        {
+            $script .= "    function invertSelection()\n    {\n";
+            $x = 0;
+
+            foreach ( $data as $row )
+            {
+                $script .= '        if ( document.' . $this->name . '[\'selectgridIncomeForecastGeneration[' . $x . ']\'].checked == true )' . "\n        {\n";
+                $script .= '            document.' . $this->name . '[\'selectgridIncomeForecastGeneration[' . $x . ']\'].checked = false;' . "\n";
+                $script .= '        }' . "\n        else\n        {\n";
+                $script .= '            document.' . $this->name . '[\'selectgridIncomeForecastGeneration[' . $x . ']\'].checked = true;' . "\n";
+                $script .= '        }' . "\n";
+                $x++;
+            }
+
+            $script .= "    }\n";
+            $script .= "    invertSelection();";
+            $this->page->addJsCode($script);
+        
+            $btn1[] = new MButton('btnGenerate', _M('Generate', $module));
+            $div1   = new MDiv('div1', $btn1, null, 'align="center"');
+            $div1->setWidth('97%');
+            $sep1 = new MSeparator('<hr>');
+            $sep1->setWidth('99%');
+            $fields[] = $sep1;
+            $fields[] = $div1;
+            $fields[] = new Separator('');
+            $this->addField($fields);
+        }
+    }
+
+   /**
+    * Event triggered when user chooses Generate from the toolbar
+    */
+    public function btnGenerate_click($sender = null)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+        
+        $learningPeriodId = $this->getFormValue('selectgridIncomeForecastGeneration', $this->selectgridIncomeForecastGeneration);
+	    $session = $MIOLO->session;
+	    $session->setValue('learningPeriodId', $learningPeriodId);
+
+        $postAction = substr($action, 0, strrpos($action, ':')).':incomeForecastGeneration';
+        $this->page->mGoto($MIOLO->getActionURL($module, $postAction, null));
+    }
+}
+?>

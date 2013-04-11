@@ -1,0 +1,206 @@
+<?php
+
+/**
+ * GenerateMultipleLearningPeriod form
+ *
+ * @author Armando Taffarel Neto [taffarel@solis.coop.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * Armando Taffarel Neto [taffarel@solis.coop.br]
+ *
+ * @since
+ * Class created on 20/01/2006
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2005 SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+
+/**
+ * Form to generate Multiple Academic Calendar
+ **/
+class FrmGenerateMultipleAcademicCalendar extends MForm
+{
+
+    public $learningPeriods;
+
+    /**
+     * Class constructor
+     **/
+    function __construct()
+    {
+
+        $module = MIOLO::getCurrentModule();
+
+        parent::__construct(_M('Generate multiple academic calendar', $module));
+
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+
+        $toolBar = new MToolBar('toolBar', $MIOLO->getActionURL($module,$action));
+
+        $toolBar->disableButton('tbBtnNew');
+        $toolBar->disableButton('tbBtnDelete');
+        $toolBar->disableButton('tbBtnPrint');
+        $toolBar->disableButton('tbBtnSave');
+        $toolBar->disableButton('tbBtnSearch');
+        $fields[] = $toolBar;
+
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+        $this->setClose($MIOLO->getActionURL($module,substr($action,0,strrpos($action,':'))));
+
+        $learningPeriodId  = new MHiddenField('learningPeriodId');
+        $fields[] = $learningPeriodId;
+
+        $periodId = $this->getFormValue('periodId', $MIOLO->_request('periodId'));
+        $fields[] = new MHiddenField('periodId', $periodId);
+        $fields[] = new MTextLabel('periodIdLabel', $periodId, _M('Period', $module));
+
+
+        $occurrenceDate = new MCalendarField('occurrenceDate', $this->getFormValue('occurrenceDate', $data->occurrenceDate), _M('Date',$module), FIELD_DATE_SIZE);
+        $occurrenceDate->setJsHint(_M('Enter the occurrence date', $module));
+
+        $occurrenceDate->setValidator( new MDATEDMYValidator('occurrenceDate', '', 'required'));
+
+        $fields[] = $occurrenceDate;
+
+        $business = $MIOLO->getBusiness('basic', 'BusWeekDay');
+        $weekDayId = new MComboBox('weekDayId',
+                                   $this->GetFormValue('weekDayId',$data->weekDayId),
+                                   _M('Week day',$module),
+                                   $business->listWeekDay());
+        $fields[] = $weekDayId;
+        $validators[] = new MRequiredValidator('weekDayId', _M('Week day',$module));
+
+        $btn2     = new MButton('btnGenerate', _M('Generate', $module));
+        $fields[] = $btn2;
+
+        $fields[] = new Separator('');
+
+        $this->setValidators($validators);
+        $this->setFields($fields);
+    }
+
+    /**
+     * Event triggered when user chooses Generate from the toolbar
+     **/
+    public function btnGenerate_click($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $business  = $MIOLO->getBusiness($module,'BusGenerateMultipleAcademicCalendar');
+        $business2 = $MIOLO->getBusiness($module, 'BusAcademicCalendar');
+
+        $learningPeriods = unserialize(urldecode(stripslashes(MIOLO::_request('learningPeriods'))));
+        $periodId = $this->getFormValue('periodId');
+
+        $x = 0;
+
+        $business->beginTransaction();
+
+        foreach ( $learningPeriods as $value )
+        {
+            unset($data);
+
+            $data->learningPeriodId      = $value;/*$learningPeriodId;*/
+            $data->occurrenceDate        = $this->occurrenceDate->value;
+            $data->weekDayId             = $this->weekDayId->value;
+
+            $filters1->learningPeriodId  = $value;
+            $filters1->occurrenceDate    = $this->occurrenceDate->value;
+
+            $searchAcademicCalentar      = $business2->searchAcademicCalendar($filters1);
+
+            if ( is_array($searchAcademicCalentar) &&( sizeof($searchAcademicCalentar) > 0) )
+            {
+                $data->academicCalendarId = $searchAcademicCalentar[0][0];
+
+                $ok  = $business2->updateAcademicCalendar($data);
+            }
+            else
+            {
+                $ok  = $business2->insertAcademicCalendar($data);
+            }
+
+            if ( $ok )
+            {
+                $x++;
+            }
+        }
+
+        $business->commit();
+
+        $msg = _M('@1 records inserted', $module, $x);
+
+        if ( $x > 0 )
+        {
+            $postAction = substr($action,0,strrpos($action,':')) . ':generateMultipleAcademicCalendarCourse';
+            $goto = $MIOLO->getActionURL($module, $postAction, null, null);
+
+            $caption = _M('Information', $module);
+            $MIOLO->information($msg, $goto);
+        }
+        else
+        {
+            $opts['periodId']        = $periodId;
+            $opts['learningPeriods']        = urlencode(serialize($learningPeriods));
+
+            $msg  = _M('Error executing requested operation.', $module);
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Error', $module);
+            $MIOLO->error( $msg, $goto, $caption );
+        }
+    }
+
+    /**
+     * Method to gather all information from the form fields
+     * and put them on a database compatible object
+     **/
+    public function getTypesData()
+    {
+        $data = new acdAcademicCalendar();
+        $vars = get_object_vars($data);
+        foreach ( $vars as $var => $value )
+        {
+            if ( $this->$var )
+            {
+                $data->$var = $this->$var->value;
+            }
+        }
+
+        return $data;
+    } 
+}
+
+?>

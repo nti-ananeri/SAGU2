@@ -1,0 +1,203 @@
+<?php
+
+/**
+ *
+ * This file handles the connection and actions for acdDegree table
+ *
+ * @author Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 15/09/2005
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Form to search the acdDegree table
+ */
+class FrmDegreeSearch extends MForm
+{
+    private $home;
+    private $module;
+    private $grdResults;
+    private $filters;
+
+    /**
+     * Class constructor
+     */
+    function __construct($data)
+    {
+        $this->module = 'academic';
+        $module = $this->module;
+
+        $this->home   = $data->home;
+
+        parent::__construct(_M('Search',$module));
+
+        // hide the 'Submit' button
+        $this->setShowPostButton(false);
+
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+
+    }
+
+    /**
+     *  Default method to define fields
+     */
+    public function createFields()
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $toolBar = new MToolBar('toolBar',$MIOLO->getActionURL($module,$action));
+//        $toolBar->disableButton('tbBtnSearch');
+        $toolBar->disableButton('tbBtnSave');
+        $toolBar->disableButton('tbBtnDelete');
+//        $toolBar->disableButton('tbBtnPrint');
+
+        //favoritos
+        $enabledImage  = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-20x20.png');
+        $disabledImage = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-disabled-20x20.png');
+        $url           = $MIOLO->getActionURL($module, $this->home, null, array('function' => 'search', 'event' => 'bookmark'));
+        $toolBar->addButton('tbBtnBookmark', _M('Add to bookmarks', 'basic'), $url, null, true, $enabledImage, $disabledImage);
+
+        if ( MIOLO::_request('event') == 'bookmark' )
+        {
+            $MIOLO->getClass('basic', 'access');
+            access::insert('Degree', $this->home, 'degree-16x16.png', true);
+        }
+        //fim favoritos
+
+        $fields[] = $toolBar;
+
+        $limbo = new MHiddenField('limbo', '');
+        $fields[] = $limbo;
+
+        $fields[]  = new MHiddenField('degreeIdS', $this->getFormValue('degreeIdS', $degreId));
+
+        //$degreeIdS = new MTextField('degreeIdS', $this->degreeIdS->value, _M('Degree id',$module), 10);
+        //$degreeIdS->setJsHint(_M('Enter the degree id',$module));
+        //$fields[] = $degreeIdS;
+
+        $this->page->isPostBack() ? $dataPeriodId = $this->getFormValue('periodId', $data->periodId) : $dataPeriodId = CURRENT_PERIOD_ID;
+
+        $businessPeriod = $MIOLO->getBusiness($module,'BusPeriod');
+        $periodId = new MComboBox('periodId', $dataPeriodId, _M('Period',$module), $businessPeriod->listPeriod(), true );
+        $fields[] = $periodId;
+
+
+        /*
+         * MLookupTextField class constructor prototype:
+         *
+         * function __construct($name = '', $value     = '',       $label   = '', $size         = 10,
+         *                      $hint = '', $validator = null,     $related = '', $module       = '',
+         *                      $item = '', $event     = 'filler', $filter  = '', $autocomplete = false)
+         */
+        $learningPeriodLabelS = new MText('learningPeriodLabel', _M('Learning period', $module) . ':');
+        $learningPeriodLabelS->setWidth(FIELD_CONTAINER_SIZE);
+        
+        $learningPeriodIdS = new MLookupTextField('learningPeriodIdS', $this->learningPeriodIdS->value, _M('Learning period id',$module), FIELD_LOOKUPFIELD_SIZE, null, null, 'limbo,limbo,limbo,limbo,limbo,learningPeriodDescriptionS', $module, 'LearningPeriod', null, array('periodId' => 'periodId'), true);
+        //$fields[] = $learningPeriodIdS;
+
+        $learningPeriodDescriptionS = new MTextField('learningPeriodDescriptionS', $this->learningPeriodDescriptionS->value, _M('Learning period description',$module), FIELD_DESCRIPTION_SIZE);
+        $learningPeriodDescriptionS->setJsHint(_M('Enter the contract state description',$module));
+        //$fields[] = $learningPeriodDescriptionS;
+        
+        $hctLearningPeriodS = new MHContainer('hctLearningPeriod', array($learningPeriodLabelS, $learningPeriodIdS, $learningPeriodDescriptionS));
+        $hctLearningPeriodS->setShowLabel(false);
+        $fields[] = $hctLearningPeriodS;
+
+        $descriptionS = new MTextField('descriptionS', $this->descriptionS->value, _M('Description',$module), FIELD_DESCRIPTION_SIZE);
+        $descriptionS->setJsHint(_M('Enter the description',$module));
+        $fields[] = $descriptionS;
+
+        $finalDateS = new MCalendarField('finalDateS', $this->finalDateS->value, _M('Final date',$module), FIELD_DATE_SIZE);
+        $finalDateS->setJsHint(_M('Enter the delivery final date',$module));
+        $validators[] = new MDATEDMYValidator('finalDateS', '', 'optional');
+        $fields[] = $finalDateS;
+
+        $limitDateS = new MCalendarField('limitDateS', $this->limitDateS->value, _M('Limit date',$module), FIELD_DATE_SIZE);
+        $limitDateS->setJsHint(_M('Enter the delivery limit date',$module));
+        $validators[] = new MDATEDMYValidator('limitDateS', '', 'optional');
+        $fields[] = $limitDateS;
+
+        $degreeNumberS = new MTextField('degreeNumberS', $this->degreeNumberS->value, _M('Degree number',$module), 25);
+        $degreeNumberS->setJsHint(_M('Enter the degree number',$module));
+        $validators[] = new MIntegerValidator('degreeNumberS');
+        $fields[] = $degreeNumberS;
+
+        $conceptLabelS = new MText('conceptLabelS', _M('Evaluation type',$module) . ':');
+        $conceptLabelS->setWidth(FIELD_CONTAINER_SIZE);
+
+        $opts = array( array(_M("Concept", $module), "t"),
+                       array(_M("Note", $module), "f") );
+        $conceptS = $this->GetFormValue('conceptS',$data->conceptS);
+        $conceptS = new MRadioButtonGroup('conceptS', '', $opts, $conceptS, null, 'horizontal');
+        $conceptS->SetShowLabel(false);
+
+        $hctConcept = new MHContainer('hctConcept', array($conceptLabelS, $conceptS));
+        $fields[]  = $hctConcept;
+
+        $fields[] = new MButton('btnSearch',_M('Search',$module));
+
+        $this->setFields($fields);
+        $this->setValidators($validators);
+
+        // get filters values
+        $this->filters->degreeId         = $this->degreeIdS->value;
+        $this->filters->description      = $this->descriptionS->value;
+        $this->filters->learningPeriodId = $this->learningPeriodIdS->value;
+        $this->filters->learningPeriodDescription = $this->learningPeriodDescriptionS->value;
+        $this->filters->limitDate        = $this->limitDateS->value;
+        $this->filters->finalDate        = $this->finalDateS->value;
+        $this->filters->degreeNumber     = $this->degreeNumberS->value;
+        $this->filters->concept          = $this->conceptS->value;
+        $this->filters->periodId         = $this->periodId->value;
+
+        unset($this->degreeIdS->value);
+
+        $this->grdResults = $MIOLO->getUI()->getGrid($module,'GrdDegreeSearch',$this->filters);
+
+        $this->addField($this->grdResults);
+
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+
+    }
+
+    public function btnSearch_click($sender = NULL) {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $business = $MIOLO->getBusiness($module,'BusDegree');
+        $data = $business->searchDegree($this->filters);
+        $this->grdResults->setData($data);
+        $this->page->onLoad('document.' . $this->name . '.periodIdS.focus();');
+    }
+
+}
+
+?>

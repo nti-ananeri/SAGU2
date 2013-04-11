@@ -1,0 +1,9 @@
+INSERT INTO basprofessionalactivityagent (username, datetime, ipaddress, professionalactivityagentid, description) VALUES ('admin', '2006-10-21 14:29:40.646047-02', '127.0.0.1', 1, 'CIEE');
+INSERT INTO basprofessionalactivityagent (username, datetime, ipaddress, professionalactivityagentid, description) VALUES ('admin', '2006-10-21 14:29:40.646047-02', '127.0.0.1', 2, 'FDRH');
+INSERT INTO basprofessionalactivityagent (username, datetime, ipaddress, professionalactivityagentid, description) VALUES ('admin', '2006-10-21 14:29:40.646047-02', '127.0.0.1', 10, 'MINISTÉRIO PÚBLICO DO ESTADO DO RS');
+INSERT INTO basprofessionalactivityagent (username, datetime, ipaddress, professionalactivityagentid, description) VALUES ('admin', '2006-10-21 14:29:40.646047-02', '127.0.0.1', 11, 'TRIBUNAL DE JUSTIÇA DO ESTADO DO RS');
+INSERT INTO basprofessionalactivityagent (username, datetime, ipaddress, professionalactivityagentid, description) VALUES ('admin', '2006-10-21 14:29:40.646047-02', '127.0.0.1', 12, 'UEST - UNIDADE DE ESTÁGIOS');
+INSERT INTO basprofessionalactivityagent (username, datetime, ipaddress, professionalactivityagentid, description) VALUES ('admin', '2006-10-21 14:29:40.646047-02', '127.0.0.1', 13, 'FUNDATEC - FUNDAÇÃO UNIVERSIDADE EMPRESA DE TECNOLOGIA E CIÊNCIA');
+INSERT INTO basprofessionalactivityagent (username, datetime, ipaddress, professionalactivityagentid, description) VALUES ('admin', '2006-10-21 14:29:40.646047-02', '127.0.0.1', 14, 'METTA INTEGRADORA EMPRESA ESCOLA SOCIEDADE SIMPLES LTDA');
+INSERT INTO basprofessionalactivityagent (username, datetime, ipaddress, professionalactivityagentid, description) VALUES ('admin', '2006-10-21 14:29:40.646047-02', '127.0.0.1', 16, 'AGIRGS');
+SELECT setval('seq_professionalactivityagentid',(SELECT max(professionalactivityagentid) FROM basProfessionalActivityAgent));

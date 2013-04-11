@@ -1,0 +1,580 @@
+<?php
+
+/**
+ * Receivable invoice generation form
+ *
+ * @author Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * @maintainer: William Prigol Lopes [william@solis.coop.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ *
+ * @since
+ * Class created on 13/12/2005
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2005 SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+
+/**
+ * Form to control receivable invoice generation
+ **/
+class FrmReceivableInvoiceGenerationCompany extends MForm
+{
+    /**
+     * Class constructor
+     **/
+    function __construct()
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        
+        parent::__construct(_M('Receivable invoice generation company', $module));
+        $this->setShowPostButton(false);
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        if (($f = $this->page->request('cpaint_function')) != "")
+        {
+            $this->manager->getTheme()->clearContent();
+            $this->$f($this->page->request('cpaint_argument'));
+            $this->page->generateMethod = 'generateAJAX';
+        }
+        else
+        {
+            $this->defineFields();
+            $this->eventHandler();
+        }
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function defineFields()
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+
+        //conta bancária
+        $businessBankAccount = $MIOLO->getBusiness('finance', 'BusBankAccount');
+        $dataBankAccount     = $businessBankAccount->listBankAccount();
+
+        $bankAccountIdLabel  = new MText('bankAccountIdLabel', _M('Bank account', 'finance').':');
+        $bankAccountIdLabel->setWidth(FIELD_CONTAINER_SIZE);
+
+        $bankAccountId       = new Mselection('bankAccountId', $this->getFormValue('bankAccountId',$data->bankAccountId), '', $dataBankAccount, false);
+        $bankAccountId->setAutoSubmit(true);
+        $validators[]        = new MRequiredValidator('bankAccountId', _M('Bank account', $module));
+
+        $hctBankAccount      = new MHContainer('hctBankAccountId', array($bankAccountIdLabel, $bankAccountId));
+        $hctBankAccount->setShowLabel(true);
+        $fields[]        = $hctBankAccount;
+
+        if ( strlen((string)$this->getFormValue('bankAccountId', $data->bankAccountId))>0 )
+        {
+            //contrato
+            $businessBankAccountContract = $MIOLO->getBusiness('finance', 'BusBankAccountContract');
+            $dataBankAccountContract     = $businessBankAccountContract->listBankAccountContract($this->getFormValue('bankAccountId', $data->bankAccountId));
+
+            $bankContractIdLabel  = new MText('bankContractIdLabel', _M('Bank contract', 'finance').':');
+            $bankContractIdLabel->setWidth(FIELD_CONTAINER_SIZE);
+
+            $bankContractId       = new Mselection('bankContractId', $this->getFormValue('bankContractId', $data->bankContractId), '', $dataBankAccountContract, false);
+            $validators[]         = new MRequiredValidator('bankContractId', _M('Bank contract', $module));
+
+            $hctBankAccountContract      = new MHContainer('hctBankAccountContract', array($bankContractIdLabel, $bankContractId));
+            $hctBankAccountContract->setShowLabel(true);
+            $fields[]                = $hctBankAccountContract;
+        }
+
+        // Incentive
+        $incentiveTypeLabel   = new MText('incentiveTypeText', _M('Accord type to process', $module).':');
+        $incentiveTypeLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $incentiveTypeOptions = array( array('support', _M('Support', $module)),
+                                       array('loan',    _M('Loan', $module))
+                                     );
+
+        $incentiveType = new MSelection('incentiveType', '', '', $incentiveTypeOptions);
+        $incentiveType->addAttribute('onChange', 'callProcessType()');
+        $fields[]      = new MHContainer('hctIncentiveType', array($incentiveTypeLabel, $incentiveType));
+        $incentiveType = $this->getFormValue('incentiveType', $data->incentiveType);
+
+        $fields[] = new MSeparator('');
+        $fields[] = new MDiv('divContent', null);
+        $this->setFields($fields);
+
+        $this->page->addScript('x/x_core.js');
+        $this->page->addScript('cpaint/cpaint.inc.js');
+        $this->page->addScript('m_validator.js');
+        $MIOLO->getRequiredJS4Ajax();
+        $url = str_replace('&amp;', '&', $this->manager->getCurrentURL());
+
+        // BEGIN AJAX calls
+        $code = '
+            function callProcessType()
+            {
+                xGetElementById(\'divContent\').innerHTML = \'Loading...<img src="/images/loading.gif"/>\';
+                var args = xGetElementById(\'incentiveType\').value;
+                cpaint_call("'. $url .'", "POST", "ajax_invoiceProcessType", args, returnInvoiceFields, "TEXT");
+            }
+
+            function returnInvoiceFields(result)
+            {
+                xGetElementById(\'divContent\').innerHTML = result;
+                MIOLO_parseAjaxJavascript(result);
+            }
+        ';
+        $this->page->AddJsCode($code);
+        // END AJAX calls
+        
+        if (is_array($validators))
+        {
+            $this->setValidators($validators);
+        }
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setClose($MIOLO->getActionURL($module, substr($action, 0, strrpos($action, ':'))));
+        
+    }
+
+   /**
+    * Event triggered when user submit the data
+    */
+    public function submit_button_click($sender=NULL)
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+
+        $data = $this->getFormData();
+        $business = $MIOLO->getBusiness($module, 'BusReceivableInvoiceCompany');
+        $url      = $MIOLO->getActionURL($module, substr($action, 0, strrpos($action, ':')));
+        $status   = $business->generateSupportInvoices($data);
+        if (!$status)
+        {
+            $MIOLO->error(_M('Couldn\'t generate invoices.', $module), $url);
+        }
+        else
+        {
+            // Information relative about incentives
+            if ($business->statisticsData->support->process == true)
+            {
+                
+                $data = clone($business->statisticsData);
+                // Base group containing basic information about process type
+                $typeLabel          = new MText('typeLabel', _M('Process type', $module).': ');
+                $typeLabel->setWidth(FIELD_CONTAINER_SIZE);
+                $type               = new MText('type', _M('Support', $module));
+                $hctType            = new MHContainer('hctType', array($typeLabel, $type));
+                $fieldsStatistics[] = $hctType;
+                
+                // Main total
+                $totalLabel         = new MText('totalLabel', _M('Total', $module).':');
+                $totalLabel->setWidth(FIELD_CONTAINER_SIZE);
+
+                $total              = new MText('total', strlen((string)$data->support->total) ? $data->support->total : '0');
+                $hctTotal           = new MHContainer('hctTotal', array($totalLabel, $total));
+                $fieldsStatistics[] = $hctTotal;
+               
+                // Agglutinated total
+                $agglutinatedTotalLabel = new MText('agglutinatedTotalLabel', _M('Agglutinated total', $module).':');
+                $agglutinatedTotalLabel->setWidth(FIELD_CONTAINER_SIZE);
+                $countAgglutinated      = count($data->receivableInvoice->agglutinate->data);
+                $totalEntries           = $data->receivableInvoice->agglutinate->totalEntries;
+                $agglutinatedTotal      = new MText('agglutinatedTotal', $countAgglutinated ? ($countAgglutinated.' '._M('Invoices generated in a total of @1 entries', $module, $totalEntries)) : '0');
+                $hctAgglutinatedTotal   = new MHContainer('hctAgglutinatedTotal', array($agglutinatedTotalLabel, $agglutinatedTotal));
+                $fieldsStatistics[]     = $hctAgglutinatedTotal;
+
+                // noAgglutinated total
+                $noAgglutinatedTotalLabel = new MText('noAgglutinatedTotalLabel', _M('No agglutinated total', $module).':');
+                $noAgglutinatedTotalLabel->setWidth(FIELD_CONTAINER_SIZE);
+                $countNoAgglutinated      = count($data->receivableInvoice->noAgglutinate->data);
+                $noAgglutinatedTotal      = new MText('noAgglutinatedTotal', $countNoAgglutinated ? $countNoAgglutinated : '0');
+                $hctNoAgglutinatedTotal   = new MHContainer('hctNoAgglutinatedTotal', array($noAgglutinatedTotalLabel, $noAgglutinatedTotal));
+                $fieldsStatistics[]       = $hctNoAgglutinatedTotal;
+                
+                // noProcessed total
+                $noProcessedTotalLabel = new MText('noProcessedTotalLabel', _M('No processed total', $module).':');
+                $noProcessedTotalLabel->setWidth(FIELD_CONTAINER_SIZE);
+                $noProcessed           = count($data->receivableInvoice->noProcessed->data);
+                $noProcessedTotal      = new MText('noProcessedTotal', $noProcessed ? $noProcessed : '0');
+                $hctNoProcessedTotal   = new MHContainer('hctNoProcessedTotal', array($noProcessedTotalLabel, $noProcessedTotal));
+                $fieldsStatistics[]    = $hctNoProcessedTotal;
+                //
+                // End base group with info about process
+                //
+                
+                if ($data->support->total>0)
+                {
+                    if (is_array($data->receivableInvoice->agglutinate->data))
+                    {
+                        // We need make that because the tableRaw accepts only sequencial arrays
+                        // And put a link to consult the generated invoice
+                        foreach ($data->receivableInvoice->agglutinate->data as $info)
+                        {
+                            $_info[]   = $info[0];
+                            $_info[]   = $info[1];
+                            $url = $MIOLO->getActionURL($module, 'main:diverseConsultation', null, array('event'=>'btnSearch_click', 'invoiceId'=>$info[2]));
+                            $info[2]   = new MOpenWindow('invoice'.$info[2], $info[2], $url, $info[2]);
+                            $_info[]   = $info[2]->generate();
+                            $rawData[] = $info;
+                            unset($_info);
+                        }
+                        unset($cols);
+                        $cols[]        = new MDiv('col11', _M('Supporter',          $module), null, 'align="center"');
+                        $cols[]        = new MDiv('col12', _M('Number of supports', $module), null, 'align="center"');
+                        $cols[]        = new MDiv('col13', _M('Support invoice',    $module), null, 'align="center"');
+                        $titleTableRaw = _M('Agglutinated supports processed', $module);
+                        $fields[]      = new MSeparator('');
+                        $tableRaw      = new MTableRaw($titleTableRaw, $rawData, $cols);
+                        $tableRaw->setAlternate(true);
+                        $tableRaw->setAttributes('width="100%"');
+                        $fields[]      = $tableRaw;
+                        $fld           = new MSeparator('<hr>');
+                        $fld->setWidth('99%');
+                        $fields[]      = $fld;
+                    }
+                    unset($rawData);
+
+                    if (is_array($data->receivableInvoice->noAgglutinate->data))
+                    {
+                        // We need make that because the tableRaw accept only sequencial arrays
+                        // and, of course, add links for access info about invoices
+                        foreach ($data->receivableInvoice->noAgglutinate->data as $info)
+                        {
+                            $url     = $MIOLO->getActionURL($module, 'main:register:support', null, array('supportId'=>$info[0]));
+                            $info[0] = new MOpenWindow('support'.$info[0], $info[0], $url, $info[0]);
+                            $_info[] = $info[0]->generate();
+                            $_info[] = $info[1];
+                            $_info[] = $info[2];
+
+                            $url     = $MIOLO->getActionURL($module, 'main:diverseConsultation', null, array('event'=>'btnSearch_click', 'invoiceId'=>$info[3]));
+                            $info[3] = new MOpenWindow('pupilInvoice'.$info[3], $info[3], $url, $info[3]);
+                            $_info[] = $info[3]->generate();
+
+                            $url     = $MIOLO->getActionURL($module, 'main:diverseConsultation', null, array('event'=>'btnSearch_click', 'invoiceId'=>$info[4]));
+                            $info[4] = new MOpenWindow('incentiveInvoice'.$info[4], $info[4], $url, $info[4]);
+                            $_info[] = $info[4]->generate();
+
+                            $rawData[] = $_info;
+                            unset($_info);
+                        }
+                        unset($cols);
+                        // Generate table about no agglutinate processes
+                        $cols[]        = new MDiv('col21', _M('Support id',      $module), null, 'align="center"');
+                        $cols[]        = new MDiv('col22', _M('Supporter',       $module), null, 'align="center"');
+                        $cols[]        = new MDiv('col23', _M('Pupil',           $module), null, 'align="center"');
+                        $cols[]        = new MDiv('col24', _M('Pupil invoice',   $module), null, 'align="center"');
+                        $cols[]        = new MDiv('col25', _M('Support invoice', $module), null, 'align="center"');
+                        $titleTableRaw = _M('No agglutinated supports processed', $module, null, 'align="center"');
+                        $fields[]      = new MSeparator('');
+                        $tableRaw      = new MTableRaw($titleTableRaw, $rawData, $cols);
+                        $tableRaw->setAlternate(true);
+                        $tableRaw->setAttribute('width', '100%');
+                        $fields[]      = $tableRaw;
+                        $fld = new MSeparator('<hr>');
+                        $fld->setWidth('99%');
+                        $fields[]      = $fld;
+                    }
+                    if ((is_array($data->receivableInvoice->noProcessed->data)) && (SHOW_NO_PROCESSED_INVOICES_FOR_COMPANY == 'YES'))
+                    {
+                        unset($cols);
+                        $rawData       = $data->receivableInvoice->noProcessed->data;
+                        $cols[]        = new MDiv('col31', _M('Contract id',     $module), null, 'align="center"');
+                        $cols[]        = new MDiv('col32', _M('Supporter',       $module), null, 'align="center"');
+                        $cols[]        = new MDiv('col33', _M('Pupil',           $module), null, 'align="center"');
+                        $cols[]        = new MDiv('col34', _M('Incentive type',  $module), null, 'align="center"');
+                        $titleTableRaw = _M('Supports found but no processed', $module);
+                        $tableRaw      = new MTableRaw($titleTableRaw, $rawData, $cols);
+                        $tableRaw->setAlternate(true);
+                        $tableRaw->setAttribute('width', '100%');
+                        $fields[]      = $tableRaw;
+                        $fld           = new MSeparator('<hr>');
+                        $fld->setWidth('99%');
+                        $fields[]      = $fld;
+                    }
+                }
+                else
+                {
+                    $flds     = new MSeparator('');
+                    $fields[] = $flds;
+                    $msg = new MSpan('msgInfo', _M('No data found to process', $module));
+                    $msg->setColor('red');
+                    $fields[] = new MDiv('messageInfo', $msg, null, 'align="center"');
+                    $flds     = new MSeparator('<hr>');
+                    $flds->setWidth('99%');
+                    $fields[] = $flds;                
+                }
+            }
+            // Information relative about incentives
+            elseif ($business->statisticsData->loan->process == true)
+            {   
+                $data = clone($business->statisticsData);
+                
+                //
+                // Base group containing basic information about process type
+                //
+                $typeLabel          = new MText('typeLabel', _M('Process type', $module).': ');
+                $typeLabel->setWidth(FIELD_CONTAINER_SIZE);
+                $type               = new MText('type', _M('Loan', $module));
+                $hctType            = new MHContainer('hctType', array($typeLabel, $type));
+                $fieldsStatistics[] = $hctType;
+                
+                // Main total
+                $totalLabel         = new MText('totalLabel', _M('Total', $module).':');
+                $totalLabel->setWidth(FIELD_CONTAINER_SIZE);
+                $total              = new MText('total', strlen((string)$data->loan->total)>0 ? $data->loan->total : '0');
+                $hctTotal           = new MHContainer('hctTotal', array($totalLabel, $total));
+                $fieldsStatistics[] = $hctTotal;
+               
+                // Agglutinated total
+                $agglutinatedTotalLabel = new MText('agglutinatedTotalLabel', _M('Agglutinated total', $module));
+                $agglutinatedTotalLabel->setWidth(FIELD_CONTAINER_SIZE);
+                $countAgglutinated      = count($data->receivableInvoice->agglutinate->data);
+                $totalEntries           = $data->receivableInvoice->agglutinate->totalEntries;
+                $agglutinatedTotal      = new MText('agglutinatedTotal', $countAgglutinated ? ($countAgglutinated.' '._M('Invoices generated', $module)) : '0');
+                $hctAgglutinatedTotal   = new MHContainer('hctAgglutinatedTotal', array($agglutinatedTotalLabel, $agglutinatedTotal));
+                $fieldsStatistics[]     = $hctAgglutinatedTotal;
+
+                // noAgglutinated total
+                $noAgglutinatedTotalLabel = new MText('noAgglutinatedTotalLabel', _M('No agglutinated total', $module).':');
+                $noAgglutinatedTotalLabel->setWidth(FIELD_CONTAINER_SIZE);
+                $countNoAgglutinated      = count($data->receivableInvoice->noAgglutinate->data);
+                $noAgglutinatedTotal      = new MText('noAgglutinatedTotal', $countNoAgglutinated ? $countNoAgglutinated : '0');
+                $hctNoAgglutinatedTotal   = new MHContainer('hctNoAgglutinatedTotal', array($noAgglutinatedTotalLabel, $noAgglutinatedTotal));
+                $fieldsStatistics[]       = $hctNoAgglutinatedTotal;
+                
+                // noProcessed total
+                $noProcessedTotalLabel = new MText('noProcessedTotalLabel', _M('No processed total', $module).':');
+                $noProcessedTotalLabel->setWidth(FIELD_CONTAINER_SIZE);
+                $noProcessed           = count($data->receivableInvoice->noProcessed->data);
+                $noProcessedTotal      = new MText('noProcessedTotal', $noProcessed ? $noProcessed : '0');
+                $hctNoProcessedTotal   = new MHContainer('hctNoProcessedTotal', array($noProcessedTotalLabel, $noProcessedTotal));
+                $fieldsStatistics[]    = $hctNoProcessedTotal;
+                //
+                // End base group with info about process
+                //
+
+                if ($data->loan->total>0)
+                {
+                    if (is_array($data->receivableInvoice->agglutinate->data))
+                    {
+                        // We need make that because the tableRaw accepts
+                        // only sequencial arrays
+                        foreach ($data->receivableInvoice->agglutinate->data as $info)
+                        {
+                            $_info[] = $info[0];
+                            $_info[] = $info[1];
+                            $url     = $MIOLO->getActionURL($module, 'main:diverseConsultation', null, array('event'=>'btnSearch_click', 'invoiceId'=>$info[2]));
+                            $info[2]   = new MOpenWindow('invoice'.$info[2], $info[2], $url, $info[2]);
+                            $_info[]   = $info[2];
+                            $rawData[] = $_info;
+                            unset($_info);
+                        }
+
+                        $cols[] = new MDiv('col11', _M('Incentive id', $module),    null, 'align="center"');
+                        $cols[] = new MDiv('col12', _M('Pupil name', $module),      null, 'align="center"');
+                        $cols[] = new MDiv('col13', _M('Support invoice', $module), null, 'align="center"');
+                        
+                        $titleTableRaw = _M('Agglutinated loans processed: ', $module);
+                        $tableRaw      = new MTableRaw($titleTableRaw, $rawData, $cols);
+                        unset ($cols);
+                        $tableRaw->setAlternate(true);
+                        $tableRaw->setAttributes('width="100%"'); 
+                        $fields[] = $tableRaw;
+                        $flds     = new MSeparator('<hr>');                        
+                        $flds->setWidth('99%');
+                        $fields[] = $flds;
+                    }
+                    unset($rawData);
+
+                    if (is_array($data->receivableInvoice->noAgglutinate->data))
+                    {
+                        // We need make that because the tableRaw accepts
+                        // only sequencial arrays
+                        foreach ($data->receivableInvoice->noAgglutinate->data as $info)
+                        {
+                            $_info[]   = $info[0];
+                            $_info[]   = $info[1];
+                            $url       = $MIOLO->getActionURL($module, 'main:diverseConsultation', null, array('event'=>'btnSearch_click', 'invoiceId'=>$info[2]));
+                            $info[2]   = new MOpenWindow('invoice'.$info[2], $info[2], $url, $info[2]);
+                            $_info[]   = $info[2]->generate();
+                            $rawData[] = $_info;
+                            unset($_info);
+                        }
+
+                        $cols[] = new MDiv('col21', _M('Pupil', $module),           null, 'align="center"');
+                        $cols[] = new MDiv('col22', _M('Supporter', $module),       null, 'align="center"');
+                        $cols[] = new MDiv('col23', _M('Support invoice', $module), null, 'align="center"');
+                        $titleTableRaw = _M('No agglutinated loans processed', $module);
+                        $tableRaw = new MTableRaw($titleTableRaw, $rawData, $cols);
+                        unset ($cols);
+                        $tableRaw->setAlternate(true);
+                        $tableRaw->setAttributes('width="100%"');
+                        $fields[] = $tableRaw;
+                        $flds     = new MSeparator('<hr>');
+                        $flds->setWidth('99%');
+                        $fields[] = $flds;
+                    }
+                    if ((is_array($data->receivableInvoice->noProcessed->data)) && (SHOW_NO_PROCESSED_INVOICES_FOR_COMPANY == 'YES'))
+                    {
+                        $cols[] = new MDiv('col31', _M('Incentive id', $module),    null, 'align="center"');
+                        $cols[] = new MDiv('col32', _M('Pupil name', $module),      null, 'align="center"');
+                        $cols[] = new MDiv('col33', _M('Support invoice', $module), null, 'align="center"');
+                        
+                        $titleTableRaw = _M('Loans not processed: ', $module);
+                        $tableRaw      = new MTableRaw($titleTableRaw, $rawData, $cols);
+                        $tableRaw->setAlternate(true);
+                        $tableRaw->setAttributes('width="100%"'); 
+                        $fields[]      = $tableRaw;
+                        $flds          = new MSeparator('<hr>');                        
+                        $flds->setWidth('99%');
+                        $fields[]      = $flds;
+                    }
+                }
+                else
+                {
+                    $flds     = new MSeparator('');
+                    $fields[] = $flds;
+                    $msg = new MSpan('msgInfo', _M('No data found to process', $module));
+                    $msg->setColor('red');
+                    $fields[] = new MDiv('messageInfo', $msg, null, 'align="center"');
+                    $flds     = new MSeparator('<hr>');
+                    $flds->setWidth('99%');
+                    $fields[] = $flds;
+                }
+            }
+            else
+            {
+                $flds     = new MSeparator('');
+                $fields[] = $flds;
+                $fields[] = new MDiv('messageInfo', _M('No data found to process', $module), null, 'align="center"');
+                $flds     = new MSeparator('<hr>');
+                $flds->setWidth('99%');
+                $fields[] = $flds;
+            }
+            $fieldsStatistics = array(new MVContainer('statistics', $fieldsStatistics));
+            
+            $bgInfo[]   = new MBaseGroup('bgInfo', _M('Information about process', $module), $fieldsStatistics);
+            $fields     = is_array($fields) ? array_merge($bgInfo, $fields) : $bgInfo;
+            $url        = $MIOLO->getActionURL($module, $action);
+            $flds       = new MButton('okButton', _M('Ok', $module), $url);
+            $fields[]   = new MDiv('okDiv', $flds, null, 'align="center"');
+            $fields[]   = new MSeparator('');
+            
+            $this->setFields($fields);
+            $this->setShowPostButton(false);
+        }
+    }
+
+   /** 
+    * Event triggered when process type for ajax is called
+    */ 
+    public function ajax_invoiceProcessType($arg)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $incentiveType = $arg[0];
+        
+        if (strlen((string)$incentiveType)>0 )
+        {
+            // Year
+            $selYearLabel = new MText('selYearLabel', _M('Year', $module).':');
+            $selYearLabel->setWidth(FIELD_CONTAINER_SIZE);
+            $selYear      = new MSelection('selYear', $this->getFormValue('selYear', date('Y')), '', SAGU::listYears(date('Y')-5, date('Y')+6));
+            $selYear->setJsHint(_M('Choose the year for the invoices you want to generate.', $module));
+            $fields[]     = new MHContainer('hctSelYear', array($selYearLabel, $selYear));
+            $validators[] = new MRequiredValidator('selYear', _M('Year', $module));
+
+            // Month
+            $selMonthLabel = new MText('selMonthLabel', _M('Month', $module).':');
+            $selMonthLabel->setWidth(FIELD_CONTAINER_SIZE);
+            $selMonth      = new MSelection('selMonth', $this->getFormValue('selMonth', date('m')), '', SAGU::listMonths());
+            $selMonth->setJsHint(_M('Choose the month for the invoices you want to generate.', $module));
+            $fields[]      = new MHContainer('hctSelMonth', array($selMonthLabel, $selMonth));
+            $validators[]  = new MRequiredValidator('selMonth', _M('Month', $module));
+
+            // Day
+            $txtMaturityDayLabel = new MText('maturityDayLabel', _M('Maturity day', $module).':');
+            $txtMaturityDayLabel->setWidth(FIELD_CONTAINER_SIZE);
+            $txtMaturityDay      = new MTextField('maturityDay', $this->getFormValue('maturityDay', $data->maturityDay), '', 2);
+            $txtMaturityDay->addAttribute('maxlength', '2');
+            $txtMaturityDay->setJsHint(_M('Enter the maturity day to register the support invoices', $module));
+            $fields[]            = new MHContainer('hctMaturityDay', array($txtMaturityDayLabel, $txtMaturityDay));
+            $validators[]        = new MRequiredValidator('maturityDay', _M('Maturity day', $module));
+
+            $vctFields[]  = new MVContainer('vctMain', $fields);
+            $mFields[]    = new MBaseGroup('incentiveInfo', _M('Main information', $module), $vctFields);
+            unset($fields);
+            unset($vctFields);
+            if ($incentiveType == 'loan')
+            {
+                // Year
+                $selYearLabel = new MText('loanYearLabel', _M('Year', $module).':');
+                $selYearLabel->setWidth(FIELD_CONTAINER_SIZE);
+                $selYear      = new MSelection('loanYear', $this->getFormValue('selYear', date('Y')), '', SAGU::listYears(date('Y'), date('Y')+25));
+                $selYear->setJsHint(_M('Choose the year for the invoices you want to generate.', $module));
+                $fields[]     = new MHContainer('hctLoanYear', array($selYearLabel, $selYear));
+                $validators[] = new MRequiredValidator('loanYear', _M('Loan year', $module));
+
+                // Month
+                $selMonthLabel = new MText('loanMonthLabel', _M('Month', $module).':');
+                $selMonthLabel->setWidth(FIELD_CONTAINER_SIZE);
+                $selMonth      = new MSelection('loanMonth', $this->getFormValue('selMonth', date('m')), '', SAGU::listMonths());
+                $selMonth->setJsHint(_M('Choose the month for the invoices you want to generate.', $module));
+                $fields[]      = new MHContainer('hctLoanMonth', array($selMonthLabel, $selMonth));
+                $validators[]  = new MRequiredValidator('loanMonth', _M('Loan month', $module));
+                $vctFields[]   = new MVContainer('vctLoan', $fields);
+                $mFields[]     = new MBaseGroup('loanBg', _M('Loan information (data to generate long prize invoices)', $module), $vctFields);
+            }
+            $spanGenerate = new MSpan('spanSpacing', '<hr>');
+            $btnGenerate  = new MButton('submit_button', _M('Generate', $module), 'SUBMIT');
+            $sepDiv       = new MDiv('divGenerate', array($spanGenerate, $btnGenerate));
+            $sepDiv->setWidth('99%');
+            $mFields[]    = $sepDiv;
+        }
+        else
+        {
+            $mFields[] = new MText('MWarn', _M('Please, select a incentive type to continue', $module));
+        }
+
+        $field = new MVContainer('vContainer', $mFields);
+        $this->setValidators($validators);
+        $this->manager->getTheme()->setContent($field);
+    }
+    
+    /**
+     * Method to gather all information from the form fields
+     **/
+    public function getFormData()
+    {
+        $ret->year           = $this->getFormValue('selYear');
+        $ret->month          = $this->getFormValue('selMonth');
+        $ret->maturityDay    = $this->getFormValue('maturityDay');
+        $ret->incentiveType  = $this->getFormValue('incentiveType');
+        $ret->loanMonth      = $this->getFormValue('loanMonth');
+        $ret->loanYear       = $this->getFormValue('loanYear');
+        $ret->bankAccountId  = $this->getFormValue('bankAccountId');
+        $ret->bankContractId = $this->getFormValue('bankContractId');
+        return $ret;
+    }
+}
+?>

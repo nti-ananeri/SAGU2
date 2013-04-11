@@ -1,0 +1,690 @@
+<?php
+
+/**
+ *
+ *
+ * @author Leovan Tavares da Silva [leovan@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 20/01/2006
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+class FrmGroupEnrolledPupils extends MForm
+{
+    private $module;
+    private $urlOpts;
+
+    /**
+     * Class constructor
+     */
+    function __construct()
+    {
+        $module = MIOLO::getCurrentModule();
+
+        parent::__construct(_M('Grade typing',$module));
+
+        // hide the 'Submit' button
+        $this->setShowPostButton(false);
+
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+
+    }
+
+    /**
+     *  Default method to define fields
+     */
+    public function createFields()
+    {
+        $MIOLO           = MIOLO::getInstance();
+        $module          = MIOLO::getCurrentModule();
+        $action          = MIOLO::getCurrentAction();
+
+        $groupId         = MIOLO::_request('groupId');
+        $this->urlOpts   = unserialize(urldecode(stripslashes(MIOLO::_request('opts1'))));
+
+        $business        = $MIOLO->getBusiness($module, 'BusGradeTyping');
+        $groupData       = $business->getGroupData($groupId);
+
+        $data            = $business->listGroupEnrolledPupils($groupId);
+
+        $businessEvaluationEnroll = $MIOLO->getBusiness($module, 'BusEvaluationEnroll');
+
+        $toolbar         = new MToolbar('toolbar');
+        $toolbar->disableButton('tbBtnNew');
+        //$toolbar->disableButton('tbBtnSave');
+        $toolbar->disableButton('tbBtnDelete');
+        $toolbar->disableButton('tbBtnSearch');
+        $toolbar->disableButton('tbBtnPrint');
+
+        $fields[] = $toolbar;
+
+        $cols[] = "<div style=\"text-align: center;\">" . _M('Code', $module)   . "</div>";
+        $cols[] = "<div style=\"text-align: center;\">" . _M('Name', $module)   . "</div>";
+        $cols[] = "<div style=\"text-align: center;\">" . _M('Course', $module) . "</div>";
+
+        $learningPeriodDegrees = $business->getLearningPeriodDegrees($groupData->learningPeriodId);
+
+        if ( count($learningPeriodDegrees) > 0)
+        {
+            // coloca os labels de degree e (quando registreEvaluation == t) evaluation
+            // na tabela
+
+            foreach ($learningPeriodDegrees as $degree)
+            {
+                list (  $degreeId,
+                        $learningPeriodId,
+                        $description,
+                        $finalDate,
+                        $limitDate,
+                        $degreeNumber,
+                        $concept,
+                        $weight,
+                        $beginDateLessons ) = $degree;
+
+                if ( $this->urlOpts["registerEvaluation"] == 't' )
+                {
+                    $evaluationsDegree = $business->getDegreeEvaluations($degreeId, $groupData->scheduleProfessorId);
+
+                    if ( count($evaluationsDegree) > 0 )
+                    {
+                        foreach($evaluationsDegree as $evaluation)
+                        {
+                            list( $evaluationId,
+                                  $scheduleProfessorId,
+                                  $degreeId,
+                                  $descriptionEvaluation,
+                                  $dateForecast,
+                                  $weight) = $evaluation;
+
+                            $cols[] = "<div style=\"text-align: center; font-weight: normal; font-style: italic\">" . $descriptionEvaluation . "</div>";
+                        }
+                    }
+                }
+
+                $cols[] = "<div style=\"text-align: center; font-weight: bold; font-style: italic\">" . $description . "</div>";
+            }
+        }
+
+        $cols[] = "<div style=\"text-align: center;\">" . _M('Grade', $module)       . "</div>";
+        $cols[] = "<div style=\"text-align: center;\">" . _M('Final exam grade', $module)  . "</div>";
+        $cols[] = "<div style=\"text-align: center;\">" . _M('Final grade', $module) . "</div>";
+        $cols[] = "<div style=\"text-align: center;\">" . _M('Frequency', $module)  . ' (' . _M('H/L', $module) . ")</div>";
+        $cols[] = "<div style=\"text-align: center;\">" . _M('Desisting', $module)  . "</div>";
+
+        // se ha alunos matriculados na disciplina
+        if (count($data) > 0)
+        {
+            // percorre o resultado da consulta montando a tabela de notas
+            foreach ($data as $row)
+            {
+                list ( $enrollId,
+                       $personId,
+                       $personName,
+                       $courseId ) = $row;
+
+                // $tableRow contem os componentes para cada linha da tabela
+                $tableRow[] = $personId;
+                $tableRow[] = $personName;
+                $tableRow[] = $courseId;
+
+                $enrollGradesData = $business->getEnrollGradesData($enrollId);
+
+                // se houver degress para este periodo
+                if ( count($learningPeriodDegrees) > 0 )
+                {
+
+                    // gerar os campos correspondentes
+                    $hasConceptDegrees = false;
+                    foreach ($learningPeriodDegrees as $degree)
+                    {
+                        list ( $degreeId,
+                               $learningPeriodId,
+                               $description,
+                               $finalDate,
+                               $limitDate,
+                               $degreeNumber,
+                               $concept ) = $degree;
+
+                        // se serao registradas as evaluations para este degree
+                        if ( $this->urlOpts['registerEvaluation'] == DB_TRUE )
+                        {
+                            $evaluationsDegree = $business->getDegreeEvaluations($degreeId, $groupData->scheduleProfessorId);
+
+                            // se houverem evaluations para este degree
+                            if ( count($evaluationsDegree) > 0 )
+                            {
+                                foreach($evaluationsDegree as $evaluation)
+                                {
+                                    list( $evaluationId,
+                                          $scheduleProfessorId,
+                                          $degreeId,
+                                          $descriptionEvaluation,
+                                          $dateForecast,
+                                          $weight ) = $evaluation;
+
+                                    // obtem a nota em cada evaluation para preencher o campo
+                                    $evaluationNote = $businessEvaluationEnroll->getEvaluationEnroll($evaluationId, $enrollId)->note;
+
+                                    $evaluationNote = new MTextField('evaluationNote[' . $evaluationId . '][' . $enrollId . ']', $evaluationNote == 0 ? '' : number_format($evaluationNote,2), '', 6);
+                                    $hint = $descriptionEvaluation . ' | ' . 
+                                            _M('Foreseen date', $module) . ': ' . (strlen((string)$dateForecast) > 0 ? $dateForecast : _M('none', $module)) . ' | ' . 
+                                            _M('Weight', $module) . ': ' . (strlen((string)$weight) > 0 ? $weight : _M('none', $module));
+                                    $evaluationNote->setJsHint($hint);
+
+                                    // para gerar os JS dos evaluations
+                                    $evaluationNoteFields[] = $evaluationNote;
+                                    $evaluations .= $evaluationId . ', ';
+                                    $weights .= (strlen((string)$weight) > 0 ? $weight : 'null') . ', ';
+
+                                    $tableRow[] = $evaluationNote;
+                                }
+                            }
+                        }
+
+                        // Se o degree nao for por conceito
+                        if ($concept == DB_FALSE )
+                        {
+                            $degreeNote = $business->getEnrollDegreeIdNote($degreeId,  $enrollId);
+                        }
+                        else
+                        {
+                            $hasConceptDegrees = true;
+                        }
+                        $degreeField = new MTextField('degreeField[' . $degreeId . '][' . $enrollId . ']', $degreeNote == 0 ? '' : number_format($degreeNote,2), '', 6);
+                        // para gerar os JS dos degrees
+                        $degreeFields[] = $degreeField;
+                        $degrees .= $degreeId . ', ';
+                         // geracao dos JS dos evaluations
+                        if ( $concept == DB_FALSE )
+                        {
+                            $jsEvaluations = 'new Array(' . substr($evaluations, 0, strlen((string)$evaluations) - 2) . ')';
+                            $jsWeights = 'new Array(' . substr($weights, 0, strlen((string)$weights) - 2) . ')';
+                            for ( $i=0; $i<count($evaluationNoteFields); $i++ )
+                            {
+                                $evaluationNoteFields[$i]->addAttribute('onblur', "evaluationBlur($enrollId, $degreeId, $jsEvaluations, $jsWeights)");
+                            }
+                        }
+                        unset($evaluationNoteFields);
+                        unset($evaluations);
+                        // fim geracao dos JS dos evaluations
+
+                        $hint = $description . ' | ' . 
+                                _M('Limit date', $module) . ': ' . (strlen((string)$limitDate) > 0 ? $limitDate : _M('none', $module)) . ' | ' . 
+                                _M('Type',$module) . ': ' . ($concept == DB_TRUE ? _M('Concept', $module) : _M('Grade', $module));
+                        $degreeField->setJsHint($hint);
+
+                        $tableRow[] = $degreeField;
+                    }
+                    // geracao dos JS dos degrees
+                    if ( ! $hasConceptDegrees ) // se houver degrees por conceito, nao ha sentido em calcular media
+                    {
+                        $jsDegrees = 'new Array(' . substr($degrees, 0, strlen((string)$degrees) - 2) . ')';
+                        for ( $i=0; $i<count($degreeFields); $i++ )
+                        {
+                            $degreeFields[$i]->addAttribute('onblur', "degreeBlur($enrollId, $jsDegrees)");
+                        }
+                    }
+                    unset($degreeFields);
+                    unset($degrees);
+                    // fim geracao dos JS dos degrees
+                }
+
+                $noteField = new MTextField('noteField[' . $enrollId . ']', ($enrollGradesData[0][0] > 0 ? number_format($enrollGradesData[0][0],2) : ''), '', 6);
+
+                if ( ACD_ALLOW_DEGREE_ADJUST == DB_FALSE && count($degreeFields) > 0 )
+                {
+                    $noteField->setReadOnly(true);
+                }
+                elseif ( ! $hasConceptDegrees ) // se houver degrees por conceito, nao ha sentido em fazer calculos
+                {
+                    $noteField->addAttribute('onblur', "noteOrExamNoteBlur($enrollId, " . $groupData->average . ', ' . $groupData->disapprovationWithoutExam . ')');
+                }
+
+                $tableRow[] = $noteField;
+
+                $examNoteField  = new MTextField('examNoteField[' . $enrollId . ']' , ($enrollGradesData[0][1] >= 0 ? number_format($enrollGradesData[0][1],2) : ''), '', 6);
+                $examNoteField->addAttribute('onblur', "noteOrExamNoteBlur($enrollId, " . $groupData->average . ', ' . $groupData->disapprovationWithoutExam . ')');
+                $tableRow[] = $examNoteField;
+
+                if ( $enrollGradesData[0][0] > 0 )
+                {
+                    if ( $enrollGradesData[0][0] >= $groupData->average )
+                    {
+                        $examNoteField->setReadOnly(true);
+                    }
+                }
+
+                $finalNoteField = new MTextField('finalNoteField[' . $enrollId . ']', ($enrollGradesData[0][2] > 0 ? number_format($enrollGradesData[0][2],2) : ''), '', 6);
+                $finalNoteField->addAttribute('onblur', "finalNoteFieldBlur($enrollId)");
+                $tableRow[] = $finalNoteField;
+
+                $frequencyField = new MTextField('frequencyField[' . $enrollId . ']', ($enrollGradesData[0][3] > 0 ? number_format($enrollGradesData[0][3],2) : ''), '', 6);
+                $frequencyField->addAttribute('onblur', "frequencyFieldBlur($enrollId)");
+                $tableRow[] = $frequencyField;
+
+                $desistingField = new MCheckBox('desistingField[' . $enrollId . ']' , true, '', $enrollGradesData[0][4] == ENROLL_STATUS_DESISTING ? true : false);
+                $tableRow[] = $desistingField;
+
+                $tableData[] = $tableRow;
+                unset($tableRow);
+            }
+        }
+
+        $title = '<div style="text-align: left;">' . 
+                _M('Curricular component', $module)         . ": <i>" . $groupData->curricularComponent . "</i><br />" . 
+                _M('Period', $module)                       . ": <i>" . $groupData->period              . "</i><br />" . 
+                _M('Professor', $module)                    . ": <i>" . $groupData->professor           . "</i><br />" . 
+                _M('Unit', $module)                         . ": <i>" . $groupData->unit                . "</i><br />" . 
+                _M('Offered curricular component', $module) . ": <i>" . $groupData->groupId             . "</i><br />" . 
+                _M('Credits', $module)                      . ": <i>" . $groupData->credits             . "</i><br />" . 
+                _M('Minimum frequency', $module)            . ": <i>" . $groupData->minimumFrequency    . _M('H/L', $module) . "</i></div>";
+
+        $tableRaw = new MTableRaw($title, $tableData, $cols);
+        for ( $i=0; $i<count($tableData); $i++ )
+        {
+            for ( $j=3; $j<count($cols); $j++ )
+            {
+                $tableRaw->setCellAttribute($i, $j, 'align', 'center');
+            }
+        }
+        $fields[] = $tableRaw;
+
+        // mensagem padrao exibida quando o conteudo de um campo nao eh numerico
+        $msg = _M('Enter a numeric value and use "." (dot) as a decimal separator.', $module);
+
+        $jsCode = 
+<<< HERE
+    /* check if the contents of a control is numeric */
+    function isNumeric(control)
+    {
+        return (! isNaN(parseFloat(control.value))) && (parseFloat(control.value) == control.value)
+    }
+
+    /* calculate the evaluations average for a specified degree */
+    function evaluationBlur(enrollId, degreeId, evaluations, weights, isConcept)
+    {
+        var degreeField = document.getElementById('degreeField[' + degreeId + '][' + enrollId + ']');
+        var noteField = document.getElementById('noteField[' + enrollId + ']');
+        if ( degreeField != null && noteField != null )
+        {
+            var allFilled = true
+            var degree = 0.0
+            var weightSum = 0.0
+            for ( var i=0; i<evaluations.length && allFilled; i++ )
+            {
+                var evaluation = document.getElementById('evaluationNote[' + evaluations[i] + '][' + enrollId + ']');
+                if ( evaluation == null )
+                {
+                    allFilled = false
+                }
+                else if ( evaluation.value.length == 0 )
+                {
+                    allFilled = false
+                }
+                else if ( ! isNumeric(evaluation) )
+                {
+                    allFilled = false
+                    alert('{$msg}')
+                    evaluation.value = evaluation.defaultValue
+                }
+                else
+                {
+                    if ( weights[i] != null )
+                    {
+                        degree += weights[i] * parseFloat(evaluation.value)
+                        weightSum += weights[i]
+                    }
+                    else
+                    {
+                        degree += parseFloat(evaluation.value)
+                        weightSum += 1
+                    }
+                }
+            }
+            if ( allFilled )
+            {
+                degreeField.value = Math.round((degree / weightSum) * 100) / 100
+                // try to calculate the degrees average
+                degreeField.onblur()
+                noteField.onblur()
+            }
+        }
+    }
+
+    /* calculate the note based on the degrees average */
+    function degreeBlur(enrollId, degrees)
+    {
+        var noteField = document.getElementById('noteField[' + enrollId + ']');
+        if ( noteField != null )
+        {
+            var allFilled = true
+            var degreeSum = 0.0
+            var degreeQuant = 0
+            for ( var i=0; i<degrees.length && allFilled; i++ )
+            {
+                var degreeField = document.getElementById('degreeField[' + degrees[i] + '][' + enrollId + ']');
+                if ( degreeField == null )
+                {
+                    allFilled = false
+                }
+                else if ( degreeField.value.length == 0 )
+                {
+                    allFilled = false
+                }
+                else if ( ! isNumeric(degreeField) )
+                {
+                    allFilled = false
+                    alert('{$msg}')
+                    degreeField.value = degreeField.defaultValue
+                }
+                else
+                {
+                    degreeSum += parseFloat(degreeField.value)
+                    degreeQuant++
+                }
+            }
+            if ( allFilled )
+            {
+                noteField.value = Math.round((degreeSum / degreeQuant) * 100) / 100
+                noteField.onblur()
+            }
+        }
+    }
+
+    /* calculate the final note and enable/disable the exam field */
+    function noteOrExamNoteBlur(enrollId, average, disapprovationWithoutExam)
+    {
+        var noteField = document.getElementById('noteField[' + enrollId + ']')
+        var examNoteField = document.getElementById('examNoteField[' + enrollId + ']')
+        var finalNoteField = document.getElementById('finalNoteField[' + enrollId + ']')
+        if ( noteField != null && examNoteField != null && finalNoteField != null )
+        {
+            if ( noteField.value.length > 0 )
+            {
+                if ( ! isNumeric(noteField) )
+                {
+                    alert('{$msg}')
+                    noteField.value = noteField.defaultValue
+                }
+                else
+                {
+                    if ( parseFloat(noteField.value) >= parseFloat(average) ||  parseFloat(noteField.value) < parseFloat(disapprovationWithoutExam) )
+                    {
+                        // note greater than average. No exam note needed
+                        examNoteField.disabled = true
+                        examNoteField.readOnly = true
+                        examNoteField.value = ''
+                        finalNoteField.value = noteField.value
+                    }
+                    else
+                    {
+                        // note lower than average. Exam note needed
+                        examNoteField.disabled = false
+                        examNoteField.readOnly = false
+                        if ( examNoteField.value.length > 0 )
+                        {
+                            if ( ! isNumeric(examNoteField) )
+                            {
+                                alert('{$msg}')
+                                examNoteField.value = ''
+                            }
+                            else
+                            {
+                                finalNoteField.value = Math.round(((parseFloat(noteField.value) + parseFloat(examNoteField.value)) / 2) * 100) / 100
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /* verity the contents of the finalNoteField field */
+    function finalNoteFieldBlur(enrollId) {
+        var finalNoteField = document.getElementById('finalNoteField[' + enrollId + ']');
+        if ( finalNoteField != null )
+        {
+            if ( finalNoteField.value.length > 0 )
+            {
+                if ( ! isNumeric(finalNoteField) )
+                {
+                    alert('{$msg}')
+                    finalNoteField.value = finalNoteField.defaultValue
+                }
+            }
+        }
+    }
+
+    /* verity the contents of the frequencyField field */
+    function frequencyFieldBlur(enrollId) {
+        var frequencyField = document.getElementById('frequencyField[' + enrollId + ']');
+        if ( frequencyField != null )
+        {
+            if ( frequencyField.value.length > 0 )
+            {
+                if ( ! isNumeric(frequencyField) )
+                {
+                    alert('{$msg}')
+                    frequencyField.value = frequencyField.defaultValue
+                }
+            }
+        }
+    }
+
+
+    /* set the focus to the first text field */
+    document.getElementById('{$tableData[0][3]->name}').focus()
+HERE;
+        $this->page->addJSCode($jsCode);
+
+        $this->setFields($fields);
+
+    }
+
+    public function tbBtnSave_click()
+    {
+        global $MIOLO, $module, $action;
+
+        $business                 = $MIOLO->getBusiness($module, 'BusGradeTyping');
+        $businessDegreeEnroll     = $MIOLO->getBusiness($module, 'BusDegreeEnroll');
+        $businessEvaluationEnroll = $MIOLO->getBusiness($module, 'BusEvaluationEnroll');
+
+        $notes                = MIOLO::_request('noteField');
+        $examNotes            = MIOLO::_request('examNoteField');
+        $finalNotes           = MIOLO::_request('finalNoteField');
+        $frequencies          = MIOLO::_request('frequencyField');
+        $desisting            = MIOLO::_request('desistingField');
+        $degreeField          = MIOLO::_request('degreeField');
+        $evaluationField      = MIOLO::_request('evaluationNote');
+
+        foreach ($notes as $enrollId => $note)
+        {
+            $reqs = $business->getEnrollLearningPeriodReqs($enrollId);
+
+            $data->enrollId = $enrollId;
+            $data->note     = $note;
+            $data->examNote = $examNotes[$enrollId];
+
+            if ( $finalNotes[$enrollId] != '' )
+            {
+                if (($finalNotes[$enrollId] >= $reqs->finalAverage) && ($frequencies[$enrollId] >= $reqs->minimumFrequencyInHours)) 
+                {
+                    $data->status = ENROLL_STATUS_APPROVED;
+                }
+                elseif ($finalNotes[$enrollId] < $reqs->finalAverage) 
+                {
+                    if ( $reqs->isSerial == DB_TRUE )
+                    {
+                        $data->status = ENROLL_STATUS_DEPENDENT;
+                    }
+                    else
+                    {
+                        $data->status = ENROLL_STATUS_DISAPPROVED;
+                    }
+                }
+                elseif ($frequencies[$enrollId] < $reqs->minimumFrequencyInHours)
+                {
+                    if ( $reqs->isSerial == DB_TRUE )
+                    {
+                        $data->status = ENROLL_STATUS_DEPENDENT_FOR_LACKS;
+                    }
+                    else
+                    {
+                        $data->status = ENROLL_STATUS_DISAPPROVED_FOR_LACKS;
+                    }
+                }
+            }
+            else
+            {
+                $data->status = ENROLL_STATUS_ENROLLED;
+            }
+
+            $data->finalNote = $finalNotes[$enrollId];
+            $data->frequency = $frequencies[$enrollId];
+
+            if ($desisting[$enrollId] == 1)
+            {
+                $data->desisting = true;
+            }
+            else
+            {
+                $data->desisting = false;
+            }
+
+            $ok = $business->setEnrollGradeFrequency($data->enrollId, $data->note, $data->examNote, $data->finalNote, $data->frequency, $data->desisting, $data->status);
+        }
+
+        //Gravação das notas dos alunos por grau acadêmico
+        $businessDegreeEnroll->beginTransaction();
+        if ( count($degreeField) > 0 )
+        {
+            foreach ( $degreeField as $degreeId1 => $value2 )
+            {
+                foreach ( $value2 as $enrollId1 => $noteEnrollDegree )
+                {
+                    if ( strlen((string)$noteEnrollDegree) > 0 )
+                    {
+                        //Entra aqui quando tiver nota para este grau acadêmico
+                        $getDegreeEnroll = $businessDegreeEnroll->getDegreeEnroll($degreeId1, $enrollId1);
+
+                        if ( strlen((string)$getDegreeEnroll->degreeId) > 0 )
+                        {
+                            //Update note
+                            if ( $getDegreeEnroll->note == $noteEnrollDegree )
+                            {
+                                //Notas anterior é igual a nota atual, não é necessário o update
+                            }
+                            else
+                            {
+                                //Notas diferentes, necessário o Update
+                                $filters->degreeId = $degreeId1;
+                                $filters->enrollId = $enrollId1;
+                                $filters->note     = $noteEnrollDegree;
+
+                                $ok = $businessDegreeEnroll->updateDegreeEnroll($filters);
+                            }
+                        }
+                        else
+                        {
+                            //Insert note
+                            $filters->degreeId = $degreeId1;
+                            $filters->enrollId = $enrollId1;
+                            $filters->note     = $noteEnrollDegree;
+
+                            $ok = $businessDegreeEnroll->insertDegreeEnroll($filters);
+                        }
+                    }
+                    else
+                    {
+                        //Entra aqui quando a nota for nula
+                    }
+                }
+            }
+        }
+
+        //Gravar notas das avaliaçoes dos alunos
+        if ( count($evaluationField) > 0 )
+        {
+            foreach ( $evaluationField as $evaluationId1 => $value2 )
+            {
+                foreach ( $value2 as $enrollId1 => $noteEnrollEvaluation )
+                {
+                    if ( strlen((string)$noteEnrollEvaluation) > 0 )
+                    {
+                        //Entra aqui quando tiver nota para este grau acadêmico
+                        $getEvaluationEnroll = $businessEvaluationEnroll->getEvaluationEnroll($evaluationId1, $enrollId1);
+
+                        if ( strlen((string)$getEvaluationEnroll->evaluationId) > 0 )
+                        {
+                            //Update note
+                            if ( $getEvaluationEnroll->note == $noteEnrollEvaluation )
+                            {
+                                //Notas anterior é igual a nota atual, não é necessário o update
+                            }
+                            else
+                            {
+                                //Notas diferentes, necessário o Update
+                                $filters1->evaluationId = $evaluationId1;
+                                $filters1->enrollId     = $enrollId1;
+                                $filters1->note         = $noteEnrollEvaluation;
+
+                                $ok = $businessEvaluationEnroll->updateEvaluationEnroll($filters1);
+                            }
+                        }
+                        else
+                        {
+                            //Insert note
+                            $filters1->evaluationId = $evaluationId1;
+                            $filters1->enrollId     = $enrollId1;
+                            $filters1->note         = $noteEnrollEvaluation;
+
+                            $ok = $businessEvaluationEnroll->insertEvaluationEnroll($filters1);
+                        }
+                    }
+                    else
+                    {
+                        //Entra aqui quando a nota for nula
+                    }
+                }
+            }
+        }
+
+        $businessDegreeEnroll->commit();
+
+        if (count($business->getErrors()) == 0)
+        {
+            $this->urlOpts['event'] = 'btnList_click';
+            $goto    = $MIOLO->getActionURL($module, 'main:process:gradesTyping', NULL, $this->urlOpts);
+            $msg     = _M('Grades recorded with success', $module) . ' ';
+            $caption = _M('Information', $module);
+
+            $MIOLO->information($msg, $goto);
+        }
+    }
+}
+
+?>

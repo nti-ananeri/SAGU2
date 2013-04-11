@@ -1,0 +1,242 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for acdGroup table
+ *
+ * @author Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 22/09/2005
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to manipulate the acdGroup table
+ **/
+class BusinessAcademicBusCallListStatusReport extends Business
+{
+    public $db;
+    
+    //Class constructor
+    public function __construct()
+    {
+        $this->db = $this->getDatabase();
+    }
+    
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module = is_null($module) ? 'academic' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+
+    public function getCallListStatus ( $filters )
+    {
+        $sql = 
+        'SELECT
+            DISTINCT
+            C.professorId,
+            COALESCE(H.shortName, H.name) as professorName,
+            COALESCE(I.shortName, I.name) as curricularComponent,
+            A.classId,
+            E.room,
+            CASE WHEN ( SELECT count(*) > 0 FROM acdGroupRelease WHERE degreeId = G.degreeId AND groupId = A.groupId ) IS TRUE THEN  \'' . strtoupper(_M('Yes', 'basic')) . '\' ELSE \''. strtoupper(_M('No', 'basic')) . '\' END as isReleased,
+            CASE WHEN A.isClosed THEN \'' . strtoupper(_M('Yes', 'basic')) . '\' ELSE \''. strtoupper(_M('No', 'basic')) . '\' END as isClosed,
+            A.groupId,
+            G.degreeId,
+            G.degreeNumber,
+            G.description as degreeDescription
+        FROM
+            acdGroup A INNER JOIN
+            acdSchedule B ON ( A.groupId = B.groupId ) INNER JOIN
+            acdScheduleProfessor C ON ( C.scheduleId = B.scheduleId ) INNER JOIN
+            acdLearningPeriod D ON ( D.learningPeriodId = A.learningPeriodId ) LEFT JOIN
+            insPhysicalResource E ON ( E.physicalResourceId = B.physicalResourceId AND
+                                       E.physicalResourceVersion = B.physicalResourceVersion ) INNER JOIN
+            acdCurriculum F ON ( F.curriculumId = A.curriculumId ) INNER JOIN
+            acdDegree G ON ( G.learningPeriodId = D.learningPeriodId ) INNER JOIN
+            ONLY basPhysicalPerson H ON ( H.personId = C.professorId ) INNER JOIN
+            ONLY acdCurricularComponent I ON ( I.curricularComponentId = F.curricularComponentId AND I.curricularComponentVersion = F.curricularComponentVersion )
+        WHERE
+            D.periodId = ? ';
+
+        $args[] = $filters->periodId;
+
+        $where = '';
+        
+        if ( strlen((string)$filters->professorId) > 0 )
+        {
+            $where .=  ' AND C.professorId = ?::integer ';
+            $args[] = $filters->professorId;
+        }
+        
+        if ( strlen((string)$filters->courseId) > 0 ) 
+        {
+            $where .= ' AND F.courseId = ? ';
+            $args[] = $filters->courseId;
+        }
+
+        if ( strlen((string)$filters->courseVersion) > 0 ) 
+        {
+            $where .= ' AND F.courseVersion = ?::integer ';
+            $args[] = $filters->courseVersion;
+        }
+
+        if ( strlen((string)$filters->unitId) > 0 ) 
+        {
+            $where .= ' AND F.unitId = ?::integer ';
+            $args[] = $filters->unitId;
+        }
+
+        if ( strlen((string)$filters->turnId) > 0 ) 
+        {
+            $where .= ' AND F.turnId = ?::integer ';
+            $args[] = $filters->turnId;
+        }
+
+        if ( strlen((string)$filters->semester) > 0 ) 
+        {
+            $where .= ' AND F.semester = ?::integer ';
+            $args[] = $filters->semester;
+        }
+
+        if ( strlen((string)$filters->classId) > 0 ) 
+        {
+            $where .= ' AND A.classId = ? ';
+            $args[] = $filters->classId;
+        }
+
+        if ( isset($filters->formationLevelId) && count($filters->formationLevelId) > 0 && is_array($filters->formationLevelId) )
+        {
+            $where .= ' AND D.formationLevelId IN ( ' . implode(',', $filters->formationLevelId ) . ') ';
+        }
+        
+        $sql .= $where;
+        $sql = ' 
+        SELECT 
+            A.*,
+            SUM ( CASE WHEN C.enrollId IS NULL OR ( C.note IS NULL AND C.isNotPresent IS FALSE ) THEN 0 ELSE 1 END ) as totalNotesTyped,
+            SUM ( CASE WHEN C.enrollId IS NULL OR ( C.note IS NULL AND C.isNotPresent IS FALSE ) THEN 1 ELSE 0 END ) as totalNotesNotTyped,
+            getContentSumByDegreeNumber( A.groupId, A.professorId, A.degreeNumber) as statusContent
+        FROM 
+            ( ' . $sql . ' ) A INNER JOIN
+            acdEnroll B ON ( B.groupId = A.groupId AND NOT B.statusId = ' . ENROLL_STATUS_CANCELLED . ' ) LEFT JOIN
+            acdDegreeEnroll C ON ( C.degreeId = A.degreeId AND C.enrollId = B.enrollId )
+        ';
+        $sql .= ' WHERE 1 = 1 ';
+        if ( isset($filters->degreeNumber) && count($filters->degreeNumber) > 0 )
+        {
+            $degrees = implode(',', $filters->degreeNumber );
+            $sql .= ' AND A.degreeNumber IN ( ' . $degrees . ' ) ';
+        }
+        if ( isset($filters->isClosed) && $filters->isClosed != 'u' )
+        {
+            $sql .= ' AND UPPER(A.isClosed) = UPPER(?) ';
+            $args[] = $filters->isClosed == DB_FALSE ? _M('No', 'basic') : _M('Yes', 'basic');
+        }
+
+        if ( isset($filters->isReleased) && $filters->isReleased != 'u' )
+        {
+            $sql .= ' AND UPPER(A.isReleased) = UPPER(?) ';
+            $args[] = $filters->isReleased == DB_FALSE ? _M('No', 'basic') : _M('Yes', 'basic');
+        }
+        
+
+        $sql .= ' 
+        GROUP BY
+            A.professorId, 
+            A.professorName,
+            A.curricularComponent, 
+            A.classId, 
+            A.room, 
+            A.groupId, 
+            A.isClosed, 
+            A.degreeId, 
+            A.degreeNumber, 
+            A.degreeDescription,
+            A.isReleased';
+        if ( isset($filters->isParcialyTyped) && $filters->isParcialyTyped != 'u' )
+        {
+            if ( $filters->isParcialyTyped == DB_FALSE && $filters->isNotTyped != DB_TRUE )
+            {
+                $sql .= ' HAVING SUM ( CASE WHEN C.enrollId IS NULL OR ( C.note IS NULL AND C.isNotPresent IS FALSE ) THEN 0 ELSE 1 END ) = 0 OR SUM ( CASE WHEN C.enrollId IS NULL OR ( C.note IS NULL AND C.isNotPresent IS FALSE ) THEN 1 ELSE 0 END ) = 0 ';
+            }
+            else if ( $filters->isParcialyTyped == DB_TRUE && $filters->isNotTyped != DB_TRUE )
+            {
+                $sql .= ' HAVING SUM ( CASE WHEN C.enrollId IS NULL OR ( C.note IS NULL AND C.isNotPresent IS FALSE ) THEN 0 ELSE 1 END ) > 0 OR SUM ( CASE WHEN C.enrollId IS NULL OR ( C.note IS NULL AND C.isNotPresent IS FALSE ) THEN 1 ELSE 0 END ) > 0 ';
+            }
+            else if ( $filters->isParcialyTyped == DB_FALSE && $filters->isNotTyped == DB_TRUE )
+            {
+                $sql .= ' HAVING SUM ( CASE WHEN C.enrollId IS NULL OR ( C.note IS NULL AND C.isNotPresent IS FALSE ) THEN 0 ELSE 1 END ) = 0  ';
+            }
+        }
+        $sql .= '
+        ORDER BY
+            A.degreeNumber,
+            A.degreeDescription,
+            A.professorName,
+            A.curricularComponent,
+            A.classId
+            ';
+        unset($result);
+        $result = $this->db->query(SAGU::prepare($sql, $args));
+        if ( count($result) > 0 )
+        {
+            $result2 = $result;
+            unset($result);
+            foreach ( $result2 as $ln => $array )
+            {
+                for( $x =0; $x < count($array); $x++ )
+                {
+                    if ( $x == 13 )
+                    {
+                        unset($implode);
+                        $implode = explode(',', $array[$x]);
+                        $result[$ln][13] = substr($implode[0],1);
+                        $result[$ln][14] = substr($implode[1],0, -1);
+                    }
+                    else
+                    {
+                        $result[$ln][$x] = $array[$x];
+                    }
+                }
+
+            }
+        }
+        return $result;
+    }
+
+}
+
+?>

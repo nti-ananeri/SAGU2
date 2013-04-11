@@ -1,0 +1,295 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for sprOtherListings
+ *
+ * @author Rafael Luís Spengler [rafael@solis.coop.br]
+ *
+ * @version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * Rafael Luís Spengler [rafael@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ *
+ * @since
+ * Class created on 26/12/2005
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br
+ *
+ **/
+
+/**
+ * Class to manipulate the sprOtherListings table
+ **/
+class BusinessSelectiveProcessBusOtherListings extends Business
+{
+
+    /**
+     * Make a connection to the database
+     *
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module = is_null($module) ? 'selectiveProcess' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+    public function otherListingsClassified ($selectiveProcessId)
+    {
+        $args = array($selectiveProcessId);
+
+        $sql = ' SELECT CASE WHEN A.isClassified = \'f\'
+                                THEN 1
+                                ELSE CASE WHEN B.coursePosition <= D.vacant
+                                        THEN 2
+                                        ELSE 3
+                                END
+                        END,
+                        count(A.inscriptionId)
+                   FROM sprInscription A
+             INNER JOIN sprInscriptionOption B
+                     ON ( A.inscriptionId = B.inscriptionId )
+             INNER JOIN sprCourseOccurrence C
+                     ON ( B.courseOccurrenceId = C.courseOccurrenceId )
+             INNER JOIN sprCourseVacant D
+                     ON ( C.courseVacantId = D.courseVacantId )
+                  WHERE A.selectiveProcessId = ?
+                    AND B.optionNumber = 1
+                    --AND A.isHighSchool = \'t\'
+               GROUP BY 1 ';
+
+        $db = $this->getDatabase();
+
+        $result = $db->query(SAGU::prepare($sql, $args));
+
+        return $result;
+    }
+
+
+    public function otherListingsClassifiedB ($selectiveProcessId, $isClassified)
+    {
+        $args = array($selectiveProcessId, $isClassified);
+
+        $sql = ' SELECT A.inscriptionId,
+                        E.name,
+                        E.residentialPhone,
+                        E.workPhone,
+                        E.cellPhone,
+                        G.shortName,
+                        round(A.totalPoints::numeric, '.ROUND_VALUE_CLASSIFICATION.')
+                   FROM sprInscription A
+             INNER JOIN sprInscriptionOption B
+                     ON ( A.inscriptionId = B.inscriptionId )
+             INNER JOIN sprCourseOccurrence C
+                     ON ( B.courseOccurrenceId = C.courseOccurrenceId )
+             INNER JOIN sprCourseVacant D
+                     ON ( C.courseVacantId = D.courseVacantId )
+        INNER JOIN ONLY basPhysicalPerson E
+                     ON ( E.personId = A.personId )
+              LEFT JOIN sprCourseOccurrence F
+                     ON ( B.courseOccurrenceId = F.courseOccurrenceId )
+              LEFT JOIN acdCourse G
+                     ON ( F.courseId = G.courseId )
+                  WHERE A.selectiveProcessId = ?
+                    AND B.optionNumber = 1
+                    AND A.isHighSchool = \'t\'
+                    AND CASE WHEN A.isClassified = \'f\' 
+                             THEN 1
+                             ELSE CASE WHEN B.coursePosition <= D.vacant
+                                       THEN 2
+                                       ELSE 3
+                                  END
+                        END = ?
+               ORDER BY E.name ' ;
+
+        $db = $this->getDatabase();
+
+        $result = $db->query(SAGU::prepare($sql, $args));
+
+        return $result;
+    }
+
+    /**
+     * Report of inscriptions for general location
+     *
+     * @param $selectiveProcessId (int): Selective process id
+     *
+     * @return (array): An array containing the search results
+     **/
+    public function inscriptionForGeneralLocation($selectiveProcessId)
+    {
+       $args = array($selectiveProcessId);
+
+       $sql = 'SELECT DISTINCT A.cityExam,
+                               B.name
+                          FROM sprInscription A
+                     LEFT JOIN basCity B
+                            ON (A.cityExam = B.cityId)
+                         WHERE A.selectiveProcessId = ?
+                      ORDER BY B.name ';
+
+        $db = $this->getDatabase();
+
+        $result = $db->query(SAGU::prepare($sql, $args));
+
+        return $result;
+    }
+
+    public function inscriptionForRoom($selectiveProcessId, $cityExam)
+    {
+        $args = array($selectiveProcessId);
+
+        $sql = 'SELECT D.name,
+                       A.cityExam,
+                       B.name,
+                       A.placeRoomId,
+                       C.room,
+                       C.build,
+                       count(A.inscriptionId),
+                       C.vacant,
+                       E.content as RG_NUMBER,
+                       H.courseId || \' - \' || H.shortname
+                  FROM sprInscription A
+             LEFT JOIN basCity B
+                    ON (B.cityId = A.cityExam)
+             LEFT JOIN sprPlaceRoom C
+                    ON (A.placeRoomId = C.placeRoomId)
+        LEFT JOIN ONLY basPhysicalPerson D
+                    ON ( A.personId = D.personId )
+             LEFT JOIN basDocument E
+                    ON (A.personId = E.personId AND
+                        E.documentTypeId = '.RG_CODE.' )
+            INNER JOIN sprInscriptionOption F
+                    ON (F.inscriptionId = A.inscriptionId AND
+                        F.optionNumber = 1)
+            INNER JOIN sprCourseOccurrence G
+                    ON (G.courseOccurrenceId = F.courseOccurrenceId)
+            INNER JOIN acdCourse H
+                    ON (H.courseId = G.courseId)
+                 WHERE A.selectiveProcessId = ? ';
+
+        if ( $cityExam )
+        {
+            $sql .= ' AND A.cityExam = ? ';
+            $args[] = $cityExam;
+        }
+        $sql .= ' GROUP BY D.name, A.cityExam, B.name, A.placeRoomId, C.room, C.build, C.vacant, E.content, H.courseId, H.shortname
+              ORDER BY D.name, B.name, C.build, C.room; ';
+
+        $db = $this->getDatabase();
+
+        $result = $db->query(SAGU::prepare($sql, $args));
+
+        return $result;
+    }
+
+    public function inscriptionForRoomLocationList($filters)
+    {
+        $sql = '   SELECT A.cityExam,
+                          B.name,
+                          A.placeRoomId,
+                          C.room,
+                          C.build,
+                          D.name,
+                          I.content
+                     FROM sprInscription A
+                LEFT JOIN basCity B
+                       ON (B.cityId = A.cityExam)
+                LEFT JOIN sprPlaceRoom C
+                       ON (A.placeRoomId = C.placeRoomId)
+           LEFT JOIN ONLY basPhysicalPerson D
+                       ON ( A.personId = D.personId )
+                LEFT JOIN basDocument I
+                       ON ( I.personId = D.personId AND I.documentTypeId = ' . RG_CODE . ')
+                    WHERE A.selectiveProcessId = ?';
+
+        $args[] = $filters->selectiveProcessId;
+
+        if (strlen((string)$filters->cityExam) > 0)
+        {
+            $sql .= ' AND A.cityExam = ?';
+            $args[] = $filters->cityExam;
+        }
+
+        if (strlen((string)$filters->build) > 0)
+        {
+            $sql .= ' AND C.build = ?';
+            $args[] = $filters->build;
+        }
+
+        $sql .= 'GROUP BY A.cityExam, B.name, A.placeRoomId, C.room, C.build, D.name, I.content
+                 ORDER BY D.name, C.build, C.room';
+
+        $db = $this->getDatabase();
+
+        $result = $db->query(SAGU::prepare($sql, $args));
+
+        return $result;
+    }
+
+    public function archiveForPeriodical($selectiveProcessId)
+    {
+        $args = array($selectiveProcessId);
+
+        $sql = ' SELECT A.inscriptionId,
+                        E.name,
+                        G.courseId || \'/\' || H.unitId || \' - \' || G.name,
+                        H.description,
+                        CASE WHEN A.isClassified = \'f\'
+                            THEN 1
+                            ELSE CASE WHEN B.coursePosition <= D.vacant
+                                        THEN 2
+                                        ELSE 3
+                                END
+                                END AS classified
+                   FROM sprInscription A
+             INNER JOIN sprInscriptionOption B
+                     ON ( A.inscriptionId = B.inscriptionId )
+             INNER JOIN sprCourseOccurrence C
+                     ON ( B.courseOccurrenceId = C.courseOccurrenceId )
+             INNER JOIN sprCourseVacant D
+                     ON ( C.courseVacantId = D.courseVacantId )
+             INNER JOIN basUnit H
+                     ON ( C.unitId = H.unitId )
+        INNER JOIN ONLY basPhysicalPerson E
+                     ON ( E.personId = A.personId )
+              LEFT JOIN sprCourseOccurrence F
+                     ON ( B.courseOccurrenceId = F.courseOccurrenceId )
+              LEFT JOIN acdCourse G
+                     ON ( F.courseId = G.courseId )
+                  WHERE A.selectiveProcessId = ?
+                    AND B.optionNumber = 1
+                    --AND A.isHighSchool = \'t\'
+               ORDER BY classified, G.name, E.name ' ;
+
+        $db = $this->getDatabase();
+
+        $result = $db->query(SAGU::prepare($sql, $args));
+
+        return $result;
+    }
+
+    
+}
+
+?>

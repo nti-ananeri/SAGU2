@@ -1,0 +1,516 @@
+<?php
+/**
+ *
+ * Shows a list of pupils enrolled in the specified group and allow the professor
+ * to register their frequencies
+ *
+ * @author Armando Taffarel Neto [taffarel@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Armando Taffarel Neto [taffarel@solis.coop.br]
+ * 
+ * @since
+ * Class created on 10/09/2007
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Report to show pupils ou employees financial situations
+ */
+class FrmProfessorFrequencyNew extends MForm
+{
+    
+    /**
+     * Class constructor
+     */
+    function __construct()
+    {
+        $MIOLO  = MIOLO::getInstance();
+
+        parent::__construct(_M('Frequency register', 'services'));
+
+        // hide the 'Submit' button
+        $this->setShowPostButton(false);
+
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+        if (($f = $this->page->request('cpaint_function')) != "") 
+        {
+            $this->manager->getTheme()->clearContent();
+            $this->$f($this->page->request('cpaint_argument'));
+            $this->page->generateMethod = 'generateAJAX';
+        }
+        else
+        {
+             $this->defineFields();
+             $this->eventHandler();
+        }
+    }
+
+    /**
+     *  Default method to define fields
+     */
+    public function defineFields()
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $action = MIOLO::getCurrentAction();
+        
+        $data->professorId = MIOLO::_request('professorId');
+        $data->groupId     = MIOLO::_request('groupId');
+
+        $toolBar = new MToolBar('toolBar',$MIOLO->getActionURL('services',$action));
+
+        //Toolbar save
+        $enabledImage  = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'save-20x20.png');
+        $disabledImage = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'save-disabled-20x20.png');
+
+        $toolBar->addButton('tbBtnSave', _M('Save data','services'), 'javascript:saveData()', null, true, $enabledImage, $disabledImage);
+
+        //Toolbar content
+        $enabledImage  = $MIOLO->getActionUrl('services', 'html:images:content-on.png');
+        $disabledImage  = $MIOLO->getActionUrl('services', 'html:images:content-off.png');
+        $args = array ( 'groupId' => $data->groupId, 'professorId' => $data->professorId, 'event' => 'tbBtnContent_click' );
+        $toolBar->addButton('tbBtnContent', _M('Content', 'services'), $MIOLO->getActionURL( 'services', 'main:professor:frequencyNew', null, $args) , _M('Content', 'services'), true, $enabledImage, $disabledImage);
+//        $toolBar->addButton('tbBtnContent', _M('Content', 'services'), $MIOLO->getActionURL( 'services', 'main:professor:curricularComponentsNew'), _M('Content', 'services'), true, $enabledImage, $disabledImage);
+
+        //Toolbar exit
+        $enabledImage  = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'exit-20x20.png' );
+        $disabledImage = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'exit-disabled-20x20.png' );
+        
+        $toolBar->addButton('tbBtnClose', _M('Close', 'miolo'), $MIOLO->getActionURL( 'services', 'main:professor:curricularComponentsNew'), _M('Close', 'miolo'), true, $enabledImage, $disabledImage);
+
+ 
+        //Toolbar desable all 
+        $toolBar->hideButton('tbBtnExit');
+        $toolBar->hideButton('tbBtnNew');
+        $toolBar->hideButton('tbBtnDelete');
+        $toolBar->hideButton('tbBtnSearch');
+        $toolBar->hideButton('tbBtnPrint');
+        $toolBar->hideButton('tbBtnBack');
+        $toolBar->hideButton('tbBtnReset');
+        $fields[] = $toolBar;
+
+        //define funcoes AJAX que serao chamadas ao clique do botao para armazenar dados
+        $MIOLO->getRequiredJS4Ajax();
+        $url = str_replace('&amp;', '&',$this->manager->getCurrentURL());
+        $code = '
+                    function saveData() 
+                    {
+                        xGetElementById(\'divContent\').innerHTML = "' . _M('Wait while saving data', 'services') . '...";
+                        var enrollForSave = new Object();
+                        enrolls.professorObservation = document.' . $this->name . '.professorObservation.value;
+                        enrollForSave = enrolls;
+                        for ( x = 0 ; x < enrollForSave.length; x++ )
+                        {
+                            delete enrollForSave[x].absenceHours;
+                            delete enrollForSave[x].presenceHours;
+                        }
+
+                        MIOLO_ajaxCall("' . $url . '", "POST", "ajax_btnSave", php_serialize(enrollForSave), updateData, "TEXT");
+                    } 
+
+                    function updateData(result) 
+                    {
+                        xGetElementById(\'divContent\').innerHTML = result;
+                        MIOLO_parseAjaxJavascript(result);
+                    }    
+                ';
+        $this->page->AddJsCode($code);
+        
+        $fields[] = new MDiv('divContent', null);
+
+        SAGU::importJsSerialize($this);
+
+        //carrega arquivo externo com funções JS
+        $this->page->scripts->add( $MIOLO->getActionURL( 'services', 'html:scripts:professorFrequencyNew.js' ));
+
+        $img0h           = $MIOLO->getActionUrl('services', 'html:images:presence-0h.png');
+        $img1h           = $MIOLO->getActionUrl('services', 'html:images:presence-1h.png');
+        $img2h           = $MIOLO->getActionUrl('services', 'html:images:presence-2h.png');
+        $img3h           = $MIOLO->getActionUrl('services', 'html:images:presence-3h.png');
+        $img4h           = $MIOLO->getActionUrl('services', 'html:images:presence-4h.png');
+        $img5h           = $MIOLO->getActionUrl('services', 'html:images:presence-5h.png');
+        $img6h           = $MIOLO->getActionUrl('services', 'html:images:presence-6h.png');
+        $img7h           = $MIOLO->getActionUrl('services', 'html:images:presence-7h.png');
+        $img8h           = $MIOLO->getActionUrl('services', 'html:images:presence-8h.png');
+        $img9h           = $MIOLO->getActionUrl('services', 'html:images:presence-9h.png');
+        $img10h           = $MIOLO->getActionUrl('services', 'html:images:presence-10h.png');
+        $imgAddOn        = $MIOLO->getActionUrl('services', 'html:images:add-on.png');
+        $imgAddOff       = $MIOLO->getActionUrl('services', 'html:images:add-off.png');
+        
+        $this->page->AddJsCode("setImageSources('$imgAddOn', '$imgAddOff', '$img0h', '$img1h', '$img2h', '$img3h', '$img4h', '$img5h', '$img6h', '$img7h', '$img8h', '$img9h', '$img10h')");
+
+        //busca lista de alunos e de calendário academico
+        $business = $MIOLO->getBusiness('services', 'BusProfessorFrequencyNew');
+        $data->professorObservation = $business->getProfessorObservation($data->groupId);
+        $academicCalendar           = $business->getAcademicCalendar($data);
+
+        foreach ( $academicCalendar as $item )
+        {
+            //Verifica se existe frequencia para o dia
+            $ok = $business->verifyRegisteredFrequency ( $item );
+            if ( $ok == DB_TRUE )
+            {
+                $tot += $item->lessonNumberHours;
+            }
+        }
+        $this->page->AddJsCode('setSchedulesNumber(' . $tot . ')');
+        unset($tot);
+ 
+        //busca alunos
+        $professorGroup     = $business->getProfessorGroup($data);
+        $pupilsFrequence    = $business->listGroupPupilsEnrolledFrequency($data);
+
+        $title    = $professorGroup->curricularComponentId . '/' . $professorGroup->curricularComponentVersion . ' - '. $professorGroup->curricularComponentName;
+        foreach ( $professorGroup->schedules  as $schedule )
+        {
+            $title .= ' <br>( ' . $schedule->weekDayDescription . ' - "' . $schedule->beginHour . ' - ' . $schedule->endHour . '" )';
+        }
+
+        //cria as primeiras colunas da tabela (numero, nome e codigo)
+        $cols = array('', _M('Person id', 'services'), _M('Person name', 'services'));
+        unset($code);
+        if ( count($pupilsFrequence->enrollFrequence) > 0 )
+        {
+            foreach ( $pupilsFrequence->enrollFrequence as $enrollId => $item )
+            {
+                $code[]        = "this.enrolls.push(new objEnroll($enrollId))";
+            }
+            $this->page->AddJsCode(implode($code, "\n"));
+        }
+        //cria componentes da tabela que relaciona aluno a horarios
+        $x = count($cols)-1;
+        if ( count($academicCalendar) > 0 ) 
+        {
+            foreach ( $academicCalendar as $occurrenceDate => $day )
+            {
+
+                //se a nota tiver sido fechada e a frequencia for anterior a essa nota, bloqueia a opção de alterar a frequencia
+                $isAvaliable = $business->isDateAvaliable($data->groupId, $occurrenceDate);
+                $x++;
+                $dataC[$x] = $day;
+                if ( $day->isActive == DB_TRUE )
+                {
+                    //IMAGEM DA FREQUENCIA
+                    if ( $isAvaliable == true )
+                    {
+                        unset($path);
+                        $path  = $MIOLO->getActionUrl('services', 'html:images:add-on.png');
+                    }
+                    else
+                    {
+                        unset($path);
+                        $path  = $MIOLO->getActionUrl('services', 'html:images:add-off.png');
+                    }
+                    $image = new MImage('imgAdd_' . $occurrenceDate, _M('Add frequencies for this schedule', 'services'), $path);
+                    if ( $isAvaliable == true )
+                    {
+                        $image->addAttribute('onClick',"setPresence('$occurrenceDate', '$day->lessonNumberHours')");
+                    }
+                    //IMAGEM DO CONTEÚDO
+                    if ( strlen((string)$day->content) > 0 )
+                    {
+                        if ( $isAvaliable == true )
+                        {
+                            $path  = $MIOLO->getActionUrl('services', 'html:images:content-on-ok.png');
+                        }
+                        else
+                        {
+                            $path  = $MIOLO->getActionUrl('services', 'html:images:content-off.png');
+                        }
+                        $imageContent = new MImage('imgContent_' . $occurrenceDate . '_' . $data->groupId, _M('Update content', 'services') . ': ' . $day->content, $path);
+                    }
+                    else
+                    {
+                        if ( $isAvaliable == true )
+                        {
+                            $path  = $MIOLO->getActionUrl('services', 'html:images:content-on.png');
+                        }
+                        else
+                        {
+                            $path  = $MIOLO->getActionUrl('services', 'html:images:content-off.png');
+                        }
+                        $imageContent = new MImage('imgContent_' . $occurrenceDate . '_' . $data->groupId, _M('Add content', 'services'), $path);
+                    }
+                    $url   = $MIOLO->getActionUrl('services', "main:professor:contentNew&groupId=$data->groupId&occurrenceDate=$day->occurrenceDate&weekDayId=$day->weekDayId");
+                    if ( $isAvaliable == true  || ( defined('ALLOW_CONTENT_TYPING_WITH_NOAVALIABLE_DATE') && ALLOW_CONTENT_TYPING_WITH_NOAVALIABLE_DATE == DB_TRUE ) )
+                    {
+                        $imageContent->addAttribute('onClick', "window.open('$url')");
+                    }
+                }
+                else
+                {
+                    $path  = $MIOLO->getActionUrl('services', 'html:images:add-off.png');
+                    $image = new MImage('imgAdd_' . $occurrenceDate, '', $path);
+
+                    $url   = $MIOLO->getActionUrl('services', "main:professor:contentNew&groupId=$data->groupId&occurrenceDate=$day->occurrenceDate&weekDayId=$day->weekDayId");
+                    if ( defined('ALLOW_CONTENT_TYPING_WITH_NOAVALIABLE_DATE') && ALLOW_CONTENT_TYPING_WITH_NOAVALIABLE_DATE == DB_TRUE )
+                    {
+                        if ( strlen((string)$day->content) > 0 )
+                        {
+                            $path  = $MIOLO->getActionUrl('services', 'html:images:content-on-ok.png');
+                        }
+                        else
+                        {
+                            $path  = $MIOLO->getActionUrl('services', 'html:images:content-on.png');
+                        }
+                        $imageContent = new MImage('imgContent_' . $occurrenceDate . '_' . $data->groupId, $day->content, $path);
+                        $imageContent->addAttribute('onClick', "window.open('$url')");
+                    }
+                    else
+                    {
+                        $path  = $MIOLO->getActionUrl('services', 'html:images:content-off.png');
+                        $imageContent->addAttribute('onClick', "window.open('$url')");
+                    }
+                }
+
+                $head = $day->day . '/' . $day->month . '<br>' . $image->generate() . $imageContent->generate();
+                $divDay   = new MDiv('divDay', $head, null, 'align=center');
+                $divDay->setJsHint($weekDay);
+                $cols[]   = $divDay->generate();
+            }
+        }
+        $cols[] = _M('Person name', 'services');
+        $cols[] = _M('Person id', 'services');
+        //cria duas últimas colunas (presenças e ausências)
+        $cols[] = _M('Presences', 'services');
+        $cols[] = _M('Absences', 'services');
+
+        $Cols = Array(0,1,2, count($cols)-4, count($cols)-3, count($cols)-2, count($cols)-1);
+        $y = 0;
+        if ( count($pupilsFrequence->enrollFrequence)>0 )
+        {
+            unset($code);
+            foreach ( $pupilsFrequence->enrollFrequence as $enrollId => $pupil )
+            {
+                for ( $x = 0; $x < count($cols); $x++ )
+                {
+
+                    unset($img);
+                    if ( !in_array ( $x, $Cols ) )
+                    {
+                        foreach ( $academicCalendar as $item )
+                        {
+                            if ( array_key_exists($item->occurrenceDate, $pupil) )
+                            {
+                                $code['setData'][$item->occurrenceDate][$enrollId] ="setData('$enrollId', '$item->occurrenceDate', " . $pupil[$item->occurrenceDate]['frequency'] . ", true)";
+                                $code['turnOffAddButton'][$item->occurrenceDate] = "turnOffAddButton('$item->occurrenceDate')";
+                                unset($pupil[$item->occurrenceDate]);
+                                break;
+                            }
+                            else
+                            {
+                               $enrolls[$enrollId] = $enrollId;
+                            }
+
+                        }
+                        $image   = new MImage('imgFreq[' . $enrollId . '][' . $dataC[$x]->occurrenceDate . ']', '', null);
+                        unset($img);
+                        $image->addAttribute('onClick',"updateFrequency('{$dataC[$x]->occurrenceDate}', '$enrollId', '{$dataC[$x]->lessonNumberHours}')");
+                        $divFreq = new MDiv('divFreq_' . $enrollId.'_'.$x, array($image, $textHide), null, 'align=center');
+                        $dataX[$y][$x] = $divFreq;
+                    }
+                    else
+                    {
+                        if ( $x == 0 )
+                        {
+                            $divId = new MDiv('divId_' . $enrollId, $y+1, null, 'align=right');
+                            $dataX[$y][$x] = $divId;
+                        }
+                        else if ( $x == 1 || $x == count($cols)-3 )
+                        {
+                            $divPersonId = new MDiv('divPersonId_' . $enrollId, $pupil['personId'], null, 'align=center');
+                            $dataX[$y][$x] = $divPersonId;
+                        }
+                        else if ( $x == 2 || $x == count($cols)-4 )
+                        {
+                            $divPersonName = new MDiv('divPersonName_' . $enrollId  , $pupil['pupilName'], null);
+                            $divPersonName->addBoxStyle('white-space', 'nowrap');
+                            $dataX[$y][$x] = $divPersonName;
+                        }
+                        else if ( $x == count($cols)-2 )
+                        {
+                            //Presencas
+                            $labelSuffix = new MText('lbSuf', _M('H/L', 'services'));
+                            $labelSuffix->color = 'blue';
+
+                            $label = new MText('lbPres_' . $enrollId, '0');
+                            $label->setBold(true);
+                            $label->color = 'blue';
+
+                            $labelPercent = new MText('lbPercentPres_' . $enrollId, '(0%)');
+                            $labelPercent->color = 'blue';
+            
+                            $divPres = new MDiv('divPres_' . $enrollId, array($label, $labelSuffix, $labelPercent), null, 'align=center');
+                            $divPres->addBoxStyle('white-space', 'nowrap');
+
+                            $dataX[$y][$x] = $divPres;
+                        }
+                        else if ( $x == count($cols)-1 )
+                        {
+                            //Faltas
+                            $labelSuffix = new MText('lbSuf', _M('H/L', 'services'));
+                            $labelSuffix->color = 'red';
+            
+                            $label  = new MText('lbAbs_' . $enrollId, '0');
+                            $label->setBold(true);
+                            $label->color = 'red';
+            
+                            $labelPercent = new MText('lbPercentAbs_' . $enrollId, '(0%)');
+                            $labelPercent->color = 'red';
+            
+                            $divAbs = new MDiv('divAbs_' . $enrollId, array($label, $labelSuffix, $labelPercent), null, 'align=center');
+                            $divAbs->addBoxStyle('white-space', 'nowrap');
+                            //
+                            $dataX[$y][$x] = $divAbs;
+                        }
+                    }
+                }
+            $y++;
+            }
+            if ( count($code['turnOffAddButton']) > 0 )
+            {
+                foreach ( $code['turnOffAddButton'] as $date => $value )
+                {
+                    foreach ( $enrolls as $enrollId => $value )
+                    {
+                        if (!$code['setData'][$date][$enrollId])
+                        {
+                            $code['setData'][$date][$enrollId] ="setData('$enrollId', '$date', 0, true)";
+ 
+                        }
+                    }
+                }
+            }
+            if  ( count($code) > 0 )
+            {
+                foreach($code as $item => $value)
+                {
+                    if (is_array($value))
+                    {
+                        foreach( $value as $item2 => $value2 )
+                        {
+                            if ( is_array($value2) )
+                            {
+                                foreach ($value2 as $item3 => $value3 )
+                                {
+                                    $this->page->AddJsCode($value3);
+                                }
+                            }
+                            else
+                            {
+                                $this->page->AddJsCode($value2);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        //cria campos
+        $pupilsTable = new MTableRaw($title, $dataX, $cols);
+        $pupilsTable->setAlternate(true); 
+        $fields[] = $pupilsTable;
+
+        $obs = new MMultiLineField('professorObservation', $this->getFormValue('professorObservation', $data->professorObservation), _M('Observation', 'academic'), null, 4, 70);
+        $fields[] = $obs;
+
+        $fields[] = new MSeparator();
+        $fields[] = new MSeparator();
+        $fields[] = new MSeparator();
+        $fields[] = new MSeparator();
+
+        $this->setFields($fields);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        
+    }
+
+    public function tbBtnContent_click($enroll = NULL)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $data->groupId      = MIOLO::_REQUEST('groupId');
+        $data->professorId  = MIOLO::_REQUEST('professorId');
+
+        $class = 'RptLessonsContent'; 
+        $MIOLO->getClass('academic', $class);
+        $report = new $class($data); 
+        return;
+    }
+    /**
+     * Event triggered when user click on the save button
+     **/
+    public function ajax_btnSave($enrolls)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $action = MIOLO::getCurrentAction();
+
+        $gotError = false;
+        $data                 = unserialize(stripslashes($enrolls[0]));
+
+        $professorObservation = $data['professorObservation'];
+        unset($data['professorObservation']);
+        $groupId              = $_REQUEST['groupId'];
+
+        $business = $MIOLO->getBusiness('services', 'BusProfessorFrequencyNew');
+        $business->beginTransaction();
+
+        foreach ( $data as $enrolls )
+        {
+            $enrollId    = $enrolls->enrollId;
+            $frequencies = $enrolls->frequencies;
+            foreach ( $frequencies as $frequency )
+            {   
+                $acdFrequenceEnroll->userName      = trim($MIOLO->getLogin()->id);
+                $acdFrequenceEnroll->ipAddress     = $_SERVER['REMOTE_ADDR'];
+                $acdFrequenceEnroll->enrollId      = $enrollId;
+                $acdFrequenceEnroll->frequencyDate = str_replace('_', '-', $frequency->frequencyDate);
+                $acdFrequenceEnroll->frequency     = $frequency->frequency ? $frequency->frequency : 0;
+                $acdFrequenceEnroll->professorId   = $_REQUEST['professorId'];
+             
+                try
+                {
+                    $business->insertFrequence ($acdFrequenceEnroll);
+                }
+                catch( Exception $e )
+                {
+                    $msg  = _M('Error inserting or updating data', 'services') . ': ' . $e->getMessage();
+                    $gotError = true;
+                } 
+            }
+        }
+        if ( $gotError )
+        {
+            $business->rollback();
+        }
+        else
+        {
+            //Atualiza as observações do professor
+            $business->updateProfessorObservation($groupId, $professorObservation);
+
+            $business->commit();   
+            $msg = _M('Data saved successfully', 'services') . '!';
+        }
+        $fld33[]  = new MTextLabel('labelInfo', '<br><font color=red>' . $msg . '</font><br>&nbsp;');
+        $fields[] = new MDiv('divInfo', $fld33, null, 'align=center');
+        unset($fld33);
+        
+        $this->manager->getTheme()->setContent($fields);
+    }
+}
+
+?>

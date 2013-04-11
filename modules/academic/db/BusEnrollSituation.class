@@ -1,0 +1,150 @@
+<?php
+/**
+ * @author Leovan Tavares da Silva [leovan] [leovan@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * Leovan Tavares da Silva [leovan@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 02/08/2006
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to manipulate the basPupilListing table
+ **/
+class BusinessAcademicBusEnrollSituation extends Business
+{
+
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic', 'sagu');
+        $module = is_null($module) ? 'academic' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+    
+    /**
+     *  Return the locked contracts list
+     *
+     *  @return (array): Array containing the results.
+     */
+     public function listPupilsByEnrollSituation($filters)
+     {
+        $module = MIOLO::getCurrentModule();
+        
+        set_time_limit(0);
+        
+        $db = $this->getDatabase();
+        
+        $sql = 'SELECT DISTINCT A.enrollId, 
+                       B.personId,
+                       G.name,
+                       A.groupId,
+                       C.curricularComponentId,
+                       C.curricularComponentVersion,
+                       D.name,
+                       A.finalNote,
+                       F.periodId
+                  FROM acdEnroll A
+            INNER JOIN acdContract B
+                    ON (B.contractId = A.contractId)
+            INNER JOIN acdCurriculum C
+                    ON (C.curriculumId = A.curriculumId)
+            INNER JOIN acdCurricularComponent D
+                    ON (D.curricularComponentId      = C.curricularComponentId AND
+                        D.curricularComponentVersion = C.curricularComponentVersion)
+            INNER JOIN acdGroup E
+                    ON (E.groupId = A.groupId)
+            INNER JOIN acdLearningPeriod F
+                    ON (F.learningPeriodId = E.learningPeriodId)
+            INNER JOIN ONLY basPhysicalPersonStudent G
+                    ON (G.personId = B.personId) ';
+                            
+        if (strlen((string)$filters->periodId) > 0)
+        {
+            if ($filters->reportOption == 1)
+            {
+                $where .= ' AND F.periodId = ? ';
+                $args[] = $filters->periodId;
+            }
+            elseif ($filters->reportOption == 2)
+            {
+                $sql .= ' INNER JOIN acdLearningPeriod H
+                                  ON (H.courseId = B.courseId AND
+                                      H.courseVersion = B.courseVersion AND
+                                      H.unitId = B.unitId AND
+                                      H.turnId = B.turnId) ';
+                $where .= ' AND H.periodId = ?
+                            AND F.beginDate < H.beginDate ';
+                $args[] = $filters->periodId;
+            }
+        }
+        if (strlen((string)$filters->courseId) > 0)
+        {
+            $where .= ' AND B.courseId = ? ';
+            $args[] = $filters->courseId;
+        }
+        if (strlen((string)$filters->courseVersion) > 0)
+        {
+            $where .= ' AND B.courseVersion = ? ';
+            $args[] = $filters->courseVersion;
+        }
+        if (strlen((string)$filters->unitId) > 0)
+        {
+            $where .= ' AND B.unitId = ? ';
+            $args[] = $filters->unitId;
+        }
+        if (strlen((string)$filters->turnId) > 0)
+        {
+            $where .= ' AND B.turnId = ?';
+            $args[] = $filters->turnId;
+        }
+        if (strlen((string)$filters->statusId) > 0)
+        {
+            $where .= ' AND A.statusId = ? ';
+            $args[] = $filters->statusId;
+        }
+        if ($filters->reportOption != 3)
+        {
+            $where .= ' AND getContractDisactivationDate(A.contractId) IS NULL ';
+        }
+                         
+        if (strlen((string)$where) > 0)
+        {
+            $sql .= 'WHERE ' . substr($where, 4) . ' ORDER BY F.periodId, G.name, D.name';
+            
+            $result = $db->query(SAGU::prepare($sql, $args));
+            return $result;
+        }
+        return null;
+    }
+}
+?>

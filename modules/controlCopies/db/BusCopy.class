@@ -1,0 +1,402 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for ccpCopies table
+ *
+ * @author Jamiel Spezia [jamiel@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 14/09/2005
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to manipulate the ccpCopies table
+ **/
+class BusinessControlCopiesBusCopy extends Business
+{
+
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module = is_null($module) ? 'controlCopies' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+    /**
+     * Return a specific record from the database
+     *
+     * @param $examOccurrenceId (integer): Primary key of the record to be retrieved
+     *
+     * @return (object): Return an object of the type handled by the class
+     *
+     **/
+    public function getCopy($copyId)
+    {
+        $sql = 'SELECT A.personId,
+                       B.name as personName,
+                       A.copiesNumber,
+                       TO_CHAR(A.date,\'' . MASK_TIMESTAMP . '\'),
+                       A.physicalResourceId,
+                       A.physicalResourceVersion,
+                       A.periodId,
+                       A.userName,
+                       TO_CHAR(A.dateTime,\'' . MASK_TIMESTAMP . '\'),
+                       A.ipAddress
+                  FROM ccpCopy A
+        LEFT JOIN ONLY basPerson B
+                    ON ( B.personId = A.personId )
+                 WHERE A.copyId = ? ';
+
+        $db     = $this->getDatabase();
+        $result = $db->query(SAGU::prepare($sql, $copyId));
+        //$db->close();
+
+        $copy = new ccpCopy();
+        list ( $copy->personId,
+               $copy->personName,
+               $copy->copiesNumber,
+               $copy->date,
+               $copy->physicalResourceId,
+               $copy->physicalResourceVersion,
+               $copy->periodId,
+               $copy->userName,
+               $copy->dateTime,
+               $copy->ipAddress ) = $result[0];
+
+        return $copy;
+    }
+    
+    /**
+     * Do a search on the database table handled by the class
+     *
+     * @param $filters (object): Search filters
+     *
+     * @return (array): An array containing the search results
+     **/
+    public function searchCopy($filters)
+    {
+        $sql = 'SELECT A.copyId,
+                       A.personId,
+                       B.name as personName,
+                       A.copiesNumber,
+                       TO_CHAR(A.date,\'' . MASK_TIMESTAMP . '\'),
+                       A.physicalResourceId,
+                       A.physicalResourceVersion,
+                       C.description as physicalResourceDescription,
+                       A.periodId,
+                       A.userName,
+                       TO_CHAR(A.dateTime,\'' . MASK_TIMESTAMP . '\'),
+                       A.ipAddress
+                  FROM ccpCopy A
+        LEFT JOIN ONLY basPerson B
+                    ON ( B.personId = A.personId )
+             LEFT JOIN insPhysicalResource C
+                    ON ( C.physicalResourceId = A.physicalResourceId AND C.physicalResourceVersion = A.physicalResourceVersion)';
+
+        if ( strlen((string)$filters->personId) > 0 )
+        {
+            $where .= ' AND A.personId = ? ';
+            $args[] = $filters->personId;
+        }
+
+        if ( strlen((string)$filters->personName) > 0 )
+        {
+            $where .= ' AND B.name ILIKE ? ';
+            $args[] = $filters->personName;
+        }
+
+        if ( strlen((string)$filters->beginDate) > 0 )
+        {
+            $where .= ' AND A.date >= TO_TIMESTAMP(?,\'' . MASK_TIMESTAMP . '\') ';
+            $args[] = $filters->beginDate;
+        }
+
+        if ( strlen((string)$filters->endDate) > 0 )
+        {
+            $where .= ' AND A.date <= TO_TIMESTAMP(?,\'' . MASK_TIMESTAMP . '\') ';
+            $args[] = $filters->endDate;
+        }
+
+        if ( strlen((string)$filters->periodId) > 0 )
+        {
+            $where .= ' AND A.periodId = ? ';
+            $args[] = $filters->periodId;
+        }
+
+        unset($result);
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE ' . substr($where, 4);// . ' ORDER BY B.description';
+            $db = $this->getDatabase();
+
+            $result = $db->query(SAGU::prepare($sql, $args));
+            //$db->close();
+        }
+
+        return $result;
+    }
+
+    public function nextvalCopy()
+    {
+        $sql = 'SELECT nextval((\'seq_copyid\'::text)::regclass)';
+        $db = $this->getDatabase();
+        $id = $db->Query($sql);
+
+        return $id[0][0];
+    }
+
+    /**
+     * Insert a new record
+     *
+     * @param $data (object): An object of the type handled by the class
+     *
+     * @return True if succed, otherwise False
+     *
+     **/
+    public function insertCopy($data)
+    {
+        $sql = 'INSERT INTO ccpCopy
+                            (copyId,
+                             personId,
+                             copiesNumber,
+                             date,
+                             physicalResourceId,
+                             physicalResourceVersion,
+                             periodId )
+                     VALUES (?,?,?,TO_TIMESTAMP(?,\'' . MASK_TIMESTAMP . '\'), ?, ?, ?)';
+
+        $db     = $this->getDatabase();
+        $args   = array ( $data->copyId,
+                          $data->personId,
+                          $data->copiesNumber,
+                          $data->date,
+                          $data->physicalResourceId,
+                          $data->physicalResourceVersion,
+                          $data->periodId );
+
+        $result = $db->execute(SAGU::prepare($sql, $args));
+        //$db->close();
+
+        return $result;
+    }
+
+    /**
+     * Update data from a specific record
+     *
+     * @param $data (object): Data which will replace the old record data
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+    public function updateCopy($data)
+    {
+        $sql = 'UPDATE ccpCopy
+                   SET personId                 = ?,
+                       copiesNumber             = ?,
+                       physicalResourceId       = ?,
+                       physicalResourceVersion  = ?,
+                       periodId                 = ?
+                 WHERE copyId                   = ?';
+
+        $args = array( $data->personId,
+                       $data->copiesNumber,
+                       $data->physicalResourceId,
+                       $data->physicalResourceVersion,
+                       $data->periodId,
+                       $data->copyId );
+
+        $db   = $this->getDatabase();
+        $sqls = SAGU::prepare($sql, $args);
+
+        for ( $i=0; $i<count($sqls); $i++ )
+        {
+            $result = $db->execute($sqls[$i]);
+        }
+
+        //$db->close();
+
+        return $result;
+    }
+
+    /**
+     * Delete a record
+     *
+     * @param $examOccurrenceId (string): Primary key for deletion
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+    public function deleteCopy($copyId)
+    {
+        $sql = 'DELETE FROM ccpCopy
+                      WHERE copyId = ?';
+
+        $db     = $this->getDatabase();
+        $result = $db->execute(SAGU::prepare($sql, $copyId));
+        //$db->close();
+
+        return $result;
+    }
+
+    /**
+     * Return the last register of user
+     *
+     * @param $examOccurrenceId (integer): Primary key of the record to be retrieved
+     *
+     * @return (object): Return an object of the type handled by the class
+     *
+     **/
+    public function getLastRegister($userName)
+    {
+        $sql = 'SELECT A.personId,
+                       B.name as personName,
+                       A.copiesNumber,
+                       TO_CHAR(A.date,\'' . MASK_TIMESTAMP . '\'),
+                       A.physicalResourceId,
+                       A.physicalResourceVersion,
+                       A.periodId,
+                       A.userName,
+                       TO_CHAR(A.dateTime,\'' . MASK_TIMESTAMP . '\'),
+                       A.ipAddress
+                  FROM ccpCopy A
+        LEFT JOIN ONLY basPerson B
+                    ON ( B.personId = A.personId )
+                 WHERE A.userName ILIKE ? 
+              ORDER BY A.copyId DESC
+                 LIMIT 1';
+
+        $db     = $this->getDatabase();
+        $result = $db->query(SAGU::prepare($sql, $userName));
+        //$db->close();
+
+        $copy = new ccpCopy();
+        list ( $copy->personId,
+               $copy->personName,
+               $copy->copiesNumber,
+               $copy->date,
+               $copy->physicalResourceId,
+               $copy->physicalResourceVersion,
+               $copy->periodId,
+               $copy->userName,
+               $copy->dateTime,
+               $copy->ipAddress ) = $result[0];
+
+        return $copy;
+    }
+
+    public function copiesAnalyticalForPeriod($data)
+    {
+        $sql = 'SELECT A.userName,
+                       A.periodId,
+                       TO_CHAR(A.date, \'' . MASK_DATE . '\'),
+                       A.userName,
+                       A.personId,
+                       B.name,
+                       A.copiesNumber
+                  FROM ccpCopy A
+       INNER JOIN ONLY basPhysicalPerson B
+                    ON (A.personId = B.personId) ';
+
+        if ( count($data->beginDate) > 0 )
+        {
+            $where .= ' AND DATE(A.date) >= TO_DATE(?, \'' . MASK_DATE . '\')';
+            $args[] = $data->beginDate;
+        }
+
+        if ( count($data->endDate) > 0 )
+        {
+            $where .= ' AND DATE(A.date) <= TO_DATE(?, \'' . MASK_DATE . '\')';
+            $args[] = $data->endDate;
+        }
+
+        if ( count($data->personId) > 0 )
+        {
+            $where .= ' AND A.personId = ?';
+            $args[] = $data->personId;
+        }
+
+
+        if ( $where )
+        {
+
+            $sql .= ' WHERE ' . substr($where, 4) . '
+                   ORDER BY A.userName,
+                            A.periodId,
+                            A.date,
+                            A.userName,
+                            B.name ';
+
+            $db = $this->getDatabase();
+            $result = $db->query(SAGU::Prepare($sql, $args));
+        }
+
+        return $result;
+    }
+
+    public function copiesSyntheticForPeriod($data)
+    {
+        $sql = 'SELECT A.userName,
+                       sum(A.copiesNumber)
+                  FROM ccpCopy A ';
+
+        if ( count($data->beginDate) > 0 )
+        {
+            $where .= ' AND DATE(A.date) >= TO_DATE(?, \'' . MASK_DATE . '\')';
+            $args[] = $data->beginDate;
+        }
+
+        if ( count($data->endDate) > 0 )
+        {
+            $where .= ' AND DATE(A.date) <= TO_DATE(?, \'' . MASK_DATE . '\')';
+            $args[] = $data->endDate;
+        }
+
+        if ( $where )
+        {
+
+            $sql .= ' WHERE ' . substr($where, 4) . '
+                   GROUP BY A.userName
+                   ORDER BY 2 DESC,
+                            A.userName ';
+
+            $db = $this->getDatabase();
+            $result = $db->query(SAGU::Prepare($sql, $args));
+        }
+
+        return $result;
+    }
+
+}
+
+?>

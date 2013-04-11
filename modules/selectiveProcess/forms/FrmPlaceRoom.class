@@ -1,0 +1,374 @@
+<?php
+
+/**
+ * Place room form
+ *
+ * @author Daniel Afonso Heisler [daniel@solis.coop.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ *
+ * @since
+ * Class created on 15/09/2005
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2005 SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+
+/**
+ * Form to manipulate a selectiveProcessOccurrence
+ **/
+class FrmPlaceRoom extends MForm
+{
+
+    /**
+     * Class constructor
+     **/
+    function __construct()
+    {
+
+        $module = MIOLO::getCurrentModule();
+
+        if ( MIOLO::_request('function') == 'insert' )
+        {
+            parent::__construct(_M('Insert', $module));
+        }
+        else
+        {
+            parent::__construct(_M('Update', $module));
+        }
+
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+
+        $toolBar = new MToolBar('toolBar',$MIOLO->getActionURL($module,$action));
+
+        if ( $function == 'insert' )
+        {
+            $toolBar->disableButton('tbBtnDelete');
+            $toolBar->disableButton('tbBtnPrint');
+        }
+        elseif ( $function == 'delete' )
+        {
+            $toolBar->disableButton('tbBtnSave');
+        }
+        $fields[] = $toolBar;
+
+        if ( in_array($function,array('update','delete')) )
+        {
+            $placeRoomId = $_GET['placeRoomId'] ? $_GET['placeRoomId'] : $_POST['placeRoomId'];
+            $fields[]    = new MTextLabel('placeRoomId', $placeRoomId, _M('Place room id',$module));
+            $fields[]    = new MHiddenField('placeRoomId', $placeRoomId);
+
+            $business = $MIOLO->getBusiness($module,'BusPlaceRoom');
+            $data     = $business->getPlaceRoom($placeRoomId);
+        }
+
+        $business           = $MIOLO->getBusiness($module,'BusSelectiveProcess');
+        $selectiveProcessId = new MComboBox('selectiveProcessId', $this->getFormValue('selectiveProcessId', $data->selectiveProcessId), _M('Selective process id',$module), $business->listSelectiveProcess());
+        $selectiveProcessId->setJsHint(_M('Enter the selective process code',$module));
+//         $selectiveProcessId->addAttribute('onChange','document.' . $this->getName() . '.submit()' );
+        $selectiveProcessId->setAutoPostBack(true);
+        $fields[]           = $selectiveProcessId;
+        $validators[]       = new MRequiredValidator('selectiveProcessId'); 
+
+        $business = $MIOLO->getBusiness($module,'BusPlaceOccurrence');
+        $placeId  = new MComboBox('placeId', $this->getFormValue('placeId', $data->placeId), _M('Place id',$module), $business->listPlaceOccurrence($this->getFormValue('selectiveProcessId', $data->selectiveProcessId)));
+        $fields[] = $placeId;
+        $validators[] = new MIntegerValidator('placeId', '', 'required');
+        //$validators[] = new MRequiredValidator('placeId');
+
+
+        $businessSelectiveProcess = $MIOLO->getBusiness($module,'BusSelectiveProcess');
+
+        if ( strlen((string)$selectiveProcessId->value) > 0 )
+        {
+            $getSelectiveProcess      = $businessSelectiveProcess->getSelectiveProcess($selectiveProcessId->value);
+
+            if ( $getSelectiveProcess->isLanguage == DB_TRUE )
+            {
+                $business     = $MIOLO->getBusiness($module,'BusLanguageOccurrence');
+                $languageId   = new MComboBox('languageId', $this->getFormValue('languageId', $data->languageId), _M('Language id',$module), $business->listLanguageOccurrence($this->getFormValue('selectiveProcessId', $data->selectiveProcessId)));
+                $fields[]     = $languageId;
+                $validators[] = new MIntegerValidator('languageId', '', 'optional');
+                //$validators[] = new MRequiredValidator('languageId');
+            }
+        }
+
+
+        $room         = new MTextField('room', $this->getFormValue('room', $data->room), _M('Room',$module), 10);
+        $room->setJsHint(_M('Enter the place room',$module));
+        $fields[]     = $room;
+        $validators[] = new MRequiredValidator('room');
+
+        $build        = new MTextField('build', $this->getFormValue('build', $data->build), _M('Build',$module), 10);
+        $build->setJsHint(_M('Enter the place room build',$module));
+        $fields[]     = $build;
+        $validators[] = new MRequiredValidator('build');
+
+        $vacant       = new MTextField('vacant', $this->getFormValue('vacant', $data->vacant), _M('Capacity',$module), 10);
+        $vacant->setJsHint(_M('Enter the place room capacity',$module));
+        $fields[]     = $vacant;
+        $validators[] = new MIntegerValidator('vacant', '', 'required');
+
+        $priority     = new MTextField('priority', $this->getFormValue('priority', $data->priority), _M('Occupation priority',$module), 10);
+        $priority->setJsHint(_M('Enter the place room priority',$module));
+        $fields[]     = $priority;
+        $validators[] = new MIntegerValidator('priority', '', 'required');
+
+        $specialNecessityHelp = new MText('specialNecessityHelp', _M('Does this room allows people with special necessities?',$module));
+        $fields[] = $specialNecessityHelp;
+
+        $specialNecessityLabel = new MText('specialNecessityLabel', _M('Special necessity',$module) . ':');
+        $specialNecessityLabel->setWidth(FIELD_CONTAINER_SIZE);
+
+        $specialNecessity = $this->GetFormValue('specialNecessity', $data->specialNecessity);
+
+        if ( ! isset($specialNecessity) )
+        {
+            $specialNecessity = DB_FALSE;
+        }
+
+        $specialNecessity = new MRadioButtonGroup('specialNecessity', '', SAGU::listYesNo(1), $specialNecessity, null, 'horizontal');
+        $specialNecessity->SetShowLabel(false);
+
+        $hctSpecialNecessity = new MHContainer('hctSpecialNecessity', array($specialNecessityLabel, $specialNecessity));
+        $fields[]  = $hctSpecialNecessity;
+
+        $internetHelp = new MText('internetHelp', _M('Will this room be filled with people who subscribed via internet?',$module));
+        $fields[] = $internetHelp;
+
+        $internetLabel = new MText('internetLabel', _M('Is internet',$module) . ':');
+        $internetLabel->setWidth(FIELD_CONTAINER_SIZE);
+
+        $opts = SAGU::listYesNo(1);
+        $opts[] = array(_M('Indifferent', $module), 'any');
+        if ( is_null($data->isInternet) )
+        {
+            $data->isInternet = 'any';
+        }
+        $internet = new MRadioButtonGroup('isInternet', '', $opts, $this->getFormValue('isInternet', $data->isInternet), null, 'horizontal');
+        $internet->SetShowLabel(false);
+
+        $hctInternet = new MHContainer('hctInternet', array($internetLabel, $internet));
+        $fields[]  = $hctInternet;
+
+        $highSchoolHelp = new MText('highSchoolHelp', _M('Will this room be filled with people who finished high school?',$module));
+        $fields[] = $highSchoolHelp;
+
+        $highSchoolLabel = new MText('highSchoolLabel', _M('Is high school',$module) . ':');
+        $highSchoolLabel->setWidth(FIELD_CONTAINER_SIZE);
+
+        $opts = SAGU::listYesNo(1);
+        $opts[] = array(_M('Indifferent', $module), 'any');
+        if ( is_null($data->isHighSchool) )
+        {
+            $data->isHighSchool = 'any';
+        }
+        $highSchool = new MRadioButtonGroup('isHighSchool', '', $opts, $this->getFormValue('isHighSchool', $data->isHighSchool), null, 'horizontal');
+        $highSchool->SetShowLabel(false);
+
+        $hctHighSchool = new MHContainer('hctHighSchool', array($highSchoolLabel, $highSchool));
+        $fields[]  = $hctHighSchool;
+
+
+        if ( $function == 'update' )
+        {
+            $fields[] = new MTextLabel('lastModification', '[' . $data->userName . ' - ' . $data->dateTime . ']', _M('Last modification',$module));
+
+        }
+
+        $fields[] = new Separator('');
+
+        $this->setFields($fields);
+        $this->setValidators($validators);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+        $this->setClose($MIOLO->getActionURL($module,substr($action,0,strrpos($action,':'))));
+        if ( strlen((string)$this->getFormValue('selectiveProcessId', $data->selectiveProcessId))>0 || $function != 'insert')
+        {
+            $this->page->onLoad('document.' . $this->name . '.placeId.focus();');
+        }
+        elseif ( $function == 'insert' )
+        {
+            $this->page->onLoad('document.' . $this->name . '.selectiveProcessId.focus();' );
+        }
+
+    }
+
+    /**
+     * Event triggered when user chooses New from the toolbar
+     **/
+    public function tbBtnNew_click($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+    }
+
+    /**
+     * Event triggered when user chooses Delete from the toolbar
+     **/
+    public function tbBtnDelete_click($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $data   = $this->getTypesData();
+        $opts   = array('event'       => 'tbBtnDelete_confirm',
+                        'function'    => 'delete',
+                        'placeRoomId' => MIOLO::_request('placeRoomId') );
+
+        $gotoYes = $MIOLO->getActionURL( $module, $action, null, $opts );
+        $goto    = SAGU::getStackBackUrl();
+        $gotoNo  = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+        $msg     = _M(MSG_CONFIRM_RECORD_DELETE,$module);
+        $caption = _M('Question',$module);
+        $MIOLO->question($msg, $gotoYes, $gotoNo);
+    }
+
+    /**
+     * Event triggered when user chooses Yes from the Delete prompt dialog
+     **/
+    public function tbBtnDelete_confirm($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $business = $MIOLO->getBusiness($module, 'BusPlaceRoom');
+        $ok       = $business->deletePlaceRoom($this->placeRoomId->value);
+
+        if ( $ok )
+        {
+            $msg  = _M(MSG_RECORD_DELETED,$module);
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Information',$module);
+            $MIOLO->information($msg, $goto);
+        }
+        else
+        {
+            $msg  = _M('Error executing requested operation.',$module);
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Error',$module);
+            $MIOLO->error( $msg, $goto, $caption );
+        }
+    }
+
+    /**
+     * Event triggered when user chooses Save from the toolbar
+     **/
+    public function tbBtnSave_click($sender=NULL)
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+
+        $data     = $this->getTypesData();
+        $business = $MIOLO->getBusiness($module, 'BusPlaceRoom');
+
+        if ( $function == 'update' )
+        {
+            $ok  = $business->updatePlaceRoom($data);
+            $msg = _M(MSG_RECORD_UPDATED,$module);
+        }
+        else
+        {
+            $ok  = $business->insertPlaceRoom($data);
+            $msg = _M(MSG_RECORD_INSERTED,$module);
+        }
+
+        if ( $ok )
+        {
+            $opts = array('placeRoomIdS' => $data->placeRoomId);
+
+            if ( $function == 'update' )
+            {
+                $caption = _M('Information', $module);
+                $MIOLO->information($msg, $MIOLO->getActionURL( $module, $action, null, $opts));
+            }
+            else
+            {
+                unset($opts);
+                $goto = SAGU::getStackBackUrl();
+                $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL( $module, $action, null, $opts);
+                $opts = array('function'=>'insert');
+
+                $gotoYes = $MIOLO->getActionURL($module, $action, null, $opts);
+                $caption = _M('Question',$module);
+                $MIOLO->question($msg, $gotoYes, $goto);
+            }
+        }
+        else
+        {
+            $msg  = _M('Error executing requested operation.',$module);
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action, null, $opts);
+            $caption = _M('Error',$module);
+            $MIOLO->error( $msg, $goto, $caption );
+        }
+    }
+
+    /**
+     * Method to gather all information from the form fields
+     * and put them on a database compatible object
+     **/
+    public function getTypesData()
+    {
+        $data = new SprPlaceRoom();
+        $vars = get_object_vars($data);
+        foreach ( $vars as $var => $value )
+        {
+            if ( $this->$var && $var != 'name' )
+            {
+                eval('$data->' . $var . ' = $this->' . $var . '->value;');
+            }
+        }
+
+        if ( $data->isInternet == 'any' )
+        {
+            $data->isInternet = null;
+        }
+        if ( $data->isHighSchool == 'any' )
+        {
+            $data->isHighSchool = null;
+        }
+
+
+        return $data;
+    }
+}
+
+?>

@@ -1,0 +1,278 @@
+<?php
+
+/**
+ * Default defines 
+ * To report identification
+ */
+define('REPORT_ID', 'SP001'); 
+define('FPDF_FONTPATH', $MIOLO->getModulePath('basic', '/classes/fpdf/font/'));
+
+$MIOLO = MIOLO::getInstance();
+$module = MIOLO::getCurrentModule();
+$MIOLO->Uses('classes/fpdf/fpdf.php', 'basic');
+
+/**
+ * Create header and footer information
+ */
+class PDF extends FPDF
+{
+    var $type = 0;
+    var $data;
+    var $iterador;
+
+    /**
+     * Defines the footer for this report
+     */
+    public function Footer()
+    {
+        $module = MIOLO::getCurrentModule();
+        $this->setY(-15);
+        $pn = $this->PageNo().'/{nb}';
+        $this->cell(190, 1, '', 'B', 1);
+        $this->ln();
+
+        $this->setFont(DEFAULT_REPORT_FONT, 'I', 8);
+        $this->cell(50, 4, $text, 0, 0);
+        $this->cell(140, 4, _M('REPORT @1 ', $module, REPORT_ID).' '._M('Page @1', $module, $pn), 0, 0, 'R');
+        $this->ln();
+    }
+
+    /**
+     * Defines the header for this report
+     */
+    public function Header()
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+
+        $busCompany  = $MIOLO->getBusiness(basic, 'BusCompany');
+        $company     = $busCompany->getCompany(DEFAULT_COMPANY_CONF);
+        $rdata->file = $company->personId;
+
+        $busInscription          = $MIOLO->getBusiness($module, 'BusInscription');
+        $busSelectiveProcess     = $MIOLO->getBusiness($module, 'BusSelectiveProcess');
+
+        if ( is_array($this->data) )
+        {
+            // Inscription information
+            $rdata->inscriptions     = $busInscription->searchInscription($this->data[$this->iterador]);
+            $rdata->examType         = $busInscription->reportInscriptionByRoomAct($this->data[$this->iterador]);
+            $rdata->selectiveProcess = $busInscription->searchInscription($this->data[$this->iterador]);
+            $rdata->build            = $this->data[$this->iterador]->build;
+            $rdata->room             = $this->data[$this->iterador]->room;
+            $rdata->beginDate        = $busSelectiveProcess->searchSelectiveProcess($this->data[$this->iterador]);
+        }
+        else
+        {
+            $rdata->inscriptions     = $busInscription->searchInscription($this->data);
+            $rdata->examType         = $busInscription->reportInscriptionByRoomAct($this->data);
+            $rdata->selectiveProcess = $busInscription->searchInscription($this->data);
+            $rdata->build            = $this->data->build;
+            $rdata->room             = $this->data->room;
+            $rdata->beginDate        = $busSelectiveProcess->searchSelectiveProcess($this->data);
+        }
+
+        $module = MIOLO::getCurrentModule();
+
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', 16);
+
+        //$this->Image(SAGUFile::getPhotoPath($rdata->file),10,8, 33, PHOTO_FORMAT);
+
+        $this->cell(33, 5,'','',0,'C');
+        $this->cell(110, 8, _M('Selective process - EXAM ACT', $module, $rdata->room), 8, 'L');
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', 13);
+        $this->cell(25, 8,_M('DATE @1', $module, $rdata->beginDate[0][6]),8, 'R','C');
+        $this->ln();
+
+        if ( count($rdata->examType) > 1 )
+        {
+            foreach ( $rdata->examType as $value1 )
+            {
+                $auxExams .= $value1[1] . ', ';
+            }
+        }
+        else
+        {
+            $auxExams = $rdata->examType[0][1];
+        }
+
+        $this->cell(33, 5, '', '', 0, 'C');
+        $this->setFont(DEFAULT_REPORT_FONT, '', 10);
+        $this->cell(15, 5, _M('Exam:', $module), 4, '', '');
+        $this->MultiCell(143, 5, $auxExams, 0, 'L', 'C');
+        $this->ln();
+
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', 14);
+        $this->cell(33, 25, '', '', 0, 'C');
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', 12);
+        $this->cell(93, 5, _M('Selective process @1', $module, $rdata->selectiveProcess[0][1]), 0, 0, 'L');
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', 12);
+        $this->cell(35, 5, _M('@1 - Room @2/@3', $module, $rdata->inscriptions[0][5], $rdata->room, $rdata->build), 0, 'L');
+
+        $this->ln();
+        $this->ln();
+
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', 12);
+        $this->cell(20, 8, _M('Inscription', $module), 'BLT', 0, 'C');
+        $this->cell(95, 8,_M('Name', $module), 'BT', 0, 'C');
+        $this->cell(27, 8, _M('RG', $module), 'BT', 0, 'C');
+        $this->cell(48, 8, _M('Signature', $module), 'BTR', 0, 'C');
+        $this->ln();
+    }
+}
+
+
+/**
+ * PDF extension to generate report
+ */
+class RptInscriptionByRoomAct
+{
+
+    /**
+     * Method to generate the report
+     */
+    public function RptInscriptionByRoomAct($data = null)
+    {
+        $module = MIOLO::getCurrentModule();
+
+        // Generating PDF file
+        $this->pdf = new PDF();
+
+        $this->pdf->data     = $data;
+        $this->pdf->iterador = 0;
+
+        $this->pdf->aliasNbPages();
+        // First page
+        //$this->pdf->addPage('P', 'mm', 'A4');
+
+        if ( is_array($data) )
+        {
+            foreach ( $data as $iterador1 => $d )
+            {
+                $this->pdf->addPage('P', 'mm', 'A4');
+                unset($exams);
+
+                $rdata  = $this->getReportData($d);
+
+                if ($d->act == 1)
+                {
+                    if ( is_array($rdata->examType) )
+                    {
+                        foreach ( $rdata->examType as $examType )
+                        {
+                            $exams[] = $examType[1];
+                        }
+                        $rdata->exams = implode(', ', $exams);
+                    }
+                }
+                else
+                {
+                    $rdata->exams = $rdata->exam->description;
+                }
+                $this->generateContent($rdata);
+
+                $this->pdf->iterador = $iterador1+1;
+            }
+        }
+        else
+        {
+            $rdata  = $this->getReportData($data);
+
+            $this->pdf->addPage('P', 'mm', 'A4');
+
+            if ($data->act == 1)
+            {
+                if ( is_array($rdata->examType) )
+                {
+                    foreach ( $rdata->examType as $examType )
+                    {
+                        $exams[] = $examType[1];
+                    }
+
+                    $rdata->exams = implode(', ', $exams);
+                }
+            }
+            else
+            {
+                $rdata->exams = $rdata->exam->description;
+            }
+
+            $this->generateContent($rdata);
+        }
+
+        $this->pdf->close();
+        $this->pdf->output();
+    }
+
+    /**
+     * Get report data information
+     */
+    private function getReportData($data)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+
+        // Inscription information
+        $busInscription          = $MIOLO->getBusiness($module, 'BusInscription');
+        $rdata->inscriptions     = $busInscription->searchInscription($data);
+        $rdata->examType         = $busInscription->reportInscriptionByRoomAct($data);
+        $rdata->selectiveProcess = $busInscription->searchInscription($data);
+        $rdata->build            = $data->build;
+        $rdata->room             = $data->room;
+        $busSelectiveProcess     = $MIOLO->getBusiness($module, 'BusSelectiveProcess');
+        $rdata->beginDate        = $busSelectiveProcess->searchSelectiveProcess($data);
+
+        $busExam = $MIOLO->getBusiness($module, 'BusExam');
+        $rdata->exam = $busExam->getExam(WRITING_CODE);
+
+        return $rdata;
+    }
+
+    function generateContent($rdata)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+
+        $this->pdf->setFont(DEFAULT_REPORT_FONT, '', 10);
+        $this->pdf->setFillColor(242);
+
+        $x = 1;
+
+        foreach ($rdata->inscriptions as $inscription)
+        {
+//             if ($x == 1)
+//             {
+//                 $x = 0;
+//             }
+//             else
+//             {
+//                 $x = 1;
+//             }
+
+            //$this->pdf->cell(10, 10, $x, 0, 0, 'L'/*, $x*/);
+
+
+            $this->pdf->setFont(DEFAULT_REPORT_FONT, '', 10);
+            $this->pdf->cell(20, 10, $inscription[0], 0, 0, 'L'/*, $x*/);
+            $this->pdf->cell(95, 10, $inscription[3], 0, 0, 'B'/*, $x*/);
+            $this->pdf->cell(27, 10, $inscription[18], 0, 0, 'L'/*, $x*/);
+            $this->pdf->cell(43, 7, ' ', 'B', 0, 'L'/*, $x*/);
+
+            if ( $inscription[19] == 't' )
+            {
+                $this->pdf->cell(5, 10, '*', 0, 0, 'C'/*, $x*/);
+            }
+
+            $this->pdf->setFont(DEFAULT_REPORT_FONT, '', 8);
+            $this->pdf->text(5, $this->pdf->getY()+6, $x);
+            $this->pdf->setFont(DEFAULT_REPORT_FONT, '', 10);
+
+            $this->pdf->ln(8);
+
+            $x++;
+
+        }
+    }
+}
+
+?>

@@ -1,0 +1,329 @@
+<?php
+/**
+ *
+ * @author Giovani Murilo Dantas Corrêa [gmurilo@isolution.inf.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Daniel Afonso Heisler [daniel@isolution.inf.br]
+ *
+ * @since
+ * Class created on 01/09/2008
+ *
+ * \b Organization: \n
+ * iSolution - Soluções em TI
+ * The iSolution Development Team
+ *
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br
+ *
+ **/
+
+
+class FrmExaminationFrequence extends MForm
+{
+    private $home;
+
+    /**
+     * Class constructor
+     **/
+    function __construct($data)
+    {
+        $module = MIOLO::getCurrentModule();
+        $this->home   = $data->home;
+
+        parent::__construct(_M('Examination frequence', $module));
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+
+        $toolBar = new MToolBar('toolBar', $MIOLO->getActionURL($module, $action));
+        $toolBar->disableButton('tbBtnNew');
+        $toolBar->disableButton('tbBtnSave');
+        $toolBar->disableButton('tbBtnDelete');
+        $toolBar->disableButton('tbBtnSearch');
+
+        /* bookmark */
+        $enabledImage  = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-20x20.png');
+        $disabledImage = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-disabled-20x20.png');
+        $url           = $MIOLO->getActionURL($module, $this->home, null, array('function' => 'search', 'event' => 'bookmark'));
+        $toolBar->addButton('tbBtnBookmark', _M('Add to bookmarks', 'basic'), $url, null, true, $enabledImage, $disabledImage);
+        if ( MIOLO::_request('event') == 'bookmark' )
+        {
+            $MIOLO->getClass('basic', 'access');
+            access::insert('Examination frequence', $this->home, 'examinationFrequence-16x16.png', true);
+        }
+        /* -- bookmark -- */
+
+        $fields[] = $toolBar;
+        
+        /* Period */
+        $businessPeriod = $MIOLO->getBusiness('academic', 'BusPeriod');
+        
+        $periodIdLabel = new MText('periodLabel', _M('Period id', $module));
+        $periodIdLabel->setClass('m-caption m-caption-required');
+        $periodIdLabel->setWidth(FIELD_CONTAINER_SIZE);
+        if ( strlen((string)$data->periodId) == 0 )
+        {
+            $data->periodId[] = CURRENT_PERIOD_ID;
+        }
+        $periodId     = new MMultiSelection('periodId',  is_array($this->getFormValue('periodId')) ? $this->getFormValue('periodId') : $data->periodId, '', $businessPeriod->listPeriod('true'), false, null, 5);
+
+        $periodId->setJsHint(_M('Enter the period code', $module));
+//        $fields[]       = $periodId;
+        $validators[]   = new MRequiredValidator('periodId', _M('Period',$module));
+        $fields[]       = new MHContainer('hctPeriodId', array($periodIdLabel, $periodId));
+        /* -- Period -- */
+        /* Professor */
+        $professorLabel = new MText('professorLabel', _M('Professor',$module).':');
+        $professorLabel->setWidth(FIELD_CONTAINER_SIZE);
+        //$professorLabel->setClass('m-caption m-caption-required');
+    
+        $professorId  = new MLookupTextField('professorId', $this->getFormValue('professorId',$data->professorId), '', FIELD_LOOKUPFIELD_SIZE, null, null, 'professorName', 'basic', 'PhysicalPersonProfessor', null, null, true);
+        $professorId->setJsHint(_M('Enter the professor code',$module));
+        //$validators[] = new MIntegerValidator('professorId', _M('Professor', $module), 'required');
+    
+        $professorName = new MTextField('professorName', $this->professorName->value, '', FIELD_DESCRIPTION_SIZE);
+        $professorName->setReadOnly(true);
+    
+        $hctProfessor = new MHContainer('hctProfessor', array($professorLabel, $professorId, $professorName));
+        $hctProfessor->setShowLabel(true);
+        $fields[]   = $hctProfessor;
+        /* -- Professor -- */
+
+        /* Curricular component */
+        $curricularComponentLabel = new MText('curricularComponentLabel', _M('Curricular component',$module) . ':');
+        $curricularComponentLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $flds[]                   = $curricularComponentLabel;
+
+        $curricularComponentId = new MLookupTextField('curricularComponentId', $this->getFormValue('curricularComponentId', $data->curricularComponentId), _M('Code',$module), FIELD_LOOKUPFIELD_SIZE, null, null, array('curricularComponentName'), $module, 'CurricularComponent', null, array('curricularComponentId' => 'curricularComponentId'), true);
+        $flds[]                = $curricularComponentId;
+
+        $curricularComponentName = new MTextField('curricularComponentName', $this->getFormValue('curricularComponentName', $data->curricularComponentName), _M('Name',$module), FIELD_DESCRIPTION_SIZE);
+        $curricularComponentName->setReadOnly(true);
+        $flds[]                  = $curricularComponentName;
+
+        $hctCurricularComponent = new MHContainer('hctCurricularComponent', $flds);
+        $hctCurricularComponent->setShowLabel(false);
+        $fields[]  = $hctCurricularComponent;
+        unset($flds);
+        /* -- Curricular Component -- */
+
+        /* Course */
+        $courseLabel   = new MText('courseLabel', _M('Course', $module) . ':');
+        $courseLabel->setWidth(FIELD_CONTAINER_SIZE);
+
+        $courseId      = new MLookupTextField('courseId', $this->getFormValue('courseId'), '', FIELD_LOOKUPFIELD_SIZE, null, null, 'courseVersion, courseName, unitId, unitDescription, turnId, turnDescription', $module, 'CourseOccurrence', null, array('courseId' => 'courseId'), !$this->page->isPostBack());
+        $courseId->setJsHint(_M('Enter the course code', $module));
+
+        $courseName    = new MTextField('courseName', $this->getFormValue('courseName', $data->courseName), '', FIELD_DESCRIPTION_SIZE);
+        $courseName->setReadOnly(true);
+        $courseName->setJsHint(_M('Course name',$module));
+
+        $courseVersion = new MTextField('courseVersion', $this->getFormValue('courseVersion', $data->courseVersion), '', FIELD_ID_SIZE);
+        $courseVersion->setJsHint(_M('Course version code',$module));
+
+        $hctCourse     = new MHContainer('hctCourse', array($courseLabel, $courseId, $courseVersion, $courseName));
+        $hctCourse->setShowLabel(true);
+        $fields[]      = $hctCourse;
+        /* -- Course -- */
+        
+        /* Turn */
+        $turnLabel       = new MText('turnLabel', _M('Turn', $module) . ':');
+        $turnLabel->setWidth(FIELD_CONTAINER_SIZE);
+
+        $turnId          = new MTextField('turnId', $this->getFormValue('turnId', $data->turnId), '', FIELD_ID_SIZE);
+        $turnId->setReadOnly(true);
+        $turnId->setJsHint(_M('Turn id', $module));
+
+        $turnDescription = new MTextField('turnDescription', $this->getFormValue('turnDescription', $data->turnDescription), '', FIELD_DESCRIPTION_SIZE);
+        $turnDescription->setReadOnly(true);
+        $turnDescription->setJsHint(_M('Turn description', $module));
+
+        $hctTurn         = new MHContainer('hctTurn', array($turnLabel, $turnId, $turnDescription));
+        $hctTurn->setShowLabel(true);
+        $fields[]        = $hctTurn;
+        /* -- Turn -- */
+
+        /* Unit */
+        $unitLabel       = new MText('unitLabel', _M('Unit', $module) . ':');
+        $unitLabel->setWidth(FIELD_CONTAINER_SIZE);
+        
+		$unitId          = new MTextField('unitId', $this->getFormValue('unitId', $data->unitId),'', FIELD_ID_SIZE);
+        $unitId->setReadOnly(true);
+        $unitId->setJsHint(_M('Unit id', $module));
+
+        $unitDescription = new MTextField('unitDescription', 
+										  $this->getFormValue('unitDescription', $data->unitDescription), 
+										  '', 
+										  FIELD_DESCRIPTION_SIZE);
+        $unitDescription->setReadOnly(true);
+        $unitDescription->setJsHint(_M('Unit description', $module));
+        
+		$hctUnit         = new MHContainer('hctUnit', array($unitLabel, $unitId, $unitDescription));
+
+        $fields[]        = $hctUnit;
+		
+        /* -- Unit -- */
+
+
+        /* Class */
+        $classLabel = new MText('classLabel', _M('Class','academic') . ':');
+        $classLabel->setWidth(FIELD_CONTAINER_SIZE);
+
+        $classId = new MLookupTextField('classId', $this->getFormValue('classId', $data->classId), _M('Class id','academic'), FIELD_LOOKUPFIELD_SIZE, null, null, array('classNameS'), 'academic', 'Class', null, null, true);
+        $classNameS = new MTextField('classNameS', $this->getFormValue('classNameS'), _M('Class name', 'academic'), FIELD_DESCRIPTION_SIZE);
+        $hctClass = new MHContainer('hctClass', array($classLabel, $classId, $classNameS));
+        $hctClass->setShowLabel(false);
+        $fields[] = $hctClass;
+
+        $fields[] = new Separator('');
+        $btnList = new MButton('btnList', _M('Next', $module));
+        $divButtons = new MDiv('divButtons', array($btnList), null, 'align=center');
+        $fields[] = $divButtons;
+
+        /*
+        $groupByLabel = new MTextLabel('groupByLabel', _M('Group by',$module) . ':');
+        $groupByLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $fields[] = $groupByLabel;
+        
+        unset($flds);
+        $group4 = new MCheckBox('group4', 4, '', $this->getFormValue('group4', $data->group1),_M('Period', $module));
+        $flds[] = $group4;
+        $group1 = new MCheckBox('group1', 1, '', $this->getFormValue('group1', $data->group1),_M('Unit', $module));
+        $flds[] = $group1;
+        $group2 = new MCheckBox('group2', 2, '', $this->getFormValue('group2', $data->group2),_M('Course', $module));
+        $flds[] = $group2;
+        $group3 = new MCheckBox('group3', 3, '', $this->getFormValue('group3', $data->group3),_M('Class', 'academic'));
+        $flds[] = $group3;
+        $hctGroupBy = new MHContainer('hctGroupBy', $flds);
+        $hctGroupBy->setShowLabel(false);
+        $fields[] = $hctGroupBy;*/
+
+        unset($flds);
+       
+        /* Groupment */
+
+
+        /* -- Groupment -- */
+
+        $fields[] = new Separator('');
+        $this->setValidators($validators);
+        
+        $this->setFields($fields);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+        $this->setClose($MIOLO->getActionURL($module, substr($action, 0, strrpos($action, ':'))));
+    }
+
+    /**
+     * Event triggered when user chooses print from the toolbar
+     **/
+    public function tbBtnPrint_click($sender = null)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+        $filters = $this->getTypesData();
+        $busExaminationFrequence = $MIOLO->getBusiness('academic', 'BusExaminationFrequence');
+        $data = $busExaminationFrequence->getPupilsForFrequence($filters);
+        switch ($filters->optionId)
+        {
+           	case 2:
+				$reportX = 'RptDailyClass';
+                break;
+            default: 
+				$reportX = 'RptExaminationFrequence';
+                break;
+        }
+        $MIOLO->getClass($module,$reportX);
+        $Report = new $reportX($data);
+    }
+    
+    public function btnList_click($sender = null)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+        $filters = $this->getTypesData();
+        $busExaminationFrequence = $MIOLO->getBusiness('academic', 'BusExaminationFrequence');
+        $data = $busExaminationFrequence->getPupilsForFrequence($filters);
+        $x =0;
+        if ( count($data->pupils) == 0 )
+        {
+            $msg = _M('No records found.','academic');
+            $msgButton = new MDiv('divMsg', $msg, null, 'align=center');
+            $this->addField($msgButton);
+            return;
+        }
+
+        foreach($data->pupils as $item1 => $value1)
+        {
+            foreach ($value1 as $item2 => $value2)
+            {
+                foreach ($value2 as $item3 => $value3)
+                {
+                    foreach ($value3 as $item4 => $value4)
+                    {
+                        foreach ($value4 as $item5 => $value5)
+                        {
+                            $dataListing[$x][0] = $item1;
+                            $dataListing[$x][1] = $item2;
+                            $dataListing[$x][2] = $data->turn[$item3];
+                            $dataListing[$x][3] = $item4;
+                            $dataListing[$x][4] = $item4.' - '.$data->professor[$item4];
+                            $dataListing[$x][5] = $item5;
+                            $dataListing[$x][6] = $item5.' - '.$data->curricularComponent[$item5];
+                            $x++;
+                        }
+                    }
+                }
+            }
+        }
+        $grid = $MIOLO->getUI()->getGrid($module, 'GrdExaminationFrequence', NULL);
+        $grid->setData($dataListing);
+        $this->addField($grid);
+ 
+    }
+    /**
+     * Method to gather all information from the form fields
+     * and put them on a database compatible object
+     **/
+    public function getTypesData()
+    {
+        $data->periodId             = $this->getFormValue('periodId');
+        $data->professorId          = $this->getFormValue('professorId');
+        $data->courseId             = $this->getFormValue('courseId');
+        $data->courseVersion        = $this->getFormValue('courseVersion');
+        $data->curricularComponentId= $this->getFormValue('curricularComponentId');
+        $data->turnId               = $this->getFormValue('turnId');
+        $data->unitId               = $this->getFormValue('unitId');
+        $data->classId              = $this->getFormValue('classId');
+        $data->reportOption         = $this->getFormValue('reportOption');
+        $data->group1               = $this->getFormValue('group1');
+        $data->group2               = $this->getFormValue('group2');
+        $data->group3               = $this->getFormValue('group3');
+        $data->group4               = $this->getFormValue('group4');
+        $data->optionId             = MIOLO::_REQUEST('optionId');
+
+        return $data;
+    }
+
+}
+?>

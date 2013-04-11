@@ -1,0 +1,677 @@
+<?php
+/**
+ *
+ * This file handles the business layer for the professor services
+ *
+ * @author Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Armando Taffarel Neto [taffarel@solis.coop.br]
+ * 
+ * @since
+ * Class created on 05/09/2007
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to handle this business
+ **/
+class BusinessServicesBusProfessor extends Business
+{
+
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module = is_null($module) ? 'academic' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+    /**
+     * A list containing all periods the professor has curricular components
+     *
+     * @param $professorId (integer): Primary key for query
+     *
+     * @return (array): An array containing all the periods the professor has ministered curricular components
+     *
+     **/
+    public function listProfessorPeriods($professorId)
+    {
+        $sql = 'SELECT A.periodId,
+                       A.description
+                  FROM acdPeriod A
+                 WHERE A.periodId IN (SELECT E.periodId
+                                        FROM acdScheduleLearningPeriod B
+                                  INNER JOIN acdSchedule C
+                                          ON (C.scheduleLearningPeriodId = B.scheduleLearningPeriodId)
+                                  INNER JOIN acdScheduleProfessor D
+                                          ON (D.scheduleId = C.scheduleId)
+                                  INNER JOIN acdLearningPeriod E
+                                          ON (E.learningPeriodId = B.learningPeriodId)
+                                       WHERE D.professorId = ?)
+              ORDER BY A.description';
+
+        $db     = $this->getDatabase();
+        $result = $db->query(SAGU::prepare($sql, $professorId));
+
+        return $result;
+    }
+
+    /**
+     * A list containing all periods the professor has curricular components
+     *
+     * @param $professorId (integer): Primary key for query
+     *
+     * @return (array): An array containing all the periods the professor has ministered curricular components
+     *
+     **/
+    public function listProfessorCurricularComponents($professorId, $periodId)
+    {
+        $sql = 'SELECT A.groupId,
+                       G.curricularComponentId || \'/\' || G.curricularComponentVersion || \' - \' || G.shortName,
+                       H.courseId || \'/\' || H.courseVersion || \' - \' ||  I.shortName,
+                       D.turnId,
+                       J.description,
+                       H.unitId,
+                       K.description,
+                       FF.description,
+                       TO_CHAR(D.beginHour,\'' . MASK_TIME . '\') || \' - \' ||
+                       TO_CHAR(D.endHour,\'' . MASK_TIME . '\'),
+                       B.scheduleId,
+                       A.isClosed,
+                       A.classId,
+                       N.name,
+                       ( SELECT count(*) > 0 FROM acdDegree WHERE learningPeriodId = D.learningPeriodId AND isSubstitutive IS TRUE ) as hasSubstitutive
+                  FROM acdGroup A
+            INNER JOIN acdSchedule B
+                    ON (B.groupId = A.groupId)
+            INNER JOIN acdScheduleProfessor C
+                    ON (C.scheduleId = B.scheduleId)
+            INNER JOIN acdScheduleLearningPeriod D
+                    ON (D.scheduleLearningPeriodId = B.scheduleLearningPeriodId)
+            INNER JOIN basWeekDay FF
+                    ON (FF.weekDayId = B.weekDayId)
+            INNER JOIN acdLearningPeriod E
+                    ON (E.learningPeriodId = D.learningPeriodId)
+            INNER JOIN acdCurriculum F
+                    ON (F.curriculumId = A.curriculumId)
+            INNER JOIN acdCurricularComponent G
+                    ON (G.curricularComponentId = F.curricularComponentId
+                        AND G.curricularComponentVersion = F.curricularComponentVersion)
+            INNER JOIN acdCourseOccurrence H
+                    ON (H.courseId = F.courseId
+                        AND H.courseVersion = F.courseVersion
+                        AND H.turnId = F.turnId
+                        AND H.unitId = F.unitId)
+            INNER JOIN acdCourse I
+                    ON (I.courseId = H.courseId)
+            INNER JOIN basTurn J
+                    ON (J.turnId = D.turnId)
+            INNER JOIN basUnit K
+                    ON (K.unitId = F.unitId)
+             LEFT JOIN acdClass N
+                    ON (A.classId = N.classId)
+                 WHERE C.professorId = ?
+                   AND E.periodId    = ?
+                   AND F.curricularComponentTypeId != (SELECT value FROM basConfig WHERE parameter = \'CURRICULAR_COMPONENT_TYPE_TRAINING\')::INT
+              ORDER BY B.weekdayId, D.beginDate, D.beginHour, I.name, G.shortName';
+
+        $db  = $this->getDatabase();
+        $result = $db->query(SAGU::prepare($sql, array($professorId, $periodId)));
+
+        return $result;
+    }
+
+    public function listProfessorCurricularComponents3($professorId, $periodId)
+    {
+        $sql = 'SELECT A.groupId,
+                       C.professorId,
+                       G.curricularComponentId || \'/\' || G.curricularComponentVersion || \' - \' || G.shortName,
+                       H.courseId || \'/\' || H.courseVersion || \' - \' ||  I.shortName,
+                       D.turnId,
+                       J.description,
+                       H.unitId,
+                       K.description,
+                       A.isClosed,
+                       A.classId,
+                       N.name,
+                       (SELECT count(*) > 0 FROM acdDegree WHERE learningPeriodId = D.learningPeriodId AND isSubstitutive IS TRUE ) as hasSubstitutive,
+                       M.room
+                  FROM acdGroup A
+            INNER JOIN acdSchedule B
+                    ON (B.groupId = A.groupId)
+            INNER JOIN acdScheduleProfessor C
+                    ON (C.scheduleId = B.scheduleId)
+            INNER JOIN acdScheduleLearningPeriod D
+                    ON (D.scheduleLearningPeriodId = B.scheduleLearningPeriodId)
+            INNER JOIN acdLearningPeriod E
+                    ON (E.learningPeriodId = D.learningPeriodId)
+            INNER JOIN acdCurriculum F
+                    ON (F.curriculumId = A.curriculumId)
+            INNER JOIN acdCurricularComponent G
+                    ON (G.curricularComponentId = F.curricularComponentId
+                        AND G.curricularComponentVersion = F.curricularComponentVersion)
+            INNER JOIN acdCourseOccurrence H
+                    ON (H.courseId = F.courseId
+                        AND H.courseVersion = F.courseVersion
+                        AND H.turnId = F.turnId
+                        AND H.unitId = F.unitId)
+            INNER JOIN acdCourse I
+                    ON (I.courseId = H.courseId)
+            INNER JOIN basTurn J
+                    ON (J.turnId = D.turnId)
+            INNER JOIN basUnit K
+                    ON (K.unitId = F.unitId)
+             LEFT JOIN acdClass N
+                    ON (A.classId = N.classId)
+             LEFT JOIN insPhysicalResource M 
+                    ON ( M.physicalResourceId = B.physicalResourceId AND
+                         M.physicalResourceVersion = B.physicalResourceVersion )
+                 WHERE C.professorId = ?
+                   AND E.periodId    = ?
+                   AND F.curricularComponentTypeId != (SELECT value FROM basConfig WHERE parameter = \'CURRICULAR_COMPONENT_TYPE_TRAINING\')::INT
+              GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, I.name, G.shortName, D.learningPeriodId, M.room
+              ORDER BY I.name, G.shortName';
+
+        $db  = $this->getDatabase();
+        $result = $db->query(SAGU::prepare($sql, array($professorId, $periodId)));
+
+        return $result;
+    }
+
+    /**
+     * Another list containing all periods the professor has curricular components
+     *
+     * @param $professorId (integer): Primary key for query
+     *
+     * @return (array): An array containing all the periods the professor has ministered curricular components
+     *
+     **/
+    public function listProfessorCurricularComponents2($professorId, $periodId)
+    {
+        $sql = 'SELECT A.groupId,
+                       G.curricularComponentId || \'/\' || G.curricularComponentVersion || \' - \' || G.shortName as curricularComponent,
+                       A.classId,
+                       O.room || \'/\' || O.building as room,
+                       D.turnId,
+                       J.description,
+                       H.unitId,
+                       K.description,
+                       FF.description,
+                       TO_CHAR(D.beginHour,\'' . MASK_TIME . '\') || \' - \' ||  TO_CHAR(D.endHour,\'' . MASK_TIME . '\') as schedule,
+                       B.scheduleId,
+                       A.isClosed,
+                       A.classId,
+                       N.name,
+                       FF.weekDayId
+                  FROM acdGroup A
+            INNER JOIN acdSchedule B
+                    ON (B.groupId = A.groupId)
+            INNER JOIN acdScheduleProfessor C
+                    ON (C.scheduleId = B.scheduleId)
+            INNER JOIN acdScheduleLearningPeriod D
+                    ON (D.scheduleLearningPeriodId = B.scheduleLearningPeriodId)
+            INNER JOIN basWeekDay FF
+                    ON (FF.weekDayId = B.weekDayId)
+            INNER JOIN acdLearningPeriod E
+                    ON (E.learningPeriodId = D.learningPeriodId)
+            INNER JOIN acdCurriculum F
+                    ON (F.curriculumId = A.curriculumId)
+            INNER JOIN acdCurricularComponent G
+                    ON (G.curricularComponentId = F.curricularComponentId
+                        AND G.curricularComponentVersion = F.curricularComponentVersion)
+            INNER JOIN acdCourseOccurrence H
+                    ON (H.courseId = F.courseId
+                        AND H.courseVersion = F.courseVersion
+                        AND H.turnId = F.turnId
+                        AND H.unitId = F.unitId)
+            INNER JOIN acdCourse I
+                    ON (I.courseId = H.courseId)
+            INNER JOIN basTurn J
+                    ON (J.turnId = D.turnId)
+            INNER JOIN basUnit K
+                    ON (K.unitId = F.unitId)
+             LEFT JOIN acdClass N
+                    ON (A.classId = N.classId)
+             LEFT JOIN insPhysicalResource O
+                    ON (     O.physicalResourceId      = B.physicalResourceId
+                         AND O.physicalResourceVersion = B.physicalResourceVersion )
+                 WHERE C.professorId = ?
+                   AND E.periodId    = ?
+                   AND F.curricularComponentTypeId != (SELECT value FROM basConfig WHERE parameter = \'CURRICULAR_COMPONENT_TYPE_TRAINING\')::INT
+              ORDER BY weekDayId, schedule, curricularComponent, classId';
+
+        $db     = $this->getDatabase();
+        $result = $db->query(SAGU::prepare($sql, array($professorId, $periodId)));
+
+        if ( count($result)>0 )
+        {
+            $x = 0;
+            foreach ( $result as $row )
+            {
+                list ( $groupId,
+                       $curricularComponent,
+                       $classId,
+                       $room,
+                       $turnId,
+                       $turnDescription,
+                       $unitId,
+                       $unitDescription,
+                       $weekDay,
+                       $schedule,
+                       $scheduleId,
+                       $isClosed,
+                       $classId,
+                       $className,
+                       $weekDayId ) = $row;
+/*
+               echo ($curricularComponent . '|' . $curricularComponentOld . '<br>' . 
+                     $weekDayId . '|' . $weekDayIdOld . '<br>' . 
+                     $schedule . '|' . $scheduleOld . '<br>' . 
+                     $room . '|' . $roomOld . '<br>' . 
+                     $unitId . '|' . $unitIdOld . '<br>' . 
+                     $turnId . '|' . $turnIdOld . '<br><br><br>');
+*/
+                if ( $curricularComponent != $curricularComponentOld ||
+                     $weekDayId != $weekDayIdOld ||
+                     $schedule != $scheduleOld ||
+                     $room != $roomOld ||
+                     $unitId != $unitIdOld ||
+                     $turnId != $turnIdOld )
+                {
+                    $result2[$x][0] = NULL;
+                    $result2[$x][1] = $curricularComponent;
+                    $result2[$x][2] = $room . ' - ' . $unitDescription;
+                    $result2[$x][3] = $weekDay . ', ' . $turnDescription . '   ' . $schedule;
+                    $result2[$x][4] = NULL;
+                    $result2[$x][5] = NULL;
+                    $result2[$x][6] = DB_FALSE;
+                    $x++;
+
+                    $curricularComponentOld = $curricularComponent;
+                    $weekDayIdOld           = $weekDayId;
+                    $scheduleOld            = $schedule;
+                    $roomOld                = $room;
+                    $turnIdOld              = $turnId;
+                    $unitIdOld              = $unitId;
+
+
+                    $result2[$x][0] = $groupId;
+                    $result2[$x][1] = $classId . ' - ' . $className;
+                    $result2[$x][2] = NULL;
+                    $result2[$x][3] = NULL;
+                    $result2[$x][4] = $scheduleId;
+                    $result2[$x][5] = $isClosed;
+                    $result2[$x][6] = DB_TRUE;
+                    $x++;
+                }
+                else
+                {
+                    $result2[$x][0] = $groupId;
+                    $result2[$x][1] = $classId . ' - ' . $className;
+                    $result2[$x][2] = NULL;
+                    $result2[$x][3] = NULL;
+                    $result2[$x][4] = $scheduleId;
+                    $result2[$x][5] = $isClosed;
+                    $result2[$x][6] = DB_TRUE;
+                    $x++;
+                }
+            }
+        }
+
+        return $result2;
+    }
+
+    public function listProfessorCurricularComponentsSummary($professorId, $periodId)
+    {
+        $sql = 'SELECT A.groupId,
+                       G.curricularComponentId || \'/\' || G.curricularComponentVersion || \' - \' || G.shortName,
+                       H.courseId || \'/\' || H.courseVersion || \' - \' ||  I.shortName,
+                       H.unitId,
+                       K.description,
+                       A.isClosed,
+                       A.classId,
+                       N.name,
+                       (SELECT count(*) > 0 FROM acdDegree WHERE learningPeriodId = D.learningPeriodId AND isSubstitutive IS TRUE ) as hasSubstitutive
+                  FROM acdGroup A
+            INNER JOIN acdSchedule B
+                    ON (B.groupId = A.groupId)
+            INNER JOIN acdScheduleProfessor C
+                    ON (C.scheduleId = B.scheduleId)
+            INNER JOIN acdScheduleLearningPeriod D
+                    ON (D.scheduleLearningPeriodId = B.scheduleLearningPeriodId)
+            INNER JOIN basWeekDay FF
+                    ON (FF.weekDayId = B.weekDayId)
+            INNER JOIN acdLearningPeriod E
+                    ON (E.learningPeriodId = D.learningPeriodId)
+            INNER JOIN acdCurriculum F
+                    ON (F.curriculumId = A.curriculumId)
+            INNER JOIN acdCurricularComponent G
+                    ON (G.curricularComponentId = F.curricularComponentId
+                        AND G.curricularComponentVersion = F.curricularComponentVersion)
+            INNER JOIN acdCourseOccurrence H
+                    ON (H.courseId = F.courseId
+                        AND H.courseVersion = F.courseVersion
+                        AND H.turnId = F.turnId
+                        AND H.unitId = F.unitId)
+            INNER JOIN acdCourse I
+                    ON (I.courseId = H.courseId)
+            INNER JOIN basTurn J
+                    ON (J.turnId = D.turnId)
+            INNER JOIN basUnit K
+                    ON (K.unitId = F.unitId)
+             LEFT JOIN acdClass N
+                    ON (A.classId = N.classId)
+                 WHERE C.professorId = ?
+                   AND E.periodId    = ?
+                   AND F.curricularComponentTypeId != (SELECT value FROM basConfig WHERE parameter = \'CURRICULAR_COMPONENT_TYPE_TRAINING\')::INT
+              GROUP BY 1,2,3,4,5,6,7,8,G.shortName,I.name, D.learningPeriodId
+              ORDER BY I.name, G.shortName';
+
+        $db  = $this->getDatabase();
+        $result = $db->query(SAGU::prepare($sql, array($professorId, $periodId)));
+
+        return $result;
+    }
+
+    /**
+     * Close the specific curricular component
+     *
+     * @param $groupId (integer): Primary key for query
+     *
+     * @return (bool): True or false
+     *
+     **/
+    public function closeGroup($groupId)
+    {
+        $MIOLO  = MIOLO::getInstance();
+
+        //trazer os parametros do academico
+        $business  = $MIOLO->getBusiness('basic','BusConfig');
+        $constants = $business->getModuleValues('academic');
+        foreach ( $constants as $cnt )
+        {
+            define($cnt[0],$cnt[1]);
+        }
+        
+        $db = $this->getDatabase('academic');
+        $db->execute('BEGIN TRANSACTION');
+
+        //verifica se a turma ja nao está finalizada
+        $sql    = 'SELECT DISTINCT isClosed FROM acdGroup WHERE groupId IN (' . $groupId . ')';
+        $result = $db->query($sql);
+        
+        if ( $result[0][0] == DB_TRUE )
+        {
+            $db->execute('ROLLBACK;');
+            return 'Não posso fechar essa disciplina porque a disciplina já está fechada.';
+        }
+        
+        //Verifica se as frequencias foram digitadas
+        $business = $MIOLO->getBusiness('academic', 'BusGradeTyping');
+        if ( ! $business->validateFrequencies($groupId) )
+        {
+            $db->execute('ROLLBACK;');
+            return 'Não posso fechar essa disciplina porque as frequencias não foram validadas (tem aluno com frequencia nao digitada).';
+        }
+        //Verifica se as notas foram digitadas
+        $sql = '
+        SELECT count(*)
+          FROM acdEnroll A 
+     LEFT JOIN acdDegreeEnroll B ON ( B.enrollId = A.enrollId )
+         WHERE NOT A.statusId = '. ENROLL_STATUS_CANCELLED . '
+           AND ( B.degreeId IS NULL OR ( B.note IS NULL AND B.isNotPresent IS FALSE ) )
+           AND A.groupId = '. $groupId .' and B.degreeid in (select degreeid from acddegree where learningperiodid = A.learningperiodid) ';
+        $result = $db->query($sql);
+
+        if ( $result[0][0] > 0  )
+        {
+            $db->execute('ROLLBACK;');
+            return 'Não posso fechar essa disciplina porque tem alunos com notas não digitadas';
+        }
+
+        //configuracoes do periodo letivo
+        $sql = 'SELECT groupId, learningPeriodId, periodId, average, finalAverage, CASE WHEN minimumFrequencyInHours < minimumFrequencyInHours2 THEN minimumFrequencyInHours ELSE minimumFrequencyInHours2 END, isSerial FROM ( SELECT D.groupId,
+                       D.learningPeriodId,
+                       G.periodId,
+                       G.average,
+                       G.finalAverage,
+                       F.lessonNumberHours * G.minimumFrequency / 100 AS minimumFrequencyInHours,
+                        (SELECT getgroupofferedhours(' . $groupId . ')  ) * G.minimumFrequency / 100 AS minimumFrequencyInHours2,
+                       C.courseVersionTypeId IN (' . ACD_COURSE_TYPE_ID_SERIAL . ') AS isSerial
+                  FROM acdLearningPeriod G
+            INNER JOIN acdGroup D
+                    ON ( G.learningPeriodId = D.learningPeriodId )
+            INNER JOIN acdCurriculum A
+                    ON ( A.curriculumId = D.curriculumId )
+            INNER JOIN acdCurricularComponent F
+                    ON (     A.curricularComponentId      = F.curricularComponentId
+                         AND A.curricularComponentVersion = F.curricularComponentVersion)
+            INNER JOIN acdCourseVersion C
+                    ON (     G.courseId      = C.courseId
+                         AND G.courseVersion = C.courseVersion ) 
+                 WHERE D.groupId IN (' . $groupId . ') ) A';
+
+        $result_ = $db->query($sql);
+
+        foreach ( $result_ as $row_ )
+        {
+            list ( $groupId,
+                   $learningPeriodId,
+                   $periodId,
+                   $average,
+                   $finalAverage,
+                   $minimumFrequencyInHours,
+                   $isSerial) = $row_;
+
+            //pega os alunos matriculados e a frequencia da disciplina
+            $sql = '    SELECT  A.enrollId,
+                                C.personId,
+                                C.name
+                           FROM acdenroll A
+                      LEFT JOIN acdcontract B 
+                             ON (A.contractId = B.contractId)
+                 LEFT JOIN ONLY basphysicalperson C
+                             ON (B.personId = C.personId)
+                          WHERE A.groupId = ?
+                            AND A.statusId NOT IN (' . ENROLL_STATUS_CANCELLED . ')
+                       ORDER BY 3';
+
+            $args   = array($groupId);
+            $result = $db->query(SAGU::prepare($sql, $args));
+
+            if ( count($result)>0 )
+            {
+                foreach ( $result as $row )
+                {
+                    list ( $enrollId,
+                           $personId,
+                           $name ) = $row;
+
+                    $sql = '     SELECT A.finalNote,
+                                        A.examNote,
+                                    SUM(B.frequency)
+                                   FROM acdEnroll A
+                             INNER JOIN acdFrequenceEnroll B
+                                     ON ( A.enrollId = B.enrollId )
+                                  WHERE A.enrollId   = ?
+                               GROUP BY A.finalNote, A.examNote ';
+                    $args    = array($enrollId);
+                    $result2 = $db->query(SAGU::prepare($sql, $args));
+
+                    list ( $finalNote,
+                           $examNote,
+                           $frequencies ) = $result2[0];
+
+                    if ( strlen((string)$finalNote) > 0 )
+                    {
+
+                        if ( ($finalNote >= $finalAverage) && ($frequencies >= $minimumFrequencyInHours) && strlen((string)$examNote) > 0  )
+                        {
+                            $statusId = ENROLL_STATUS_APPROVED_INEXAM;  
+                        }
+                        else if ( ($finalNote >= $average) && ($frequencies >= $minimumFrequencyInHours) )
+                        {
+                            $statusId = ENROLL_STATUS_APPROVED;  
+                        }
+                        elseif ( $finalNote < $finalAverage ) 
+                        {
+                            //if ( $isSerial == DB_TRUE )
+                            //{
+                            //    $statusId = ENROLL_STATUS_DEPENDENT;
+                            //}
+                            //else
+                            //{
+                                $statusId = ENROLL_STATUS_DISAPPROVED;
+                            //}
+                        }
+                        elseif ($frequencies < $minimumFrequencyInHours)
+                        {
+                            //if ( $isSerial == DB_TRUE )
+                            //{
+                            //    $statusId = ENROLL_STATUS_DEPENDENT_FOR_LACKS;
+                            //}
+                            //else
+                            //{
+                                $statusId = ENROLL_STATUS_DISAPPROVED_FOR_LACKS;
+                            //}
+                        }
+                    }
+                    else
+                    {
+                        $statusId = ENROLL_STATUS_ENROLLED;
+                    }
+
+                    //atualiza o status
+                    $sql = 'UPDATE acdEnroll
+                               SET statusId  = ?,
+                                   frequency = ?
+                             WHERE enrollId  = ?';
+                    $args = array ( $statusId,
+                                    $frequencies,
+                                    $enrollId );
+                    $db->execute(SAGU::prepare($sql, $args));
+
+                    //se estiver aprovado na disciplina, 
+                    //define as disciplinas dependentes como reprovadas
+                    if ( $statusId == ENROLL_STATUS_APPROVED )
+                    {
+                        $sql = 'UPDATE acdEnroll
+                                   SET statusId = ( CASE WHEN statusId IN (' . ENROLL_STATUS_DEPENDENT_FOR_LACKS . ') 
+                                                         THEN ' . ENROLL_STATUS_DISAPPROVED_FOR_LACKS . ' 
+                                                         WHEN statusId IN (' . ENROLL_STATUS_DEPENDENT . ') 
+                                                         THEN ' . ENROLL_STATUS_DISAPPROVED . '
+                                                          END )
+                                 WHERE statusId IN (' . ENROLL_STATUS_DEPENDENT_FOR_LACKS . ', ' . ENROLL_STATUS_DEPENDENT . ') 
+                                   AND curriculumId = ( SELECT curriculumId
+                                                          FROM acdEnroll
+                                                         WHERE enrollId = \'' . $enrollId . '\')
+                                   AND contractId = ( SELECT contractId
+                                                        FROM acdEnroll
+                                                       WHERE enrollId = \'' . $enrollId . '\')';
+                        $db->execute($sql);
+                    }
+                }
+            }
+
+            //indica a disciplina como finalizada
+            $sql = 'UPDATE acdGroup
+                       SET isClosed = ?
+                     WHERE groupId  = ?';
+
+            $args = array ( DB_TRUE,
+                            $groupId );
+            $db->execute(SAGU::prepare($sql, $args));
+        }
+
+        //faz o commit
+        $result = $db->execute('COMMIT');
+
+        if($result) 
+        {
+          return '0';
+        }
+    }
+
+    public function listProfessorCurricularComponentsSupervisedTraining($professorId, $periodId)
+    {
+        $sql = 'SELECT A.groupId,
+                       C.professorId,
+                       G.curricularComponentId || \'/\' || G.curricularComponentVersion || \' - \' || G.shortName,
+                       H.courseId || \'/\' || H.courseVersion || \' - \' ||  I.shortName,
+                       D.turnId,
+                       J.description,
+                       H.unitId,
+                       K.description,
+                       A.isClosed,
+                       A.classId,
+                       N.name,
+                       (SELECT count(*) > 0 FROM acdDegree WHERE learningPeriodId = D.learningPeriodId AND isSubstitutive IS TRUE ) as hasSubstitutive,
+                       M.room
+                  FROM acdGroup A
+            INNER JOIN acdSchedule B
+                    ON (B.groupId = A.groupId)
+            INNER JOIN acdScheduleProfessor C
+                    ON (C.scheduleId = B.scheduleId)
+            INNER JOIN acdScheduleLearningPeriod D
+                    ON (D.scheduleLearningPeriodId = B.scheduleLearningPeriodId)
+            INNER JOIN acdLearningPeriod E
+                    ON (E.learningPeriodId = D.learningPeriodId)
+            INNER JOIN acdCurriculum F
+                    ON (F.curriculumId = A.curriculumId)
+            INNER JOIN acdCurricularComponent G
+                    ON (G.curricularComponentId = F.curricularComponentId
+                        AND G.curricularComponentVersion = F.curricularComponentVersion)
+            INNER JOIN acdCourseOccurrence H
+                    ON (H.courseId = F.courseId
+                        AND H.courseVersion = F.courseVersion
+                        AND H.turnId = F.turnId
+                        AND H.unitId = F.unitId)
+            INNER JOIN acdCourse I
+                    ON (I.courseId = H.courseId)
+            INNER JOIN basTurn J
+                    ON (J.turnId = D.turnId)
+            INNER JOIN basUnit K
+                    ON (K.unitId = F.unitId)
+             LEFT JOIN acdClass N
+                    ON (A.classId = N.classId)
+             LEFT JOIN insPhysicalResource M 
+                    ON ( M.physicalResourceId = B.physicalResourceId AND
+                         M.physicalResourceVersion = B.physicalResourceVersion )
+                 WHERE C.professorId = ?
+                   AND E.periodId    = ?
+                   AND F.curricularComponentTypeId = (SELECT value FROM basConfig WHERE parameter = \'CURRICULAR_COMPONENT_TYPE_TRAINING\')::INT
+              GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, I.name, G.shortName, D.learningPeriodId, M.room
+              ORDER BY I.name, G.shortName';
+
+        $db  = $this->getDatabase();
+        $result = $db->query(SAGU::prepare($sql, array($professorId, $periodId)));
+
+        return $result;
+    }
+
+}

@@ -1,0 +1,515 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for finPolicy table
+ *
+ * @author Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 08/09/2005
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to manipulate the finPolicy table
+ **/
+class BusinessFinanceBusPolicy extends Business
+{
+    public $db;
+    
+    /**
+     * Class constructor
+     **/
+    public function BusinessFinanceBusPolicy()
+    {
+        $this->db = $this->getDatabase();
+    }
+
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module = is_null($module) ? 'finance' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+    /**
+     * List all records from the table handled by the class
+     *
+     * @author: William Prigol Lopes [william@solis.coop.br]
+         *
+     * @param: None
+     *
+     * @returns (array): Return an array with the entire table
+     *
+     **/
+    public function listPolicy($type = 0)
+    {
+        if ($type == 0 )
+        {
+            $sql = '   SELECT policyId,
+                              description
+                         FROM finPolicy
+                     ORDER BY policyId ';
+        }
+        else
+        {
+            $sql = '   SELECT description,
+                              policyId
+                         FROM finPolicy
+                     ORDER BY policyId ';
+        }
+        //$db = $this->getDatabase();
+
+        $return = $this->db->query($sql);
+
+        return $return;
+    }
+    
+    /**
+     * Return a specific record from the database
+     *
+     * @param $policyId (integer): Primary key of the record to be retrieved
+     *
+     * @return (object): Return an object of the type handled by the class
+     *
+     **/
+    public function getPolicy($policyId)
+    {
+
+        $sql = 'SELECT A.policyId,
+                       A.description,
+                       A.bankOperationTypeCode,
+                       A.operationId,
+                       B.description AS operationDescription,
+                       A.collectionTypeId,
+                       D.description AS collectionTypeDescription,
+                       A.monthlyInterest,
+                       A.isMonthlyInterestInPercent,
+                       A.fine,
+                       A.isFineInPercent,
+                       A.isFineInOriginalValue,
+                       A.daysToInterest,
+                       A.daysToFine,
+                       A.daysToDiscount,
+                       A.daysToProtest,
+                       A.discount,
+                       A.isDiscountInPercent,
+                       ROUND(A.bankTaxValue, '.REAL_ROUND_VALUE.'),
+                       A.userName,
+                       A.ipAddress,
+                       A.dateTime,
+                       A.isExtinct,
+                       A.useFineCompositive,
+                       A.isBankTaxValueInPercent,
+                       A.calculateValueWithMaturiyDate,
+                       A.isDiscountAtLastMonthDay,
+                       C.incomeSourceId,
+                       C.description
+                  FROM finPolicy A
+             LEFT JOIN finOperation B 
+                    ON (B.operationId = A.operationId)
+             LEFT JOIN finCollectionType D
+                    ON (D.collectionTypeId = A.collectionTypeId)
+             LEFT JOIN finIncomeSource C 
+                    ON ( A.incomeSourceId = C.incomeSourceId )
+                 WHERE A.policyId = ?';
+
+        //$db     = $this->getDatabase();
+        $result = $this->db->query(SAGU::prepare($sql, $policyId));
+
+        $policy = new FinPolicy();
+
+        list ( $policy->policyId,
+               $policy->description,
+               $policy->bankOperationTypeCode,
+               $policy->operationId,
+               $policy->operationDescription,
+               $policy->collectionTypeId,
+               $policy->collectionTypeDescription,
+               $policy->monthlyInterest,
+               $policy->isMonthlyInterestInPercent,
+               $policy->fine,
+               $policy->isFineInPercent,
+               $policy->isFineInOriginalValue,
+               $policy->daysToInterest,
+               $policy->daysToFine,
+               $policy->daysToDiscount,
+               $policy->daysToProtest,
+               $policy->discount,
+               $policy->isDiscountInPercent,
+               $policy->bankTaxValue,
+               $policy->userName,
+               $policy->ipAddress,
+               $policy->dateTime,
+               $policy->isExtinct,
+               $policy->useFineCompositive,
+               $policy->isBankTaxValueInPercent,
+               $policy->calculateValueWithMaturiyDate,
+               $policy->isDiscountAtLastMonthDay,
+               $policy->incomeSourceId,
+               $policy->incomeSourceDescription ) = $result[0];
+
+        return $policy; 
+    }
+    
+    /**
+     * Do a search on the database table handled by the class
+     *
+     * @param $filters (object): Search filters
+     *
+     * @last modification: William Prigol Lopes [william@solis.coop.br]
+     *       Make the search capable to return partial words seek with % in varchar fields
+     *
+     * @return (array): An array containing the search results
+     **/
+    public function searchPolicy($filters)
+    {
+        $sql = 'SELECT A.policyId,
+                       A.description,
+                       A.bankOperationTypeCode,
+                       A.operationId,
+                       B.description AS operationDescription,
+                       A.collectionTypeId,
+                       D.description AS collectionTypeDescription,
+                       A.monthlyInterest,
+                       A.isMonthlyInterestInPercent,
+                       A.fine,
+                       A.isFineInPercent,
+                       A.isFineInOriginalValue,
+                       A.daysToInterest,
+                       A.daysToFine,
+                       A.daysToDiscount,
+                       A.daysToProtest,
+                       A.discount,
+                       A.isDiscountInPercent,
+                       A.bankTaxValue,
+                       A.isExtinct,
+                       A.useFineCompositive,
+                       A.isBankTaxValueInPercent,
+                       A.calculateValueWithMaturiyDate,
+                       A.isDiscountAtLastMonthDay
+                  FROM finPolicy A
+             LEFT JOIN finOperation B 
+                    ON (B.operationId = A.operationId)
+             LEFT JOIN finCollectionType D
+                    ON (D.collectionTypeId = A.collectionTypeId) ';
+
+        if ( strlen((string)$filters->policyId) > 0 )
+        {
+            $where .= ' AND A.policyId = ?';
+            $args[] = $filters->policyId;
+        }
+        if ( strlen((string)$filters->description) > 0 )
+        {
+            $where .= ' AND A.description ILIKE ?';
+            $args[] = $filters->description.'%';
+        }
+        if ( strlen((string)$filters->bankOperationTypeCode) > 0 )
+        {
+            $where .= ' AND A.bankOperationTypeCode ILIKE ?';
+            $args[] = $filters->bankOperationTypeCode.'%';
+        }
+        if ( strlen((string)$filters->operationId) > 0 )
+        {
+            $where .= ' AND A.operationId = ?';
+            $args[] = $filters->operationId;
+        }
+        if ( strlen((string)$filters->operationDescription) > 0 )
+        {
+            $where .= ' AND B.description ILIKE ?';
+            $args[] = $filters->operationDescription.'%';
+        }
+        if ( strlen((string)$filters->collectionTypeId) > 0 )
+        {
+            $where .= ' AND A.collectionTypeId = ?';
+            $args[] = $filters->collectionTypeId;
+        }
+        if ( strlen((string)$filters->collectionTypeDescription) > 0 )
+        {
+            $where .= ' AND D.description ILIKE ?';
+            $args[] = $filters->collectionTypeDescription.'%';
+        }
+        if ( strlen((string)$filters->monthlyInterest) > 0 )
+        {
+            $where .= ' AND A.monthlyInterest = ?';
+            $args[] = $filters->monthlyInterest;
+        }
+        if ( strlen((string)$filters->fine) > 0 )
+        {
+            $where .= ' AND A.fine = ?';
+            $args[] = $filters->fine;
+        }
+        if ( strlen((string)$filters->daysToInterest) > 0 )
+        {
+            $where .= ' AND A.daysToInterest = ?';
+            $args[] = $filters->daysToInterest;
+        }
+        if ( strlen((string)$filters->daysToFine) > 0 )
+        {
+            $where .= ' AND A.daysToFine = ?';
+            $args[] = $filters->daysToFine;
+        }
+        if ( strlen((string)$filters->daysToDiscount) > 0 )
+        {
+            $where .= ' AND A.daysToDiscount = ?';
+            $args[] = $filters->daysToDiscount;
+        }
+        if ( strlen((string)$filters->daysToProtest) > 0 )
+        {
+            $where .= ' AND A.daysToProtest = ?';
+            $args[] = $filters->daysToProtest;
+        }
+        if ( strlen((string)$filters->discount) > 0 )
+        {
+            $where .= ' AND A.discount = ?';
+            $args[] = $filters->discount;
+        }
+        if ( strlen((string)$filters->bankTaxValue) > 0 )
+        {
+            $where .= ' AND A.bankTaxValue = ?';
+            $args[] = $filters->bankTaxValue;
+        }
+        if ( strlen((string)$filters->isExtinct) > 0 )
+        {
+            $where .= ' AND A.isExtinct = ?';
+            $args[] = $filters->isExtinct;
+        }
+        if ( strlen((string)$filters->isDiscountAtLastMonthDay) > 0 )
+        {
+            $where .= ' AND A.isDiscountAtLastMonthDay = ?';
+            $args[] = $filters->isDiscountAtLastMonthDay;
+        }
+
+        unset($result);
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE ' . substr($where, 4) . '
+                   ORDER BY A.description';
+
+            //$db = $this->getDatabase();
+            $result = $this->db->query(SAGU::prepare($sql, $args));
+
+            //$db->close();
+        }
+
+        return $result;
+    }
+
+    /**
+     * Insert a new record
+     *
+     * @param $data (object): An object of the type handled by the class
+     *
+     * @return True if succed, otherwise False
+     *
+     **/
+    public function insertPolicy($data)
+    {
+        $sql = 'INSERT INTO finPolicy
+                            (description,
+                             bankOperationTypeCode,
+                             operationId,
+                             collectionTypeId,
+                             monthlyInterest,
+                             isMonthlyInterestInPercent,
+                             fine,
+                             isFineInPercent,
+                             isFineInOriginalValue,
+                             daysToInterest,
+                             daysToFine,
+                             daysToDiscount,
+                             daysToProtest,
+                             discount,
+                             isDiscountInPercent,
+                             bankTaxValue,
+                             isExtinct,
+                             useFineCompositive,
+                             isBankTaxValueInPercent,
+                             calculateValueWithMaturiyDate,
+                             isDiscountAtLastMonthDay,
+                             incomeSourceId)
+                     VALUES (?,
+                             ?,
+                             ?,
+                             ?,
+                             ?,
+                             ?,
+                             ?,
+                             ?,
+                             ?,
+                             ?,
+                             ?,
+                             ?,
+                             ?,
+                             ?,
+                             ?,
+                             ?,
+                             ?,
+                             ?,
+                             ?,
+                             ?,
+                             ?,
+                             ?)';
+
+        $args = array( $data->description,
+                       $data->bankOperationTypeCode,
+                       $data->operationId,
+                       $data->collectionTypeId,
+                       $data->monthlyInterest,
+                       $data->isMonthlyInterestInPercent,
+                       $data->fine,
+                       $data->isFineInPercent,
+                       $data->isFineInOriginalValue,
+                       $data->daysToInterest,
+                       $data->daysToFine,
+                       $data->daysToDiscount,
+                       $data->daysToProtest,
+                       $data->discount,
+                       $data->isDiscountInPercent,
+                       $data->bankTaxValue,
+                       strlen((string)$data->isExtinct)>0 ? $data->isExtinct : DB_FALSE,
+                       strlen((string)$data->useFineCompositive)>0 ? $data->useFineCompositive : DB_TRUE,
+                       strlen((string)$data->isBankTaxValueInPercent)>0 ? $data->isBankTaxValueInPercent : DB_FALSE,
+                       strlen((string)$data->calculateValueWithMaturiyDate)>0 ? $data->calculateValueWithMaturiyDate : DB_TRUE,
+                       strlen((string)$data->isDiscountAtLastMonthDay)>0 ? $data->isDiscountAtLastMonthDay : DB_FALSE,
+                       $data->incomeSourceId
+                     );
+
+        //$db     = $this->getDatabase();
+        $result = $this->db->execute(SAGU::prepare($sql, $args));
+
+        return $result;
+    }
+
+    /**
+     * Update data from a specific record
+     *
+     * @param $data (object): Data which will replace the old record data
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+    public function updatePolicy($data)
+    {
+        $sql = 'UPDATE finPolicy
+                   SET description                = ?,
+                       bankOperationTypeCode      = ?,
+                       operationId                = ?,
+                       collectionTypeId           = ?,
+                       monthlyInterest            = ?,
+                       isMonthlyInterestInPercent = ?,
+                       fine                       = ?,
+                       isFineInPercent            = ?,
+                       isFineInOriginalValue      = ?,
+                       daysToInterest             = ?,
+                       daysToFine                 = ?,
+                       daysToDiscount             = ?, 
+                       daysToProtest              = ?,
+                       discount                   = ?,
+                       isDiscountInPercent        = ?,
+                       bankTaxValue               = ?,
+                       isExtinct                  = ?,
+                       useFineCompositive         = ?,
+                       isBankTaxValueInPercent    = ?,
+                       calculateValueWithMaturiyDate = ?,
+                       isDiscountAtLastMonthDay = ?,
+                       incomeSourceId           = ?
+                 WHERE policyId = ?';
+
+        $args = array( 
+                       $data->description,
+                       $data->bankOperationTypeCode,
+                       $data->operationId,
+                       $data->collectionTypeId,
+                       $data->monthlyInterest,
+                       $data->isMonthlyInterestInPercent,
+                       $data->fine,
+                       $data->isFineInPercent,
+                       $data->isFineInOriginalValue,
+                       $data->daysToInterest,
+                       $data->daysToFine,
+                       $data->daysToDiscount,
+                       $data->daysToProtest,
+                       $data->discount,
+                       $data->isDiscountInPercent,
+                       $data->bankTaxValue,
+                       $data->isExtinct,
+                       $data->useFineCompositive,
+                       $data->isBankTaxValueInPercent,
+                       $data->calculateValueWithMaturiyDate,
+                       $data->isDiscountAtLastMonthDay,
+                       $data->incomeSourceId,
+                       $data->policyId
+                     );
+                       
+        //$db   = $this->getDatabase();
+        $sqls = SAGU::prepare($sql, $args);
+
+        for ( $i=0; $i<count($sqls); $i++ )
+        {
+            $result = $this->db->execute($sqls[$i]);
+        }
+
+        //$db->close();
+
+        return $result;
+    }
+
+    /**
+     * Delete a record
+     *
+     * @param $policyId (string): Primary key for deletion
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+    public function deletePolicy($policyId)
+    {
+        $sql = 'DELETE FROM finPolicy
+                      WHERE policyId = ?';
+
+        $pk = array(
+                     $policyId
+                   );
+
+        //$db     = $this->getDatabase();
+        $result = $this->db->execute(SAGU::prepare($sql, $pk));
+        //$db->close();
+
+        return $result;
+    }
+
+}
+
+?>

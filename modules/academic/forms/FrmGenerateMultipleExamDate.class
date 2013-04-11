@@ -1,0 +1,317 @@
+<?php
+
+/**
+ * GenerateMultipleScheduleLearningPeriod form
+ *
+ * @author Leovan Tavares da Silva [leovan@solis.coop.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * Armando Taffarel Neto [taffarel@solis.coop.br]
+ *
+ * @since
+ * Class created on 25/07/2006
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2005 SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+
+/**
+ * Form to generate Multiple Learning Period
+ **/
+class FrmGenerateMultipleExamDate extends MForm
+{
+    var $weekDays;
+    //var $learningPeriods;
+    
+    /**
+     * Class constructor
+     **/
+    
+    function __construct()
+    {
+
+        $module = MIOLO::getCurrentModule();
+
+        parent::__construct(_M('Generate multiple exam dates', $module));
+
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+
+
+        $toolBar = new MToolBar('toolBar',$MIOLO->getActionURL($module,$action));
+
+        $toolBar->disableButton('tbBtnNew');
+        $toolBar->disableButton('tbBtnDelete');
+        $toolBar->disableButton('tbBtnPrint');
+        $toolBar->disableButton('tbBtnSave');
+        $toolBar->disableButton('tbBtnSearch');
+        $fields[] = $toolBar;
+
+        $learningPeriods = MIOLO::_request('learningPeriods');
+
+        $divError = new MDiv('divError', null, null, 'align=center');
+        $fields[] = $divError;
+
+        $session = $MIOLO->session;
+
+        if ( !(strlen((string)$learningPeriods) > 0) )
+        {
+            $session->getValue('learningPeriods', $learningPeriods);
+        }
+        else
+        {
+            $session->setValue('learningPeriods', $learningPeriods);
+        }
+
+        $periodId = $this->getFormValue('periodId', $MIOLO->_request('periodId'));
+        $fields[] = new MHiddenField('periodId', $periodId);
+        $fields[] = new MTextLabel('periodIdLabel', $periodId, _M('Period', $module));
+
+
+        $fields[] = new MSeparator('<hr>');
+
+        $business = $MIOLO->getBusiness('basic', 'BusWeekDay');
+        $this->weekDays = $business->listWeekDay();
+
+        if (count($this->weekDays) > 0)
+        {
+            foreach ($this->weekDays as $weekdayData)
+            {
+                list ($weekdayId, 
+                      $weekdayDesc) = $weekdayData;
+
+                eval('$checkBox = new MCheckBox(\'check_' . $weekdayId . '\', 1, \''. $weekdayDesc . '\', false);');
+                $checkBox->setJsHint(_M('Click here to open the form for this week day',$module));
+                $js       = 'ExpandRetractContainer(\'m_cntDate_' . $weekdayId . '\')';
+                $checkBox->addAttribute('onchange', $js);
+                $fields[] = $checkBox;
+
+                eval('$examDate = new MCalendarField(\'examDate_' . $weekdayId . '\', $this->getFormValue(\'examDate_' . $weekdayId . '\', $data->examDate_' . $weekdayId . '), _M(\'Exam date\', $module), FIELD_DATE_SIZE);');
+                eval('$validators[] = new MDATEDMYValidator(\'examDate_' . $weekdayId . '\', \'\', \'optional\');');
+
+                $flds[] = new MSeparator('<hr>');
+                $flds[] = $examDate;
+                $flds[] = new MSeparator('<hr>');
+
+                $cntDate = new MHContainer('cntDate_' . $weekdayId, $flds);
+                $cntDate->addBoxStyle('display', 'none');
+                $fields[] = $cntDate;
+                unset($flds);
+
+                $fields[] = new MSeparator('');
+            }
+        }
+
+        $fields[] = new Separator('');
+
+        $fields[] = new MButton('btnGenerate', _M('Generate', $module));
+
+        $fields[] = new Separator('');
+        $this->setFields($fields);
+        $this->setValidators($validators);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+
+        $js = 'function RetractContainer(cntName) {
+                   document.getElementById(cntName).style.display = "none";
+               }
+               function ExpandContainer(cntName) {
+                   document.getElementById(cntName).style.display = "block";
+               }
+               function ExpandRetractContainer(cntName) {
+                   document.getElementById(cntName).style.display = (document.getElementById(cntName).style.display == "none" ? "block" : "none");
+               }';
+        $this->page->addJsCode($js);
+    }
+
+    /**
+     * Event triggered when user chooses Generate from the toolbar
+     **/
+    public function btnGenerate_click($sender=NULL)
+    {
+        $MIOLO           = MIOLO::getInstance();
+        $module          = MIOLO::getCurrentModule();
+        $action          = MIOLO::getCurrentAction();
+
+        $periodId        = MIOLO::_request('periodId');
+        //$opts            = array('periodId'         => $periodId);
+        $learningPeriods = unserialize(urldecode(stripslashes(MIOLO::_request('learningPeriods'))));
+
+        $session         = $MIOLO->session;
+        //$learningPeriods = $session->getValue('learningPeriods');
+
+        $flagHaveSelectedWeekDay = FALSE;
+
+        $data     = $this->getData();
+
+        $business2 = $MIOLO->getBusiness($module, 'BusGenerateMultipleExamDate');
+
+        $business1 = $MIOLO->getBusiness($module, 'BusExamDate');
+        $business1->db = $business2->db;
+
+        $business3 = $MIOLO->getBusiness($module, 'BusSchedule');
+        $business3->db = $business2->db;
+
+        $x = 0;
+        $y = 0;
+
+        $business2->beginTransaction();
+
+        if ( count($this->weekDays) )
+        {
+            foreach ($this->weekDays as $weekdayData)
+            {
+                list ($weekdayId, 
+                      $weekdayDesc) = $weekdayData;
+
+                eval('$check = $data->check_' . $weekdayId . ';');
+
+                if ($check == 1)
+                {
+                    $flagHaveSelectedWeekDay = TRUE;
+
+                    eval('$sdata->examDate   = $data->examDate_' . $weekdayId . ';');
+
+                    if ( !(strlen((string)$sdata->examDate) > 0) ) //Verify if dataExam is correct
+                    {
+                        $msg  = '<br>' . _M('Error. Fault exam date to ', $module) . $weekdayDesc . '.';
+
+                        $lblMsg1 = new MText('lblMsg1', $msg);
+                        $lblMsg1->color = 'red';
+
+                        $cntErrors      = new MVContainer('cntErrors', array($lblMsg1));
+                        $this->divError->addControl($cntErrors);
+/*                        $flagFaultRequired = true;
+
+
+                        $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action, null, $opts);
+                        $caption = _M('Error', $module);
+                        $MIOLO->error( $msg, $goto, $caption );*/
+                    }
+                    else
+                    {
+                        if (count($learningPeriods) > 0)
+                        {
+                            foreach ($learningPeriods as $learningPeriodId)
+                            {
+                                $filters->learningPeriodId = $learningPeriodId;
+                                $filters->weekDayId        = $weekdayId;
+                                $examDates                 = $business1->searchExamDate($filters);
+
+                                $sdata->learningPeriodId = $learningPeriodId;
+                                $sdata->weekDayId        = $weekdayId;
+
+                                if ( count($examDates) == 0 )
+                                {
+                                    $ok                      = $business1->insertExamDate($sdata);
+                                }
+                                else
+                                {
+                                    $ok                      = $business1->updateExamDate($sdata);
+                                }
+
+                                if ( $ok )
+                                {
+                                    $x++;
+
+                                    $updateSchedules         = $business2->updateSchedules($sdata);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            if ( !$flagHaveSelectedWeekDay )
+            {
+                $msg  .= '<br>' . _M('Is necessary select on minimum one day of list', $module);
+
+                $lblMsg1 = new MText('lblMsg1', $msg);
+                $lblMsg1->color = 'red';
+
+                $cntErrors      = new MVContainer('cntErrors', array($lblMsg1));
+                $this->divError->addControl($cntErrors);
+            }
+        }
+
+        $business2->commit();
+
+        if (count($business2->getErrors()) > 0)
+        {
+            $msg = $business2->getErrors();
+        }
+
+        if ( $x > 0 )
+        {
+            $msg .= '<br>' . _M('@1 records inserted', $module, $x);
+
+            $postAction = substr($action,0,strrpos($action,':')) . ':generateMultipleExamDateCourse';
+            $goto = $MIOLO->getActionURL($module, $postAction, null, null);
+
+            $caption = _M('Information', $module);
+            $MIOLO->information($msg, $goto);
+        }
+        else
+        {
+            $opts['periodId']         = $periodId;
+            $opts['learningPeriods'] = urlencode(serialize($learningPeriods));
+
+            $msg  .= '<br>' . _M('Error executing requested operation.', $module);
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action, null, $opts);
+            $caption = _M('Error', $module);
+            $MIOLO->error( $msg, $goto, $caption );
+        }
+    }
+
+    /**
+     * Method to gather all information from the form fields
+     * and put them on a database compatible object
+     **/
+    public function getTypesData()
+    {
+        $data = new acdScheduleLearningPeriod();
+        $vars = get_object_vars($data);
+        foreach ( $vars as $var => $value )
+        {
+            if ( $this->$var && $var != 'description' )
+            {
+                $data->$var = $this->$var->value;
+            }
+        }
+        $data->description = $this->description->value;
+
+        return $data;
+
+    } 
+
+}
+
+?>

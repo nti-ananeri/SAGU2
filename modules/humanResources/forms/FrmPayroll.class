@@ -1,0 +1,172 @@
+<?php
+
+/**
+ * Payroll form
+ *
+ * @author Armando Taffarel Neto [taffarel@solis.coop.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * Armando Taffarel Neto [taffarel@solis.coop.br]
+ *
+ * @since
+ * Class created on 16/03/2006
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2005 SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+
+/**
+ * Form to employee list
+ **/
+class FrmPayroll extends MForm
+{
+    private $home;
+    public $employeeTypes;
+    /**
+     * Class constructor
+     **/
+    function __construct($data)
+    {
+
+        $module = MIOLO::getCurrentModule();
+
+        $this->home   = $data->home;
+
+        parent::__construct(_M('Payroll', $module));
+
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+
+
+        $toolBar = new MToolBar('toolBar',$MIOLO->getActionURL($module,$action));
+
+        $toolBar->disableButton('tbBtnNew');
+        $toolBar->disableButton('tbBtnDelete');
+        $toolBar->disableButton('tbBtnPrint');
+        $toolBar->disableButton('tbBtnSave');
+        $toolBar->disableButton('tbBtnSearch');
+        $toolBar->disableButton('tbBtnReset');
+
+        //favoritos
+        $enabledImage  = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-20x20.png');
+        $disabledImage = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-disabled-20x20.png');
+        $url           = $MIOLO->getActionURL($module, $this->home, null, array('function' => 'search', 'event' => 'bookmark'));
+        $toolBar->addButton('tbBtnBookmark', _M('Add to bookmarks', 'basic'), $url, null, true, $enabledImage, $disabledImage);
+
+        if ( MIOLO::_request('event') == 'bookmark' )
+        {
+            $MIOLO->getClass('basic', 'access');
+            access::insert('Payroll', $this->home, 'payroll-16x16.png', true);
+        }
+        //fim favoritos
+
+        $fields[] = $toolBar;
+        
+        $business = $MIOLO->getBusiness('basic', 'BusEmployeeType');        
+
+        $this->employeeTypes = $business->listEmployeeType();
+        
+        foreach ($this->employeeTypes as $key => $employee )
+        {
+            eval('$employeeType' . $key . '= new MCheckBox(\'employeeType' . $key . '\' , ' . $employee[0] . ', \'\', true, \'' . $employee[1] . '\');'); 
+            eval('$flds[] = $employeeType' . $key . ';');
+        }
+
+        $bsg1            = new BaseGroup('bsg1', _M('Employee type', $module), $flds, 'vertical');
+        $bsg1->showLabel = true;
+        $bsg1->width     = '50%';
+        unset($flds);
+
+        $hct1           = new MHContainer('hct1', array($bsg1));
+        $hct1->setFormMode(MControl::FORM_MODE_SHOW_NBSP);
+        $hct1->showLabel = true;
+        $fields[] = $hct1;
+
+        $fields[] = new MSeparator(' ');
+        
+        $btn1     = new MButton('btnGenerate', _M('Generate', $module));
+        $fields[] = $btn1;
+        
+        $fields[] = new MSeparator(' ');
+        
+        $this->setFields($fields);
+//        $this->setValidators($validators);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+        $this->setClose($MIOLO->getActionURL($module,substr($action,0,strrpos($action,':'))));
+        
+        $this->employeeTypeId = $this->employeeTypeId->value;
+
+    }
+
+    /**
+     * Event triggered when user chooses Generate from the toolbar
+     **/
+    public function btnGenerate_click($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        foreach ($this->employeeTypes as $key => $employee )
+        {
+            $value = $this->getFormValue('employeeType' . $key);
+            if ( strlen((string)$value) > 0 )
+            {
+                $employeeTypeId = $employeeTypeId . ',' . $value;
+            }
+        }
+
+        $business = $MIOLO->getBusiness($module,'BusEmployeeList');
+        $data = $business->searchEmployee(substr($employeeTypeId,1));    
+
+        // caso não tenha gerado documento por causa do $data ser nulo.    
+        if($data == NULL)
+        {
+            $goto = strlen((string) $goto ) > 0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Error', $module );
+            $msg     = _M('No results for this query, try another option !', $module);
+            $MIOLO->error( $msg, $goto, $caption );
+        }
+        else
+        {        
+            $MIOLO->getClass($module, 'RptPayroll'); //get the RptPayroll class
+
+            $report = new RptPayroll($data); //instanciate the class
+        }
+  
+        
+    }
+
+}
+
+?>

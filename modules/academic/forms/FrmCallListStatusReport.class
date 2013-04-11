@@ -1,0 +1,352 @@
+<?php
+
+/**
+ * Professors with daily delayed document form
+ *
+ * @author Daniel Afonso Heisler [daniel@isolution.inf.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Daniel Afonso Heisler [daniel@isolution.inf.br]
+ * Giovani Murilo Dantas Corrêa [gmurilo@isolution.inf.br]
+ *
+ * @since
+ * Class created on 22/07/2008
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2008 iSolution \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+
+/**
+ * Form to manipulate a report
+ **/
+class FrmCallListStatusReport extends MForm
+{
+    private $home;
+
+    /**
+     * Class constructor
+     **/
+    function __construct($data)
+    {
+        $module = MIOLO::getCurrentModule();
+        $this->home   = $data->home;
+
+        parent::__construct(_M('Call list status', $module));
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        if (($f = $this->page->request('cpaint_function')) != "") 
+        {
+            $this->manager->getTheme()->clearContent();
+            $this->$f($this->page->request('cpaint_argument'));
+            $this->page->generateMethod = 'generateAJAX';
+        }
+        else
+        {
+            $this->defineFields();
+            $this->eventHandler();
+        }
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function defineFields()
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+        $event    = MIOLO::_request('event');
+        $toolBar = new MToolBar('toolBar', $MIOLO->getActionURL($module, $action));
+        $toolBar->hideButton('tbBtnNew');
+        $toolBar->hideButton('tbBtnSave');
+        $toolBar->hideButton('tbBtnSearch');
+        $toolBar->hideButton('tbBtnDelete');
+        $toolBar->enableButton('tbBtnPrint');
+
+        //favoritos
+        $enabledImage  = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-20x20.png');
+        $disabledImage = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-disabled-20x20.png');
+        $url           = $MIOLO->getActionURL($module, $this->home, null, array('function' => 'search', 'event' => 'bookmark'));
+        $toolBar->addButton('tbBtnBookmark', _M('Add to bookmarks', 'basic'), $url, null, true, $enabledImage, $disabledImage);
+
+        if ( MIOLO::_request('event') == 'bookmark' )
+        {
+            $MIOLO->getClass('basic', 'access');
+            access::insert('Call list status report', $this->home, 'callListStatusReport-16x16.png', true);
+        }
+
+        //fim favoritos
+        $fields[] = $toolBar;
+        $fields[] = new MSeparator();
+
+        $busPeriod    = $MIOLO->getBusiness($module, 'BusPeriod');
+        $periodValue  = $this->getFormValue('periodId',$this->periodId->value) ? $this->getFormValue('periodId',$this->periodId->value) : CURRENT_PERIOD_ID;
+        $periodId     = new MSelection('periodId', $periodValue, _M('Period', 'academic'), $busPeriod->listPeriod());
+        $periodId->SetAutoPostBack(true);
+        $validators[] = new MRequiredValidator('periodId', _M('Period','academic'), 'required');
+        $fields[]     = $periodId;
+
+        //Unit
+        $business = $MIOLO->getBusiness('basic', 'BusUnit');
+        $unitId = new MComboBox('unitId',
+                                    $this->GetFormValue('unitId',$data->unitId),
+                                    _M('Unit',$module),
+                                    $business->listUnit());
+        $unitId->addAttribute('onblur', 'getDegrees()');
+        $unitId->addAttribute('onchange', 'getDegrees()');
+        $fields[] = $unitId;
+
+        //Course
+        $courseLabel   = new MText('courseLabel', _M('Course', $module) . ':');
+        $courseLabel->setWidth(FIELD_CONTAINER_SIZE);
+
+        $courseId      = new MLookupTextField('courseId', $this->getFormValue('courseId'), '', FIELD_LOOKUPFIELD_SIZE, null, null, 'courseVersion, courseName, unitId, unitDescription, turnId, turnDescription', $module, 'CourseOccurrence', null, array('courseId' => 'courseId'), !$this->page->isPostBack());
+        $courseId->setJsHint(_M('Enter the course code', $module));
+        $courseId->addAttribute('onchange', 'getDegrees()');
+        $courseId->addAttribute('onblur', 'getDegrees()');
+
+        $courseName    = new MTextField('courseName', $this->getFormValue('courseName', $data->courseName), '', FIELD_DESCRIPTION_SIZE);
+        //$courseName->setReadOnly(true);
+        $courseName->setJsHint(_M('Course name',$module));
+        $courseName->addAttribute('onchange', 'getDegrees()');
+        $courseName->addAttribute('onblur', 'getDegrees()');
+
+        $courseVersion = new MTextField('courseVersion', $this->getFormValue('courseVersion', $data->courseVersion), '', FIELD_ID_SIZE);
+        $courseVersion->setJsHint(_M('Course version code',$module));
+        $courseVersion->addAttribute('onchange', 'getDegrees()');
+        $courseVersion->addAttribute('onblur', 'getDegrees()');
+
+        $hctCourse     = new MHContainer('hctCourse', array($courseLabel, $courseId, $courseVersion, $courseName));
+        $hctCourse->setShowLabel(true);
+        $fields[]      = $hctCourse;
+
+        //Turn
+        $business = $MIOLO->getBusiness('basic', 'BusTurn');
+        $turnId = new MComboBox( 'turnId',
+                                    $this->GetFormValue('turnId',$data->turnId),
+                                    _M('Turn',$module),
+                                    $business->listTurn());
+        //$validators[] = new MRequiredValidator('turnId');
+        $fields[] = $turnId;
+        $turnId->addAttribute('onblur', 'getDegrees()');
+        $turnId->addAttribute('onchange', 'getDegrees()');
+
+        //Semester
+        $semester = new MTextField('semester', $this->getFormValue('semester', $data->semester), _M('Série/periodo/ano',$module), 10, _M('Year when it is an annual course otherwise, semester', $module));
+        $semester->setJsHint(_M('Enter the year or the semester', $module));
+        $fields[] = $semester;
+
+        //Class
+        $classLabel = new MText('classLabel', _M('Class','academic') . ':');
+        $classLabel->setWidth(FIELD_CONTAINER_SIZE);
+
+        $classId    = new MLookupTextField('classId', $this->getFormValue('classId', $data->classId), _M('Class id','academic'), FIELD_LOOKUPFIELD_SIZE, null, null, array('classNameS'), 'academic', 'Class', null, null, true);
+        $classNameS = new MTextField('classNameS', $this->getFormValue('classNameS'), _M('Class name', 'academic'), FIELD_DESCRIPTION_SIZE);
+        $hctClass   = new MHContainer('hctClass', array($classLabel, $classId, $classNameS));
+        $hctClass->setShowLabel(false);
+        $fields[]   = $hctClass;
+        
+
+        $busFormationLevel = $MIOLO->getBusiness($module, 'BusFormationLevel');
+        $formationLevels   = $busFormationLevel->listFormationLevel();
+
+        $filter = new MMultiSelection('formationLevelId', is_array($this->getFormValue('formationLevelId', $data->formationLevelId)) ? $this->getFormValue('formationLevelId', $data->formationLevelId) : array(), _M('Formation level', $module), $formationLevels, true, null, 5);
+        $fields[]          = $filter;
+
+
+        //Professor
+        $professorLabel = new MText('professorLabel', _M('Professor',$module) . ':');
+        $professorLabel->setWidth(FIELD_CONTAINER_SIZE);
+
+        $professorId = new MLookupTextField('professorId', $this->getFormValue('professorId', $data->professorId), '', FIELD_LOOKUPFIELD_SIZE, null, null, 'professorName', 'basic', 'PhysicalPersonProfessor', null, $params, true);
+        $professorId->setJsHint(_M('Professor id',$module));
+        $validators[] = new MIntegerValidator('professorId', _M('Professor',$module), 'optional');
+
+        $professorName = new MTextField('professorName', $this->getFormValue('professorName', $data->professorName), '', FIELD_DESCRIPTION_SIZE);
+        $professorName->setReadOnly(true);
+        $professorName->setJsHint(_M('Professor name',$module));
+        
+        $hctProfessor = new MHContainer('hctProfessor', array( $professorLabel, $professorId, $professorName) );
+        $hctProfessor->setShowLabel(true);
+        $fields[]  = $hctProfessor;
+
+
+        $degreeLabel = new MText('degreeLabel', _M('Academic degree',$module) . ':');
+        $degreeLabel->setWidth(FIELD_CONTAINER_SIZE);
+
+        $degreeNumber = new MMultiSelection('degreeNumber', array(), null, array(), false, null, 2 );
+
+        $fields[] = new MHContainer('hctDegreeNumber', array ( $degreeLabel, $degreeNumber )) ;
+
+        $listYesNo = SAGU::listYesNo('1');
+        $listYesNo[] = array(_M('Undefined', $module) , 'u');
+
+        $isClosedLabel = new MText('isClosed', _M('Is it closed',$module) .'?');
+        $isClosedLabel->setWidth(FIELD_CONTAINER_SIZE);
+
+        $isClosed = new MRadioButtonGroup('isClosed', null, $listYesNo, $this->getFormValue('isClosed', 'u'), null, 'horizontal');
+        $isClosed->setShowLabel(false);
+
+        $hctIsClosed = new MHContainer('hctIsClosed', array($isClosedLabel, $isClosed));
+        $fields[]    = $hctIsClosed;
+                        
+        $isReleasedLabel = new MText('isReleasedLabel', _M('was released',$module) . '?');
+        $isReleasedLabel->setWidth(FIELD_CONTAINER_SIZE);
+
+        $isReleased = $this->getFormValue('isReleased', $this->getFormValue('isReleased', 'u'));
+        $isReleased = new MRadioButtonGroup('isReleased', '', $listYesNo, $isReleased, null, 'horizontal');
+        $isReleased->setShowLabel(false);
+
+        $hctIsReleased = new MHContainer('hctIsReleased', array($isReleasedLabel, $isReleased));
+        $fields[]        = $hctIsReleased;
+
+        $parcialyTypedLabel = new MText('parcialyTyped', _M('Is it parcialy typed',$module) .'?');
+        $parcialyTypedLabel->setWidth(FIELD_CONTAINER_SIZE);
+
+        $isParcialyTyped = new MRadioButtonGroup('isParcialyTyped', null, $listYesNo, $this->getFormValue('isParcialyTyped', 'u'), null, 'horizontal');
+        $isParcialyTyped->setShowLabel(false);
+
+        $hctIsParcialyTyped = new MHContainer('hctIsParcialyTyped', array($parcialyTypedLabel, $isParcialyTyped));
+        $fields[]    = $hctIsParcialyTyped;
+
+        $notTypedLabel = new MText('notTyped', _M('Is it not typed',$module) .'?');
+        $notTypedLabel->setWidth(FIELD_CONTAINER_SIZE);
+
+        $isNotTyped = new MRadioButtonGroup('isNotTyped', null, $listYesNo, $this->getFormValue('isNotTyped', 'u'), null, 'horizontal');
+        $isNotTyped->setShowLabel(false);
+
+        $hctIsParcialyTyped = new MHContainer('hctIsParcialyTyped', array($notTypedLabel, $isNotTyped));
+        $fields[]    = $hctIsParcialyTyped;
+        // Ajax calls
+        $this->page->addScript('x/x_core.js');
+        $this->page->addScript('cpaint/cpaint.inc.js');
+        $this->page->addScript('m_lookup_ajax.js');
+        $url = str_replace('&amp;', '&',$this->manager->getCurrentURL());
+        $code = '
+            function getDegrees() 
+            {
+                
+                cpaint_call("' . $url . '", "POST", "ajax_loadDegree", xGetElementById(\'periodId\').value + "," + xGetElementById(\'courseId\').value + "," + xGetElementById(\'courseVersion\').value + "," + xGetElementById(\'turnId\').value + "," +  xGetElementById(\'unitId\').value , returnDegrees, "TEXT");
+            } 
+            
+            function returnDegrees(result) 
+            {
+                var ObjSelect = xGetElementById(\'degreeNumber\');
+                var i;
+                for (i = ObjSelect.length -1; i >= 0 ; i-- )
+                {
+                    ObjSelect.remove(i);
+                }
+                var result = unescape(result);
+                var content = result.split(";");
+                var x = 2;
+                for(i =0; i < content.length-1; i++)
+                {
+                    var te = content[i].lastIndexOf(":");
+                    te++;
+                    var v = content[i].substr(te);
+                    if ( v.substr(0,1) == \'"\' )
+                    {
+                        var v = v.substr(1, v.length-2);
+                    }
+                    if ( x == 0 )
+                    {
+                        x = 1;
+                        elOptNew.text = v;
+                        try 
+                        {
+                            ObjSelect.add(elOptNew, null); // standards compliant; doesnt works ON IE
+                        }
+                        catch(ex) 
+                        {
+                            ObjSelect.add(elOptNew); // IE only
+                        }
+                    }
+                    else
+                    {
+                        var elOptNew = document.createElement("option");
+                        x = 0;
+                        elOptNew.value = v;
+                    }
+                }
+
+            }
+        ';
+        $this->page->AddJsCode($code);
+
+        $fields[] = new Separator('');
+
+        $this->setFields($fields);
+        $this->setValidators($validators);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+        $this->setClose($MIOLO->getActionURL($module,substr($action,0,strrpos($action,':'))));
+    }
+
+    function ajax_loadDegree($go)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+        list($data->periodId, $data->courseId, $data->courseVersion, $data->turnId, $data->unitId ) = explode(",",$go[0]);
+        $db = $MIOLO->getBusiness('academic', 'BusLearningPeriod');
+        $searchLearningPeriod = $db->searchLearningPeriod($data);
+        $db = $MIOLO->getBusiness('academic', 'BusDegree');
+        foreach ($searchLearningPeriod as $row => $lp )
+        {
+            unset($dt, $searchDegree);
+            $dt->learningPeriodId = $lp[0];
+            $searchDegree = $db->searchDegree($dt);
+            if ( count($searchDegree) > 0 )
+            {
+                foreach ( $searchDegree as $rowd => $degree )
+                {
+                    $degrees[$degree[9]] = $degree[6];
+//                    $degrees[$degree[9]] = $degree[6];
+                }
+            }
+        }
+        print serialize($degrees);
+        die();
+    }
+    /**
+     * Event triggered when user chooses Search from the toolbar
+     **/
+    public function tbBtnPrint_click($sender = null)
+    {
+        $MIOLO        = MIOLO::getInstance();
+        $module       = MIOLO::getCurrentModule();
+        $action       = MIOLO::getCurrentAction();
+        $data = $this->getData();
+        if ( count($data) > 0 )
+        {
+            foreach ( $data as $item => $value )
+            {
+                if ( stristr($item, 'label') || $value == null )
+                {
+                    unset($data->$item);
+                }
+            }
+        }
+
+        $class = 'RptCallListStatusReport';
+        $MIOLO->getClass($module, $class);
+        $report = new $class($data); 
+    }
+}
+
+?>

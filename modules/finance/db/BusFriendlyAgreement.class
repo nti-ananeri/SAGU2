@@ -1,0 +1,279 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for FriendlyAgreements 
+ *
+ * @author Eduardo Beal Miglioransa [eduardo@solis.coop.br] 
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ *
+ * @since
+ * Class created on 07/08/2006
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to manipulate the FriendlyAgreement table
+ **/
+class BusinessFinanceBusFriendlyAgreement extends MBusiness
+{
+    protected $db;
+
+    function BusinessFinanceBusFriendlyAgreement()
+    {
+        $this->db = $this->getDatabase();
+    }
+
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module = is_null($module) ? 'finance' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+    /**
+     * List all records from the table handled by the class
+     *
+     * @param: None
+     *
+     * @returns (array): Return an array with the entire table
+     *
+     **/
+    public function listFriendlyAgreement()
+    {
+    }
+
+
+
+    /**
+     * Return a specific record from the database
+     *
+     * @param $data (object): data of record to be retrieved
+     *
+     * @return (array): Return an array of the type handled by the class
+     *
+     **/
+    public function getReportPaidInvoicesWithFriendlyAgreement($data)
+    {
+
+        $sql = 'SELECT  A.personId,
+                        A.name, 
+                        A.residentialPhone,
+                        A.cellPhone,
+                        A.workPhone,
+                        E.invoiceId,
+                        E.value AS invoiceValue,
+                        ROUND (balance(E.invoiceId), \''. REAL_ROUND_VALUE . '\') AS defaulterValue,
+                        ROUND (balanceWithPolicies(E.invoiceId), \''. REAL_ROUND_VALUE .'\' ) AS actualDefaulterValue,
+                        TO_CHAR(E.maturityDate, \''. MASK_DATE . '\')
+
+                        FROM (SELECT personId, 
+                                     courseId,
+                                     courseVersion,
+                                     unitId, 
+                                     maturityDate, 
+                                     invoiceId, 
+                                     value,
+                                     emissionDate,
+                                     incomeSourceId
+                                FROM ONLY finReceivableInvoice) AS E
+
+                        INNER JOIN (SELECT personId, 
+                                           name, 
+                                           residentialPhone,
+                                           workPhone,
+                                           cellPhone,
+                                           location,
+                                           neighborhood, 
+                                           zipcode, 
+                                           number, 
+                                           complement,
+                                           email, 
+                                           emailalternative,
+                                           cityId,
+                                           isInsured
+                        FROM ONLY basPhysicalPersonStudent) AS A
+                                 ON (A.personId = E.personId)
+                        INNER JOIN (SELECT contractId,
+                                           personId,
+                                           courseId,
+                                           courseVersion,
+                                           unitId
+                                 FROM ONLY acdContract) AS B
+                                ON (E.personId = B.personId
+                                    AND E.courseId = B.courseId
+                                    AND E.courseVersion = B.courseVersion
+                                    AND E.unitId = B.unitId)
+                        LEFT JOIN (SELECT incentiveTypeId,
+                                          contractId,
+                                          startDate,
+                                          endDate,
+                                          cancellationDate 
+                                     FROM finincentive) AS D 
+                                  ON(D.contractId = B.contractId)
+                    WHERE   ';
+        if(strlen((string)$data->startDate) > 0)
+        {
+                $where   .= ' E.maturityDate >= TO_DATE(? , \''. MASK_DATE .'\') ';
+                $args[] = $data->startDate;
+        }
+        if(strlen((string)$data->endDate) > 0)
+        {
+                If(strlen((string)$where) > 0)
+                {
+                    $where   .= ' AND ';
+                }
+                $where   .= ' E.maturityDate <= TO_DATE(? , \''. MASK_DATE .'\') ';
+                $args[] = $data->endDate;
+        }
+
+        $incomeSourceId = explode(',' ,AGREEMENT_INCOME_SOURCE_ID);
+
+
+        for( $number = 0 ; $number < count($incomeSourceId); $number++)
+        {
+            if($number == 0 )
+            {
+                If(strlen((string)$where) > 0)
+                {
+                    $where   .= ' AND ';
+                }
+                $where .= '  E.incomeSourceId IN ( ? ';
+                $args[] = $incomeSourceId[0];
+            }
+            else
+            {
+                $where .= ' , ?';
+                $args[] = $incomeSourceId[$number];
+            }
+        }
+        $where   .= ' )';
+
+	if ( strlen((string)$where) > 0 )
+        {
+            $sql .= $where .'  GROUP BY 1,2,3,4,5,6,7,8,9, e.maturityDate, b.contractId
+                               ORDER BY A.personId, E.maturityDate  ';
+
+            $result = $this->db->query(SAGU::prepare($sql,$args));
+        }
+
+        return $result;
+    }
+
+
+    /**
+     * Return a specific record from the database
+     *
+     * @param $data (object): data of record to be retrieved
+     *
+     * @return (array): Return an array of the type handled by the class
+     *
+     **/
+    public function getReportFriendlyAgreement($data)
+    {
+ 
+        $sql = '         SELECT  A.personId,
+                                 A.name, 
+                                 A.residentialPhone,
+                                 A.cellPhone,
+                                 A.workPhone,
+                                 E.invoiceId,
+                                 ROUND (balance(E.invoiceId), 2),
+                                 ROUND (balanceWithPolicies(E.invoiceId), 2),
+                                 TO_CHAR(E.maturityDate, \''. MASK_DATE . '\')
+                       FROM ONLY finReceivableInvoice E
+                 INNER JOIN ONLY basPhysicalPersonStudent A
+                           USING (personId)
+                           WHERE balance(E.invoiceId) = 0  ';
+        if(strlen((string)$data->startDate) > 0)
+        {
+                $where   .= ' AND E.maturityDate >= TO_DATE(? , \''. MASK_DATE .'\') ';
+                $args[] = $data->startDate;
+        }
+        if(strlen((string)$data->endDate) > 0)
+        {
+                $where   .= ' AND E.maturityDate <= TO_DATE(? , \''. MASK_DATE .'\') ';
+                $args[] = $data->endDate;
+        }
+
+        if(strlen((string)$data->incomeSourceId) > 0)
+        {
+            for( $number = 0 ; $number < count($data->incomeSourceId); $number++)
+            {
+                if($number == 0 )
+                {
+                    $where .= ' AND   E.incomeSourceId IN ( ? ';
+                    $args[] = $data->incomeSourceId[0];
+                }
+                else
+                {
+                    $where .= ' , ?';
+                    $args[] = $data->incomeSourceId[$number];
+                }
+            }
+            $where   .= ' )';
+        }
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= $where .'  GROUP BY 1,2,3,4,5,6,7,8,9, E.maturityDate
+                               ORDER BY A.personId, E.maturityDate  ';
+
+            $result = $this->db->query(SAGU::prepare($sql,$args));
+        }
+        return $result;
+    }
+
+
+
+    // As funções abaixo foram feitas para otimização dos SQLs.
+    /*
+     * Move and get data from cursor
+     *
+     */
+    public function fetchData($number)
+    {
+        $sql = 'FETCH ' . $number . ' FROM data';
+        $db      = $this->getDatabase();
+        $result = $db->query($sql);
+
+        return $result;
+    }
+
+    public function beginTransaction()
+    {
+        $db = $this->getDatabase();
+        $db->execute('BEGIN TRANSACTION');
+    }
+
+    public function commit()
+    {
+        $db = $this->getDatabase();
+        $db->execute('COMMIT');
+    }
+   
+}
+?>

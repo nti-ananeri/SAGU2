@@ -1,0 +1,353 @@
+<?php
+
+/**
+ * Default defines 
+ * To report identification
+ */
+define('REPORT_ID', 'AC011'); 
+define('FPDF_FONTPATH', $MIOLO->getModulePath('basic', '/classes/fpdf/font/'));
+
+$MIOLO = MIOLO::getInstance();
+$module = MIOLO::getCurrentModule();
+$MIOLO->Uses('classes/fpdf/pdf.php', 'basic');
+
+/**
+ * PDF extension to generate report
+ */
+class RptEnrollConfirmationDocument extends PDF
+{
+
+    public function __construct( $filters )
+    {
+        $MIOLO       = MIOLO::getInstance();
+        $module      = MIOLO::getCurrentModule();
+        $this->title =strtoupper(_M('Enroll confirmation', $module) );
+        $this->useUserInfo = false;
+        parent::__construct();
+        foreach($filters as $item => $value)
+        {
+            $this->filters->{$item} = $value;
+        }
+        $this->aliasNbPages();
+        $this->addPage('P', 'mm', 'A4');
+        $this->PageBreakTrigger = ($this->h-$this->tMargin);
+        $db = $MIOLO->getBusiness('academic', 'BusEnrollConfirmationDocument');
+        $this->infos = $db->getPupilEnroll($this->filters);
+        $this->generatePDF();
+    }
+
+    public function getHeader($header)
+    {
+        $module = 'academic';
+        //check if there is a emition date specified
+        if (strlen((string)$this->filters->emitionDate) == 0)
+        {
+            $this->filters->emitionDate = date(MASK_DATE_PHP);
+        }
+        $this->cell($this->psize, $this->lsize, $this->pdfInfo->legalPerson->cityName . ', ' . SAGU::getDateByExtense($this->filters->emitionDate), 0, 0, 'R');
+        $this->ln(10);
+        
+        //Beggining of the text
+        $this->setFont(DEFAULT_REPORT_FONT, '', 10);
+        $msg = _M('Dear pupil', $module) . ' '  . $header->personName . ' (' . $header->personId . '):';
+        $this->cell($this->psize, $this->lsize, $msg);
+        $this->ln(10);
+        $msg = 'Informamos que você está matriculado em '  . $header->courseName . ', nas seguintes disciplinas:';
+        $this->multiCell($this->psize, $this->lsize, $msg);        
+//        $this->cell($this->psize, $this->lsize, '', 'B');
+        $this->ln();
+        
+        unset ($this->colName, $this->colSize);
+        $this->colName[0] = _M('Day', $module);
+        $this->colName[1] = _M('Turn', $module);
+        $this->colName[2] = _M('Room-Building', $module);
+        $this->colName[3] = _M('Begin day', $module);
+        $this->colName[4] = _M('Curricular component', $module);
+        $this->colName[5] = _M('Professor', $module);
+
+        $this->colSize[0] = 15;
+        $this->colSize[1] = 10;
+        $this->colSize[2] = 15;
+        $this->colSize[3] = 15;
+        $this->colSize[4] = ($this->psize-array_sum($this->colSize))/2;
+        $this->colSize[5] = $this->colSize[4];
+
+        $this->colAlign[0] = 'L';
+        $this->colAlign[1] = 'C';
+        $this->colAlign[2] = 'C';
+        $this->colAlign[3] = 'C';
+        $this->colAlign[4] = 'L';
+        $this->colAlign[5] = 'L';
+
+        $fs = 10;
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', $fs);
+        $ok = true;
+        while ($ok == true )
+        {
+            $ok = false;
+            foreach ( $this->colSize as $item => $value )
+            {
+                if ( $this->getStringWidth($this->colName[$item])+3 > $value )
+                {
+                    $fs -= 0.1;
+                    $this->setFont(DEFAULT_REPORT_FONT, 'B', $fs);
+                    $this->fs = $fs;
+                    $ok = true;
+                }
+            }
+        }
+        $this->setFillColor(230);
+
+        if ( strlen((string)$header->unitDescription) > 0 )
+        {
+            $this->setFont(DEFAULT_REPORT_FONT, 'B', $fs);
+            $unit = strtoupper(_M('Unit', 'academic') . ':');
+            $gsize = $this->getStringWidth($unit) +1;
+            $this->cell($gsize, $this->lsize, $unit, null, null, null);
+            $this->setFont(DEFAULT_REPORT_FONT, 'I', $fs);
+            $this->cell($this->psize-$gsize, $this->lsize, $header->unitDescription);
+            $this->ln();
+        }
+        if ( strlen((string)$this->filters->classId) > 0 )
+        {
+            $this->setFont(DEFAULT_REPORT_FONT, 'B', $fs);
+            $class = strtoupper(_M('Class', 'academic') . ':');
+            $gsize = $this->getStringWidth($class) +1;
+            $this->cell($gsize, $this->lsize, $class, null, null, null);
+            $this->setFont(DEFAULT_REPORT_FONT, 'I', $fs);
+            $this->cell($this->psize-$gsize, $this->lsize, $this->filters->classId);
+            $this->ln();
+        }
+
+        $this->setFillColor(240);
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', $fs);
+        foreach($this->colName as $item => $value )
+        {
+            $this->cell($this->colSize[$item], $this->lsize, strtoupper($value), 1, null, 'C', 1);
+        }
+        $this->ln();
+    }
+    public function generatePDF()
+    {
+        $y = $this->y;
+        $x = 0;
+        $oldpupil = '';
+        $this->setFont(DEFAULT_REPORT_FONT, '', $this->fs);
+//vd($this->infos);
+        if ( count($this->infos) > 0 )
+        {
+            foreach ( $this->infos as $ln => $pupil )
+            {
+                
+                if ( $this->y+($this->lsize) >= $this->PageBreakTrigger || $x == 0 || $pupil[7] <> $oldpupil[7] )
+                {
+                    if ( $x != 0 )
+                    {
+                        $this->addPage();
+                    }
+                    unset($obj);
+                    list($obj->weekDay, $obj->turn, $obj->room, $obj->beginDate, $obj->curricularComponent, $obj->professor, $obj->curricularComponentId, $obj->contractId, $obj->personName, $obj->personId, $obj->enrollId, $obj->emissionDate, $obj->courseName ) = $pupil;
+                    $this->getHeader($obj);
+                    $this->setFont(DEFAULT_REPORT_FONT, '', $this->fs);
+                    $x++;
+                }
+
+                if ( $oldpupil[7] == $pupil[7] )
+                {
+                    foreach ( $this->colName as $item => $value )
+                    {
+                        $this->cell($this->colSize[$item], $this->lsize, $pupil[$item], 1, null, $this->colAlign[$item]);
+                    }
+                    $this->ln();
+                    $count[$pupil[2]][] ='';
+                }
+                $oldpupil = $pupil;
+            }
+            $this->ln();
+            $this->setFont(DEFAULT_REPORT_FONT, '', 10);
+
+            $msg = $this->replaceText($this->pdfInfo);
+            
+            $this->multiCell($this->psize, $this->lsize, $msg);
+            if ( $this->y < 170 )
+            {
+                $this->setY(170);
+
+            }
+        }
+        parent::generatePDF();
+    }
+    private function replaceText($rdata)
+    {
+        $parcelValue = $rdata->courseInfo->value/$rdata->contract->parcelsNumber;
+        $courseValue = $rdata->courseInfo->value;
+        $enrollValue = $rdata->courseInfo->enrollValue;
+        $courseTotalNumberHours = $rdata->contract->courseTotalNumberHours;
+        
+        $procurar[] = '$CURDAY';
+        $substituir[] = date('d');
+
+        $procurar[] = '$CURMONTHEXT';
+        $substituir[] =  _M(date('F'), 'academic');
+
+        $procurar[] = '$CURMONTH';
+        $substituir[] = date('m');
+
+        $procurar[] = '$CURYEAR';
+        $substituir[] =  date('Y');
+
+        $procurar[] = '$PERIOD';
+        $substituir[] =  CURRENT_PERIOD_ID;
+        
+        $procurar[] = '$LEGALPERSON_CNPJ';
+        $substituir[] =   $this->pdfInfo->legalPerson->cnpj;
+
+        $procurar[] = '$LEGALPERSON_ADDRESS';
+        $substituir[] =   $this->pdfInfo->legalPersonAddress;
+
+        $procurar[] = '$LEGALPERSON_NAME';
+        $substituir[] =   $this->pdfInfo->legalPersonName;
+
+        $procurar[] = '$LEGALPERSON_SHORTNAME';
+        $substituir[] =   $this->pdfInfo->legalPerson->shortName;
+
+        $procurar[] = '$COMPANY_NAME';
+        $substituir[] =   $this->pdfInfo->company->name;
+
+        $procurar[] = '$COMPANY_SHORTNAME';
+        $substituir[] =   $this->pdfInfo->company->acronym;
+
+        $procurar[] = '$MATURITYDAY_EXTENSIVE';
+        $substituir[] =   strtolower(SAGU::returnExtenseNumber($rdata->contract->maturityDay));
+
+        $procurar[] = '$MATURITYDAY';
+        $substituir[] =   $rdata->contract->maturityDay;
+        
+        if ( $rdata->policy->isDiscountInPercent )
+        {
+            $procurar[] = '$POLICY_DISCOUNT_VALUE_EXTENSIVE';
+            $substituir[] =    strtolower(SAGU::returnExtenseNumber($rdata->policy->discount)) . ' por cento';
+            $procurar[] = '$POLICY_DISCOUNT_VALUE';
+            $substituir[] =   $rdata->policy->discount . ' %';
+        }
+        else
+        {
+            $procurar[] = '$POLICY_DISCOUNT_VALUE_EXTENSIVE';
+            $substituir[] =    strtolower(SAGU::returnExtenseNumber($rdata->policy->discount)) . ' REAIS';
+            $procurar[] = '$POLICY_DISCOUNT_VALUE';
+            $substituir[] =   'R$ ' . $rdata->policy->discount;
+        }
+
+        $procurar[] = '$POLICY_DAYS_TO_DISCOUNT_EXTENSIVE';
+        $substituir[] =   strtolower(SAGU::extensive($rdata->contract->maturityDay -($rdata->policy->daysToDiscount)));
+
+        $procurar[] = '$POLICY_DAYS_TO_DISCOUNT';
+        $substituir[] =   $rdata->contract->maturityDay -($rdata->policy->daysToDiscount);
+
+        $procurar[] = '$PARCELS_NUMBER';
+        $substituir[] =   $rdata->contract->parcelsNumber; 
+
+        $procurar[] = '$PARCELS_NUMBER_EXENSIVE';
+        $substituir[] =    strtolower(SAGU::returnExtenseNumber($rdata->contract->parcelsNumber, 'F')); 
+
+        $procurar[] = '$PARCEL_VALUE_EXTENSIVE';
+        $substituir[] =   SAGU::extensive($parcelValue, 'M', true); 
+
+        $procurar[] = '$PARCEL_VALUE';
+        $substituir[] =   SAGU::formatNumber($parcelValue,true); 
+
+        $procurar[] = '$COURSE_VALUE_EXTENSIVE';
+        $substituir[] =   SAGU::extensive($courseValue, 'M', true); 
+
+        $procurar[] = '$COURSE_VALUE';
+        $substituir[] =   SAGU::formatNumber($courseValue, true); 
+
+        $procurar[] = '$ENROLL_VALUE_EXTENSIVE';
+        $substituir[] =   SAGU::extensive($enrollValue, 'M', true); 
+
+        $procurar[] = '$ENROLL_VALUE';
+        $substituir[] =   SAGU::formatNumber($enrollValue, true); 
+        
+        $procurar[] = '$COURSENAME';
+        $substituir[] =   $rdata->contract->courseName; 
+
+        $procurar[] = '$COURSE_SEMESTER_TOTAL_EXTENSIVE';
+        $substituir[] =   strtolower(SAGU::extensive($rdata->contract->courseSemesterTotal)); 
+
+        $procurar[] = '$COURSE_SEMESTER_TOTAL';
+        $substituir[] =   $rdata->contract->courseSemesterTotal; 
+
+        $procurar[] = '$COURSE_TOTAL_NUMBER_HOURS_EXTENSIVE';
+        $substituir[] =   strtolower(SAGU::extensive($courseTotalNumberHours, 'F')); 
+        
+        $procurar[] = '$COURSE_TOTAL_NUMBER_HOURS';
+        $substituir[] =   $courseTotalNumberHours; 
+
+        $procurar[] = '$CONTRACT_PERSONNAME';
+        $substituir[] =   $rdata->contract->name; 
+        
+        $procurar[] = '$CONTRACT_MARITALSTATUS';
+        $substituir[] =   $rdata->contract->maritalStatus; 
+
+        $procurar[] = '$CONTRACT_RG';
+        $substituir[] =   $rdata->contract->rg; 
+
+        $procurar[] = '$CONTRACT_CPF';
+        $substituir[] =   $rdata->contract->cpf;
+
+        $procurar[] = '$CONTRACT_LOCATION';
+        $substituir[] =   $rdata->contract->location;
+
+        $procurar[] = '$CONTRACT_ADDRESSNUMBER';
+        $substituir[] =   $rdata->contract->number;
+
+        $procurar[] = '$CONTRACT_ZIPCODE';
+        $substituir[] =   $rdata->contract->zipCode;
+
+        $procurar[] = '$CONTRACT_CITYNAME';
+        $substituir[] =   $rdata->contract->cityName;
+
+        $procurar[] = '$CONTRACT_NEIGHBORHOOD';
+        $substituir[] =   $rdata->contract->neighborhood;
+        
+        $procurar[] = '$RESPONSABLE_PERSONNAME';
+        $substituir[] =   $rdata->responsable->name; 
+        
+        $procurar[] = '$RESPONSABLE_MARITALSTATUS';
+        $substituir[] =   $rdata->responsable->maritalStatus; 
+
+        $procurar[] = '$RESPONSABLE_RG';
+        $substituir[] =   $rdata->responsable->rg; 
+
+        $procurar[] = '$RESPONSABLE_CPF';
+        $substituir[] =   $rdata->responsable->cpf;
+
+        $procurar[] = '$RESPONSABLE_LOCATION';
+        $substituir[] =   $rdata->responsable->location;
+
+        $procurar[] = '$RESPONSABLE_ADDRESSNUMBER';
+        $substituir[] =   $rdata->responsable->number;
+
+        $procurar[] = '$RESPONSABLE_ZIPCODE';
+        $substituir[] =   $rdata->responsable->zipCode;
+
+        $procurar[] = '$RESPONSABLE_CITYNAME';
+        $substituir[] =   $rdata->responsable->cityName;
+
+        $procurar[] = '$RESPONSABLE_NEIGHBORHOOD';
+        $substituir[] =   $rdata->responsable->neighborhood;
+        
+        $procurar[] = '$COURSE_ENDDATE';
+        $substituir[] =   $rdata->courseInfo->endDate;
+        
+        $procurar[] = '$COURSE_BEGINDATE';
+        $substituir[] =   $rdata->courseInfo->beginDate;
+        
+        $text = ENROLL_CONFIRMATION_TEXT;
+        $text = str_replace($procurar, $substituir, $text);
+
+        return $text;
+    }
+}
+
+?>

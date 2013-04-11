@@ -1,0 +1,143 @@
+<?php
+
+/**
+ * Academic inactive contract lock form
+ *
+ * @author Daniel Afonso Heisler [daniel@solis.coop.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ *
+ * @since
+ * Class created on 28/01/2007
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2005 SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+
+/**
+ * Form to close inactive contracts
+ **/
+class FrmInactiveContractLock extends MForm
+{
+
+    /**
+     * Class constructor
+     **/
+    function __construct()
+    {
+
+        $action = MIOLO::getCurrentAction();
+        $module = MIOLO::getCurrentModule();
+        $MIOLO  = MIOLO::getInstance();
+
+        parent::__construct(_M('Inactive contract lock', $module));
+
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+        $MIOLO        = MIOLO::getInstance();
+        $module       = MIOLO::getCurrentModule();
+        $action       = MIOLO::getCurrentAction();
+
+        // Esse processo serve para inserir uma movimentacao contratual de
+        // trancamento em todos os contratos que nao tiveram movimentacao no
+        // último período corrente e que no período anterior, nao tiveram
+        // uma movimentacao de fechamento.
+        $explanationText = new MText('explanationText', _M('This process inserts a contract movement, locking all contracts without movements on the last learning period and were not closed.', $module));
+        $fields[] = $explanationText;
+
+        $businessPeriod = $MIOLO->getBusiness($module,'BusPeriod');
+        $periodId       = new MComboBox('periodId', strlen((string)$this->getFormValue('periodId', $data->periodId))>0 ? $this->getFormValue('periodId', $data->periodId) : CURRENT_PERIOD_ID, _M('Period',$module), $businessPeriod->listPeriod(), true );
+        $validators[]   = new MRequiredValidator('periodId', _M('Period',$module), 'required');
+        $fields[]       = $periodId;
+
+        $businessReason = $MIOLO->getBusiness($module, 'BusReason');
+        $reasonId       = new MComboBox('reasonId', $this->getFormValue('reasonId', $data->reasonId), _M('Reason',$module), $businessReason->listReasonByStateContract(STATE_CONTRACT_ID_LOCKED), true );
+        $validators[]   = new MRequiredValidator('reasonId', _M('Reason',$module), 'required');
+        $fields[]       = $reasonId;
+
+        $fields[] = new Separator('');
+
+        //Buttons
+        $btn1[] = new MButton('btn1', _M('Execute', $module));
+        $div1   = new MDiv('div1', $btn1, null, 'align=center');
+
+        $fields[] = $div1;
+        $fields[] = new Separator('');
+
+        $this->setFields($fields);
+        
+        if ( count($validators) > 0 )
+        {
+            $this->setValidators($validators);
+        }
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+        $this->page->onLoad('document.' . $this->name . '.contractPersonId.focus();');
+        $this->setClose($MIOLO->getActionURL($module,substr($action,0,strrpos($action,':'))));
+
+    }
+
+    /**
+     * Event triggered when user click execute button
+     **/
+    public function btn1_click($sender = null)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $data = $this->getData();
+
+        $business = $MIOLO->getBusiness($module, 'BusInactiveContractLock');
+        $ok       = $business->inactiveContractLock($data);
+
+        if ( count($ok) > 0 )
+        {
+            $msg     = _M('@1 contracts closed!', $module, count($ok)) . ' ';
+            $msg    .= _M('The following contracts had been closed', $module) . '.';
+            foreach ( $ok as $row )
+            {
+                $msg    .= '<br>' . _M('Contract', $module) . ': ' . $row[0] . ' ' . 
+                           '(' . $row[1] . ')';
+            }
+            $goto    = $MIOLO->getActionURL($module, $action);
+            $caption = _M('Success',$module);
+            $MIOLO->information($msg, $goto, $caption);
+        }
+        else
+        {
+            $msg     = _M('No contract was closed.', $module);
+            $goto    = $MIOLO->getActionURL($module, $action);
+            $caption = _M('Information', $module);
+            $MIOLO->information($msg, $goto, $caption);
+        }
+    }
+
+}
+
+?>

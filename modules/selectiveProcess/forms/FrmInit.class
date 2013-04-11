@@ -1,0 +1,426 @@
+<?php
+
+/**
+ * Inscription form
+ *
+ * @author Hélio Henrique Rodrigues Guimarães [helio@solis.coop.br]
+ *
+ * @version: $Id$
+ * 
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * Rafael Luís Spengler [rafael@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ *
+ * @since
+ * Class created on 05/07/2006
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2005 SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+
+/**
+ * Form to manipulate a selectiveProcessOccurrence
+ **/
+class FrmInit extends MForm
+{
+    private $inscriptionData;
+    private $optionsNumber;
+    private $othersSelectiveProcessNumbers;
+    /**
+     * Class constructor
+     **/
+    function __construct()
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+
+        parent::__construct(_M('Selective process inscription', 'selectiveProcess'));
+
+        $this->inscriptionData = unserialize(urldecode(stripslashes($MIOLO->session->getValue('inscriptionData'))));
+
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+        $event      = MIOLO::_request('event');
+        $selectiveProcessId = MIOLO::_request('selectiveProcessId');
+        if(!$this->inscriptionData)
+        {
+            $this->inscriptionData = unserialize(urldecode(stripslashes($MIOLO->session->getValue('inscriptionData'))));
+ 
+        }
+        if(strlen((string)$selectiveProcessId) > 0 && !$this->inscriptionData->inscription->selectiveProcessId)
+        {
+            $this->inscriptionData->inscription->selectiveProcessId = $selectiveProcessId;
+
+        }
+        else if((USE_MULTIPLE =='TRUE' && !$this->inscriptionData->inscription->selectiveProcessId) || ($event =='listAll:click' && !$this->inscriptionData->inscription->selectiveProcessId))
+        {
+            $business = $MIOLO->getBusiness($module,'BusSelectiveProcess');
+            $filters->endDateTime = date('Y-m-d h:i:s');
+            $processList = $business->listSelectiveProcess($filters);
+
+            if ( count($processList) > 1 )
+            {
+                $flds[] = new MComboBox('selectiveProcessId',($this->getFormValue('selectiveProcessId',$data->selectiveProcessId) ? $this->getFormValue('selectiveProcessId',$data->selectiveProcessId) : ''),_M('Selective Process',$module),$processList);
+                $this->setFields($flds);
+                return true;
+            }
+            elseif ( count($processList) == 0 )
+            {
+                $msg = _M('Current selective process settings was not found! @1 Would you like to list all selective process options ?',$module,'<br>');
+                $gotoYes = $MIOLO->GetActionURL($module,$self);
+                $gotoNo = $MIOLO->GetActionURL($module,'main:process');
+                $eventYes = "listAll:click";
+                $eventNo = "";
+                $MIOLO->Question($msg, $gotoYes, $gotoNo, $eventYes, $eventNo);
+            }
+            else
+            {
+                $this->inscriptionData->inscription->selectiveProcessId = $processList[0][0];
+            }
+
+        }
+        else if((USE_MULTIPLE == 'FALSE' && !$selectiveProcessId && !$this->inscriptionData->inscription->selectiveProcessId) || !defined('USE_MULTIPLE'))
+        {
+            $this->inscriptionData->inscription->selectiveProcessId = SELECTIVE_PROCESS_CURRENT;
+        }
+        $businessInscriptionSetting = $MIOLO->getBusiness($module, 'BusInscriptionSetting');
+        $inscriptionSetting         = $businessInscriptionSetting->getInscriptionSetting($this->inscriptionData->inscription->selectiveProcessId);
+
+        if(!$inscriptionSetting->selectiveProcessId)
+        {
+            $msg = _M('Current selective process settings was not found!',$module).'<br>'._M('Would you like to list all selective process options ?',$module);
+            $gotoYes = $MIOLO->GetActionURL($module, $self);
+            $gotoNo = $MIOLO->GetActionURL($module,'main:process');
+            $eventYes = "listAll:click";
+            $eventNo = "";
+            $MIOLO->Question($msg, $gotoYes, $gotoNo, $eventYes, $eventNo);
+        }
+        
+        //Data atual
+        list ( $dc, $mc, $yc)       = explode('/', date('d/m/Y'),3);
+        list ( $Hc, $Mc, $Sc)       = explode(':', date('G:i:s'),3);
+        $currentDate                = mktime($Hc, $Mc, $Sc, $mc, $dc, $yc);
+
+        //Data de início das inscrições do processo seletivo
+        list ( $db, $mb, $yb)       = $data = explode('/', $inscriptionSetting->beginDate,3);
+        list ( $Hb, $Mb, $Sb)       = $hora = explode(':', $inscriptionSetting->beginHour,3);
+        $beginDate                  = mktime($Hb, $Mb, $Sb, $mb, $db, $yb);
+
+        //Data de fim das inscrições do processo seletivo
+        list ( $de, $me, $ye)       = explode('/', $inscriptionSetting->endDate,3);
+        list ( $He, $Me, $Se)       = explode(':', $inscriptionSetting->endHour,3);
+        $endDate                    = mktime($He, $Me, $Se, $me, $de, $ye);
+
+        //Dados que serão subistuídos se encontrados nos corpos das mensagens
+        $searchData  = array( "\$SELECTIVE_PROCESS_CURRENT",
+        					  "\$DESCRIPTION_SELECTIVE_PROCESS_CURRENT",
+                              "\$BEGIN_DATE",
+                              "\$BEGIN_HOUR",
+                              "\$END_DATE",
+                              "\$END_HOUR" );
+
+        //Dados que substituirã os corpos das mensagens
+        $replaceData = array( $this->inscriptionData->inscription->selectiveProcessId,
+							  $inscriptionSetting->description,        
+                              $inscriptionSetting->beginDate,
+                              $inscriptionSetting->beginHour,
+                              $inscriptionSetting->endDate,
+                              $inscriptionSetting->endHour );
+
+        //Message to inscription time
+        if ( ($beginDate <= $currentDate && $endDate >= $currentDate) ||
+                ($MIOLO->checkAccess($module, SPR_INSCRIPTION, false, true))
+            )
+        {
+            $msgInscriptionText = str_replace($searchData, $replaceData, $inscriptionSetting->messageWelcomeInscription);
+
+            $btnInscription = new MButton('btnInscription',_M('Subscribe',$module));
+            $btnInscription->attachEventHandler('click', 'tbBtnInscription_click', true);
+
+            $btnAlterInscription = new MButton('btnAlterInscription',_M('Alter inscription',$module));
+            $btnAlterInscription->attachEventHandler('click', 'tbBtnInscription_click', true);
+        
+
+            $arrayButtons = array( $btnInscription, $btnAlterInscription);
+
+            if ( GENERATE_BANK_INVOICE === DB_TRUE )
+            {
+                $btnReprintInvoice = new MButton('btnReprintInvoice',_M('Reprint invoice',$module));
+                $btnReprintInvoice->attachEventHandler('click', 'tbBtnReprintInvoice_click', true);
+                
+                $arrayButtons[]    = $btnReprintInvoice;
+            }
+            
+            if ( GENERATE_TERM_RESERVE === DB_TRUE )
+            {
+                $btnReprintTerm = new MButton('btnReprintTerm',_M('Reprint Term',$module));
+                $btnReprintTerm->attachEventHandler('click', 'tbBtnReprintTerm_click', true);
+                
+                $arrayButtons[]    = $btnReprintTerm;
+            }
+
+            $btnReprintInscriptionVoucher = new MButton('btnReprintInscriptionVoucher',_M('Reprint inscription voucher',$module));
+            $btnReprintInscriptionVoucher->attachEventHandler('click', 'tbBtnReprintInscriptionVoucher_click', true);
+            $arrayButtons[] = $btnReprintInscriptionVoucher;
+            $btnChangeSelectiveProcess = new MButton('btnChangeSelectiveProcess',_M('Change selective process',$module));
+            $btnChangeSelectiveProcess->attachEventHandler('click','tbBtnChangeSelectiveProcess_click',true);
+            $arrayButtons[] = $btnChangeSelectiveProcess;
+            $div1       = new MDiv('div1', $arrayButtons, null, 'align="center"');
+        }
+        elseif ( $beginDate > $currentDate ) //Message to before date of inscription
+        {
+            $msgInscriptionText = str_replace($searchData, $replaceData, $inscriptionSetting->messageNotDisponibleInscription);
+        }
+        else //Message to after inscription period
+        {
+            $msgInscriptionText = str_replace($searchData, $replaceData, $inscriptionSetting->messageFinishInscription);
+        }
+
+        $separator = new Separator('');
+
+        $msgInscription     = new MText('msgInscription', $msgInscriptionText);
+        $cntInscription     = new MHContainer('cntInscription', array($msgInscription, $div1, $separator, $separator));
+
+        $cntInscription->addBoxStyle('background', 'white');
+        $cntInscription->setDisposition('center');
+
+        $fields[] = $cntInscription;
+
+        //BasPerson
+        $this->inscriptionData->physicalPerson->personId                    = NULL;
+        $this->inscriptionData->physicalPerson->name                        = NULL;
+        $this->inscriptionData->physicalPerson->email                       = NULL;
+        $this->inscriptionData->physicalPerson->countryIdBirth              = NULL;
+        $this->inscriptionData->physicalPerson->location                    = NULL;
+        $this->inscriptionData->physicalPerson->number                      = NULL;
+        $this->inscriptionData->physicalPerson->complement                  = NULL;
+        $this->inscriptionData->physicalPerson->neighborhood                = NULL;
+        $this->inscriptionData->physicalPerson->cityId                      = NULL;
+        $this->inscriptionData->physicalPerson->zipCode                     = NULL;
+        $this->inscriptionData->physicalPerson->residentialPhone            = NULL;
+        $this->inscriptionData->physicalPerson->workPhone                   = NULL;
+        $this->inscriptionData->physicalPerson->cellPhone                   = NULL;
+        $this->inscriptionData->physicalPerson->maritalStatusId             = NULL;
+        $this->inscriptionData->physicalPerson->sex                         = NULL;
+        $this->inscriptionData->physicalPerson->fatherId                    = NULL;
+        $this->inscriptionData->physicalPerson->motherId                    = NULL;
+        $this->inscriptionData->physicalPerson->specialNecessityId          = NULL;
+        $this->inscriptionData->physicalPerson->specialNecessityDescription = NULL;
+        $this->inscriptionData->physicalPerson->ethnicOriginId              = NULL;
+        $this->inscriptionData->physicalPerson->dateBirth                   = NULL;
+        $this->inscriptionData->physicalPersonStudent->institutionIdHs      = NULL;
+        $this->inscriptionData->physicalPersonStudent->cityIdHs             = NULL;
+        $this->inscriptionData->document->rgNumber                          = NULL;
+        $this->inscriptionData->document->organ                             = NULL;
+        $this->inscriptionData->document->cpf                               = NULL;
+        $this->inscriptionData->documentReadOnly                            = NULL;
+        $this->inscriptionData->inscription->isHighSchool                   = DB_TRUE;
+
+        $this->inscriptionData->stepTotal                                   = 4;
+        $this->inscriptionData->currentStep                                 = 0;
+
+        //Verifica, e cria as opções de curso, língua e local de prova quando necessário
+        $businessSelectiveProcess    = $MIOLO->getBusiness($module, 'BusSelectiveProcess');
+        $filters->selectiveProcessId = $this->inscriptionData->inscription->selectiveProcessId;
+        $selectiveProcess            = $businessSelectiveProcess->searchSelectiveProcess($filters);
+
+        //Número de opções de curso obrigatórias na inscrição
+        $this->inscriptionData->inscription->optionsNumberRequired = $selectiveProcess[0][15];
+
+        for ($x = 1; $x <= $selectiveProcess[0][7]; $x++)   //course options; $selectiveProcess[0][7] = número de opçoes de curso
+        {
+            eval('$this->inscriptionData->inscriptionOption->o'.$x.'->optionNumber       = $x;');
+            eval('$this->inscriptionData->inscriptionOption->o'.$x.'->courseOccurrenceId = NULL;');
+        }
+
+        //$selectiveProcess[0][8] => selective process can language ocurrence
+        $selectiveProcess[0][8] == DB_TRUE ? $this->inscriptionData->inscription->languageId = NULL : NULL;
+
+        $this->inscriptionData->inscription->cityExam   = NULL;
+
+        //Se existe outros processos seletivos, cadastras os dados deles
+        $businessSelectiveProcessOccurrence = $MIOLO->getBusiness('selectiveProcess', 'BusSelectiveProcessOccurrence');
+
+        $filters2->selectiveProcessId       = $this->inscriptionData->inscription->selectiveProcessId;
+        $filters2->isOtherSelectiveProcess  = true;
+
+        $othersSelectiveProcess = $businessSelectiveProcessOccurrence->searchSelectiveProcessOccurrence($filters2);
+
+        $businessExamOccurrence = $MIOLO->getBusiness('selectiveProcess', 'BusExamOccurrence');
+
+        if ( count($othersSelectiveProcess) > 0 )
+        {
+            //Se tiver outro processo seletivo, é um passo a mais na inscrição
+            $this->inscriptionData->stepTotal = $this->inscriptionData->stepTotal + 1;
+
+            foreach($othersSelectiveProcess as $selectiveProcess)
+            {
+                if ( $selectiveProcess[2] != DEFAULT_SELECTIVE_PROCESS_TYPE )
+                {
+                    eval('$this->inscriptionData->selectiveProcessTypeData->o'.$selectiveProcess[2].'->selectiveProcessTypeId = '.$selectiveProcess[2].';');
+                    eval('$this->inscriptionData->selectiveProcessTypeData->o'.$selectiveProcess[2].'->numberInscription = NULL;');
+
+                    $filters3->selectiveProcessId     = $this->inscriptionData->inscription->selectiveProcessId;
+                    $filters3->selectiveProcessTypeId = $selectiveProcess[2];
+                    $examsOccurrences = $businessExamOccurrence->searchExamOccurrence($filters3);
+
+                    foreach ( $examsOccurrences as $examOccurrence )
+                    {
+                        eval('$this->inscriptionData->selectiveProcessTypeData->o'.$selectiveProcess[2].'->o'.$examOccurrence[0].'->examOccurrenceId  = '.$examOccurrence[0].';');
+                        eval('$this->inscriptionData->selectiveProcessTypeData->o'.$selectiveProcess[2].'->o'.$examOccurrence[0].'->note = NULL;');
+                    }
+                }
+            }
+        }
+
+        $this->inscriptionData->inscription->isSocialEconomic = $inscriptionSetting->isSocialEconomic;
+
+        if ( $inscriptionSetting->isSocialEconomic == DB_TRUE )
+        {
+            $this->inscriptionData->stepTotal = $this->inscriptionData->stepTotal + 1;
+
+            //Informações sócio-econômicas
+            $filters->formId         = FORM_INSCRIPTION_ID;
+
+            $businessForm            = $MIOLO->getBusiness('research', 'BusForm');
+            $businessQuestions       = $MIOLO->getBusiness('research', 'BusQuestion');
+            $businessOption          = $MIOLO->getBusiness('research', 'BusOption');
+
+            $socialEconomicForm      = $businessForm->getForm(FORM_INSCRIPTION_ID);
+            $socialEconomicQuestions = $businessQuestions->searchQuestion($filters);
+
+            if ( is_array($socialEconomicQuestions) && (count($socialEconomicQuestions) > 0) )
+            {
+                foreach ( $socialEconomicQuestions as $socialEconomicQuestion )  //Laço para cada questão
+                {
+                    eval('$this->inscriptionData->answer->o'.$socialEconomicQuestion[0].'->questionId = '.$socialEconomicQuestion[0].';');
+                    eval('$this->inscriptionData->answer->o'.$socialEconomicQuestion[0].'->optionId = NULL;');
+                }
+            }
+        }
+
+        $this->inscriptionData->inscription->selectiveProcessId   = $this->inscriptionData->inscription->selectiveProcessId;
+        $this->inscriptionData->inscription->inscriptionId        = NULL;
+        $this->inscriptionData->inscription->isInternet           = DB_TRUE;
+        $this->inscriptionData->inscription->isClassified         = DB_FALSE;
+
+        $this->inscriptionData->message->messageDocumentInscription = $inscriptionSetting->messageDocumentInscription;
+
+        $this->inscriptionData->message->messageInformationInscription = $inscriptionSetting->messageInformationInscription;
+
+        $this->inscriptionData->message->messageHighSchoolConcluedInscription = $inscriptionSetting->messageHighSchoolConcluedInscription;
+
+
+        $this->inscriptionData->message->messageOfInvoice           = $inscriptionSetting->messageOfInvoice;
+        $this->inscriptionData->message->messageConcluedInscription = $inscriptionSetting->messageConcluedInscription;
+
+        $fields[] = new Separator('');
+        $MIOLO->session->setValue('inscriptionData', urlencode(serialize($this->inscriptionData)));
+
+        $this->setFields($fields);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+        $this->setClose($MIOLO->getActionURL($module,substr($action,0,strrpos($action,':'))));
+    }
+
+
+    /**
+     * Event triggered when user click inscription
+     **/
+    public function tbBtnInscription_click($sender = null)
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $MIOLO->session->setValue('inscriptionData', urlencode(serialize($this->inscriptionData)));
+
+        $opts = array('page' => '2');  //Verify documents
+
+        $this->page->mGoto($MIOLO->getActionURL($module, $action, null, $opts));
+    }
+
+    public function tbBtnChangeSelectiveProcess_click($sender = null)
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $MIOLO->session->setValue('inscriptionData','');
+        $opts = array('page' => '1');  //Verify documents
+
+        $this->page->mGoto($MIOLO->getActionURL($module, $action, null, $opts));
+    }
+
+    /**
+     * Event triggered when user click re print invoice
+     **/
+    public function tbBtnReprintInvoice_click($sender = null)
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+
+        $MIOLO->session->setValue('inscriptionData', urlencode(serialize($this->inscriptionData)));
+
+        $opts = array('page' => '10','selectiveProcessId'=>$this->inscriptionData->inscription->selectiveProcessId);  //Verify documents
+
+        $this->page->mGoto($MIOLO->getActionURL($module, $action, null, $opts));
+    }
+
+
+    /**
+     * Event triggered when user click re print inscription voucher
+     **/
+    public function tbBtnReprintInscriptionVoucher_click($sender = null)
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+
+        $MIOLO->session->setValue('inscriptionData', urlencode(serialize($this->inscriptionData)));
+
+        $opts = array('page' => '11','selectiveProcessId'=>$this->inscriptionData->inscription->selectiveProcessId);  //Verify documents
+
+        $this->page->mGoto($MIOLO->getActionURL($module, $action, null, $opts));
+    }
+    
+    public function tbBtnReprintTerm_click($sender = null)
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+
+        $MIOLO->session->setValue('inscriptionData', urlencode(serialize($this->inscriptionData)));
+
+        $opts = array('page' => '12','selectiveProcessId'=>$this->inscriptionData->inscription->selectiveProcessId);  //Verify documents
+
+        $this->page->mGoto($MIOLO->getActionURL($module, $action, null, $opts));
+    }
+}
+
+?>

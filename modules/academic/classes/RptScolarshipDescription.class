@@ -1,0 +1,397 @@
+<?php
+
+define('FPDF_FONTPATH', $MIOLO->getModulePath('basic', '/classes/fpdf/font/'));
+
+$MIOLO = MIOLO::getInstance();
+$MIOLO->Uses('classes/fpdf/pdf.php', 'basic');
+
+class RptScolarshipDescription extends PDF
+{
+    var $module = 'academic';
+    public function __construct($data = NULL)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $this->db = $MIOLO->getBusiness('academic', 'BusScolarshipDescription');
+        $this->title = strtoupper(_M('Scolarship description', $this->module));
+        parent::__construct();
+        $this->defaultFontSize = 8;
+        foreach ($data as $item=> $value)
+        {
+            $this->contract->{$item} = $value;
+        }
+        $this->useUserInfo = false;
+        $this->addPage('P', 'mm', 'A4');
+        $this->aliasNbPages();
+        $this->putHeaderLine();
+        $this->outPut();
+    }
+    
+    public function putHeaderLine()
+    {
+        $this->putHeaderContract();
+        $this->putHeaderCurricular();
+        $this->getCurricularComponentInfos();
+        $this->footerCurricularComponent();
+    }
+
+    public function getContractInfo()
+    {
+        $data = $this->db->getHeaderContract($this->contract);
+        $this->contract->personId       = $data[0][0];
+        $this->contract->personName     = $data[0][1];
+        $this->contract->birthDate      = $data[0][2];                
+        $this->contract->fatherName     = $data[0][3];
+        $this->contract->motherName     = $data[0][4];
+        $this->contract->naturalness    = $data[0][5] . ' / ' . $data[0][22] ;
+        $this->contract->nacionality    = $data[0][7];
+        $this->contract->documentRg->content    = $data[0][8];        
+        $this->contract->documentRg->expeditionDate    = $data[0][9];        
+        $this->contract->documentRg->organ    = $data[0][10];            
+        $this->contract->documentMilitar->content    = $data[0][11];        
+        $this->contract->documentMilitar->expeditionDate    = $data[0][12];        
+        $this->contract->documentMilitar->organ    = $data[0][13];            
+        $this->contract->evidenceOfVoter    = $data[0][14];
+        $this->contract->referenceSchool->type    = $data[0][15];
+        $this->contract->referenceSchool->name    = $data[0][16];
+        $this->contract->referenceSchool->conclusionDate    = $data[0][17];                
+        $this->contract->referenceSchool->place    = $data[0][18]; 
+        $this->contract->courseId    = $data[0][19]; 
+        $this->contract->courseVersion    = $data[0][20]; 
+        $this->contract->courseTotalNumberHours    = $data[0][21];                 
+        $this->contract->coursedNumberHours = 0;
+        $this->contract->totalNote = 0;
+        $this->curriculum = $this->db->getCurriculum($this->contract);
+        if ( count($this->curriculum) > 0 )
+        {
+            foreach ($this->curriculum as $curriculum )
+            {
+                if ( $curriculum[8] == ENROLL_STATUS_APPROVED || $curriculum[8] == ENROLL_STATUS_EXCUSED || $curriculum[8] == ENROLL_STATUS_APPROVED_INEXAM )
+                {
+                    $this->contract->coursedNumberHours += $curriculum[3];
+                    $this->contract->totalNote += (float)SAGU::formatNumber($curriculum[4]);
+                }
+                $this->contract->curriculumIds[$curriculum[7]] = 0;
+            }
+            $this->contract->coefficient = ROUND(($this->contract->totalNote/count($this->contract->curriculumIds)),2);
+        }
+    }
+
+    public function putHeaderContract()
+    {
+        /* Informacoes do contrato do aluno */  
+        $this->getContractInfo();
+             
+        /* Nome e código de pessoa Linha 1*/
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->defaultFontSize);         
+        $this->cell(($this->psize)*0.1, $this->lsize, _M('Name', 'basic') .':', 'LT');
+        $this->setFont(DEFAULT_REPORT_FONT, '', $this->defaultFontSize);         
+        $this->cell(($this->psize)*0.45,$this->lsize, $this->contract->personName,  'T');
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->defaultFontSize);         
+        $this->cell(($this->psize)*0.15, $this->lsize, _M('Person id', 'basic') . ':', 'T');        
+        $this->setFont(DEFAULT_REPORT_FONT, '', $this->defaultFontSize);         
+        $this->cell(($this->psize)*0.1, $this->lsize, $this->contract->personId, 'T');  
+        if( strlen((string) $this->contract->notPrintCoefficient ) == 0 )
+        {
+            $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->defaultFontSize);
+            $this->cell(($this->psize)*0.15, $this->lsize, _M('Coefficient', $this->module) . ':', 'T', null, 'R');
+            $this->setFont(DEFAULT_REPORT_FONT, '', $this->defaultFontSize);         
+            $this->cell(($this->psize)*0.05, $this->lsize, $this->contract->coefficient, 'RT', null, 'R');  
+        }
+        else
+        {
+            $this->cell(($this->psize)*0.20, $this->lsize, null, 'RT', null, 'R');
+        }
+        $this->ln();
+
+        /* Filiação de pessoa Linha 2*/
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->defaultFontSize);         
+        $this->cell(($this->psize)*0.1, $this->lsize, _M('Parents', $this->module) .':', 'L');
+        $this->setFont(DEFAULT_REPORT_FONT, '', $this->defaultFontSize);         
+        $this->cell(($this->psize)*0.9,$this->lsize, $this->contract->motherName . ' / ' . $this->contract->fatherName, 'R');
+        $this->ln();
+        
+        /* Data de nascimento, naturalidade e nacionalidade de pessoa Linha 3*/
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->defaultFontSize);         
+        $this->cell(($this->psize)*0.15, $this->lsize, _M('Birth date', $this->module) .':', 'L');
+        $this->setFont(DEFAULT_REPORT_FONT, '', $this->defaultFontSize);         
+        $this->cell(($this->psize)*0.05,$this->lsize, $this->contract->birthDate, '');
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->defaultFontSize);         
+        $this->cell(($this->psize)*0.15,$this->lsize, _M('Naturalness',$this->module) . ':', '', null, 'R');
+        $this->setFont(DEFAULT_REPORT_FONT, '', $this->defaultFontSize);         
+        $this->cell(($this->psize)*0.25,$this->lsize, $this->contract->naturalness, '');
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->defaultFontSize);         
+        $this->cell(($this->psize)*0.15,$this->lsize, _M('Nacionality',$this->module) . ':', '', null, 'R');
+        $this->setFont(DEFAULT_REPORT_FONT, '', $this->defaultFontSize);         
+        $this->cell(($this->psize)*0.25,$this->lsize, $this->contract->nacionality, 'R');
+        $this->ln();
+        
+        /* Identidade, data de expedição, orgão de expedição Linha 4*/
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->defaultFontSize);         
+        $this->cell(($this->psize)*0.17, $this->lsize, _M('Identity card', $this->module) . ':', 'L');
+        $this->setFont(DEFAULT_REPORT_FONT, '', $this->defaultFontSize);         
+        $this->cell(($this->psize)*0.13,$this->lsize, $this->contract->documentRg->content, '');
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->defaultFontSize);         
+        $this->cell(($this->psize)*0.15,$this->lsize, _M('Expedition date','basic') . ':', '', null, 'R');
+        $this->setFont(DEFAULT_REPORT_FONT, '', $this->defaultFontSize);         
+        $this->cell(($this->psize)*0.15,$this->lsize, $this->contract->documentRg->expeditionDate, '');
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->defaultFontSize);         
+        $this->cell(($this->psize)*0.15,$this->lsize, _M('Organ','basic') . ':', '', null, 'R');
+        $this->setFont(DEFAULT_REPORT_FONT, '', $this->defaultFontSize);         
+        $this->cell(($this->psize)*0.25,$this->lsize, $this->contract->documentRg->organ, 'R');
+        $this->ln();
+
+        /* Serviço militar, data de expedição, orgão de expedição Linha 5*/
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->defaultFontSize);         
+        $this->cell(($this->psize)*0.15, $this->lsize, _M('Military service', $this->module) . ':', 'L');
+        $this->setFont(DEFAULT_REPORT_FONT, '', $this->defaultFontSize);         
+        $this->cell(($this->psize)*0.15,$this->lsize, $this->contract->documentMilitar->content, '');
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->defaultFontSize);         
+        $this->cell(($this->psize)*0.15,$this->lsize, _M('Expedition date','basic') . ':', '', null, 'R');
+        $this->setFont(DEFAULT_REPORT_FONT, '', $this->defaultFontSize);         
+        $this->cell(($this->psize)*0.15,$this->lsize, $this->contract->documentMilitar->expeditionDate, '');
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->defaultFontSize);         
+        $this->cell(($this->psize)*0.15,$this->lsize, _M('Organ','basic') . ':', '', null, 'R');
+        $this->setFont(DEFAULT_REPORT_FONT, '', $this->defaultFontSize);         
+        $this->cell(($this->psize)*0.25,$this->lsize, $this->contract->documentMilitar->organ, 'R');
+        $this->ln();
+
+        /* Titulo de eleitor e curso Linha 6 */
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->defaultFontSize);         
+        $this->cell(($this->psize)*0.125, $this->lsize, _M('Evidence of voter', $this->module) .':', 'L');
+        $this->setFont(DEFAULT_REPORT_FONT, '', $this->defaultFontSize);         
+        $this->cell(($this->psize)*0.175,$this->lsize, $this->contract->evidenceOfVoter, '');
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->defaultFontSize);         
+        $this->cell(($this->psize)*0.15,$this->lsize, _M('Course',$this->module) . ':', '', null, 'R');
+        $this->setFont(DEFAULT_REPORT_FONT, '', $this->defaultFontSize);         
+        $this->cell(($this->psize)*0.55,$this->lsize, $this->contract->courseId . ' - ' . $this->contract->courseName , 'R');
+        $this->ln();
+
+        /* data de colação de grau, carga horaria do curso 7 */
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->defaultFontSize);         
+        $this->cell(($this->psize)*0.15, $this->lsize, /* _M('Conclusion date', $this->module)*/ 'Colação de Grau: ', 'LB');
+        $this->setFont(DEFAULT_REPORT_FONT, '', $this->defaultFontSize);         
+        $this->cell(($this->psize)*0.10,$this->lsize, $this->contract->conclusionDate, 'B');
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->defaultFontSize);         
+        $this->cell(($this->psize)*0.20,$this->lsize, _M('Course total number hours',$this->module) . ':', 'B', null, 'R');
+        $this->setFont(DEFAULT_REPORT_FONT, '', $this->defaultFontSize);         
+        $this->cell(($this->psize)*0.075, $this->lsize, $this->contract->courseTotalNumberHours , 'B', null, 'C');
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->defaultFontSize);         
+        $this->cell(($this->psize)*0.10, $this->lsize, _M('hours/lesson',$this->module), 'B', null, 'L');
+
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->defaultFontSize);         
+        $this->cell(($this->psize)*0.20,$this->lsize, _M('Coursed total number hours',$this->module) . ':', 'B', null, 'R');
+        $this->setFont(DEFAULT_REPORT_FONT, '', $this->defaultFontSize);         
+        $this->cell(($this->psize)*0.075,$this->lsize, $this->contract->coursedNumberHours , 'B', null, 'C');
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->defaultFontSize);         
+        $this->cell(($this->psize)*0.10,$this->lsize, _M('hours/lesson',$this->module), 'RB', null, 'L');
+        $this->ln();
+
+        $this->ln($this->lsize/3);
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', 8);
+        $this->SetFillColor(180,180,180);
+        $this->cell($this->psize, $this->lsize, strtoupper(_M('Referência Instituição Anterior', $this->module)), 1, null, 'C', 1);
+        $this->ln();
+        
+        /* Ensino médio ou equivalente */
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->defaultFontSize);         
+        $this->cell(($this->psize)*0.15, $this->lsize, _M('Establishment', $this->module) .':', 'LT');
+        $this->setFont(DEFAULT_REPORT_FONT, '', $this->defaultFontSize);         
+        $this->cell(($this->psize)*0.45,$this->lsize, $this->contract->referenceSchool->name, 'T');
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->defaultFontSize);         
+        $this->cell(($this->psize)*0.15,$this->lsize, _M('Place','basic'). ':', 'T', null, 'R');
+        $this->setFont(DEFAULT_REPORT_FONT, '', $this->defaultFontSize);         
+        $this->cell(($this->psize)*0.25,$this->lsize, $this->contract->referenceSchool->place, 'TR');
+        $this->ln();         
+
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->defaultFontSize);
+        $this->cell(($this->psize)*0.15,$this->lsize, _M('Type',$this->module) . ':', 'LB');
+        $this->setFont(DEFAULT_REPORT_FONT, '', $this->defaultFontSize);         
+        $this->cell(($this->psize)*0.45,$this->lsize, $this->contract->referenceSchool->type, 'B');
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->defaultFontSize);         
+        $this->cell(($this->psize)*0.15,$this->lsize, _M('Conclusion date',$this->module) . ':', 'B');
+        $this->setFont(DEFAULT_REPORT_FONT, '', $this->defaultFontSize);         
+        $this->cell(($this->psize)*0.25,$this->lsize, $this->contract->referenceSchool->conclusionDate, 'BR');
+
+        $this->ln();
+        $this->ln($this->lsize/3);
+
+    }
+  
+    public function footerCurricularComponent()
+    {
+        $MIOLO = MIOLO::getInstance();
+        $this->ln();
+        // Caixa de digitao de titulo de monografia
+        if (strlen((string)$this->contract->monograph) >0 )
+        {
+            $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->defaultFontSize-1);
+            $this->cell($this->psize, $this->lsize, _M('Monograph', $this->module) .':', 1, 0, 'L');
+            $this->ln();
+            $this->setFont(DEFAULT_REPORT_FONT, '', $this->defaultFontSize-1);
+            $this->multicell($this->psize, $this->lsize, strtoupper($this->contract->monograph), 1,'J');
+            $this->ln();
+        }
+        // Caixa de observaes                                       
+        if (strlen((string)$this->contract->comments) > 0)
+        {
+            $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->defaultFontSize-1);
+            $this->cell($this->psize, $this->lsize, _M('Observations', $this->module).':', 1, 0, 'L');
+            $this->ln();
+            $this->setFont(DEFAULT_REPORT_FONT, '', $this->defaultFontSize-1);
+            $this->multicell($this->psize, $this->lsize, strtoupper($this->contract->comments), 1,'L');
+            $this->ln();
+        }
+
+        /*$this->setFont(DEFAULT_REPORT_FONT, 'I', $this->defaultFontSize); 
+        $this->cell($this->psize-30,$this->lsize, strtoupper(_M('Number hours coursed', $this->module)) . ':', null, null, 'R');
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->defaultFontSize); 
+        $this->cell(30,$this->lsize, ($this->contract->coursedNumberHours+$this->contract->exploitationNumberHours));
+        $this->ln();*/
+        /*$this->setFont(DEFAULT_REPORT_FONT, 'I', $this->defaultFontSize); 
+        $this->cell($this->psize-40,$this->lsize, strtoupper(_M('Number hour exploitation', $this->module)) . ':', null, null, 'R');
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->defaultFontSize); 
+        $this->cell(40,$this->lsize, $this->contract->exploitationNumberHours);
+        $this->ln();*/
+        $this->ln();
+
+        $this->setFont(DEFAULT_REPORT_FONT, '', $this->defaultFontSize);
+        $this->cell($this->psize,$this->lsize, strtoupper($this->pdfInfo->cityName . '/' . $this->pdfInfo->stateId . ', '.date('d').' '._M('of', $this->module) .' '._M(date('F'), $this->module).' ' . _M('of', $this->module) . ' '. date('Y'). '.'), null, null, 'C');
+        $this->ln();
+        $this->ln();
+        // Impresso de estampa               
+        $businessStamp      = $MIOLO->getBusiness('basic', 'BusStamp');
+        if ( strlen((string)$this->contract->stamp1) > 0 )
+        {
+            $stamp = $businessStamp->getStamp($this->contract->stamp1);
+            $this->setFont(DEFAULT_REPORT_FONT, '', $this->defaultFontSize);
+            $this->cell($this->psize/4, $this->lsize, '', null, null, 'C');
+            $this->cell($this->psize/2, $this->lsize, '', 'B', null, 'C');
+            $this->ln();
+            $this->setFont(DEFAULT_REPORT_FONT, 'BI', $this->defaultFontSize);
+            $this->cell($this->psize, $this->lsize, $stamp->personName, null, null, 'C');
+            $this->ln();
+            $this->setFont(DEFAULT_REPORT_FONT, 'I', $this->defaultFontSize);
+            $this->cell($this->psize, $this->lsize, $stamp->functionDescription, null, null, 'C');
+            $this->ln();
+            $this->ln();
+
+        }
+
+        if ( strlen((string)$this->contract->stamp2) > 0 )
+        {
+            $stamp = $businessStamp->getStamp($this->contract->stamp2);
+            $this->setFont(DEFAULT_REPORT_FONT, '', $this->defaultFontSize);
+            $this->cell($this->psize/4, $this->lsize, '', null, null, 'C');
+            $this->cell($this->psize/2, $this->lsize, '', 'B', null, 'C');
+            $this->ln();
+            $this->setFont(DEFAULT_REPORT_FONT, 'BI', $this->defaultFontSize);
+            $this->cell($this->psize, $this->lsize, $stamp->personName, null, null, 'C');
+            $this->ln();
+            $this->setFont(DEFAULT_REPORT_FONT, 'I', $this->defaultFontSize);
+            $this->cell($this->psize, $this->lsize, $stamp->functionDescription, null, null, 'C');
+            $this->ln();
+            $this->ln();
+
+        }
+
+    }
+
+    public function putHeaderCurricular()
+    {
+        
+        /* Informacoes do cabecalho das disciplinas */        
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->defaultFontSize+2);
+        $this->SetFillColor(253,253,10);
+        $this->cell($this->psize, $this->lsize+1, strtoupper(_M('Curricular integration demonstrative', $this->module)), 1, null, 'C', 1, null, null);
+        $this->ln();
+        $this->setFillColor(180,180,180);
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->defaultFontSize-2);
+        $this->colSize[0] = ($this->psize*0.1)*0.7;
+        $this->colSize[1] = ($this->psize*0.1)*0.7;
+        $this->colSize[2] = ($this->psize*0.1)*4.4;
+        $this->colSize[3] = ($this->psize*0.1)*1.1;
+        $this->colSize[4] = ($this->psize*0.1)*0.8;
+        $this->colSize[5] = ($this->psize*0.1)*2.3;
+        
+        $this->cell($this->colSize[0],$this->lsize, strtoupper(_M('Semester', $this->module)), 1, null, 'C', 1);
+        $this->cell($this->colSize[1],$this->lsize, strtoupper(_M('Period', $this->module)), 1, null, 'C', 1);
+        $this->cell($this->colSize[2],$this->lsize, strtoupper(_M('Curricular component', $this->module)), 1, null, 'C', 1);
+        $this->cell($this->colSize[3],$this->lsize, strtoupper(_M('Number hours', $this->module)), 1, null, 'C', 1);
+        $this->cell($this->colSize[4],$this->lsize, strtoupper(_M('Final average', $this->module)), 1, null, 'C', 1);
+        $this->cell($this->colSize[5],$this->lsize, strtoupper(_M('Actual situation', $this->module)), 1, null, 'C', 1); 
+        $this->ln();
+    }
+    
+    public function getCurricularComponentInfos()
+    {
+        $retry = true;
+        $aprovedStatus[] = array(2,7,10);
+        if ( count($this->curriculum) == 0 ) return;
+        foreach ($this->curriculum as $curriculum )
+        {
+           $infoGroup[$curriculum[7]]->periodId = $curriculum[0];
+           $infoGroup[$curriculum[7]]->serie = $curriculum[1];
+           $infoGroup[$curriculum[7]]->curricularComponentName = $curriculum[2];
+           $infoGroup[$curriculum[7]]->lessonNumberHours = $curriculum[3];
+           $infoGroup[$curriculum[7]]->finalNote = $curriculum[4];
+           $infoGroup[$curriculum[7]]->enrollDescription = $curriculum[5];
+           $infoGroup[$curriculum[7]]->curriculumId = $curriculum[7];
+           $infoGroup[$curriculum[7]]->statusId[] = $curriculum[8];
+           $enrollDescription[$curriculum[8]] = $curriculum[7];                
+        }
+        $infoG = $infoGroup;
+        unset($infoGroup);
+        $this->contract->coursedNumberHours = 0;
+        $this->lsize = $this->lsize+1;
+        foreach ($infoG as $curriculum => $infoGroup )
+        {
+
+                unset($colorX);
+                $color = ( $color == 253 ) ? 230 : 253;
+                $colorX[] = $color;
+                $colorX[] = $color;
+                $colorX[] = $color;
+                
+                list( $infoGroup->color[0], $infoGroup->color[1],$infoGroup->color[2] )  = $colorX;
+                $this->setFont(DEFAULT_REPORT_FONT, '', $this->defaultFontSize);
+                $this->setFillColor($infoGroup->color[0],$infoGroup->color[1],$infoGroup->color[2]);
+                $this->cell($this->colSize[0],$this->lsize, $infoGroup->periodId, 1, null, 'C', 1);
+                $this->cell($this->colSize[1],$this->lsize, $infoGroup->serie, 1, null, 'C', 1);
+                if( strlen((string)$infoGroup->curricularComponentName) > 50 ) 
+                {
+                    $this->setFont(DEFAULT_REPORT_FONT, '', $this->defaultFontSize-2);
+                }
+                else if (strlen((string)$infoGroup->curricularComponentName) > 35)
+                {
+                    $this->setFont(DEFAULT_REPORT_FONT, '', $this->defaultFontSize-1);
+                }
+                $this->cell($this->colSize[2],$this->lsize, $infoGroup->curricularComponentName, 1, null, 'L', 1);
+                $this->setFont(DEFAULT_REPORT_FONT, '', $this->defaultFontSize);
+                $this->cell($this->colSize[3],$this->lsize, $infoGroup->lessonNumberHours, 1, null, 'C', 1);
+                $this->cell($this->colSize[4],$this->lsize, SAGU::formatNumber($infoGroup->finalNote), 1, null, 'C', 1);
+                $this->setFont(DEFAULT_REPORT_FONT, 'I', $this->defaultFontSize);
+                if( strlen((string)$infoGroup->enrollDescription) > 18 ) 
+                {
+                    $this->setFont(DEFAULT_REPORT_FONT, 'I', $this->defaultFontSize-1);
+                }
+                
+                $this->cell($this->colSize[5],$this->lsize, strtoupper(_M($infoGroup->enrollDescription, $this->module)), 1, null, 'C', 1);         
+                $this->ln();
+                if ( in_array(ENROLL_STATUS_APPROVED, $infoGroup->statusId) || in_array(ENROLL_STATUS_APPROVED_INEXAM, $infoGroup->statusId) )
+                {
+                    $this->contract->coursedNumberHours += $infoGroup->lessonNumberHours;
+                }
+                else if ( in_array(ENROLL_STATUS_EXCUSED, $infoGroup->statusId) )
+                {
+                    $this->contract->exploitationNumberHours += $infoGroup->lessonNumberHours;
+                }
+
+                if ( $this->y+$this->lsize > $this->PageBreakTrigger )
+                {
+                    $this->putHeaderCurricular();
+                }
+        }
+        $this->lsize = $this->lsize-1;
+    }
+}
+?>

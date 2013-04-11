@@ -1,0 +1,255 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for letter professor
+ *
+ * @author Guilherme Gregory [guilherme@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 04/07/2006
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to manipulate letter professor
+ **/
+class BusinessAcademicBusLetterProfessor extends Business
+{
+
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module = is_null($module) ? 'academic' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+    /**
+     * List all registers to generate contract documets
+     *
+     * @param: $data (object):
+     *
+     * @returns (array): Return an array with all the matching records
+     *
+     **/
+
+    public function getLetterProfessor($data)
+    {
+
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $db     = $this->getDatabase();
+
+		$sql = 'SELECT DISTINCT E.personId,
+                	   			E.name,
+                	   			E.location,
+                	   			E.number,
+                	   			E.complement,
+                	   			E.zipCode,
+                	   			F.name as cityName
+           		  			 FROM acdGroup A
+     				   INNER JOIN acdCurriculum A1
+             				   ON ( A.curriculumId = A1.curriculumId )
+     				   INNER JOIN acdCourse A2
+             				   ON ( A1.courseId = A2.courseId )
+     				   INNER JOIN acdLearningPeriod B
+             				   ON ( A.learningPeriodId = B.learningPeriodId )
+     				   INNER JOIN acdSchedule C
+             				   ON ( A.groupId = C.groupId )
+     				   INNER JOIN acdScheduleProfessor D
+             				   ON ( C.scheduleId = D.scheduleId )
+	              INNER JOIN ONLY basPhysicalPerson E
+             		           ON ( D.professorId = E.personId )
+      		 		    LEFT JOIN basCity F
+             				   ON ( E.cityId = F.cityId )
+          		 		    WHERE B.periodId = ? 
+            	   			  AND A.iscancellation = false
+                   			  AND A2.formationLevelId = ?';
+     
+          $args[] = $data->periodId;
+		  $args[] = $data->formationLevelId;   	
+
+		  if ( strlen((string)$data->personId)>0 )
+          {
+       	      $sql   .= " AND E.personId = ? ";
+          	  $args[] = $data->personId;	
+		  }
+
+                        'GROUP BY E.personId,
+                            	  E.name,
+                       	    	  E.location,
+                            	  E.number,
+                            	  E.complement,
+                            	  E.zipCode,
+                            	  F.name
+                   	     ORDER BY E.name';
+
+
+
+		  $db = $this->getDatabase();
+		  $result = $db->query(SAGU::prepare($sql, $args));
+
+		  return $result;		
+
+	}
+/**
+    * List all registers to generate contract documets
+    *
+    * @param: $professorId (int):
+    * @param: $periodId (string):
+        *	
+    * @returns (array): Return an array with all the matching records
+    *
+    **/
+
+    public function getCurricularComponentByProfessor($professorId, $periodId)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $db     = $this->getDatabase();
+
+        $sql = '    SELECT G.shortName,
+                           J.room || \' - \' || J.building,
+                           E.shortdescription,
+                           O.shortDescription,
+                           D.totalEnrolled,
+                           L.description,
+                           M.courseId,
+                           TO_DATE(H.begindatelessons, \''.MASK_DATE.'\'),
+                           B.name
+                      FROM acdscheduleprofessor A 
+                INNER JOIN basphysicalpersonprofessor B 
+                        ON (A.professorid = B.personid) 
+                INNER JOIN acdschedule C 
+                        ON (A.scheduleid = C.scheduleid) 
+                INNER JOIN acdgroup D 
+                        ON (C.groupid = D.groupid) 
+                INNER JOIN basweekday E 
+                        ON (C.weekdayid = E.weekdayid) 
+                INNER JOIN acdcurriculum F 
+                        ON (D.curriculumid = F.curriculumid) 
+                INNER JOIN acdcurricularcomponent G 
+                        ON (F.curricularcomponentid = G.curricularcomponentid AND 
+                            F.curricularcomponentversion = G.curricularcomponentversion) 
+                INNER JOIN acdlearningperiod H 
+                        ON (D.learningperiodid = H.learningperiodid)
+                INNER JOIN basturn I 
+                        ON (I.turnid = H.turnId)
+                INNER JOIN insPhysicalResource J 
+                        ON (J.physicalresourceid = C.physicalresourceid)
+                INNER JOIN bascity K
+                        ON (B.cityId = K.cityId)
+                INNER JOIN basUnit L
+                        ON (C.unitid = L.unitid )
+                INNER JOIN acdCurriculum M
+                        ON (M.curriculumId = D.curriculumId)
+                INNER JOIN acdScheduleLearningPeriod N
+                        ON (N.scheduleLearningPeriodId = C.scheduleLearningPeriodId)
+                INNER JOIN basTurn O
+                        ON (O.turnId = N.turnId)
+                        WHERE (H.periodid = ?) AND 
+                            (D.iscancellation = false)';
+
+        $args[] = $periodId;
+
+        if ( strlen((string)$professorId) > 0 )
+        {
+            $sql .= ' AND A.professorId = ? ';
+            $args[] = $professorId;
+        }
+
+        $sql .= ' ORDER BY E.weekdayid';
+
+        $db = $this->getDatabase();
+        $result = $db->query(SAGU::prepare($sql, $args));
+
+        return $result;
+    }
+
+
+    public function getProfessorFromPeriod($periodId, $formationLevelId, $professorId=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $db     = $this->getDatabase();
+
+        $sql = 'SELECT DISTINCT D.professorId,
+                                E.name,
+                                E.location,
+                                E.number,
+                                E.complement,
+                                E.neighborhood,
+                                F.name as cityName,
+                                E.zipCode
+                           FROM acdLearningPeriod A
+                     INNER JOIN acdScheduleLearningPeriod B
+                             ON (A.learningPeriodId = B.learningPeriodId)
+                     INNER JOIN acdSchedule C
+                             ON (C.scheduleLearningPeriodId = B.scheduleLearningPeriodId)
+                     INNER JOIN acdScheduleProfessor D
+                             ON (D.scheduleId = C.scheduleId)
+                INNER JOIN ONLY basPhysicalPersonProfessor E
+                             ON (E.personId = D.professorId)
+                     INNER JOIN basCity F
+                             ON (F.cityId = E.cityId)
+                     INNER JOIN acdGroup G
+                             ON (G.groupId = C.groupId)
+                     INNER JOIN acdCurriculum H
+                             ON (H.curriculumId = G.curriculumId)
+                     INNER JOIN acdCourse I
+                             ON (I.courseId = H.courseId)
+                          WHERE A.periodId = ? AND
+                                I.formationLevelId = ?';
+
+
+        $args[] = $periodId;
+        $args[] = $formationLevelId;
+
+        if ( strlen((string)$professorId) > 0 )
+        {
+            $sql .= ' AND D.professorId = ?';
+            $args[] = $professorId;
+        }
+
+        $db = $this->getDatabase();
+        $result = $db->query(SAGU::prepare($sql, $args));
+
+        return $result;
+    }
+
+
+
+
+}
+
+?>

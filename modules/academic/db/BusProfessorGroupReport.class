@@ -1,0 +1,169 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for acdGroup table
+ *
+ * @author Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 22/09/2005
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to manipulate the acdGroup table
+ **/
+class BusinessAcademicBusProfessorGroupReport extends Business
+{
+    public $db;
+    
+    //Class constructor
+    public function __construct()
+    {
+        $this->db = $this->getDatabase();
+    }
+    
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module = is_null($module) ? 'academic' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+    /**
+     * List all records from the table handled by the class
+     *
+     * @param: None
+     *
+     * @returns (array): Return an array with the entire table
+     *
+     **/
+    
+    /**
+     * Return a specific record from the database
+     *
+     * @param $groupId (integer): Primary key of the record to be retrieved
+     *
+     * @return (object): Return an object of the type handled by the class
+     *
+     **/
+    public function searchProfessorGroup($filters)
+    {
+        $sql = 'SELECT 
+                    distinct 
+                    groupId as "Disciplina Oferecida",
+                    getPersonName(professorId) as "Professor",
+                    G.name as "Disciplinas",
+                    (SELECT sum(numberhourslessons) from acdschedule inner join acdschedulelearningperiod using ( schedulelearningperiodid ) where groupid = a.groupid ) as "Quantidade de Horas Semanais",
+                    (SELECT totalenrolled from acdgroup where groupid = a.groupid ) as "Total de Alunos",
+                    classId as "Turma",
+                    getTurnDescription(B.turnId) as "Turno",
+                    semester
+                FROM
+                    acdGroup A INNER JOIN
+                    acdLearningPeriod B USING ( learningPeriodId ) INNER JOIN
+                    acdSchedule C USING ( groupId ) INNER JOIN
+                    acdScheduleProfessor D USING ( scheduleId )  INNER JOIN
+                    acdCurriculum E USING ( curriculumId ) INNER JOIN
+                    acdCourse F ON ( F.courseId = E.courseId ) INNER JOIN
+                    acdCurricularComponent G ON ( G.curricularComponentId = E.curricularComponentId AND G.curricularComponentVersion = E.curricularComponentVersion )
+                WHERE
+                    1 = 1 ';
+        if ( strlen((string)$filters->periodId) > 0 )
+        {
+            $sql .= ' AND B.periodId = ? ';
+            $args[] = $filters->periodId;
+        }
+
+        if ( strlen((string)$filters->professorId) > 0 )
+        {
+            $sql .= ' AND D.professorId = ?::integer ';
+            $args[] = $filters->professorId;
+        }
+
+        if ( strlen((string)$filters->turnId) > 0 )
+        {
+            $sql .= ' AND B.turnId = ?::Integer ';
+            $args[] = $filters->turnId;
+        }
+
+        if ( strlen((string)$filters->unitId) > 0 )
+        {
+            $sql .= ' AND B.unitId = ?::integer ';
+            $args[] = $filters->unitId;
+        }
+
+        if ( strlen((string)$filters->classId) > 0 )
+        {
+            $sql .= ' AND A.classId = ? ';
+            $agrs[] = $filters->classId;
+        }
+
+        if ( strlen((string)$filters->learningPeriodId) > 0 )
+        {
+            $sql .= ' AND B.learningPeriodId = ?::integer ';
+            $args[] = $filters->learningPeriodId;
+        }
+
+        if ( strlen((string)$filters->regimenId) > 0 )
+        {
+            $sql .= ' AND A.regimenId = ?::integer ';
+            $args[] = $filters->regimenId;
+        }
+        
+        if ( strlen((string)$filters->curricularComponentName) > 0 )
+        {
+            $sql .= ' AND TO_ASCII(G.name) ILIKE TO_ASCII(?) ';
+            $args[] = $filters->curricularComponentName ;
+        }
+
+        if ( strlen((string)$filters->professorName) > 0 )
+        {
+            $sql .= ' AND TO_ASCII(getPersonName(D.professorId)) ILIKE TO_ASCII(?) ';
+            $args[] = $filters->professorName ;
+        }
+        
+        if ( count($filters->formationLevelId) > 0 )
+        {
+            $sql .= " AND F.formationLevelId IN ( " . implode(',', $filters->formationLevelId) ." ) ";
+        }
+
+        $sql .= ' ORDER BY 2, 7, 8 ';
+
+        $sql = SAGU::prepare($sql, $args);
+        $result = $this->db->query($sql);
+        return $result; 
+    }
+}
+
+?>

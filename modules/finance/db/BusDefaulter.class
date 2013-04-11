@@ -1,0 +1,1771 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for Defaulters 
+ *
+ * @author Eduardo Beal Miglioransa [eduardo@solis.coop.br] 
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ *
+ * @since
+ * Class created on 13/08/2006
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to manipulate the Defaulter table
+ **/
+class BusinessFinanceBusDefaulter extends MBusiness
+{
+    protected $db;
+
+    function BusinessFinanceBusDefaulter()
+    {
+        $this->db = $this->getDatabase();
+    }
+
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module = is_null($module) ? 'finance' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+    /**
+     * List all records from the table handled by the class
+     *
+     * @param: None
+     *
+     * @returns (array): Return an array with the entire table
+     *
+     **/
+    public function listDefaulter()
+    {
+    }
+
+
+    /**
+     * Return a specific record from the database
+     *
+     * @param $data (object): data of record to be retrieved
+     *
+     * @return (array): Return an array of the type handled by the class
+     *
+     **/
+    public function getRelateDefaulterLegalPerson($data)
+    {
+        
+      $sql =   ' SELECT A.personId,
+                        (A.personId || \'-\' || A.name) AS person, 
+                        A.location,
+                        A.number,
+                        A.complement,
+                        A.neighborhood,
+                        A.phone,
+                        A.fax,
+                        A.cityId,
+                        (SELECT AA.name 
+                           FROM basCity AA
+                          WHERE A.cityId = AA.cityId) AS cityName,
+                        A.zipCode,  
+                        E.invoiceId,
+                        TO_CHAR(E.emissionDate, \''. MASK_DATE .'\'),
+                        TO_CHAR(E.maturityDate, \''. MASK_DATE .'\'), 
+                        ROUND (E.value, 2),
+                        ROUND (balance(E.invoiceId), 2),
+                        ROUND (balancewithpolicies(E.invoiceId), 2)
+                        FROM (SELECT personId, 
+                                     courseId,
+                                     unitId, 
+                                     maturityDate, 
+                                     invoiceId, 
+                                     value,
+                                     emissionDate
+                           FROM ONLY finReceivableInvoice
+                               WHERE extract(year from maturityDate) = ?  
+                                 AND extract(month from maturityDate ) = ? ) AS E
+                          INNER JOIN (SELECT personId, 
+                                             name, 
+                                             phone,
+                                             fax,
+                                             location,
+                                             neighborhood, 
+                                             zipcode, 
+                                             number, 
+                                             complement,
+                                             email, 
+                                             emailalternative,
+                                             cityId
+                               FROM ONLY basLegalPerson) AS A
+                                 ON (A.personId = E.personId)
+
+                        INNER JOIN (SELECT learningPeriodId,
+                                           courseId,
+                                           unitId,
+                                           policyId,
+                                           periodId,
+                                           beginDate,
+                                           endDate
+                              FROM acdLearningPeriod) AS C
+                                ON ( E.maturityDate 
+                                     BETWEEN C.beginDate AND C.endDate)  
+                        WHERE balance(E.invoiceId) <> 0  ';
+        $args[] = $data->year;
+        $args[] = $data->month;
+
+        if( strlen((string)$data->personId) > 0)
+        {
+             $where .=  ' AND A.personId = ? ';
+             $args[] = $data->personId;
+        }
+        if( strlen((string)$data->periodId) > 0 )
+        {
+             $where .= '  AND C.periodId =  ? ';
+             $args[] = $data->periodId;
+     
+        }
+        if ( strlen((string)$where) > 0 )
+        {
+             $sql .= $where .'   GROUP BY 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17, E.maturityDate
+                                  ORDER BY A.personId, E.invoiceId, E.maturityDate ';
+             $result = $this->db->query(SAGU::prepare($sql,$args));
+        }
+
+
+        return $result;
+
+     }
+
+
+     /**
+     * Return a specific record from the database 
+     *
+     * @param $data (object): data of record to be retrieved
+     *
+     * @return (array): Return an array of the type handled by the class
+     *
+     **/
+    public function getRelateDefaulterFirstEnroll($data)
+    {
+
+      $sql = '     SELECT B.personId,
+                          c.name,      
+                          B.courseId,
+                          (SELECT name
+                            FROM acdCourse
+                          WHERE acdCourse.courseId = B.courseId) AS courseName,
+                          B.unitId,
+                          C.residentialPhone, 
+                          C.workPhone, 
+                          C.cellPhone, 
+                          C.location,      
+                          C.neighBorhood,  
+                          C.cityId,    
+                          (SELECT name   
+                             FROM basCity 
+                           WHERE cityId = C.cityId) AS cityName,
+                          C.zipCode,   
+                          C.email,    
+                          C.number,   
+                          C.complement, 
+                          E.periodId,
+                          count(*)
+                     FROM (SELECT  contractId,
+                                   groupId
+                             FROM acdEnroll) AS A
+                     INNER JOIN ONLY acdContract AS B
+                           USING (contractId)
+                     INNER JOIN ONLY basPhysicalPersonStudent AS C
+                           USING (personId)
+                     INNER JOIN (SELECT groupId,
+                                        learningPeriodId
+                                 FROM acdGroup) AS D
+                           USING (groupId)
+                     INNER JOIN acdLearningPeriod AS E
+                           ON (D.learningPeriodId = E.learningPeriodId )
+                     WHERE E.periodId = ?
+                       AND B.personId IN (SELECT B.personId
+                                            FROM (SELECT contractId, 
+                                                         groupId
+                                                    FROM acdEnroll) AS A
+                                             INNER JOIN ONLY acdContract AS B
+                                                  USING (contractId)   
+                                             INNER JOIN (SELECT groupId,
+                                                                learningPeriodId
+                                                   FROM acdGroup ) AS C
+                                                  USING (groupId)
+                                             INNER JOIN acdLearningPeriod AS D
+                                                     ON ( C.learningPeriodId = D.learningPeriodId)
+                                             INNER JOIN (SELECT personId,
+                                                                isInsured
+                                                            FROM ONLY basPhysicalPersonStudent ) AS F
+                                                     ON (B.personId = F.personId)
+                                             INNER JOIN (SELECT personId,
+                                                                invoiceId,
+                                                                value,
+                                                                maturityDate
+                                              FROM ONLY finReceivableInvoice) AS E
+                                                     ON ( F.personId = E.personId )     
+                                                WHERE D.periodId = ?
+                                                AND balance(E.invoiceId) > 5
+                                                AND E.maturityDate <= TO_DATE(? , \'' . MASK_DATE . '\')
+                                                AND F.isInsured = \'f\'
+                                                GROUP BY B.personId)
+                     GROUP BY B.personId,
+                              c.name,      
+                              B.courseId,     
+                              courseName,
+                              B.unitId,
+                              C.residentialPhone, 
+                              C.workPhone, 
+                              C.cellPhone, 
+                              C.location,      
+                              C.neighBorhood,  
+                              C.cityId,    
+                              cityName,
+                              C.zipCode,   
+                              C.email,    
+                              C.number,   
+                              C.complement,                              
+                              E.periodId ';
+
+
+             $args = array( $data->periodId,
+                            $data->periodId,
+                            $data->endDate);
+ 
+        $sql = SAGU::prepare($sql,$args); 
+        $sql = 'DECLARE data CURSOR FOR ' . $sql;
+        $result = $this->db->execute($sql);
+
+        return $result;
+
+    }
+
+
+    /**
+     * Return a specific record from the database
+     *
+     * @param $data (object): data of record to be retrieved
+     *
+     * @return (array): Return an array of the type handled by the class
+     *
+     **/
+    public function getRelateDefaulterLetterA($data)
+    {
+
+/*     // Este sql contém um subSql que vai pegar todos as pessoas que tem centavos em aberto e excluir da consulta.
+        $sql = '  SELECT B.personId,
+                          E.periodId,
+                          count(*)
+                     FROM (SELECT  contractId,
+                                   groupId
+                             FROM acdEnroll) AS A
+                     INNER JOIN ONLY acdContract AS B
+                           USING (contractId)
+                     INNER JOIN (SELECT groupId,
+                                        learningPeriodId
+                                 FROM acdGroup) AS D
+                           USING (groupId)
+                     INNER JOIN acdLearningPeriod AS E
+                           ON (D.learningPeriodId = E.learningPeriodId )
+                     WHERE E.periodId = ?
+                       AND B.personId NOT IN (SELECT DISTINCT A.personId
+                                                FROM (SELECT personId,
+                                                             invoiceId,
+                                                             value,
+                                                             maturityDate
+                                                FROM ONLY finReceivableInvoice ) AS A
+                                                WHERE balance(A.invoiceId)
+                                                      BETWEEN ( A.value * 5 / 100 )
+                                                AND ( A.value * 7 / 100 )
+                                                AND A.maturityDate <= TO_DATE(? , \''. MASK_DATE .'\')
+                                                AND A.value <> 0   )
+                   GROUP BY B.personId,
+                   E.periodId  ';
+*/
+
+       $sql = '    SELECT B.personId,
+                          E.periodId,
+                          count(*)
+                     FROM (SELECT  contractId,
+                                   groupId
+                             FROM acdEnroll) AS A
+                     INNER JOIN ONLY acdContract AS B
+                           USING (contractId)
+                     INNER JOIN (SELECT groupId,
+                                        learningPeriodId
+                                 FROM acdGroup) AS D
+                           USING (groupId)
+                     INNER JOIN acdLearningPeriod AS E
+                           ON (D.learningPeriodId = E.learningPeriodId )
+                     INNER JOIN  (SELECT personId,
+                                         invoiceId,
+                                         value,
+                                         maturityDate,
+                                         courseId,
+                                         courseVersion,
+                                         unitId
+                                    FROM ONLY finReceivableInvoice ) AS F
+                           ON (B.personId = F.personId)
+                     WHERE E.periodId = ?
+                       AND F.maturityDate <= TO_DATE(? , \''. MASK_DATE .'\')
+                       AND BALANCE(F.invoiceId) > 0
+                       AND F.value <> 0   
+                   GROUP BY B.personId,  E.periodId  ';
+
+
+             $args = array( $data->periodId,
+                            $data->endDate);
+             $result = $this->db->query(SAGU::prepare($sql,$args));
+    
+        return $result;
+    }
+
+
+    /**
+     * Return a specific record from the database
+     *
+     * @param $data (object): data of record to be retrieved
+     *
+     * @return (array): Return an array of the type handled by the class
+     *
+     **/
+    public function getRelateDefaulterForDate($data)
+    {
+          
+       $sql =    ' SELECT B.personId,
+                          E.periodId,
+                          count(*)
+                     FROM (SELECT  contractId,
+                                   groupId
+                             FROM acdEnroll) AS A
+                     INNER JOIN ONLY acdContract AS B
+                           USING (contractId)
+                     INNER JOIN (SELECT groupId,
+                                        learningPeriodId
+                                 FROM acdGroup) AS D
+                           USING (groupId)
+                     INNER JOIN acdLearningPeriod AS E
+                           ON (D.learningPeriodId = E.learningPeriodId )
+                     INNER JOIN  (SELECT personId,
+                                         courseId,
+                                         courseVersion,  
+                                         unitId,
+                                         invoiceId,
+                                         value,
+                                         maturityDate
+                                    FROM ONLY finReceivableInvoice ) AS F
+                           ON (B.personId = F.personId)
+                     INNER JOIN (SELECT personId, 
+                                        isInsured
+                                   FROM ONLY basPhysicalPersonStudent ) G
+                           ON (B.personId = G.personId)
+                     INNER JOIN (SELECT DISTINCT personId,
+                                        courseId,
+                                        courseVersion,
+                                        unitId
+                                   FROM acdContract ) H
+                           ON (G.personId = H.personId
+                               AND F.courseId = H.courseId
+                               AND F.courseVersion = H.courseVersion
+                               AND F.unitId = H.unitId)
+                     WHERE G.isInsured = false ';
+            if(strlen((string)$data->pupilList > 0))
+            {
+                 $pupilList = explode(',' , $data->pupilList);
+                 for( $number = 0 ; $number < count($pupilList); $number++)
+                     if($number == 0 )
+                     {
+                         $sql   .= ' AND   B.personId IN ( ? ';
+                         $args[] = $pupilList[0];
+                     }
+                     else
+                     {
+                        $sql    .= ' , ?';
+                        $args[] = $pupilList[$number];
+                     }
+                 $sql   .= ' )';
+            }
+            if(strlen((string)$data->periodId > 0))
+            {
+                 $sql   .= ' AND   E.periodId = ?';
+                 $args[] = $data->periodId;
+            }
+            if(strlen((string)$data->personId > 0))
+            {
+                 $sql   .= ' AND   E.personId = ?';
+                 $args[] = $data->personId;
+            }
+            if(strlen((string)$data->startDate > 0))
+            {
+                 $sql   .= ' AND F.maturityDate >= TO_DATE(? , \''. MASK_DATE .'\') ';
+                 $args[] = $data->startDate;
+            }
+            if(strlen((string)$data->endDate > 0))
+            {
+                 $sql   .= ' AND F.maturityDate <= TO_DATE(? , \''. MASK_DATE .'\') ';
+                 $args[] = $data->endDate;
+            }
+            if(strlen((string)$data->courseId > 0))
+            {
+                 $sql   .= ' AND H.courseId = ? ';
+                 $args[] = $data->courseId;
+            }
+            $sql .= '  AND BALANCE(F.invoiceId) > 0
+                       AND F.value <> 0
+                   GROUP BY B.personId,
+                   E.periodId ';
+             $result = $this->db->query(SAGU::prepare($sql,$args));
+    
+        return $result;
+     }
+
+   /**
+     * Return a specific record from the database
+     *
+     * @param $data (object): data of record to be retrieved
+     *
+     * @return (array): Return an array of the type handled by the class
+     *
+     **/
+     public function getRelateDefaulterInvoiceForDate($data)
+    {
+        $sql = '   SELECT A.personId,
+                          A.name,      
+                          D.courseId,     
+                          (SELECT name 
+                             FROM acdCourse 
+                            WHERE courseId = D.courseId) AS courseName,
+                          B.unitId,
+                          A.residentialPhone, 
+                          A.workPhone, 
+                          A.cellPhone, 
+                          A.location,      
+                          A.neighBorhood,  
+                          A.cityId,    
+                          (SELECT name   
+                             FROM basCity 
+                           WHERE cityId = A.cityId) AS cityName,
+                          A.zipCode,   
+                          A.email,    
+                          A.number,   
+                          A.complement, 
+                          B.invoiceId,       
+                          TO_CHAR(B.emissionDate, \''. MASK_DATE .'\'),
+                          TO_CHAR(B.maturityDate, \''. MASK_DATE .'\'), 
+                          ROUND(B.value, 2),   
+                          ROUND(balance(B.invoiceId), 2),               
+                          ROUND (balancewithpolicies(B.invoiceId), 2), 
+                          C.discount,   
+                          C.monthlyInterest,   
+                          C.fine   
+                     FROM ONLY basPhysicalPersonStudent A
+                    INNER JOIN ONLY finReceivableInvoice  AS B
+                          ON (A.personId = B.personId)
+                    INNER JOIN  finPolicy  AS C
+                          USING (policyId)
+                    INNER JOIN (SELECT DISTINCT personId,
+                                       courseId,
+                                       courseVersion,
+                                       unitId
+                                  FROM acdContract) AS D
+                          ON (B.personId = D.personId 
+                              AND B.courseId = D.courseId
+                              AND B.courseVersion = D.courseVersion 
+                              AND B.unitId = D.unitId)
+                    WHERE A.isInsured = false ';
+        if(strlen((string)$data->personId) > 0 )
+        {
+            $sql .=     ' AND A.personId = ? '; 
+            $args[] = $data->personId;
+        }
+        if(strlen((string)$data->startDate) > 0 )
+        {
+            $sql   .=   ' AND B.maturityDate >= TO_DATE(?, \''. MASK_DATE .'\') ';
+            $args[] =   $data->startDate;
+        }
+        if(strlen((string)$data->endDate) > 0 )
+        {
+            $sql   .=   ' AND B.maturityDate <= TO_DATE(?, \''. MASK_DATE .'\') ';
+            $args[] =   $data->endDate;
+        }
+        if(strlen((string)$data->courseId) > 0 )
+        {
+            $sql   .=   ' AND D.courseId = ? ';
+            $args[] =   $data->courseId;
+        }
+
+            $sql .= ' AND balance(B.invoiceId) > 0 
+                      ORDER BY courseName, A.name, B.maturityDate ';
+
+
+        $sql = SAGU::prepare($sql,$args);
+        $result = $this->db->query($sql);
+        return $result;
+    }
+
+     /**
+     * Return a specific record from the database
+     *
+     * @param $data (object): data of record to be retrieved
+     *
+     * @return (array): Return an array of the type handled by the class
+     *
+     **/
+     public function getRelateDefaulterStateForDate($data)
+     {
+
+        $sql = ' SELECT A.statecontractId,
+                        TO_CHAR(stateTime, \''. MASK_DATE .'\'),
+                        contractId,
+                        A.reasonId,
+                        B.description 
+                   FROM acdMovementContract A,
+                        acdStateContract B, 
+                        acdLearningPeriod C 
+                  WHERE A.stateContractId = B.stateContractId 
+                    AND contractId = ?
+                    AND A.learningperiodId = C.learningPeriodId
+                    AND C.periodId = ?
+               ORDER BY statetime DESC
+                  LIMIT 1';
+        $args = array($data->contractId,
+                      $data->periodId);
+        $result = $this->db->query(SAGU::prepare($sql,$args));
+
+     }   
+
+
+
+     /**
+     * Return a specific record from the database
+     *
+     * @param $data (object): data of record to be retrieved
+     *
+     * @return (array): Return an array of the type handled by the class
+     *
+     **/
+     public function getRelateDefaulterTotalForDate($data)
+    {
+        $sql = '   SELECT A.personId,
+                          A.name,
+                          D.courseId,
+                          (SELECT name
+                             FROM acdCourse
+                            WHERE courseId = D.courseId) AS courseName,
+                          B.unitId,
+                          A.residentialPhone,
+                          A.workPhone,
+                          A.cellPhone,
+                          A.location,
+                          A.neighBorhood,
+                          A.cityId,
+                          (SELECT name
+                             FROM basCity
+                           WHERE cityId = A.cityId) AS cityName,
+                          A.zipCode,
+                          A.email,
+                          A.number,
+                          A.complement,
+                          D.contractId,
+                          (SELECT SUM(ROUND(balancewithpolicies(B.invoiceId), 2) ) ) AS total
+                     FROM ONLY basPhysicalPersonStudent A
+                    INNER JOIN  finReceivableInvoice  AS B
+                          ON (A.personId = B.personId)
+                    INNER JOIN  finPolicy  AS C
+                          USING (policyId)
+                    INNER JOIN (SELECT DISTINCT personId,
+                                       contractId, 
+                                       courseId, 
+                                       courseVersion,
+                                       unitId 
+                                  FROM acdContract) AS D
+                          ON (B.personId = D.personId 
+                              AND B.courseId = D.courseId
+                              AND B.courseVersion = D.courseVersion 
+                              AND B.unitId = D.unitId)
+                            WHERE A.isInsured = false  ';
+        if(strlen((string)$data->personId) > 0 )
+        {
+            $sql .=     ' AND A.personId = ? '; 
+            $args[] = $data->personId;
+        }
+        if(strlen((string)$data->startDate) > 0 )
+        {
+            $sql   .=   ' AND B.maturityDate >= TO_DATE(?, \''. MASK_DATE .'\') ';
+            $args[] =   $data->startDate;
+        }
+        if(strlen((string)$data->endDate) > 0 )
+        {
+            $sql   .=   ' AND B.maturityDate <= TO_DATE(?, \''. MASK_DATE .'\') ';
+            $args[] =   $data->endDate;
+        }
+        if(strlen((string)$data->courseId) > 0 )
+        {
+            $sql   .=   ' AND D.courseId = ? ';
+            $args[] =   $data->courseId;
+        }
+
+            $sql .= ' AND balance(B.invoiceId) > 0
+                      GROUP BY  A.personId,
+                                A.name,
+                                D.courseId,
+                                courseName, 
+                                B.unitId,
+                                A.residentialPhone,
+                                A.workPhone,
+                                A.cellPhone,
+                                A.location,
+                                A.neighBorhood,  
+                                A.cityId, 
+                                cityName, 
+                                A.zipCode, 
+                                A.email,
+                                A.number, 
+                                A.complement,
+                                D.contractId  ';
+        $sql = SAGU::prepare($sql,$args);
+        $result = $this->db->query($sql);
+        return $result;
+    }
+
+
+
+   /**
+     * Return a specific record from the database
+     *
+     * @param $data (object): data of record to be retrieved
+     *
+     * @return (array): Return an array of the type handled by the class
+     *
+     **/
+     public function getRelateDefaulterInvoice($data)
+    {
+        $sql = '   SELECT A.personId,
+                          A.name,      
+                          D.courseId,     
+                          (SELECT name 
+                             FROM acdCourse 
+                            WHERE courseId = D.courseId) AS courseName,
+                          B.unitId,
+                          A.residentialPhone, 
+                          A.workPhone, 
+                          A.cellPhone, 
+                          A.location,      
+                          A.neighBorhood,  
+                          A.cityId,    
+                          (SELECT name   
+                             FROM basCity 
+                           WHERE cityId = A.cityId) AS cityName,
+                          A.zipCode,   
+                          A.email,    
+                          A.number,   
+                          A.complement, 
+                          B.invoiceId,       
+                          TO_CHAR(B.emissionDate, \''. MASK_DATE .'\'),
+                          TO_CHAR(B.maturityDate, \''. MASK_DATE .'\'), 
+                          ROUND(B.value, 2),   
+                          ROUND(balance(B.invoiceId), 2),               
+                          ROUND (balancewithpolicies(B.invoiceId), 2), 
+                          C.discount,   
+                          C.monthlyInterest,   
+                          C.fine
+                     FROM ONLY basPhysicalPersonStudent A
+                    INNER JOIN  finReceivableInvoice  AS B
+                          ON (A.personId = B.personId)
+                    INNER JOIN  finPolicy  AS C
+                          USING (policyId)
+                    INNER JOIN (SELECT DISTINCT personId, 
+                                       courseId,
+                                       courseVersion,
+                                       unitId
+                                  FROM acdContract) AS D
+                          ON (A.personId = D.personId
+--                              AND B.courseId = D.courseId
+--                              AND A.courseVersion = D.courseVersion
+--                              AND A.unitId = D.unitId
+                               )
+                    WHERE A.personId = ?
+                      AND A.isInsured = false
+                      AND B.maturityDate <= TO_DATE(?, \''. MASK_DATE .'\')
+                      AND balance(B.invoiceId) > 0 
+                      ORDER BY courseName, A.name, B.maturityDate ';
+
+        $args = array( $data->personId,
+                       $data->endDate);
+        $sql = SAGU::prepare($sql,$args);
+        $result = $this->db->query($sql);
+        return $result;
+    }
+
+    /**
+     * Return a specific record from the database
+     *
+     * @param $data (object): data of record to be retrieved
+     *
+     * @return (array): Return an array of the type handled by the class
+     *
+     **/
+    public function getRelateDefaulterGenerate($data)
+    {
+        $sql = 'SELECT A.personId, 
+                       A.name, 
+                       null as contractId,
+                       B.unitId,
+                       A.residentialPhone,
+                       A.workPhone,
+                       A.cellPhone,
+                       A.location,
+                       A.neighborhood, 
+                       A.zipcode, 
+                       A.number, 
+                       A.complement,
+                       A.email, 
+                       A.emailalternative,
+                       A.cityId,
+                       ( SELECT name 
+                           FROM basCity 
+                          WHERE basCity.cityId=A.cityId) as cityName,
+                       A.isInsured,
+                       D.fine,
+                       D.discount,
+                       D.daysToFine,
+                       D.daysToInterest,
+                       TO_CHAR(E.maturityDate, \''. MASK_DATE .'\'),
+                       E.invoiceId,
+                       ROUND (balance(E.invoiceId), 2),
+                       ROUND (balancewithpolicies(E.invoiceId), 2),    
+                       C.periodId,
+                       B.courseId,
+                       ( SELECT name 
+                           FROM acdCourse
+                          WHERE acdCourse.courseId=B.courseId) as courseName,
+                       TRUNC (E.value, 2),
+                       TO_CHAR(E.emissionDate,  \''. MASK_DATE .'\')
+                  FROM finReceivableInvoice E
+            INNER JOIN basPhysicalPersonStudent A
+                    ON ( A.personId = E.personId ';
+
+        if( strlen((string)$data->personId) > 0)
+        {
+             $sql .=  ' AND E.personId = ? ';
+             $args[] = $data->personId;
+        }
+
+        if( strlen((string)$data->courseId) > 0)
+        {
+             $sql .=  ' AND E.courseId = ? ';
+             $args[] = $data->courseId;
+        }
+
+        if( strlen((string)$data->classId) > 0)
+        {
+             $sql .=  ' AND A.personId IN ( SELECT personId
+                                              FROM acdContract
+                                        INNER JOIN acdClassPupil
+                                                ON ( acdContract.contractId = acdClassPupil.contractId )
+                                             WHERE isContractOut(acdContract.contractId) = false
+                                               AND acdClassPupil.classId = ?
+                                               AND A.personId = acdCOntract.personId
+                                          )';
+             $args[] = $data->classId;
+        }
+
+        $sql .= ' )     INNER JOIN (SELECT DISTINCT
+                                           personId, 
+                                           courseId,
+                                           courseVersion,
+                                           unitId,
+                                           turnId
+                                      FROM acdContract ';
+
+        if ( strlen((string)$data->personId) > 0)
+        {
+            $sql .= ' WHERE personId = ? ';
+            $args[] = $data->personId;
+        }
+        elseif ( strlen((string)$data->courseId) > 0)
+        {
+            $sql .= ' WHERE courseId = ? ';
+            $args[] = $data->courseId;
+
+            if ( strlen((string)$data->courseVersion) > 0)
+            {
+                $sql .= ' AND courseVersion = ? ';
+                $args[] = $data->courseVersion;
+            }
+        }        
+        
+        $sql .= '                  ) as B
+                                ON (    E.personId      = B.personId
+                                    AND E.courseId      = B.courseId 
+                                    AND E.courseVersion = B.courseVersion
+                                    AND E.unitId        = B.unitId)          
+
+                        INNER JOIN acdLearningPeriod C
+                                ON (    B.courseId      = C.courseId
+                                    AND B.courseVersion = C.courseVersion
+                                    AND B.turnId        = C.turnId
+                                    AND B.unitId        = C.unitId)
+                        INNER JOIN finPolicy D
+                                ON ( C.policyId = D.policyId )
+                    WHERE E.maturityDate 
+                  BETWEEN C.beginDate AND C.endDate
+                      AND balance(E.invoiceId) > 0   
+                      AND E.maturityDate < date(now()) 
+                      AND ((isInsured = false) or (isInsured is NULL) ) ';
+        if( strlen((string)$data->courseId) > 0)
+        {
+             $sql .=  ' AND B.courseId = ? ';
+             $args[] = $data->courseId;
+        }
+        if( strlen((string)$data->courseVersion) > 0)
+        {
+             $sql .=  ' AND B.courseVersion = ? ';
+             $args[] = $data->courseVersion;
+        }
+        if( strlen((string)$data->personId) > 0)
+        {
+             $sql .=  ' AND A.personId = ? ';
+             $args[] = $data->personId;
+        }
+        $sql .= '  AND C.periodId IN ( ';
+        foreach ( $data->periodId as $option)
+        {
+            $x++;
+            if ( $x == count($data->periodId) )
+            {
+                $where .= ' ? ';
+                $args[] = $option;
+            }
+            else
+            {   
+                $where .= ' ?, ';
+                $args[] = $option;
+            }
+        }                           
+
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= $where . ' ) ORDER BY A.personId, B.courseId, E.maturityDate ';
+            $result = $this->db->query(SAGU::prepare($sql,$args));
+
+        }
+
+        return $result;
+    }
+
+    
+   /**
+     * Return a specific record from the database
+     *
+     * @param $data (object): data of record to be retrieved
+     *
+     * @return (array): Return an array of the type handled by the class
+     *
+     **/
+    public function getReportDefaulter($data)
+    {
+        
+ 
+
+        $sql = 'SELECT  A.personId,
+                        (A.personId || \'-\' || A.name) AS person, 
+                        A.residentialPhone,
+                        A.cellPhone,
+                        A.workPhone,
+                        ROUND (balance(E.invoiceId), 2),
+                        A.isInsured,
+                        D.isActive
+
+                        FROM (SELECT personId, 
+                                     courseId,
+                                     unitId, 
+                                     maturityDate, 
+                                     invoiceId, 
+                                     value,
+                                     emissionDate
+                                FROM ONLY finReceivableInvoice) AS E
+
+                        INNER JOIN (SELECT personId, 
+                                           name, 
+                                           residentialPhone,
+                                           workPhone,
+                                           cellPhone,
+                                           location,
+                                           neighborhood, 
+                                           zipcode, 
+                                           number, 
+                                           complement,
+                                           email, 
+                                           emailalternative,
+                                           cityId,
+                                           isInsured
+                        FROM ONLY basPhysicalPersonStudent) AS A
+                                 ON (A.personId = E.personId)
+                        INNER JOIN (SELECT contractId,
+                                           personId,
+                                           courseId,
+                                           courseVersion,
+                                           unitId
+                                 FROM ONLY acdContract) AS B
+                                ON (E.personId = B.personId
+                                    AND E.courseId = B.courseId
+                                    AND E.courseVerion = B.courseVersion
+                                    AND E.unitId = B.unitId)          
+
+                        INNER JOIN (SELECT learningPeriodId,
+                                           courseId,
+                                           unitId,
+                                           policyId,
+                                           periodId,
+                                           beginDate,
+                                           endDate
+                              FROM acdLearningPeriod) AS C
+                                ON (B.courseId = C.courseId 
+                               AND  B.unitId   = C.unitId)
+                        LEFT JOIN finPayrollDiscountTarget AS D
+                                ON (D.contractId = B.contractId)
+                    WHERE E.maturityDate 
+                  BETWEEN C.beginDate AND C.endDate
+                      AND balance(E.invoiceId) <> 0 ';
+       if( strlen((string)$data->courseId) > 0)
+        {
+             $where .=  ' AND B.courseId = ? ';
+             $args[] = $data->courseId;
+        }
+        if( strlen((string)$data->courseVersion) > 0)
+        {
+             $where .=  ' AND B.courseVersion = ? ';
+             $args[] = $data->courseVersion;
+        }
+        if( strlen((string)$data->personId) > 0)
+        {
+             $where .=  ' AND A.personId = ? ';
+             $args[] = $data->personId;
+        }
+        if( strlen((string)$data->periodId) > 0 )
+        {
+             $where .= '  AND C.periodId IN ( ';
+             foreach ( $data->periodId as $option)
+             {
+                 $x++;
+                 if ( $x == count($data->periodId) )
+                 {
+                     $where .= ' ? ) ';
+                     $args[] = $option;
+                 }
+                 else
+                 {   
+                     $where .= ' ?, ';
+                     $args[] = $option;
+                 }
+             }     
+         }
+         if ( strlen((string)$where) > 0 )
+         {
+             $sql .= $where .'  GROUP BY 1,2,3,4,5,6,7,8, b.courseid,E.maturityDate
+                                  ORDER BY A.personId, B.courseId, E.maturityDate  ';
+
+             $result = $this->db->query(SAGU::prepare($sql,$args));
+         }
+
+
+         return $result;
+
+
+
+     }
+                      
+    /**
+     * Return a specific record from the database
+     *
+     * @param $data (object): data of record to be retrieved
+     *
+     * @return (array): Return an array of the type handled by the class
+     *
+     **/
+    public function getReportDefaulterForDate($data)
+    {
+        
+ 
+        $sql = 'SELECT  A.personId,
+                        (A.personId || \'-\' || A.name) AS person, 
+                        A.residentialPhone,
+                        A.cellPhone,
+                        A.workPhone,
+                        E.invoiceId,
+                        ROUND (balance(E.invoiceId), 2),
+                        TO_CHAR(E.maturityDate, \''. MASK_DATE . '\'),
+                        A.isInsured,
+                        F.description
+
+                        FROM (SELECT personId, 
+                                     courseId,
+                                     unitId, 
+                                     maturityDate, 
+                                     invoiceId, 
+                                     value,
+                                     emissionDate
+                                FROM ONLY finReceivableInvoice) AS E
+
+                        INNER JOIN (SELECT personId, 
+                                           name, 
+                                           residentialPhone,
+                                           workPhone,
+                                           cellPhone,
+                                           location,
+                                           neighborhood, 
+                                           zipcode, 
+                                           number, 
+                                           complement,
+                                           email, 
+                                           emailalternative,
+                                           cityId,
+                                           isInsured
+                        FROM ONLY basPhysicalPersonStudent) AS A
+                                 ON (A.personId = E.personId)
+                        INNER JOIN (SELECT DISTINCT contractId,
+                                           personId,
+                                           courseId,
+                                           courseVersion,
+                                           unitId
+                                 FROM ONLY acdContract) AS B
+                                ON (E.personId = B.personId
+                                    AND E.courseId = B.courseId
+                                    AND E.courseVerion = B.courseVersion
+                                    AND E.unitId = B.unitId)          
+                        LEFT JOIN (SELECT incentiveTypeId,
+                                          contractId 
+                                     FROM finincentive) AS D 
+                                  ON(D.contractId = B.contractId)
+                        LEFT JOIN (SELECT incentiveTypeId,
+                                          description
+                                     FROM finIncentiveType) AS F
+                              ON (D.incentivetypeid = F.incentiveTypeId )
+            
+                    WHERE balance(E.invoiceId) <> 0 ';
+        if(strlen((string)$data->startDate) > 0)
+        {
+                $where   .= ' AND E.maturityDate >= TO_DATE(? , \''. MASK_DATE .'\') ';
+                $args[] = $data->startDate;
+        }
+        if(strlen((string)$data->endDate) > 0)
+        {
+                $where   .= ' AND E.maturityDate <= TO_DATE(? , \''. MASK_DATE .'\') ';
+                $args[] = $data->endDate;
+        }
+        if( strlen((string)$data->courseId) > 0)
+        {
+             $where .=  ' AND B.courseId = ? ';
+             $args[] = $data->courseId;
+        }
+        if( strlen((string)$data->courseVersion) > 0)
+        {
+             $where .=  ' AND B.courseVersion = ? ';
+             $args[] = $data->courseVersion;
+        }
+        if( strlen((string)$data->personId) > 0)
+        {
+             $where .=  ' AND A.personId = ? ';
+             $args[] = $data->personId;
+        }
+
+
+         if ( strlen((string)$where) > 0 )
+         {
+             $sql .= $where .'  GROUP BY 1,2,3,4,5,6,7,8,9,10, b.courseid,E.maturityDate
+                                  ORDER BY A.personId, B.courseId, E.maturityDate  ';
+
+             $result = $this->db->query(SAGU::prepare($sql,$args));
+         }
+        return $result;
+    }
+
+    
+   /**
+     * Return a specific record from the database
+     *
+     * @param $data (object): data of record to be retrieved
+     *
+     * @return (array): Return an array of the type handled by the class
+     *
+     **/
+    public function getReportDefaulterForDateEnrolled($data)
+    {
+        
+
+        $sql = 'SELECT  A.personId,
+                        (A.personId || \'-\' || A.name) AS person, 
+                        A.residentialPhone,
+                        A.cellPhone,
+                        A.workPhone,
+                        E.invoiceId,
+                        ROUND (balance(E.invoiceId), 2),
+                        TO_CHAR(E.maturityDate, \''. MASK_DATE . '\'),
+                        A.isInsured,
+                        F.description
+
+                        FROM (SELECT DISTINCT contractId,
+                                     personId,
+                                     courseId,
+                                     courseVersion,
+                                     unitId
+                                FROM ONLY acdContract) AS B
+ 
+                         INNER JOIN(SELECT personId, 
+                                     courseId,
+                                     unitId, 
+                                     maturityDate, 
+                                     invoiceId, 
+                                     value,
+                                     emissionDate
+                                FROM ONLY finReceivableInvoice) AS E
+                                 ON (E.personId = B.personId
+                                     AND E.courseId = B.courseId
+                                     AND E.courseVersion = B.courseVersion
+                                     AND E.unitId = B.unitId )
+
+                        INNER JOIN (SELECT personId, 
+                                           name, 
+                                           residentialPhone,
+                                           workPhone,
+                                           cellPhone,
+                                           location,
+                                           neighborhood, 
+                                           zipcode, 
+                                           number, 
+                                           complement,
+                                           email, 
+                                           emailalternative,
+                                           cityId,
+                                           isInsured
+                        FROM ONLY basPhysicalPersonStudent) AS A
+                                 ON (A.personId = E.personId)
+                
+                        LEFT JOIN (SELECT incentiveTypeId,
+                                          contractId 
+                                     FROM finincentive) AS D 
+                                 ON (D.contractId = B.contractId)
+                        LEFT JOIN (SELECT incentiveTypeId,
+                                          description
+                                     FROM finIncentiveType) AS F
+                              ON (D.incentivetypeid = F.incentiveTypeId )
+                        LEFT JOIN (SELECT contractId,
+                                          groupId 
+                                     FROM acdEnroll ) AS G
+                              ON (B.contractId = G.contractId)
+                        LEFT JOIN (SELECT learningPeriodId,
+                                          groupId
+                                     FROM acdGroup ) AS H
+                              ON (G.groupId = H.groupId)
+                    WHERE balance(E.invoiceId) <> 0 
+                    AND hasContractualMovement( B.contractId, H.learningPeriodId, \''. STATE_CONTRACT_ID_ENROLLED . '\' ) = \''. DB_TRUE .'\'  ';
+        if(strlen((string)$data->startDate) > 0)
+        {
+                $where   .= ' AND E.maturityDate >= TO_DATE(? , \''. MASK_DATE .'\') ';
+                $args[] = $data->startDate;
+        }
+        if(strlen((string)$data->endDate) > 0)
+        {
+                $where   .= ' AND E.maturityDate <= TO_DATE(? , \''. MASK_DATE .'\') ';
+                $args[] = $data->endDate;
+        }
+        if( strlen((string)$data->courseId) > 0)
+        {
+             $where .=  ' AND B.courseId = ? ';
+             $args[] = $data->courseId;
+        }
+        if( strlen((string)$data->courseVersion) > 0)
+        {
+             $where .=  ' AND B.courseVersion = ? ';
+             $args[] = $data->courseVersion;
+        }
+        if( strlen((string)$data->personId) > 0)
+        {
+             $where .=  ' AND A.personId = ? ';
+             $args[] = $data->personId;
+        }
+
+         if ( strlen((string)$where) > 0 )
+         {
+             $sql .= $where .'  GROUP BY 1,2,3,4,5,6,7,8,9,10, b.courseid,E.maturityDate
+                                  ORDER BY A.personId, B.courseId, E.maturityDate  ';
+
+             $result = $this->db->query(SAGU::prepare($sql,$args));
+         }
+        return $result;
+    }
+
+
+  /**
+     * Return a specific record from the database
+     *
+     * @param $data (object): data of record to be retrieved
+     *
+     * @return (array): Return an array of the type handled by the class
+     *
+     **/
+    public function getReportDefaulterForLimitDate($data)
+    {
+
+        $sql = 'SELECT  A.personId,
+                        (A.personId || \'-\' || A.name) AS person, 
+                        A.residentialPhone,
+                        A.cellPhone,
+                        A.workPhone,
+                        E.invoiceId,
+                        ROUND(  balanceWithBetweenDates(E.invoiceId, TO_DATE(?, \''. MASK_DATE . '\'), TO_DATE(?, \''. MASK_DATE . '\') ), 2 ),
+                        TO_CHAR(E.maturityDate, \''. MASK_DATE . '\'),
+                        (SELECT isInsured FROM ONLY basPhysicalPersonStudent 
+                                          WHERE personId = A.personId) AS IsInsured,
+                        F.description
+
+                   FROM (SELECT DISTINCT contractId,
+                                personId,
+                                courseId,
+                                courseVersion,
+                                unitId
+                      FROM ONLY acdContract) AS B
+ 
+                        INNER JOIN (SELECT personId, 
+                                           name, 
+                                           residentialPhone,
+                                           workPhone,
+                                           cellPhone,
+                                           location,
+                                           neighborhood, 
+                                           zipcode, 
+                                           number, 
+                                           complement,
+                                           email, 
+                                           emailalternative,
+                                           cityId
+                        FROM ONLY basPhysicalPerson) AS A
+                                 ON (A.personId = B.personId)
+                        INNER JOIN  (SELECT personId, 
+                                     courseId,
+                                     unitId, 
+                                     maturityDate, 
+                                     invoiceId, 
+                                     value,
+                                     emissionDate
+                                FROM ONLY finReceivableInvoice) AS E 
+                                ON (E.personId = B.personId
+                                    AND E.contractId = B.contractId
+                                    AND E.contractVersion = B.contractVersion
+                                    AND E.unitId = B.unitId)
+                        LEFT JOIN (SELECT incentiveTypeId,
+                                          contractId 
+                                     FROM finincentive) AS D 
+                                 ON (D.contractId = B.contractId)
+                        LEFT JOIN (SELECT incentiveTypeId,
+                                          description
+                                     FROM finIncentiveType) AS F
+                              ON (D.incentivetypeid = F.incentiveTypeId )
+                    WHERE balanceWithBetweenDates(E.invoiceId, TO_DATE(?, \''. MASK_DATE . '\'), TO_DATE(?, \''. MASK_DATE . '\') ) <> 0  ';
+        $args[] = $data->startDate;
+        $args[] = $data->endDate;
+        $args[] = $data->startDate;
+        $args[] = $data->endDate;
+        if(strlen((string)$data->startDate) > 0)
+        {
+                $where   .= ' AND E.maturityDate >= TO_DATE(? , \''. MASK_DATE .'\') ';
+                $args[] = $data->startDate;
+        }
+        if(strlen((string)$data->endDate) > 0)
+        {
+                $where   .= ' AND E.maturityDate <= TO_DATE(? , \''. MASK_DATE .'\') ';
+                $args[] = $data->endDate;
+        }
+        if( strlen((string)$data->courseId) > 0)
+        {
+             $where .=  ' AND B.courseId = ? ';
+             $args[] = $data->courseId;
+        }
+        if( strlen((string)$data->courseVersion) > 0)
+        {
+             $where .=  ' AND B.courseVersion = ? ';
+             $args[] = $data->courseVersion;
+        }
+        if( strlen((string)$data->personId) > 0)
+        {
+             $where .=  ' AND A.personId = ? ';
+             $args[] = $data->personId;
+        }
+
+         if ( strlen((string)$where) > 0 )
+         {
+             $sql .= $where .'  GROUP BY 1,2,3,4,5,6,7,8,9,10, b.courseid,E.maturityDate
+                                  ORDER BY A.personId, B.courseId, E.maturityDate  ';
+
+             $result = $this->db->query(SAGU::prepare($sql,$args));
+         }
+        return $result;
+    }
+
+
+
+
+  /**
+     * Return a specific record from the database
+     *
+     * @param $data (object): data of record to be retrieved
+     *
+     * @return (array): Return an array of the type handled by the class
+     *
+     **/
+    public function getReportDefaulterForDateIncomeSource($data)
+    {
+
+        $sql = 'SELECT  A.personId,
+                        (A.personId || \'-\' || A.name) AS person, 
+                        A.residentialPhone,
+                        A.cellPhone,
+                        A.workPhone,
+                        E.invoiceId,
+                        ROUND( balance(E.invoiceId ), 2 ),
+                        TO_CHAR(E.maturityDate, \''. MASK_DATE . '\'),
+                        (SELECT isInsured 
+                           FROM ONLY basPhysicalPersonStudent 
+                          WHERE personId = A.personId) AS IsInsured,
+                        F.description
+
+                   FROM (SELECT DISTINCT contractId,
+                                personId,
+                                courseId,
+                                courseVersion,
+                                unitId
+                      FROM ONLY acdContract) AS B
+ 
+                        INNER JOIN (SELECT personId, 
+                                           name, 
+                                           residentialPhone,
+                                           workPhone,
+                                           cellPhone,
+                                           location,
+                                           neighborhood, 
+                                           zipcode, 
+                                           number, 
+                                           complement,
+                                           email, 
+                                           emailalternative,
+                                           cityId
+                        FROM ONLY basPhysicalPerson) AS A
+                                 ON (A.personId = B.personId)
+                        INNER JOIN  (SELECT personId, 
+                                     courseId,
+                                     unitId, 
+                                     maturityDate, 
+                                     invoiceId, 
+                                     value,
+                                     emissionDate,
+                                     incomeSourceId
+                                FROM ONLY finReceivableInvoice) AS E 
+                                ON (E.personId = B.personId
+                                    AND E.courseId = B.courseId
+                                    AND E.courseVersion = B.courseVersion
+                                    AND E.unitId = B.unitId)
+                        LEFT JOIN (SELECT incentiveTypeId,
+                                          contractId 
+                                     FROM finincentive) AS D 
+                                 ON (D.contractId = B.contractId)
+                        LEFT JOIN (SELECT incentiveTypeId,
+                                          description
+                                     FROM finIncentiveType) AS F
+                              ON (D.incentivetypeid = F.incentiveTypeId )
+                    WHERE balance(E.invoiceId) <> 0  ';
+ 
+        if(strlen((string)$data->startDate) > 0)
+        {
+                $where   .= ' AND E.maturityDate >= TO_DATE(? , \''. MASK_DATE .'\') ';
+                $args[] = $data->startDate;
+        }
+        if(strlen((string)$data->endDate) > 0)
+        {
+                $where   .= ' AND E.maturityDate <= TO_DATE(? , \''. MASK_DATE .'\') ';
+                $args[] = $data->endDate;
+        }
+        if( ( $data->generateOption == 'freshman' ) && (strlen((string)$data->periodId) > 0 ))
+        {
+             $where .=  ' AND is_freshman( ?, A.personId) is true ';
+             $args[] = $data->periodId;           
+        }
+        if( strlen((string)$data->courseId) > 0)
+        {
+             $where .=  ' AND B.courseId = ? ';
+             $args[] = $data->courseId;
+        }
+        if( strlen((string)$data->incomeSourceId) > 0)
+        {
+             $where .=  ' AND E.incomeSourceId = ? ';
+             $args[] = $data->incomeSourceId;
+        }
+        if( strlen((string)$data->courseVersion) > 0)
+        {
+             $where .=  ' AND B.courseVersion = ? ';
+             $args[] = $data->courseVersion;
+        }
+        if( strlen((string)$data->personId) > 0)
+        {
+             $where .=  ' AND A.personId = ? ';
+             $args[] = $data->personId;
+        }
+
+         if ( strlen((string)$where) > 0 )
+         {
+             $sql .= $where .'  GROUP BY 1,2,3,4,5,6,7,8,9,10, b.courseid, E.maturityDate
+                                  ORDER BY A.personId, B.courseId, E.maturityDate  ';
+             $result = $this->db->query(SAGU::prepare($sql,$args));
+         }
+        return $result;
+    }
+
+
+
+     /**
+     * Return a specific record from the database
+     *
+     * @param $data (object): data of record to be retrieved
+     *
+     * @return (array): Return an array of the type handled by the class
+     *
+     **/
+    public function getReportDefaulterDegree($data)
+    {
+
+        $sql = 'SELECT  A.personId,
+                        (A.personId || \'-\' || A.name) AS person, 
+                        A.residentialPhone,
+                        A.cellPhone,
+                        A.workPhone,
+                        E.invoiceId,
+                        ROUND( balance(E.invoiceId ), 2 ),
+                        TO_CHAR(E.maturityDate, \''. MASK_DATE . '\'),
+                        (SELECT isInsured 
+                           FROM ONLY basPhysicalPersonStudent 
+                          WHERE personId = A.personId) AS IsInsured,
+                        F.description
+
+                   FROM (SELECT contractId,
+                                personId,
+                                courseId,
+                                courseVersion,
+                                unitId,
+                                formationPeriodId,
+                                formationDate
+                      FROM ONLY acdContract) AS B
+ 
+                        INNER JOIN (SELECT personId, 
+                                           name, 
+                                           residentialPhone,
+                                           workPhone,
+                                           cellPhone,
+                                           location,
+                                           neighborhood, 
+                                           zipcode, 
+                                           number, 
+                                           complement,
+                                           email, 
+                                           emailalternative,
+                                           cityId
+                        FROM ONLY basPhysicalPerson) AS A
+                                 ON (A.personId = B.personId)
+                        INNER JOIN  (SELECT personId, 
+                                     courseId,
+                                     unitId, 
+                                     maturityDate, 
+                                     invoiceId, 
+                                     value,
+                                     emissionDate,
+                                     incomeSourceId
+                                FROM ONLY finReceivableInvoice) AS E 
+                                ON (E.personId = B.personId
+                                    AND E.courseId = B.courseId
+                                    AND E.courseVersion = B.courseVersion
+                                    AND E.unitId = B.unitId)
+                        LEFT JOIN (SELECT incentiveTypeId,
+                                          contractId 
+                                     FROM finincentive) AS D 
+                                 ON (D.contractId = B.contractId)
+                        LEFT JOIN (SELECT incentiveTypeId,
+                                          description
+                                     FROM finIncentiveType) AS F
+                              ON (D.incentivetypeid = F.incentiveTypeId )
+                    WHERE balance(E.invoiceId) <> 0  ';
+
+        if(strlen((string)$data->periodId) > 0 )
+        {
+             $where .=  ' AND B.formationPeriodId = ?
+                          AND B.formationDate <= date(now()) ';
+             $args[] = $data->periodId;           
+        }
+        if( strlen((string)$data->courseId) > 0)
+        {
+             $where .=  ' AND B.courseId = ? ';
+             $args[] = $data->courseId;
+        }
+        if( strlen((string)$data->courseVersion) > 0)
+        {
+             $where .=  ' AND B.courseVersion = ? ';
+             $args[] = $data->courseVersion;
+        }
+        if( strlen((string)$data->personId) > 0)
+        {
+             $where .=  ' AND A.personId = ? ';
+             $args[] = $data->personId;
+        }
+
+         if ( strlen((string)$where) > 0 )
+         {
+             $sql .= $where .'  GROUP BY 1,2,3,4,5,6,7,8,9,10, b.courseid, E.maturityDate
+                                ORDER BY A.personId, B.courseId, E.maturityDate  ';
+
+
+             $result = $this->db->query(SAGU::prepare($sql,$args));
+         }
+        return $result;
+    }
+
+
+    /**
+     * Return a specific record from the database
+     *
+     * @param $data (object): data of record to be retrieved
+     *
+     * @return (array): Return an array of the type handled by the class
+     *
+     **/
+    public function getReportDefaulterLegalPerson($data)
+    {
+        
+      $sql =   ' SELECT A.personId,
+                        (A.personId || \'-\' || A.name) AS person, 
+                        A.phone,
+                        A.fax,
+                        E.invoiceId,
+                        ROUND (balance(E.invoiceId), 2),
+                        E.maturityDate
+
+                        FROM (SELECT personId, 
+                                     courseId,
+                                     unitId, 
+                                     maturityDate, 
+                                     invoiceId, 
+                                     value,
+                                     emissionDate
+                           FROM ONLY finReceivableInvoice
+                               WHERE extract(year from maturityDate) = ?  
+                                 AND extract(month from maturityDate ) = ? ) AS E
+                          INNER JOIN (SELECT personId, 
+                                             name, 
+                                             phone,
+                                             fax,
+                                             location,
+                                             neighborhood, 
+                                             zipcode, 
+                                             number, 
+                                             complement,
+                                             email, 
+                                             emailalternative,
+                                             cityId
+                               FROM ONLY basLegalPerson) AS A
+                                 ON (A.personId = E.personId)
+
+                        INNER JOIN (SELECT learningPeriodId,
+                                           courseId,
+                                           unitId,
+                                           policyId,
+                                           periodId,
+                                           beginDate,
+                                           endDate
+                              FROM acdLearningPeriod) AS C
+                                ON ( E.maturityDate 
+                                     BETWEEN C.beginDate AND C.endDate)  
+                        WHERE balance(E.invoiceId) <> 0  ';
+        $args[] = $data->year;
+        $args[] = $data->month;
+
+        if( strlen((string)$data->personId) > 0)
+        {
+             $where .=  ' AND A.personId = ? ';
+             $args[] = $data->personId;
+        }
+        if( strlen((string)$data->periodId) > 0 )
+        {
+             $where .= '  AND C.periodId =  ? ';
+             $args[] = $data->periodId;
+     
+        }
+        if ( strlen((string)$where) > 0 )
+        {
+             $sql .= $where .'   GROUP BY 1,2,3,4,5, E.maturityDate
+                                  ORDER BY A.personId, E.maturityDate   ';
+
+             $result = $this->db->query(SAGU::prepare($sql,$args));
+        }
+        return $result;
+     }
+
+
+    /**
+     * Return a specific record from the database
+     *
+     * @param $data (object): data of record to be retrieved
+     *
+     * @return (array): Return an array of the type handled by the class
+     *
+     **/
+    public function getReportDefaulterFriendlyAgreement($data)
+    {
+ 
+        $sql = 'SELECT  A.personId,
+                        (A.personId || \'-\' || A.name) AS person, 
+                        A.residentialPhone,
+                        A.cellPhone,
+                        A.workPhone,
+                        E.invoiceId,
+                        ROUND (balance(E.invoiceId), 2),
+                        ROUND (balanceWithPolicies(E.invoiceId), 2),
+                        TO_CHAR(E.maturityDate, \''. MASK_DATE . '\')
+
+                        FROM (SELECT personId, 
+                                     courseId,
+                                     courseVersion,
+                                     unitId, 
+                                     maturityDate, 
+                                     invoiceId, 
+                                     value,
+                                     emissionDate,
+                                     incomeSourceId
+                                FROM ONLY finReceivableInvoice) AS E
+
+                        INNER JOIN (SELECT personId, 
+                                           name, 
+                                           residentialPhone,
+                                           workPhone,
+                                           cellPhone,
+                                           location,
+                                           neighborhood, 
+                                           zipcode, 
+                                           number, 
+                                           complement,
+                                           email, 
+                                           emailalternative,
+                                           cityId,
+                                           isInsured
+                        FROM ONLY basPhysicalPersonStudent) AS A
+                                 ON (A.personId = E.personId)
+                        INNER JOIN (SELECT contractId,
+                                           personId,
+                                           courseId,
+                                           courseVersion,
+                                           unitId
+                                 FROM ONLY acdContract) AS B
+                                ON (E.personId = B.personId
+                                    AND E.courseId = B.courseId
+                                    AND E.courseVersion = B.courseVersion
+                                    AND E.unitId = B.unitId)
+                        LEFT JOIN (SELECT incentiveTypeId,
+                                          contractId,
+                                          startDate,
+                                          endDate,
+                                          cancellationDate
+                                     FROM finincentive) AS D 
+                                  ON(D.contractId = B.contractId)
+                    WHERE balance(E.invoiceId) <> 0   ';
+        if(strlen((string)$data->startDate) > 0)
+        {
+                $where   .= ' AND E.maturityDate >= TO_DATE(? , \''. MASK_DATE .'\') ';
+                $args[] = $data->startDate;
+        }
+        if(strlen((string)$data->endDate) > 0)
+        {
+                $where   .= ' AND E.maturityDate <= TO_DATE(? , \''. MASK_DATE .'\') ';
+                $args[] = $data->endDate;
+        }
+
+        $incomeSourceId = explode(',' , AGREEMENT_INCOME_SOURCE_ID);
+
+
+        for( $number = 0 ; $number < count($incomeSourceId); $number++)
+        {
+            if($number == 0 )
+            {
+                $where .= ' AND   E.incomeSourceId IN ( ? ';
+                $args[] = $incomeSourceId[0];
+            }
+            else
+            {
+                $where .= ' , ?';
+                $args[] = $incomeSourceId[$number];
+            }
+        }
+        $where   .= ' )';
+
+	if ( strlen((string)$where) > 0 )
+        {
+            $sql .= $where .'  GROUP BY 1,2,3,4,5,6,7,8,9, b.courseid,E.maturityDate
+                               ORDER BY A.personId, B.courseId, E.maturityDate  ';
+          
+            $result = $this->db->query(SAGU::prepare($sql,$args));
+        }
+        return $result;
+    }
+
+
+
+
+    // As funções abaixo foram feitas para otimização dos SQLs.
+    /*
+     * Move and get data from cursor
+     *
+     */
+    public function fetchData($number)
+    {
+        $sql = 'FETCH ' . $number . ' FROM data';
+        $db      = $this->getDatabase();
+        $result = $db->query($sql);
+
+        return $result;
+    }
+
+    public function beginTransaction()
+    {
+        $db = $this->getDatabase();
+        $db->execute('BEGIN TRANSACTION');
+    }
+
+    public function commit()
+    {
+        $db = $this->getDatabase();
+        $db->execute('COMMIT');
+    }
+   
+}
+?>

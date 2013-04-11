@@ -1,0 +1,178 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for finCounterMovement table
+ *
+ * @author Armando Taffarel Neto [taffarel@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * Armando Taffarel Neto [taffarel@solis.coop.br]
+ * 
+ * @since
+ * Class created on 03/01/2006
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to manipulate the finCounterMovement table
+ **/
+class BusinessFinanceBusCounterMovementNew extends MBusiness
+{
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    private $db;
+
+    public function __construct()
+    {
+        parent::__construct();
+        $this->db = $this->getDatabase();
+    }
+
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module = is_null($module) ? 'finance' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+    
+    public function searchCounterMovement($data = NULL)
+    {
+        $sql = 'SELECT
+                TO_CHAR(A.movementdate::date, \'' . MASK_DATE . '\') as data,
+                TO_CHAR(A.movementdate::time, \'' . MASK_TIME . '\')  as hora,
+                CASE 
+                    WHEN A.entryId IS NULL AND A.operation = \'D\' THEN \'PAGAMENTO: \' || A.description 
+                    WHEN A.entryId IS NULL AND A.operation = \'C\' THEN \'RECEBIMENTO: \' || A.description 
+                    WHEN NOT A.entryId IS NULL AND A.operation = \'C\' THEN \'RECEBIMENTO DO TITULO: \' || C.invoiceId
+                END as descricao_movimentacao,
+                ROUND(A.value,2) as valor,
+                A.operation as tipo,
+                D.counterId as caixa,
+                getPersonName(D.responsableid) as responsavel,
+                CASE 
+                    WHEN NOT C.invoiceId IS NULL THEN round(COALESCE((SELECT sum(value) FROM ONLY finEntry WHERE invoiceid = C.invoiceId AND operationId IN(    SELECT operationId FROM finOperation WHERE operationGroupId = \'I\' AND operationtypeid = \'C\')),0),2)
+                    ELSE 0.00
+                END  as Incentivos,
+                CASE 
+                    WHEN NOT C.invoiceId IS NULL THEN round(COALESCE((SELECT sum(value) FROM ONLY finEntry WHERE invoiceid = C.invoiceId AND operationId IN(    SELECT operationId FROM finOperation WHERE operationGroupId = \'D\' AND operationtypeid = \'C\')),0),2)
+                    ELSE 0.00
+                END as Descontos,
+                CASE 
+                    WHEN NOT C.invoiceId IS NULL THEN round(COALESCE((SELECT sum(value) FROM ONLY finEntry WHERE invoiceid = C.invoiceId AND operationId IN(    SELECT operationId FROM finOperation WHERE operationGroupId = \'J\' AND operationtypeid = \'D\')),0),2)
+                    ELSE 0.00
+                END as Juros,
+                E.description as especie,
+                F.description
+            FROM 
+                finCounterMovement A 
+      LEFT JOIN finEntry B ON ( B.entryId = A.entryId )
+      LEFT JOIN ONLY finInvoice C ON ( C.invoiceId = B.invoiceId )
+      LEFT JOIN finCounter D ON ( D.counterId = A.counterId )
+      LEFT JOIN finSpecies E ON (E.speciesId = A.speciesId ) 
+      LEFT JOIN finIncomeSource F ON ( F.incomeSourceId = C.incomeSourceId )
+            WHERE
+                1 = 1 ';
+        if ( strlen((string)$data->movementDate) > 0 ) 
+        {
+            $sql .= ' AND A.movementdate::date = TO_DATE(?, \'' . MASK_DATE . '\')';
+            $args[] = $data->movementDate;
+        }
+
+        if ( strlen((string)$data->beginDate) > 0 ) 
+        {
+            $sql .= ' AND A.movementdate::date = TO_DATE(?, \'' . MASK_DATE . '\')';
+            $args[] = $data->beginDate;
+        }
+
+        if ( strlen((string)$data->endDate) > 0 ) 
+        {
+            $sql .= ' AND A.movementdate::date <= TO_DATE(?, \'' . MASK_DATE . '\')';
+            $args[] = $data->endDate;
+        }
+
+        if ( strlen((string)$data->counterId) > 0 ) 
+        {
+            $sql .= ' AND A.counterId = ?::integer ';
+            $args[] = $data->counterId;
+        }
+
+        if ( strlen((string)$data->responsableId) > 0 ) 
+        {
+            $sql .= ' AND A.operatorId = ?::integer ';
+            $args[] = $data->responsableId;
+        }
+
+        if ( strlen((string)$data->operation) > 0 ) 
+        {
+            $sql .= ' AND A.operation = ? ';
+            $args[] = $data->operation;
+        }
+
+        if ( strlen((string)$data->speciesId) > 0 ) 
+        {
+            $sql .= ' AND A.speciesId = ?::integer ';
+            $args[] = $data->speciesId;
+        }
+        if ( strlen((string)$args) > 0 )
+        {
+            $sql = SAGU::prepare($sql, $args);
+            $result = $this->db->query($sql);
+
+            if ( count($result) > 0 )
+            {
+                foreach( $result as $linhas => $linha )
+                {
+                    unset($obj);
+                    $obj->data          = $linha[0];
+                    $obj->hora          = $linha[1];
+                    $obj->descricao     = $linha[2];
+                    $obj->valor         = $linha[3];
+                    $obj->operacao      = $linha[4];
+                    $obj->caixa         = $linha[5];
+                    $obj->responsavel   = $linha[6];
+                    $obj->incentivo     = $linha[7];
+                    $obj->desconto      = $linha[8];
+                    $obj->juros         = $linha[9];
+                    $obj->especie       = $linha[10];
+                    $obj->origem        = $linha[11];
+                    $res[] = $obj;
+                }
+            }
+            else
+            {
+                return null;
+            }
+            return $res;
+        }
+    }
+
+}
+
+?>

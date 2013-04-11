@@ -1,0 +1,139 @@
+<?php
+/**
+ * @author Leovan Tavares da Silva [leovan] [leovan@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * Leovan Tavares da Silva [leovan@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 07/08/2006
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to manipulate tables
+ **/
+class BusinessAcademicBusConditionUnblockList extends Business
+{
+
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic', 'sagu');
+        $module = is_null($module) ? 'academic' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+    
+    public function listConditionUnblockPupils($periodId, $formationLevelId)
+    {
+        $module = MIOLO::getCurrentModule();
+        
+        set_time_limit(0);
+        
+        $db = $this->getDatabase();
+        
+        $sql = 'SELECT DISTINCT B.personId,
+                       F.name,
+                       C.curriculumId,
+                       D.curricularComponentId,
+                       D.curricularComponentVersion,
+                       E.name,
+                       B.courseId,
+                       B.courseVersion,
+                       I.name,
+                       B.unitId,
+                       J.description,
+                       B.turnId,
+                       K.description
+                  FROM acdEnroll A
+            INNER JOIN acdContract B
+                    ON (B.contractId = A.contractId)
+            INNER JOIN acdGroup C
+                    ON (C.groupId = A.groupId)
+            INNER JOIN acdCurriculum D
+                    ON (D.curriculumId = C.curriculumId)
+            INNER JOIN acdCurricularComponent E
+                    ON (E.curricularComponentId = D.curricularComponentId AND
+                        E.curricularComponentVersion = D.curricularComponentVersion)
+            INNER JOIN ONLY basPhysicalPersonStudent F
+                    ON (F.personId = B.personId)
+            INNER JOIN acdLearningPeriod G
+                    ON (G.learningPeriodId = C.learningPeriodId)
+            INNER JOIN acdCurricularComponentUnblock H
+                    ON (H.curriculumId     = C.curriculumId AND
+                        H.learningPeriodId = C.learningPeriodId AND
+                        H.contractId       = A.contractId)
+            INNER JOIN acdCourse I
+                    ON (I.courseId = B.courseId)
+            INNER JOIN basUnit J
+                    ON (J.unitId = B.unitId)
+            INNER JOIN basTurn K
+                    ON (K.turnId = B.turnId)
+                 WHERE G.periodId = ?
+                   AND I.formationLevelId = ?
+                   AND H.isConditionBreak = true
+              ORDER BY B.courseId, B.courseVersion, B.unitId, B.turnId, C.curriculumId, F.name';
+              
+        $args = array(  $periodId,
+                        $formationLevelId
+                     );
+        $result = $db->query(SAGU::prepare($sql, $args));
+            
+        if (count($result) > 0)
+        {
+            foreach ($result as $res)
+            {
+                list (  $personId,
+                        $personName,
+                        $curriculumId,
+                        $curricularComponentId,
+                        $curricularComponentVersion,
+                        $curricularComponentDesc,
+                        $courseId,
+                        $courseVersion,
+                        $courseName,
+                        $unitId,
+                        $unitDesc,
+                        $turnId,
+                        $turnDesc) = $res;
+                        
+                $index = $courseId . '-' . $courseVersion . '-' . $unitId . '-' . $turnId;
+                
+                $return[$index]->title = $courseId . '(' . $courseVersion . ') - ' . $courseName . ' - ' . $unitDesc . ' - ' . $turnDesc;
+                $return[$index]->currComps[$curriculumId]->title  = $curricularComponentId . '(' . $curricularComponentVersion . ') - ' . $curricularComponentDesc;
+                $return[$index]->currComps[$curriculumId]->data[] = array($personId, $personName);
+                $return[$index]->total++;
+            }
+            return $return;
+        }
+        return null;
+    }
+}
+?>

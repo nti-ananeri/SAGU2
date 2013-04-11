@@ -1,0 +1,135 @@
+<?
+class BusinessAcademicBusExaminationFrequence extends Business
+{
+
+    public $db;
+
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module = is_null($module) ? 'academic' : $module;
+        return $MIOLO->getDatabase($module);
+    }
+
+    public function __construct()
+    {
+        $this->db = $this->getDatabase();
+    }
+    public function getPupilsForFrequence($data = NULL)
+    {
+        $sql = 'SELECT  A.courseId, 
+                        A.name as CourseName, 
+                        B.periodId, 
+                        C.semester, 
+                        D.turnId, 
+                        D.description as turnDescription, 
+                        E.classId, 
+                        F.curricularComponentId, 
+                        F.curricularComponentVersion, 
+                        F.name as curricularComponentName, 
+                        G.personId as professorId, 
+                        G.name as professorName,
+                        P.personId,
+                        P.name
+                FROM 
+                    acdScheduleProfessor H INNER JOIN
+                    acdSchedule I ON (H.scheduleId = I.scheduleId) INNER JOIN
+                    ONLY basPhysicalPersonProfessor G ON ( H.professorId = G.personId ) INNER JOIN
+                    acdGroup J ON ( I.groupId = J.groupId )  INNER JOIN
+                    acdEnroll K ON (K.groupId = J.groupId ) INNER JOIN
+                    acdLearningPeriod B ON ( J.learningPeriodId = B.learningPeriodId AND B.periodId IN (?) ) INNER JOIN
+                    acdContract L ON ( L.contractId = K.contractId ) INNER JOIN
+                    acdClassPupil E ON ( E.contractId = L.contractId ) INNER JOIN
+                    acdCurriculum C ON ( C.curriculumId = J.curriculumId ) INNER JOIN
+                    acdCourse A ON ( C.courseId = A.courseId ) INNER JOIN
+                    acdCurricularComponent F ON ( F.curricularComponentId = C.curricularComponentId AND F.curricularComponentVersion = C.curricularComponentVersion ) INNER JOIN
+                    basTurn D ON (D.turnId = C.turnId ) INNER JOIN
+                    ONLY basPhysicalPerson P ON ( L.personId = P.personId )
+                WHERE 1=1 ';
+        if (is_array($data->periodId))
+        {
+            if( count($data->periodId) > 0 )
+            {
+                $dt = $data->periodId;
+                $data->periodId = NULL;
+                $data->periodId = implode("','", $dt);
+                $args[] = $data->periodId;
+            }
+            else
+            {
+                $args[] = CURRENT_PERIOD_ID;
+            }
+        }
+        else if ( strlen((string)$data->periodId) > 0 )
+        {
+            $args[] = $data->periodId;
+        }
+        else
+        {
+            $args[] = CURRENT_PERIOD_ID;
+        }
+
+        if( strlen((string)$data->classId) > 0 )
+        {
+            $sql .= ' AND TRIM(E.classId) = TRIM(?) ';
+            $args[] = $data->classId;
+        }
+
+        if( strlen((string)$data->courseId) > 0 )
+        {
+            $sql .= ' AND TRIM(A.courseId) = TRIM(?) ';
+            $args[] = $data->courseId;
+        }
+
+        if( strlen((string)$data->professorId) > 0 )
+        {
+            $sql .= ' AND H.professorId = ? ';
+            $args[] = $data->professorId;
+        }
+
+        if( strlen((string)$data->curricularComponentId) > 0 )
+        {
+            $sql .= ' AND TRIM(C.curricularComponentId) = TRIM(?) ';
+            $args[] = $data->curricularComponentId;
+        }
+
+        if( strlen((string)$data->curricularComponentVersion) > 0 )
+        {
+            $sql .= ' AND C.curricularComponentVersion = ? ';
+            $args[] = $data->curricularComponentVersion;
+        }
+        $sql .= ' ORDER BY B.periodId, E.classId, D.turnId, G.name, F.name ';
+        $sql = SAGU::prepare($sql, $args);
+        $result = $this->db->query($sql);
+        for($x=0; $x < count($result); $x++)
+        {
+            if($data->courseId == NULL )
+            {
+                $data->courseId = $result[$x][0];
+            }
+            $data->course[$result[$x][0]] = $result[$x][1];
+            //$data->period[$result[$x][2]] = $result[$x][2];
+            $data->turn[$result[$x][4]] = $result[$x][5];
+            //$data->class[$result[$x][6]] = $result[$x][6];
+            if ($result[$x][3] > $data->semester )
+            {
+                $data->semester = $result[$x][3];
+            }
+            $data->curricularComponent[$result[$x][7]] = $result[$x][9];
+            $data->professor[$result[$x][10]] = $result[$x][11];
+            $data->pupils[$result[$x][2]][$result[$x][6]][$result[$x][4]][$result[$x][10]][$result[$x][7]][$result[$x][12]] = $result[$x][13];
+            $data->pupilsCourse[$result[$x][12]] = $result[$x][0];
+        }
+        return $data;
+        
+    }
+}
+?>

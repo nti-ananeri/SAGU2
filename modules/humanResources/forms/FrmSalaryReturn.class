@@ -1,0 +1,267 @@
+<?php
+/**
+ * Salary return form
+ *
+ * @author Armando Taffarel Neto [taffarel@solis.coop.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * Armando Taffarel Neto [taffarel@solis.coop.br]
+ *
+ * @since
+ * Class created on 03/05/2006
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2005 SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+
+/**
+ * Form to salary return
+ **/
+class FrmSalaryReturn extends MForm
+{
+    private $home;
+    
+    /**
+     * Class constructor
+     **/
+    function __construct($data)
+    {
+
+        $module = MIOLO::getCurrentModule();
+
+        $this->home   = $data->home;
+
+        parent::__construct(_M('Salary return', $module));
+
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+
+
+        $toolBar = new MToolBar('toolBar',$MIOLO->getActionURL($module,$action));
+
+        $toolBar->disableButton('tbBtnNew');
+        $toolBar->disableButton('tbBtnDelete');
+        $toolBar->disableButton('tbBtnPrint');
+        $toolBar->disableButton('tbBtnSave');
+        $toolBar->disableButton('tbBtnSearch');
+
+        //favoritos
+        $enabledImage  = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-20x20.png');
+        $disabledImage = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-disabled-20x20.png');
+        $url           = $MIOLO->getActionURL($module, $this->home, null, array('function' => 'search', 'event' => 'bookmark'));
+        $toolBar->addButton('tbBtnBookmark', _M('Add to bookmarks', 'basic'), $url, null, true, $enabledImage, $disabledImage);
+
+        if ( MIOLO::_request('event') == 'bookmark' )
+        {
+            $MIOLO->getClass('basic', 'access');
+            access::insert('Salary return', $this->home, 'salaryReturn-16x16.png', true);
+        }
+        //fim favoritos
+
+        $fields[] = $toolBar;
+        
+        if ( ! $this->page->isPostBack() )
+        {
+            $fields[] = new MFileField('importReturnFile', $this->getFormValue('importReturnFile', $data->importReturnFile), _M('Import return file', $module));
+
+            $fields[] = new MSeparator('');
+
+            $btn1[]   = new MButton('btnValidate', _M('Validate', $module));
+            $div1     = new MDiv('div1', $btn1, null);
+            $fields[] = $div1;
+        
+            $fields[] = new MSeparator('');
+        }
+        
+        $this->setFields($fields);
+        $this->setValidators($validators);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+        $this->setClose($MIOLO->getActionURL($module,substr($action,0,strrpos($action,':'))));
+
+    }
+
+    /**
+     * Event triggered when user chooses Validate from the toolbar
+     **/
+    public function btnValidate_click($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        if ($_FILES["importReturnFile"]["error"] == 0)
+        {
+            $data->fileName  = $_FILES["importReturnFile"]["name"];
+            $data->fileType  = $_FILES["importReturnFile"]["type"];
+            $data->localPath = $_FILES["importReturnFile"]["tmp_name"];
+            $data->size      = $_FILES["importReturnFile"]["size"];
+        }
+        else
+        {
+            $MIOLO->Information(_M('Some problems occurred on update the file. Please, try again.', $module));
+        }
+        
+        $businessFile = $MIOLO->getBusiness('basic', 'BusFile');
+        
+        // Data to put information on files
+        $dataFile = $businessFile->insertFile($data);
+        if ($dataFile == false)
+        {
+            $MIOLO->Information(_M('Some problems occurred on update the file. Please, try again.', $module));
+        }
+        else
+        {
+            if (SAGUFile::saveFileToLocal($data->localPath, $dataFile->fileId))
+            {
+                $args = array('event'=>'process_click',
+                              'fileId'=>$dataFile->fileId
+                             );
+                             
+                $goProcessUrl = $MIOLO->getActionURL($module, $action, '', $args);
+                $MIOLO->Information(_M('File uploaded with success. Please, click on "OK" button to continue the process', $module), $goProcessUrl);
+            }
+        }
+
+    }
+    
+   /**
+     * Event triggered when user set new from the toolbar
+     */
+    public function process_click($sender = null)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+        
+        $data->fileId        = MIOLO::_request('fileId');
+
+        $fileData = $this->getFileContent($data->fileId);
+
+        if (strlen((string)$fileData)>0)
+        {
+//             $data = explode("\n", $data);
+//             $count = count($data);
+
+            $header  = $fileData[0];
+            $trailer = $fileData[count($fileData)-1];
+            unset($fileData[0], $fileData[count($fileData)]);
+            $details = $fileData;
+
+            foreach($details as $key => $line)
+            {
+                $personName          = trim(substr($line, 43, 30));
+                $personId            = trim(substr($line, 73, 20));
+                $datePayment         = trim(substr($line, 154, 8));
+                $valuePayment        = trim(substr($line, 162, 15));
+
+                if( ( strlen((string) $datePayment ) > 0 ) && ( strlen((string) $valuePayment ) > 0) )
+                {
+                    $business = $MIOLO->getBusiness($module,'BusSalaryReturn');
+                    $data = $business->getEmployeeSalay($personId);
+                    
+                    if ($data->value == $valuePayment)
+                    {
+                        $valuePayment = $valuePayment / 100;
+                        $valuePayment = sprintf("%.2f", $valuePayment);
+                        
+                        $dataReturn[$key][0] = $personId . ' - ' . $personName;
+                        $dataReturn[$key][1] = _M('Payment OK', $module);
+                        $dataReturn[$key][2] = $datePayment;
+                        $dataReturn[$key][3] = $valuePayment;
+                        $dataReturn[$key][3] = $valuePayment;
+                    }
+                    else
+                    {
+                        $valuePayment = $valuePayment / 100;
+                        $valuePayment = sprintf("%.2f", $valuePayment);
+
+                        $value = $data->value / 100;
+                        $value = sprintf("%.2f", $value);
+
+                        $dataReturn[$key][0] = $personId . ' - ' . $personName;
+                        $dataReturn[$key][1] = _M('Payment OK', $module);
+                        $dataReturn[$key][2] = $datePayment;
+                        $dataReturn[$key][3] = $valuePayment;
+                        $dataReturn[$key][4] = $value;
+                    }
+                }
+            }
+
+        }
+        else
+        {
+            $goProcessUrl = $MIOLO->getActionURL($module, $action, '', null);
+            $MIOLO->Error(_M('The file is empty', $module), $goProcessUrl);
+        }
+
+
+        if( is_array($dataReturn) )
+        {
+            $cols = array(_M('Person', $module), _M('Description', $module), _M('Date', $module), _M('Value payment', $module), _M('Salary', $module));
+            
+            $tableRaw = new MTableRaw(_M('Details for return salary', $module), $dataReturn, $cols, true);
+            $tableRaw->setAlternate(true);
+            $tableRaw->addAttribute('width=\"100%\"');
+            
+            $this->addField($tableRaw);
+//         $this->addField(new MHiddenField('fileId', $this->getFormValue('fileId', $invoiceData->statisticsData->fileId)));
+        }
+        else
+        {
+                  
+                $goProcessURL = $MIOLO->getActionURL($module, $action);
+                $MIOLO->information(_M('The file don\'t have returns. The process is conclued !', $module), $goProcessURL);
+        }
+    }
+    
+    /**
+     * get the file content
+     *
+     * @param: $fileName: string with filename
+     *
+     * @return (string): String containing the file content
+     *
+     */
+    private function getFileContent($fileName)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        
+        $fileData = file(SAGUFile::getFilePath($fileName));
+
+        return $fileData;
+    }
+    
+
+}
+
+?>

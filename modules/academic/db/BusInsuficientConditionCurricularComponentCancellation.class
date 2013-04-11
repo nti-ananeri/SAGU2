@@ -1,0 +1,267 @@
+<?php
+
+/**
+ * This class contains methods to get, search, list, insert,
+ * update and delete register into acdInsuficientConditionCurricularComponentCancellation table.
+ *
+ * @author Armando Taffarel Neto [taffarel@solis.coop.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * Armando Taffarel Neto [taffarel@solis.coop.br]
+ *
+ * @since
+ * This class was created 19/12/2005
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2005 SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br
+ *
+ */
+
+class BusinessAcademicBusInsuficientConditionCurricularComponentCancellation extends Business
+{
+
+    public $db;
+
+    /**
+     * Class constructor
+     **/
+    public function BusinessAcademicBusInsuficientConditionCurricularComponentCancellation()
+    {
+        $this->db = $this->getDatabase();
+    }
+
+    /**
+     * Make a connection to the database
+     *
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module = is_null($module) ? 'academic' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+
+    /**
+     * Run de proccess that cancell de enrolls
+     *
+     * @author Jamiel Spezia [jamiel@solis.coop.br]
+     *
+     * @param $data (object): Object (curricular) containing the data to be inserted.
+     *
+     * @return On success, the course id of the inserted record. Otherwise, returns null.
+     *
+     */
+    function runInsuficientConditionCurricularComponentCancellation($periodId)
+    {
+        $sql = ' SELECT DISTINCT B.enrollId
+                  FROM acdCondition A,
+                        acdEnroll B,
+                        acdGroup H,
+                        acdLearningPeriod I
+                 WHERE A.curriculumId = B.curriculumID
+                   AND B.groupID = H.groupId
+                   AND H.learningPeriodId = I.learningPeriodId
+                   AND I.periodId = ?
+                   AND A.type = \'P\'
+                   AND B.statusId = ' . ENROLL_STATUS_ENROLLED . '
+                   AND A.curriculumid
+                   IN (
+                        SELECT C.curriculumId
+                          FROM acdEnroll C,
+                               acdGroup D,
+                               acdLearningPeriod E
+                         WHERE C.groupId = D.groupId
+                           AND D.learningPeriodId = E.learningPeriodId
+                           AND E.periodId = ?
+                           AND C.contractId = B.contractId
+                       )
+                   AND A.conditionCurriculumId
+                   IN (
+                        SELECT F.curriculumId
+                          FROM acdEnroll F
+                         WHERE F.contractId = B.contractId
+                           AND F.statusId NOT IN (' . ENROLL_STATUS_APPR_OR_EXC . ')   
+                       )
+                   AND A.conditionCurriculumId
+                   NOT IN (
+                        SELECT F.curriculumId
+                          FROM acdEnroll F
+                         WHERE F.contractId = B.contractId
+                           AND F.statusId IN (' . ENROLL_STATUS_APPR_OR_EXC . ')
+                       )   
+                   AND A.curriculumId
+                   NOT IN (
+                        SELECT G.curriculumId 
+                          FROM acdCurricularComponentUnblock G,
+                                acdLearningPeriod L
+                         WHERE G.contractId = B.contractId
+                           AND G.learningPeriodId = L.learningPeriodId
+                           AND L.periodId = ?
+                           AND G.isConditionBreak = TRUE
+                       );';
+
+        $args = array (
+                       $periodId,
+                       $periodId,
+                       $periodId
+                      );
+
+        $db     = $this->getDatabase();
+        $result = $db->query(SAGU::prepare($sql, $args));
+        
+        $$cnt = 0;
+        
+        for ($i=0; $i<count($result); $i++)
+        {
+            if ( $this->curricularComponentCancellation($result[$i][0]) )
+            {
+                $cnt++;
+            }
+        }
+        
+        return $cnt;
+    }
+    
+    function curricularComponentCancellation($enrollId)
+    {
+        $sql = 'UPDATE acdenroll
+                   SET statusId                = ' . ENROLL_STATUS_CANCELLED . ', 
+                       dateCancellation        = TO_DATE(?,\'' . MASK_DATE . '\'),
+                       hourCancellation        = (CURRENT_TIME),
+                       reasonCancellationId    = ' . AUTOMATIC_ENROLL_CANCELLATION_REASON_ID . '
+                 WHERE enrollId                = ?';
+
+        $args = array( 
+                       date(MASK_DATE_PHP),
+                       $enrollId
+                       );
+
+        $sqls = SAGU::prepare($sql, $args);
+
+        for ( $i=0; $i<count($sqls); $i++ )
+        {
+            $result = $this->db->execute($sqls[$i]);
+        }
+ 
+        return $result;
+    }
+    
+    function selectEnrollsToBeCancelled($periodId)
+    {
+        $db     = $this->getDatabase();
+
+        $sql1   = ' SELECT DISTINCT A.enrollId,
+                           E.personId,
+                           F.name,
+                           A.groupId,
+                           H.curricularComponentId,
+                           H.name,
+                           A.contractId,
+                           A.curriculumId,
+                           A.obsexploitation
+                      FROM acdEnroll A
+                INNER JOIN acdGroup B
+                        ON ( A.groupId = B.groupId )
+                INNER JOIN acdLearningPeriod C
+                        ON ( B.learningPeriodId = C.learningPeriodId )
+                INNER JOIN acdCondition D
+                        ON ( D.curriculumId = A.curriculumId )
+                INNER JOIN acdContract E
+                        ON ( E.contractId = A.contractId )
+           INNER JOIN ONLY basPhysicalPerson F
+                        ON ( E.personId = F.personId )
+                INNER JOIN acdCurriculum G
+                        ON ( G.curriculumId = A.curriculumId )
+                INNER JOIN acdCurricularComponent H
+                        ON ( H.curricularComponentId      = G.curricularComponentId AND
+                             H.curricularComponentVersion = G.curricularComponentVersion )
+                     WHERE C.periodId = \''.$periodId.'\'
+                       AND D.type = \'P\'
+                       AND A.statusId = ' . ENROLL_STATUS_ENROLLED . '
+                  ORDER BY 2 ';
+
+        //Irá trazer todos as matrículas do período referido, que estão com o status de "Matricula" e que são disciplinas-curriculos que possuem pré-requisito
+       $result1 = $db->query($sql1);
+
+        if ( is_array($result1) && ( count($result1) > 0 ) )
+        {
+            //Matriculas em disciplinas que possuem pré-requisito
+            foreach ( $result1 as $key1 => $value1 )
+            {
+                $sql2 = ' SELECT count(*)
+                            FROM acdCurricularComponentUnblock
+                           WHERE contractId       = \''.$value1[6].'\'
+                             AND curriculumId     = \''.$value1[7].'\'
+                             AND isConditionBreak = TRUE ';
+
+                $result2 = $db->query($sql2);
+
+                if ( $result2[0][0] > 0 )
+                {
+                    //Está cadastrada na tabela de desbloqueios. Não será uma possibilidade de cancelamento por insuficiência de requisito
+                }
+                else
+                {
+                    //Não está cadastrada em desbloqueios. Ou seja, é necessário cumprir o pré-requisito.
+                    $sql3 = ' SELECT A.enrollId
+                                FROM acdEnroll A
+                          INNER JOIN acdCondition B
+                                  ON ( B.conditionCurriculumId = A.curriculumId )
+                               WHERE B.curriculumId = '.$value1[7].'
+                                 AND A.contractId   = '.$value1[6].'
+                                 AND A.statusId IN (' . ENROLL_STATUS_APPR_OR_EXC . ')
+                                 AND B.type = \'P\'';
+
+                    $result3 = $db->query($sql3);
+
+                    if ( (strlen((string)$result3[0][0]) > 0) /*&& ( ! ( strlen((string)$result3[0][1]) > 0 ) )*/ )
+                    {
+                        //Está aprovado ou dispensado da disciplina que é pré-requisito. Não será uma possibilidade de cancelamento por insuficiência de requisito.
+                    }
+                    else
+                    {
+                        //Verifica se o aluno possui aproveitamento, se possuir aproveitamento para a disciplina pré-requisito, não aparecer como possibilidade de cancelamento
+                        if ( strlen((string)$value1[8]) > 0 )
+                        {
+                            //Possui aproveitamento para o pré-requisito
+                        }
+                        else
+                        {
+                            //Não possui aproveitamento para o pré-requisito
+                            $res[] = $value1;
+                        }
+                    }
+                }
+            }
+        }
+        else
+        {
+            //Não existem matrículas neste período em disciplinas que exigem pré-requisito. Não será uma possibilidade de cancelamento por insuficiência de requisito
+        }
+        return $res;
+    }
+}
+
+?>

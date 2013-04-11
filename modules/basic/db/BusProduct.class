@@ -1,0 +1,265 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for basProduct table
+ *
+ * @author Daniel Afonso Heisler [daniel@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 02/09/2005
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to manipulate the basProduct table
+ **/
+class BusinessBasicBusProduct extends Business
+{
+
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module = is_null($module) ? 'basic' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+    /**
+     * Return a specific record from the database
+     *
+     * @param $bossId (integer): Primary key of the record to be retrieved
+     *
+     * @return (object): Return an object of the type handled by the class
+     *
+     **/
+    public function getProduct($productId)
+    {
+        $sql = 'SELECT A.productId,
+                       A.name,
+                       A.shortName,
+                       A.description,
+                       B.productGroupId,
+                       B.name,
+                       B.description,
+                       A.barCode,
+                       A.userName,
+                       TO_CHAR(A.dateTime,\'' . MASK_TIMESTAMP . '\'),
+                       A.ipAddress
+                  FROM basProduct A
+            INNER JOIN basProductGroup B 
+                    ON ( A.productGroupId = B.productGroupId )
+                 WHERE A.productId = ?
+              ORDER BY B.name,
+                       A.name';
+
+        $args = array( $productId );
+
+        $db     = $this->getDatabase();
+        $result = $db->query(SAGU::prepare($sql, $args));
+
+        $product = new basProduct();
+        list ( $product->productId,
+               $product->name,
+               $product->shortName,
+               $product->description,
+               $product->productGroupId,
+               $product->productGroupName,
+               $product->productGroupDescription,
+               $product->barCode,
+               $product->userName,
+               $product->dateTime,
+               $product->ipAddress ) = $result[0];
+
+        return $product; 
+    }
+    
+    /**
+     * Do a search on the database table handled by the class
+     *
+     * @param $filters (object): Search filters
+     *
+     * @return (array): An array containing the search results
+     **/
+    public function searchProduct($filters)
+    {
+        $sql = 'SELECT A.productId,
+                       A.name,
+                       A.shortName,
+                       A.description,
+                       B.productGroupId,
+                       B.name,
+                       B.description,
+                       A.barCode,
+                       A.userName,
+                       TO_CHAR(A.dateTime,\'' . MASK_TIMESTAMP . '\'),
+                       A.ipAddress
+                  FROM basProduct A
+            INNER JOIN basProductGroup B 
+                    ON ( A.productGroupId = B.productGroupId ) ';
+
+        if ( strlen((string)$filters->productId) > 0 )
+        {
+            $where .= ' AND A.productId = ? ';
+            $args[] = $filters->productId;
+        }
+
+        if ( strlen((string)$filters->name) > 0 )
+        {
+            $where .= ' AND TO_ASCII(A.name) ILIKE TO_ASCII(?) ';
+            $args[] = $filters->name . '%';
+        }
+
+        if ( strlen((string)$filters->shortName) > 0 )
+        {
+            $where .= ' AND TO_ASCII(A.shortName) ILIKE TO_ASCII(?) ';
+            $args[] = $filters->shortName . '%';
+        }
+
+        if ( strlen((string)$filters->description) > 0 )
+        {
+            $where .= ' AND TO_ASCII(A.description) ILIKE TO_ASCII(?) ';
+            $args[] = $filters->description . '%';
+        }
+
+        if ( strlen((string)$filters->productGroupId) > 0 )
+        {
+            $where .= ' AND B.productGroupId = ? ';
+            $args[] = $filters->productGroupId;
+        }
+
+        unset($result);
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE ' . substr($where, 4) . ' ORDER BY B.name, A.name';
+            $db   = $this->getDatabase();
+            $result = $db->query(SAGU::prepare($sql, $args));
+            //$db->close();
+        }
+        return $result;
+
+    }
+
+    /**
+     * Insert a new record
+     *
+     * @param $data (object): An object of the type handled by the class
+     *
+     * @return True if succed, otherwise False
+     *
+     **/
+    public function insertProduct($data)
+    {
+        $sql = 'INSERT INTO basProduct
+                            (name,
+                             shortName,
+                             description,
+                             productGroupId,
+                             barCode)
+                     VALUES (?,?,?,?,?)';
+
+        $args = array( $data->name,
+                       $data->shortName,
+                       $data->description,
+                       $data->productGroupId,
+                       $data->barCode );
+
+        $db     = $this->getDatabase();
+        $result = $db->execute(SAGU::prepare($sql, $args));
+        //$db->close();
+
+        return $result;
+    }
+
+    /**
+     * Update data from a specific record
+     *
+     * @param $data (object): Data which will replace the old record data
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+    public function updateProduct($data)
+    {
+        $sql = 'UPDATE basProduct
+                   SET name           = ?,
+                       shortName      = ?,
+                       description    = ?,
+                       productGroupId = ?,
+                       barCode        = ?
+                 WHERE productId      = ?';
+
+        $args = array( $data->name,
+                       $data->shortName,
+                       $data->description,
+                       $data->productGroupId,
+                       $data->barCode,
+                       $data->productId );
+
+        $db   = $this->getDatabase();
+        $sqls = SAGU::prepare($sql, $args);
+
+        for ( $i=0; $i<count($sqls); $i++ )
+        {
+            $result = $db->execute($sqls[$i]);
+        }
+
+        //$db->close();
+
+        return $result;
+    }
+
+    /**
+     * Delete a record
+     *
+     * @param $bossId (string): Primary key for deletion
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+    public function deleteProduct($productId)
+    {
+
+        $sql = 'DELETE FROM basProduct
+                      WHERE productId = ?';
+
+        $args = array( $productId );
+
+        $db     = $this->getDatabase();
+        $result = $db->execute(SAGU::prepare($sql, $args));
+        //$db->close();
+
+        return $result;
+    }
+
+}
+
+?>

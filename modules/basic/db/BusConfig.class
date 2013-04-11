@@ -1,0 +1,436 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for basConfig table
+ *
+ * @author Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 01/09/2005
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to manipulate the acdCourseVersion table
+ **/
+class BusinessBasicBusConfig extends Business
+{
+
+    var $db;
+
+    /**
+     * Constructor
+     * 
+     * @param: none 
+     *
+     * @return: none
+     **/
+    public function BusinessBasicBusConfig()
+    {
+        $this->db = $this->getDatabase();
+    }
+
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module   = is_null($module) ? 'basic' : $module;
+        return $MIOLO->getDatabase($module);
+    }
+
+    /**
+     * List all records from the table handled by the class
+     *
+     * @param: None
+     *
+     * @returns (array): Return an array with the entire table
+     *
+     **/
+    public function listConfig()
+    {
+        return 'Not implemented';
+    }
+
+    /**
+     * Create a transaction
+     *
+     * @param: None
+     *
+     * @returns : None
+     *
+     **/
+    public function beginTransaction()
+    {       
+        $this->db->execute('BEGIN TRANSACTION');
+    }
+    
+    /**
+     * Commit a transaction
+     *
+     * @param: None
+     *
+     * @returns : None
+     *
+     **/
+    public function commitTransaction()
+    {       
+        $this->db->execute('COMMIT');
+    }
+    
+    /**
+     * Return a specific record from the database
+     *
+     * @param $moduleConfig (integer): Primary key of the record to be retrieved
+     * @param $parameter (integer): Primary key of the record to be retrieved
+     *
+     * @return (object): Return an object of the type handled by the class
+     *
+     **/
+    public function getConfig($moduleConfig, $parameter)
+    {
+        $sql = 'SELECT A.moduleConfig,
+                       A.parameter,
+                       A.value,
+                       A.description,
+                       A.type,
+                       A.isValueChangeable,
+                       A.userName,
+                       TO_CHAR(A.dateTime,\'' . MASK_TIMESTAMP . '\'),
+                       A.ipAddress
+                  FROM basConfig A
+                 WHERE A.moduleConfig = UPPER(?)
+                   AND A.parameter    = UPPER(?)';
+
+        $pk = array ( $moduleConfig,
+                      $parameter );
+
+        $db     = $this->getDatabase();
+        $result = $db->query(SAGU::prepare($sql, $pk, false));
+        //$db->close();
+
+        $basConfig = new BasConfig();
+
+        list ( $basConfig->moduleConfig,
+               $basConfig->parameter,
+               $basConfig->value,
+               $basConfig->description,
+               $basConfig->type,
+               $basConfig->isValueChangeable,
+               $basConfig->userName,
+               $basConfig->dateTime,
+               $basConfig->ipAddress ) = $result[0];
+
+        return $basConfig; 
+    }
+    
+    /**
+     * Do a search on the database table handled by the class
+     *
+     * @param $filters (object): Search filters
+     *
+     * @return (array): An array containing the search results
+     **/
+    public function searchConfig($filters)
+    {
+        $sql = 'SELECT A.moduleConfig,
+                       A.parameter,
+                       A.value,
+                       A.description,
+                       A.type,
+                       A.isValueChangeable
+                  FROM basConfig A';
+
+        if ( strlen((string)$filters->moduleConfig) > 0 )
+        {
+            $where .= ' AND A.moduleConfig ILIKE ?';
+            $args[] = $filters->moduleConfig;
+        }
+        if ( strlen((string)$filters->parameter) > 0 )
+        {
+            $where .= ' AND A.parameter ILIKE ?';
+            $args[] = $filters->parameter . '%';
+        }
+        if ( strlen((string)$filters->value) > 0 )
+        {
+            $where .= ' AND A.value ILIKE ?';
+            $args[] = $filters->value . '%';
+        }
+        if ( strlen((string)$filters->description) > 0 )
+        {
+            $where .= ' AND TO_ASCII(A.description) ILIKE TO_ASCII(?)';
+            $args[] = $filters->description. '%';
+        }
+        if ( strlen((string)$filters->type) > 0 )
+        {
+            $where .= ' AND A.type ILIKE ?';
+            $args[] = $filters->type;
+        }
+        
+        if ( strlen((string)$filters->isValueChangeable) > 0 )
+        {
+            $where .= ' AND A.isValueChangeable = ?';
+            $args[] = $filters->isValueChangeable;
+        }
+
+        unset($result);
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE ' . substr($where, 4) . '
+                   ORDER BY A.moduleConfig,
+                            A.parameter';
+
+            $db = $this->getDatabase();
+            $result = $db->query(SAGU::prepare($sql, $args, false));
+            //$db->close();
+        }
+
+        return $result;
+    }
+
+    /**
+     * Insert a new record
+     *
+     * @param $data (object): An object of the type handled by the class
+     *
+     * @return True if succed, otherwise False
+     *
+     **/
+    public function insertConfig($data)
+    {
+        if ( strlen((string)$data->isValueChangeable) == 0 )
+        {
+            $data->isValueChangeable = DB_TRUE;
+        }
+
+        $sql = 'INSERT INTO basConfig
+                            (moduleConfig,
+                             parameter,
+                             value,
+                             description,
+                             type,
+                             isValueChangeable)
+                     VALUES (UPPER(?),
+                             UPPER(?),
+                             ?,
+                             ?,
+                             UPPER(?),
+                             ?)';
+
+        $args = array( $data->moduleConfig,
+                       $data->parameter,
+                       $data->value,
+                       $data->description,
+                       $data->type,
+                       $data->isValueChangeable );
+
+        $db     = $this->getDatabase();
+        $result = $db->execute(SAGU::prepare($sql, $args, false));
+        //$db->close();
+
+        return $result;
+    }
+
+    /**
+     * Update data from a specific record
+     *
+     * @param $data (object): Data which will replace the old record data
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+    public function updateConfig($data)
+    {
+        if ( strlen((string)$data->isValueChangeable) == 0 )
+        {
+            $data->isValueChangeable = DB_TRUE;
+        }
+        
+        $sql = 'UPDATE basConfig
+                   SET value       = ?,
+                       description = ?,
+                       type        = UPPER(?),
+                       isValueChangeable  = ?
+                 WHERE moduleConfig = UPPER(?)
+                   AND parameter    = UPPER(?)';
+
+        $args = array( $data->value,
+                       $data->description,
+                       $data->type,
+                       $data->isValueChangeable,
+                       $data->moduleConfig,
+                       $data->parameter );
+                       
+        $db   = $this->getDatabase();
+        $sqls = SAGU::prepare($sql, $args, false);
+
+        for ( $i=0; $i<count($sqls); $i++ )
+        {
+            $result = $db->execute($sqls[$i]);
+        }
+
+        return $result;
+    }
+
+    /**
+     * Update data from a specific record
+     *
+     * @param $data (object): Data which will replace the old record data
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+    public function updateConfigValue($data)
+    {
+        $sql = ' UPDATE basConfig
+                    SET value        = ?
+                  WHERE moduleConfig = UPPER(?)
+                    AND parameter    = ? ';
+                   
+        $args = array( $data->value,
+                         $data->moduleConfig,
+                         $data->parameter 
+                       );
+
+        $result = $this->db->execute(SAGU::prepare($sql, $args, false) );
+
+        return $result;
+    }
+
+
+    /**
+     * Delete a record
+     *
+     * @param $moduleConfig (string): Primary key for deletion
+     * @param $parameter (string): Primary key for deletion
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+    public function deleteConfig($moduleConfig, $parameter)
+    {
+        $sql = 'DELETE FROM basConfig
+                      WHERE moduleConfig = UPPER(?)
+                        AND parameter    = UPPER(?)';
+
+        $pk = array ( $moduleConfig,
+                      $parameter );
+
+        $db     = $this->getDatabase();
+        $result = $db->execute(SAGU::prepare($sql, $pk, false));
+
+        return $result;
+    }
+
+    /**
+     * Get constants for a specified module
+     *
+     * @param $moduleConfig (string): Name of the module to load values from
+     *
+     * @return (array): An array of key pair values
+     *
+     **/
+    public function getModuleValues($moduleConfig)
+    {
+        $sql = 'SELECT parameter,
+                       value
+                  FROM basConfig
+                 WHERE moduleConfig = UPPER(?)';
+
+        $db     = $this->getDatabase();
+        $result = $db->query(SAGU::prepare($sql, $moduleConfig));
+        //$db->close();
+
+        return $result;
+    }
+
+    /**
+     * List all modules currently recorded.
+     *
+     * @param None
+     *
+     * @return (array): An array of key pair values
+     *
+     **/
+    function listModules()
+    {
+        $sql = 'SELECT DISTINCT moduleConfig, moduleConfig
+                           FROM basConfig
+                       ORDER BY moduleConfig';
+
+        $db     = $this->getDatabase();
+        $result = $db->query($sql);
+
+        for ( $i=0; $i<count($result); $i++ )
+        {
+            $res[$result[$i][0]] = $result[$i][1];
+        }
+        //$db->close();
+
+        return $res;
+    }
+
+
+    function setModuleValues()
+    {
+        $constants = $this->getModuleValues('basic');
+        if ( count($constants)>0 )
+        {
+            foreach ( $constants as $cnt )
+            {
+                define($cnt[0],$cnt[1]);
+            }
+        }
+    }
+    
+    /**
+     * List all available types.
+     * New types must be declared within this method.
+     *
+     * @param None
+     *
+     * @return (array): An array of key pair values
+     *
+     **/
+    function listTypes()
+    {
+        $args = array( 'INT'     => 'INTEGER',
+                       'CHAR'    => 'CHAR',
+                       'VARCHAR' => 'VARCHAR',
+                       'DATE'    => 'DATE',
+                       'FILE'    => 'FILE',
+                       'BOOLEAN' => 'BOOLEAN',
+                       'NULL'    => 'NULL' );
+
+        return $args;
+    }
+}
+
+?>

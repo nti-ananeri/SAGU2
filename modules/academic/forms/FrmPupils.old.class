@@ -1,0 +1,489 @@
+<?php
+
+/**
+ * Boletim document form
+ *
+ * @author Giovani Murilo Dantas Corrêa [gmurilo@isolution.inf.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Daniel Afonso Heisler [daniel@isolution.inf.br]
+ *
+ * @since
+ * Class created on 17/03/2008
+ *
+ * \b Organization: \n
+ * iSolution - Solucoes em TI \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2008 iSolution \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ **/
+
+/**
+ * Form to manipulate a contract document
+ **/
+class FrmPupils extends MForm
+{
+    private $home;
+
+    /**
+     * Class constructor
+     **/
+    function __construct($data)
+    {
+        $module = MIOLO::getCurrentModule();
+        $this->home   = $data->home;
+
+        parent::__construct(_M('Pupils', $module));
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+        $event    = MIOLO::_request('event');
+
+        $toolBar = new MToolBar('toolBar', $MIOLO->getActionURL($module, $action));
+        //$toolBar->hideButton('tbBtnNew');
+        $toolBar->hideButton('tbBtnSave');
+        $toolBar->hideButton('tbBtnBack');
+        $toolBar->hideButton('tbBtnReset');
+        $toolBar->hideButton('tbBtnSearch');
+        $toolBar->hideButton('tbBtnDelete');
+        $toolBar->enableButton('tbBtnPrint');
+
+        //favoritos
+        $enabledImage  = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-20x20.png');
+        $disabledImage = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-disabled-20x20.png');
+        $url           = $MIOLO->getActionURL($module, $this->home, null, array('function' => 'search', 'event' => 'bookmark'));
+        $toolBar->addButton('tbBtnBookmark', _M('Add to bookmarks', 'basic'), $url, null, true, $enabledImage, $disabledImage);
+
+        if ( MIOLO::_request('event') == 'bookmark' )
+        {
+            $MIOLO->getClass('basic', 'access');
+            access::insert(_M('Pupils',$module), $this->home, 'document-16x16.png', true);
+        }
+        //fim favoritos
+        $fields[]   = $toolBar;
+
+        $business = $MIOLO->getBusiness('basic', 'BusCompany');
+
+        $companyValue = is_array($this->getFormValue('companyId', $this->companyId->value)) ? $this->getFormValue('companyId',$this->companyId->value) : array(DEFAULT_COMPANY_CONF);
+        $companyLabel = new MText('companyLabel', _M('Company', 'basic') . ':');
+        $companyLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $companyLabel->setClass('m-caption m-caption-required');
+
+        $companyId = new MMultiSelection('companyId',
+                                    $companyValue,
+                                    null,
+                                    $business->listcompany());
+
+        $fields[] = new MHContainer('hctcompany', array ( $companyLabel, $companyId ) );
+        //Period
+        $busPeriod     = $MIOLO->getBusiness($module, 'BusPeriod');
+        $periodValue   = is_array($this->getFormValue('periodId', $this->periodId->value)) ? $this->getFormValue('periodId',$this->periodId->value) : array(CURRENT_PERIOD_ID);
+
+        $periodIdLabel = new MText('periodIdLabel',  _M('Period', 'academic') . ':');
+        $periodIdLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $periodIdLabel->setClass('m-caption m-caption-required');
+
+        $periodId      = new MMultiSelection('periodId', $periodValue, null, $busPeriod->listPeriod(), false, null, 10 );
+
+        $fields[]      = new MHContainer('hctPeriodId', array($periodIdLabel, $periodId));
+
+        $validators[]  = new MRequiredValidator('periodId', _M('Period', $module), 'required');
+
+        $fields[]      = new MSeparator();
+
+        $this->setFields($fields);
+        $this->setValidators($validators);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+        $this->setClose($MIOLO->getActionURL($module,substr($action,0,strrpos($action,':'))));
+    }
+
+    /**
+     * Event triggered when user chooses Search from the toolbar
+     **/
+    public function tbBtnPrint_click($sender = null)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $periodId = is_array($this->periodId->value) ? $this->periodId->value : array($this->periodId->value);
+        
+        /*
+         * leiaute - arquivo aluno
+         */
+
+        $busContract = $MIOLO->getBusiness($module, 'BusContract');
+        $contracts   = $busContract->listRegularPupilByPeriod($periodId);
+
+        if ( count($contracts)>0 )
+        {
+            $x = 0;
+            foreach ( $contracts as $contract )
+            {
+                unset($dataC);
+                unset($arrayStateContract);
+                unset($stateContract);
+                list ( $dataC->personId,
+                       $dataC->personName,
+                       $dataC->personCPF,
+                       $dataC->personBirthDate,
+                       $dataC->personSex,
+                       $dataC->personEthnicOriginId,
+                       $dataC->personMother,
+                       $dataC->nacionality,
+                       $dataC->inepCountry,
+                       $dataC->inepCity,
+                       $dataC->inepUF,
+                       $dataC->personSpecialNecessityId,
+                       $dataC->inepCourse,
+                       $dataC->courseId,
+                       $dataC->courseVersion,
+                       $dataC->courseName,
+                       $dataC->unitId,
+                       $dataC->unitDescription,
+                       $dataC->turnId,
+                       $dataC->turnDescription,
+                       $stateContract,
+                       $dateBeginCourse ) = $contract;
+                $arrayStateContract = explode(',', $stateContract);
+                $dataC->inDate = substr($arrayStateContract[1],1,10);
+                $dataC->contractId = substr($arrayStateContract[0], 1);
+                $dt = explode('/', $dataC->inDate);
+                $dt2 = explode('/', $dateBeginCourse);
+                $dataC->stateContractId = substr($arrayStateContract[2], 0, strlen((string)$arrayStateContract[2])-1); 
+                
+                if ( $dataC->inepCountry == '' )
+                {
+                    $dataC->inepCountry = 'BRA';
+                }
+
+                //Verifica se o nome do aluno possui ao menos 2 nomes (Nome e Sobrenome)
+                
+                $pupilName = explode(' ', trim($dataC->personName));
+                $motherName = explode(' ', trim($dataC->personMother));
+
+                $dataC->personName = ereg_replace("[^[:alpha:]^[:space:]]","",$dataC->personName);
+                $dataC->personMother = ereg_replace("[^[:alpha:]^[:space:]]","",$dataC->personMother);
+
+                if( strlen((string)$dt[1]) > 0 || strlen((string)$dt[2]) > 0 || strlen((string)$dt[0]) > 0 )
+                {
+                    $dtIngresso = mktime(0,0,0,strlen((string)$dt[1]) > 0 ? $dt[1] : 0 , strlen((string)$dt[0]) > 0 ? $dt[0] : 0, strlen((string)$dt[2]) > 0 ? $dt[2] : 0 );
+                    $dtBeginCourse = mktime(0,0,0,strlen((string)$dt2[1]) > 0 ? $dt2[1] : 0 , strlen((string)$dt2[0]) > 0 ? $dt2[0] : 0, strlen((string)$dt2[2]) > 0 ? $dt2[2] : 0 );
+                }
+                else
+                {
+                    $dtIngresso = 0;
+                }
+
+                // Verifica se os dados obrigatórios do aluno estão cadastrados
+                if ( count($pupilName) > 1 && ( SAGU::validateCPF($dataC->personCPF) || count($motherName) > 1 ) && $dtIngresso > 0 && $dtIngresso >= $dtBeginCourse  )
+                {
+                    //registro do aluno - registro 41
+                    if ( $dataC->personId != $oldPersonId )
+                    {
+                        $data[$x][1] = $this->formatNumber(41, 2); //Tipo de registro
+                        $data[$x][2] = ( strlen((string)$dataC->inep) > 0 ? $this->formatNumber($dataC->inep, 12) : '' ); //ID do Aluno no INEP
+                        $data[$x][3] = $this->formatString($dataC->personId,20,'V'); //ID do aluno na IES
+                        $data[$x][4] = $this->formatString(strtoupper($dataC->personName), 120, 'V'); //Nome
+                        $data[$x][5] = SAGU::convertInCPFWithoutDelimiters($dataC->personCPF); //CPF 
+                        $data[$x][6] = '';//$this->formatString('', 20); //Documento de estrangeiro ou passaporte
+                        $data[$x][7] = $this->formatNumber(str_replace('/', '', $dataC->personBirthDate), 8); //Data de nascimento
+                        $data[$x][8] = $this->formatNumber($dataC->personSex, 1); //Sexo
+                        $data[$x][9] = $this->formatNumber($dataC->personEthnicOriginId, 1); //Cor/Raça
+                        $data[$x][10]= $this->formatString(strtoupper($dataC->personMother), 120, 'V'); //Nome completo da mãe
+                        $data[$x][11]= $dataC->nacionality; // Nacionalidade
+                        $data[$x][12]= $this->formatNumber($dataC->inepUF, 2); //Uf de nascimento
+                        $data[$x][13]= $this->formatNumber($dataC->inepCity, 7);//Cidade de Nascimento
+                        $data[$x][14]= $this->formatString($dataC->inepCountry, 3);//País de Origem
+    
+                        //Parâmetros de deficiência
+                        
+                        $data[$x][15] = ( array_search($dataC->specialNecessityId, array(0,6)) || strlen((string)$dataC->specialNecessityId) == 0 )  ? '0' : '1'; //Aluno com deficiência
+                        $data[$x][16] = $this->formatNumber($dataC->personSpecialNecessityId == COMPLETE_BLIND_SPECIAL_NECESSITY_ID ? 1 : 0, 1, 'F'); //Tipo de deficiência - Cegueira
+                        $data[$x][17] = $this->formatNumber($dataC->personSpecialNecessityId == BLIND_SPECIAL_NECESSITY_ID ? 1 : 0, 1, 'F'); //Tipo de deficiência - Baixa visão
+                        $data[$x][18] = $this->formatNumber($dataC->personSpecialNecessityId == COMPLETE_DEAF_SPECIAL_NECESSITY_ID ? 1 : 0, 1, 'F'); //Tipo de deficiência - Surdez
+                        $data[$x][19] = $this->formatNumber($dataC->personSpecialNecessityId == DEAF_SPECIAL_NECESSITY_ID ? 1 : 0, 1, 'F'); //Tipo de deficiência - Auditiva
+                        $data[$x][20] = $this->formatNumber($dataC->personSpecialNecessityId == CRIPPLE_SPECIAL_NECESSITY_ID ? 1 : 0, 1, 'F'); //Tipo de deficiência - Física
+                        $data[$x][21] = $this->formatNumber($dataC->personSpecialNecessityId == BLIND_DEAF_SPECIAL_NECESSITY_ID ? 1 : 0, 1, 'F'); //Tipo de deficiência - Surdocegueira
+                        $data[$x][22] = $this->formatNumber($dataC->personSpecialNecessityId == MULTIPLY_SPECIAL_NECESSITY_ID ? 1 : 0, 1, 'F'); //Tipo de deficiência - Múltipla
+                        $data[$x][23] = $this->formatNumber($dataC->personSpecialNecessityId == INTELECTUAL_SPECIAL_NECESSITY_ID ? 1 : 0, 1, 'F'); //Tipo de deficiência - Mental
+
+                        if ( $data[$x][12] == '00' )
+                        {
+                            $data[$x][12] = '21';
+                            $data[$x][13] = '2111300';
+                            $data[$x][14] = 'BRA';
+                        }
+                        $x++;
+                    }
+
+                    //registro do vínculo do aluno com curso - registro 42
+
+                    $data[$x][1] = $this->formatNumber(42, 2); //Tipo do registro
+                    $data[$x][2] = $dataC->inepCourse; //ID do curso no INEP
+                    $data[$x][3] = '';//Código do pólo EAD no INEP
+
+                    $data[$x][4] = '2'; //Situação do vínculo 
+                    $data[$x][5] = $this->formatString(str_replace('/', '', $dataC->inDate), 8); //Data de ingresso validar se a mesma está de acordo com o curso
+                    $data[$x][6] = $this->formatNumber($dataC->stateContractId == WRITING_STATE_CONTRACT ? 1 : 0, 1, 'F'); //0 ou 1 Quando a Forma de Ingresso for vestibular
+                    $data[$x][7] = $this->formatNumber($dataC->stateContractId == STATE_CONTRACT_ID_PROUNI ? 1 : 0, 1, 'F'); //Se a forma de ingresso for o enem 0 ou 1
+                    $data[$x][8] = $this->formatNumber( array_search($dataC->stateContractId, array(WRITING_STATE_CONTRACT, STATE_CONTRACT_ID_PROUNI, STATE_CONTRACT_ID_EXTERNAL_TRANSFER_FROM)) === false ? 1 : 0, 1, 'F');  //Se a forma de ingresso for outro tipo 0 ou 1
+                    $data[$x][9] = '0'; //Forma de ingresso quando estrangeiro
+                    $data[$x][10]= $this->formatNumber( array_search($dataC->stateContractId, array(STATE_CONTRACT_ID_EXTERNAL_TRANSFER_FROM )) === false ? 0 : 1, 1, 'F'); //Forma de ingresso outras formas (Transferencia Externa / Transferencia Interna)
+
+                    //Se for reserva de vagas (Egresso...)
+                    
+                    $data[$x][11]= '0'; //Programa de reserva de vagas 
+                    $data[$x][12]= ''; //Etnico
+                    $data[$x][13]= ''; //Deficiência
+                    $data[$x][14]= ''; //Egresso rede publica
+                    $data[$x][15]= ''; //Renda Familiar / Social
+                    $data[$x][16]= ''; //Outros Programas
+
+                    if ( MODULE_FINANCE_INSTALLED == 'YES' )
+                    {
+                        $busIncentive = $MIOLO->getBusiness('finance', 'BusIncentive');
+                        $busLearningPeriod = $MIOLO->getBusiness($module, 'BusLearningPeriod');
+                        foreach($periodId as $period )
+                        {
+                            unset($objLearningPeriod);
+                            $objLearningPeriod->periodId = $period;
+                            $objLearningPeriod->courseId = $dataC->courseId;
+                            $objLearningPeriod->courseVersion = $dataC->courseVersion;
+                            $objLearningPeriod->turnId = $dataC->turnId;
+                            $objLearningPeriod->unitId = $dataC->unitId;
+                            unset($periodObj);
+                            unset($incentivos);
+                            $learningPeriod = $busLearningPeriod->searchLearningPeriod($objLearningPeriod);
+                            if ( count($learningPeriod) > 0 ) 
+                            {
+                                foreach ( $learningPeriod as $learningPeriodObj )
+                                {
+                                    unset($searchPeople);
+                                    $searchPeople->contractId   = $dataC->contractId;
+                                    $searchPeople->startDate    = $learningPeriodObj[3];
+                                    $searchIncentives = $busIncentive->searchIncentive($searchPeople);
+                                    if ( count($searchIncentives) > 0 )
+                                    {
+//if ( $dataC->personId == 4201370 )
+//vd($searchIncentives);
+                                        foreach ( $searchIncentives as $incentivo )
+                                        {
+                                            list ( $_incentiveId, $_personId, $_name, $_supporterId, $_name, $_incentiveTypeId, $_description, $_startDate, $_endDate, $_valueIsPercent, $_value, $_agglutinate, $_costCenterId, $_description, $_cancellationDate) = $incentivo;
+
+                                            if ( $_valueIsPercent == DB_TRUE && (float)$_value == 100.00 )
+                                            {
+                                                $incentivos[$_incentiveTypeId] = DB_TRUE;
+                                            }
+                                            else 
+                                            {
+                                                $incentivos[$_incentiveTypeId] = DB_FALSE;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        $incentivos = is_array($incentivos) ? $incentivos : array();
+
+                        //Financiamento Estudantil                    
+                        $data[$x][17] = $this->formatNumber(count($incentivos) > 0 ? 1 : 0, 1, 'F'); //Tipo de deficiência - Mental
+                        
+                        $incentivoObrigatorio = count($incentivos) > 0 ? 0 : '';
+
+//if ( $dataC->personId == 4202958 )
+//vd($searchIncentives);
+
+                        //Reembolsável
+                        //FIES
+                        if ( array_key_exists(INCENTIVE_TYPE_ID_FIES, $incentivos ) != false )
+                        {
+                            $data[$x][18]= $this->formatNumber(1, 1, 'F'); //Possui FIES
+                        }
+                        else
+                        {
+                            $data[$x][18]= $incentivoObrigatorio; //Não Possui FIES
+                        }
+
+                        $data[$x][19]= $incentivoObrigatorio; //Governo Estatual
+                        $data[$x][20]= $incentivoObrigatorio; //Governo Municipal
+                        $data[$x][21]= $incentivoObrigatorio; //IES
+                        $data[$x][22]= $incentivoObrigatorio; //Entidades Externas                        
+                        $data[$x][23]= $incentivoObrigatorio; //Outros
+//if ( $dataC->personId == 4202958 )
+//vd($incentivos);
+                        //Não Reembolsáveis
+                        //Verificar se o aluno é prouni ou tem algum tipo de bolsa no semestre q ele não vai precisar pagar
+                        if ( array_key_exists(INCENTIVE_TYPE_ID_PROUNI, $incentivos ) != false )
+                        {
+                            if ( $incentivos[INCENTIVE_TYPE_ID_PROUNI] == DB_TRUE )
+                            {
+                                $data[$x][24]= $this->formatNumber(1, 1, 'F'); //ProUni Integral
+                                $data[$x][25]= $this->formatNumber(0, 1, 'F'); //ProUni Parcial
+//if ( $dataC->personId == 4202958 )
+//vd($incentivos);
+                            }
+                            else
+                            {
+                                $data[$x][24]= $this->formatNumber(0, 1, 'F'); //ProUni Integral
+                                $data[$x][25]= $this->formatNumber(1, 1, 'F'); //ProUni Parcial
+                            }
+                        }
+                        else
+                        {
+                            $data[$x][24]= $incentivoObrigatorio; //ProUni Integral
+                            $data[$x][25]= $incentivoObrigatorio; //ProUni Integral
+                        }
+
+
+                        $data[$x][26]= $incentivoObrigatorio; //Governo Estadual
+                        $data[$x][27]= $incentivoObrigatorio; //Governo Municipal
+
+                        if ( array_key_exists(INCENTIVE_TYPE_ID_FIES, $incentivos ) != false )
+                        {
+                                $data[$x][24]= $this->formatNumber(1, 1, 'F'); //ProUni Integral
+                                $data[$x][25]= $this->formatNumber(0, 1, 'F'); //ProUni Parcial
+//if ( $dataC->personId == 4202958 )
+//vd($incentivos);
+                        }
+                        else
+                        {
+                            $data[$x][28]= $incentivoObrigatorio; //ProUni Integral
+                        }
+
+                        if ( array_key_exists(INCENTIVE_TYPE_ID_PROUNI, $incentivos) == false && array_key_exists(INCENTIVE_TYPE_ID_FIES, $incentivos) == false && count($incentivos) > 0 )
+                        {
+                            $data[$x][28]= '1'; //IES
+                        }
+                        else
+                        {
+                            $data[$x][28]= $incentivoObrigatorio; //IES
+                        }
+
+                        $data[$x][29]= $incentivoObrigatorio; //Entidades Externas
+                        $data[$x][30]= $incentivoObrigatorio; //Outros
+    
+                        //Auxilio Financeiro
+                        $data[$x][31]= '0'; //Apoio Social
+                        $data[$x][32]= '0'; //Apoio Social - Alimentação
+                        $data[$x][33]= '0'; //Apoio Social - Moradia
+                        $data[$x][34]= '0'; //Apoio Social - Transporte
+                        $data[$x][35]= '0'; //Apoio Social - Didático
+                        $data[$x][36]= '0'; //Apoio SOcial - Bolsa Trabalho
+                        $data[$x][37]= '0'; //Apoio Social - Bolsa Permanência (Apenas proUni integral)
+    
+                        $data[$x][38]= '0'; //Atividade de Formação Complementar
+                        $data[$x][39]= '0'; //Atividade de Formação Complementar - Pesquisa
+                        $data[$x][40]= '0'; //Atividade de Formação Complementar - Extensão
+                        $data[$x][41]= '0'; //Atividade de Formação Complementar - Monitoria
+                        $data[$x][42]= '0'; 
+                        $data[$x][43]= '0';
+                        $data[$x][44]= '0';
+                        $data[$x][45]= '0';
+                        $data[$x][46]= '0';
+                    }
+                    else
+                    {
+                        for ( $y = 17; $y < 31; $y++ )
+                        {
+                            $data[$x][$y] = '';
+                        }
+                        for ( $y = 31; $y < 47; $y++ )
+                        {
+                            $data[$x][$y] = '0';
+                        }
+                    }
+                    $x++;
+                    $oldPersonId = $dataC->personId;
+                }
+            }
+        }
+        $data2 = $data;
+        unset($data);
+        //cabeçalho do arquivo - registro 40
+        $basCompany = $MIOLO->getBusiness('basic', 'BusCompany');
+        $companys = $this->getFormValue('companyId');
+        $company = $basCompany->getCompany($companys[0]);
+
+
+        $data = $this->formatNumber(40, 2) . '|'; //tipo de registro
+        $data .= $company->inep . '|'; //código da IES
+        $data .= $this->formatNumber(4, 1); //tipo de arquivo
+        $data .= "\n";
+
+        if ( count ($data2) > 0 )
+        {
+            foreach ($data2 as $id => $d )
+            {
+                if ( ! (array_search( $d[1], array ( 40, 41, 42 ) ) === false) && ! ( $data2[$id+1][1] == $data2[$id][1] && $data2[$id+1][2] == $data2[$id][2] && $data[1] == 42 ) )
+                {
+                    $data .= implode('|', $d) . "\n";
+                }
+            }
+        }
+        SAGU::returnAsFile(_M('Pupils', $module) . '_' . date(dmY) . '.txt', $data, 'text/txt');
+    }
+
+    //Preenche com espaços à direita
+    function formatString($value, $len, $fixo_ou_variavel='F')
+    {
+        if ( $fixo_ou_variavel == 'F' )
+        {
+            return sprintf("%-{$len}.{$len}s", $value);
+        }
+        else
+        {
+            return substr($value, 0, $len);
+        }
+    }
+
+    //Preenche com zeros "0" à esquerda
+    function formatNumber($value, $len, $fixo_ou_variavel='F')
+    {
+        if ( $fixo_ou_variavel == 'F' )
+        {
+            return sprintf("%0{$len}.{$len}d", $value);
+        }
+        else
+        {
+            return substr($value, 0, $len);
+        }
+    }
+    
+    function verificaSituacaoDoVinculo($situacao)
+    {
+        /** 
+          Códigos de Retornos
+          1 - Provável formando
+          2 - Cursando
+          3 - Matrícula trancada
+          4 - Desvinculado do Curso
+          6 - Formado
+          7 - Falecido
+          Obs: A opção 6 só deverá ser informada se na opção do curso tiver sido informado que permite concluinte no curso
+        **/
+        return 2;
+    }
+
+}
+
+?>

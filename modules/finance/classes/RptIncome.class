@@ -1,0 +1,675 @@
+<?
+/**
+*
+* @author Giovani Murilo Dantas Correa [gmurilo@isolution.inf.br]
+*
+* $version: $Id$
+*
+* \b Maintainers \n
+* Daniel Afonso Heisler [daniel@isolution.inf.br]
+*
+* @since
+* Class created on 25/03/2009
+*
+* \b Organization: \n
+* iSolution - Soluções de Internet \n
+* The iSolution TEAM
+*
+* \b CopyLeft: \n
+* CopyLeft (L) 2007 iSolution - Soluções de Internet \n
+*
+* \b License \n
+* Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+*
+* \b History \n
+* See history in CVS repository: http://isolution.inf.br   
+*
+**/
+set_time_limit(0);        
+$MIOLO = MIOLO::getInstance();
+$module = 'finance';
+
+define('FPDF_FONTPATH', $MIOLO->getModulePath('basic', '/classes/fpdf/font/'));
+$MIOLO->Uses('classes/fpdf/pdf.php', 'basic');
+
+class RptIncome extends PDF
+{
+    var $module = 'finance';
+
+    public function __construct($filters = NULL)
+    {
+        $MIOLO = MIOLO::getInstance();
+        foreach($filters as $item => $value )
+        {
+            if(!$this->headerData->{$item} )
+            {
+                $this->headerData->{$item} = $value;
+            }
+        }
+        $MIOLO  = MIOLO::getInstance();
+        $busIncome = $MIOLO->getBusiness('finance','BusIncome'); 
+        $this->data = $busIncome->getIncome( $this->headerData );
+        $this->title = strtoupper(_M('Income report', 'finance'));
+        parent::__construct();
+        $this->useUserInfo = true;
+        $this->addPage($filters->reportType == 1 ? 'P' : 'L', 'mm', 'A4');
+        $this->aliasNbPages();   
+        $this->generatePDF();
+    }
+
+    public function synthetic()
+    {
+        //echo 'Sintético';
+        $data = $this->data;
+        unset($this->data);
+        foreach($data as $titulo)
+        {
+            $d = explode("/",$titulo->vencimento);
+            $cursoX[$titulo->courseId]   = $titulo->curso;
+            $origemX[$titulo->origem]    = $titulo->origemDescription;
+            //Prevista
+            $this->data[$d[1]][$titulo->origem][$titulo->courseId]->receitaNominal  += $titulo->receitaNominal;
+            $this->data[$d[1]][$titulo->origem][$titulo->courseId]->receitaPrevista += $titulo->receitaPrevista;
+            $descontos = ($titulo->receitaNominal-($titulo->receitaPrevista+$titulo->incentivos));
+            $this->data[$d[1]][$titulo->origem][$titulo->courseId]->descontos       += $descontos;
+            $this->data[$d[1]][$titulo->origem][$titulo->courseId]->incentivos      += $titulo->incentivos;
+            $this->data[$d[1]][$titulo->origem][$titulo->courseId]->totalTitulos++;
+            
+            //Realizada
+            if( $titulo->receitaRealizada > 0 )
+            {
+                $this->data[$d[1]][$titulo->origem][$titulo->courseId]->receitaNominalRR    += $titulo->receitaNominal;
+                $this->data[$d[1]][$titulo->origem][$titulo->courseId]->receitaRealizada    += $titulo->receitaRealizada;
+                $this->data[$d[1]][$titulo->origem][$titulo->courseId]->receitaPrevistaRR   += $titulo->receitaPrevista;
+                $this->data[$d[1]][$titulo->origem][$titulo->courseId]->incentivosRR        += $titulo->incentivos;
+                $this->data[$d[1]][$titulo->origem][$titulo->courseId]->descontosRR         += $titulo->descontos;
+                $this->data[$d[1]][$titulo->origem][$titulo->courseId]->jurosRR             += $titulo->juros;
+                if( $titulo->valorEmAberto <= 0 )
+                {
+                    $this->data[$d[1]][$titulo->origem][$titulo->courseId]->ttTotalmenteRR++;
+                }
+                else
+                {
+                    $this->data[$d[1]][$titulo->origem][$titulo->courseId]->totalTitulosRA++;                    
+                    $this->data[$d[1]][$titulo->origem][$titulo->courseId]->ttParcialmenteRR++;
+                }
+            }
+            else
+            {
+            //Não realizada
+                $date = split( '/', $titulo->vencimento );
+                $dataVencimento = mktime(0,0,0, (int)$date[1], (int)$date[0], (int)$date[2]);
+                unset($date);
+                $date = split( '/', $titulo->dataAtual );
+                $dataAtual = mktime(0,0,0, (int)$date[1], (int)$date[0], (int)$date[2]);
+                if( $titulo->valorEmAberto <= 0  && $dataAtual > $dataVencimento )
+                {
+                    $this->data[$d[1]][$titulo->origem][$titulo->courseId]->ttTotalmenteRR++;
+                    $this->data[$d[1]][$titulo->origem][$titulo->courseId]->receitaNominalRR    += $titulo->receitaNominal;
+                    $this->data[$d[1]][$titulo->origem][$titulo->courseId]->receitaRealizada    += $titulo->receitaRealizada;
+                    $this->data[$d[1]][$titulo->origem][$titulo->courseId]->receitaPrevistaRR   += $titulo->receitaPrevista;
+                    $this->data[$d[1]][$titulo->origem][$titulo->courseId]->incentivosRR        += $titulo->incentivos;
+                    $this->data[$d[1]][$titulo->origem][$titulo->courseId]->descontosRR         += $titulo->descontos;
+                    $this->data[$d[1]][$titulo->origem][$titulo->courseId]->jurosRR             += $titulo->juros;
+                }
+                else
+                {
+                    $this->data[$d[1]][$titulo->origem][$titulo->courseId]->receitaNominalRA    += $titulo->receitaNominal;
+                    $this->data[$d[1]][$titulo->origem][$titulo->courseId]->receitaPrevistaRA   += $titulo->receitaPrevista;
+                    $this->data[$d[1]][$titulo->origem][$titulo->courseId]->receitaEmAberto     += $titulo->valorEmAbertoAtualizado;
+                    $this->data[$d[1]][$titulo->origem][$titulo->courseId]->incentivosRA        += $titulo->incentivos;
+                    $this->data[$d[1]][$titulo->origem][$titulo->courseId]->descontosRA         += $titulo->descontos;
+                    $this->data[$d[1]][$titulo->origem][$titulo->courseId]->descontosNRA         += $descontos;
+                    $this->data[$d[1]][$titulo->origem][$titulo->courseId]->jurosRA             += $titulo->juros;
+                    if ( $dataAtual > $dataVencimento )
+                    {
+                        $this->data[$d[1]][$titulo->origem][$titulo->courseId]->totalTitulosRA++;
+                    }
+                    else
+                    {
+                        $this->data[$d[1]][$titulo->origem][$titulo->courseId]->receitaEmAberto     += $titulo->receitaPrevista;
+                    }
+                }  
+            }
+        }
+        foreach( $this->data as $meses => $mes )
+        {
+            $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->fontSizeBody);
+            $this->SetFillColor(220,220,220);
+            $this->cell($this->psize, $this->lsize, 'Mês: '. $meses, 1, null, 'R', 1);
+            $this->ln();
+            //campos para totalizacoes
+            //receita prevista
+            $l1 = array('receitaNominal', 'descontos', 'incentivos', 'receitaPrevista', 'totalTitulos');
+            //receita realizada
+            $l2 = array('receitaNominalRR', 'receitaPrevistaRR', 'receitaRealizada', 'incentivosRR', 'descontosRR', 'jurosRR', 'ttTotalmenteRR', 'ttParcialmenteRR');
+            //receita nao realizada
+            $l3 = array('receitaNominalRA', 'receitaPrevistaRA', 'receitaEmAberto', 'descontosRA', 'incentivosRA', 'totalTitulosRA');
+            $ltotal = array_merge($l1, $l2, $l3);
+            foreach( $mes as $origens => $origem )
+            {
+                $this->SetFillColor(200,200,200);
+                $this->cell($this->psize, $this->lsize, 'Origem: '. $origemX[$origens], 1, null, 'C', 1);
+                $this->ln();
+                foreach( $origem as $cursos => $curso )
+                {
+                    $this->SetFillColor(180,180,180);
+                    $this->ln();
+                    $this->setFont(DEFAULT_REPORT_FONT, 'BI', $this->fontSizeBody);
+                    $this->cell($this->psize, $this->lsize, 'Curso: '. $cursoX[$cursos], 1, null, 'L', 1);
+                    $this->ln();
+                    $this->setFont(DEFAULT_REPORT_FONT, 'BI', $this->fontSizeBody);
+                    $this->SetFillColor(220,220,220);
+                    $this->cell($this->psize, $this->lsize, _M('RECEITA PREVISTA', 'finance'), 1, null, 'C', 1);
+                    $this->ln();
+                    $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->fontSizeBody);
+                    $this->cell($this->psize/5, $this->lsize, 'BRUTA', 1, null, 'C');
+                    $this->cell($this->psize/5, $this->lsize, 'DESCONTOS', 1, null, 'C');
+                    $this->cell($this->psize/5, $this->lsize, 'INCENTIVOS', 1, null, 'C');
+                    $this->cell($this->psize/5, $this->lsize, 'LÍQUIDA', 1, null, 'C');
+                    $this->cell($this->psize/5, $this->lsize, 'TÍTULOS', 1, null, 'C');
+                    $this->ln();
+                    $this->setFont(DEFAULT_REPORT_FONT, '', $this->fontSizeBody);
+                    $this->cell($this->psize/5, $this->lsize, SAGU::formatNumber($curso->receitaNominal), 1, null, 'R');
+                    $this->cell($this->psize/5, $this->lsize, SAGU::formatNumber($curso->descontos), 1, null, 'R');
+                    $this->cell($this->psize/5, $this->lsize, SAGU::formatNumber($curso->incentivos), 1, null, 'R');
+                    $this->cell($this->psize/5, $this->lsize, SAGU::formatNumber($curso->receitaPrevista), 1, null, 'R');
+                    $this->cell($this->psize/5, $this->lsize, $curso->totalTitulos, 1, null, 'R');
+                    $this->ln();
+                    $this->setFont(DEFAULT_REPORT_FONT, 'BI', $this->fontSizeBody);
+                    $this->SetFillColor(220,220,220);
+                    $this->cell($this->psize, $this->lsize, _M('RECEITA REALIZADA', 'finance'), 1, null, 'C', 1);
+                    $this->ln();
+                    $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->fontSizeBody);
+                    $this->cell($this->psize/8, $this->lsize, 'DA RECEITA BRUTA', 1, null, 'C');
+                    $this->cell($this->psize/8, $this->lsize, 'DA RECEITA LIQUIDA', 1, null, 'C');
+                    $this->cell($this->psize/8, $this->lsize, 'REALIZADO', 1, null, 'C');
+                    $this->cell($this->psize/8, $this->lsize, 'INCENTIVOS', 1, null, 'C');
+                    $this->cell($this->psize/8, $this->lsize, 'DESCONTOS', 1, null, 'C');
+                    $this->cell($this->psize/8, $this->lsize, 'JUROS', 1, null, 'C');
+                    $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->fontSizeBody-2);
+                    $this->cell($this->psize/8, $this->lsize, 'TITULOS PAGOS TOTALMENTE', 1, null, 'C');
+                    $this->cell($this->psize/8, $this->lsize, 'TITULOS PAGOS PARCIALMENTE', 1, null, 'C');
+                    $this->ln();
+                    $this->setFont(DEFAULT_REPORT_FONT, '', $this->fontSizeBody);
+                    $this->cell($this->psize/8, $this->lsize, SAGU::formatNumber($curso->receitaNominalRR), 1, null, 'R');
+                    $this->cell($this->psize/8, $this->lsize, SAGU::formatNumber($curso->receitaPrevistaRR), 1, null, 'R');
+                    $this->cell($this->psize/8, $this->lsize, SAGU::formatNumber($curso->receitaRealizada), 1, null, 'R');
+                    $this->cell($this->psize/8, $this->lsize, SAGU::formatNumber($curso->incentivosRR), 1, null, 'R');
+                    $this->cell($this->psize/8, $this->lsize, SAGU::formatNumber($curso->descontosRR), 1, null, 'R');
+                    $this->cell($this->psize/8, $this->lsize, SAGU::formatNumber($curso->jurosRR), 1, null, 'R');
+                    $this->cell($this->psize/8, $this->lsize, $curso->ttTotalmenteRR, 1, null, 'R');
+                    $this->cell($this->psize/8, $this->lsize, $curso->ttParcialmenteRR, 1, null, 'R');
+                     $this->ln();
+                    $this->setFont(DEFAULT_REPORT_FONT, 'BI', $this->fontSizeBody);
+                    $this->SetFillColor(220,220,220);
+                    $this->cell($this->psize, $this->lsize, _M('RECEITA NÃO REALIZADA', 'finance'), 1, null, 'C', 1);
+                    $this->ln();
+                    $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->fontSizeBody);
+                    $this->cell($this->psize/7, $this->lsize, 'BRUTA', 1, null, 'C');
+                    $this->cell($this->psize/7, $this->lsize, 'LÍQUIDA', 1, null, 'C');
+                    $this->cell($this->psize/7, $this->lsize, 'ATUALIZADA', 1, null, 'C');
+                    $this->cell($this->psize/7, $this->lsize, 'DESCONTOS', 1, null, 'C');
+                    $this->cell($this->psize/7, $this->lsize, 'INCENTIVOS', 1, null, 'C');
+                    $this->cell($this->psize/7, $this->lsize, 'TOTAL TÍTULOS', 1, null, 'C');
+                    $this->cell($this->psize/7, $this->lsize, '% INADIMPLÊNCIA', 1, null, 'C');
+                    $this->ln();
+                    $this->setFont(DEFAULT_REPORT_FONT, '', $this->fontSizeBody);
+                    $this->cell($this->psize/7, $this->lsize, SAGU::formatNumber($curso->receitaNominalRA), 1, null, 'R');
+                    $this->cell($this->psize/7, $this->lsize, SAGU::formatNumber($curso->receitaPrevistaRA), 1, null, 'R');
+                    $this->cell($this->psize/7, $this->lsize, SAGU::formatNumber($curso->receitaEmAberto), 1, null, 'R');
+                    $this->cell($this->psize/7, $this->lsize, SAGU::formatNumber($curso->descontosNRA), 1, null, 'R');
+                    $this->cell($this->psize/7, $this->lsize, SAGU::formatNumber($curso->incentivosRA), 1, null, 'R');
+                    $this->cell($this->psize/7, $this->lsize, $curso->totalTitulosRA, 1, null, 'R');
+                    $this->cell($this->psize/7, $this->lsize, SAGU::formatNumber(($curso->totalTitulosRA/$curso->totalTitulos)*100), 1, null, 'R');
+                    $this->ln();
+                    foreach ( $ltotal as $item => $value )
+                    {
+                        $totalPorOrigens[$meses][$origens]->$value += $curso->$value ;
+                        $totalPorMes[$meses]->$value += $curso->$value;
+                    }
+                }
+                $this->SetFillColor(180,180,180);
+                $this->ln();
+                $this->setFont(DEFAULT_REPORT_FONT, 'BI', $this->fontSizeBody);
+                $this->cell($this->psize, $this->lsize, 'Total por Origem: '. $origemX[$origens] . ' / Mês ( '. $meses .' )', 1, null, 'L', 1);
+                $this->ln();
+                $this->setFont(DEFAULT_REPORT_FONT, 'BI', $this->fontSizeBody);
+                $this->SetFillColor(220,220,220);
+                $this->cell($this->psize, $this->lsize, _M('RECEITA PREVISTA', 'finance'), 1, null, 'C', 1);
+                $this->ln();
+                $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->fontSizeBody);
+                $this->cell($this->psize/5, $this->lsize, 'BRUTA', 1, null, 'C');
+                $this->cell($this->psize/5, $this->lsize, 'DESCONTOS', 1, null, 'C');
+                $this->cell($this->psize/5, $this->lsize, 'INCENTIVOS', 1, null, 'C');
+                $this->cell($this->psize/5, $this->lsize, 'LÍQUIDA', 1, null, 'C');
+                $this->cell($this->psize/5, $this->lsize, 'TÍTULOS', 1, null, 'C');
+                $this->ln();
+                $this->setFont(DEFAULT_REPORT_FONT, '', $this->fontSizeBody);
+                $this->cell($this->psize/5, $this->lsize, SAGU::formatNumber($totalPorOrigens[$meses][$origens]->receitaNominal), 1, null, 'R');
+                $this->cell($this->psize/5, $this->lsize, SAGU::formatNumber($totalPorOrigens[$meses][$origens]->descontos), 1, null, 'R');
+                $this->cell($this->psize/5, $this->lsize, SAGU::formatNumber($totalPorOrigens[$meses][$origens]->incentivos), 1, null, 'R');
+                $this->cell($this->psize/5, $this->lsize, SAGU::formatNumber($totalPorOrigens[$meses][$origens]->receitaPrevista), 1, null, 'R');
+                $this->cell($this->psize/5, $this->lsize, $totalPorOrigens[$meses][$origens]->totalTitulos, 1, null, 'R');
+                $this->ln();
+                $this->setFont(DEFAULT_REPORT_FONT, 'BI', $this->fontSizeBody);
+                $this->SetFillColor(220,220,220);
+                $this->cell($this->psize, $this->lsize, _M('RECEITA REALIZADA', 'finance'), 1, null, 'C', 1);
+                $this->ln();
+                $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->fontSizeBody);
+                $this->cell($this->psize/8, $this->lsize, 'DA RECEITA BRUTA', 1, null, 'C');
+                $this->cell($this->psize/8, $this->lsize, 'DA RECEITA LIQUIDA', 1, null, 'C');
+                $this->cell($this->psize/8, $this->lsize, 'REALIZADO', 1, null, 'C');
+                $this->cell($this->psize/8, $this->lsize, 'INCENTIVOS', 1, null, 'C');
+                $this->cell($this->psize/8, $this->lsize, 'DESCONTOS', 1, null, 'C');
+                $this->cell($this->psize/8, $this->lsize, 'JUROS', 1, null, 'C');
+                $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->fontSizeBody-2);
+                $this->cell($this->psize/8, $this->lsize, 'TITULOS PAGOS TOTALMENTE', 1, null, 'C');
+                $this->cell($this->psize/8, $this->lsize, 'TITULOS PAGOS PARCIALMENTE', 1, null, 'C');
+                $this->ln();
+                $this->setFont(DEFAULT_REPORT_FONT, '', $this->fontSizeBody);
+                $this->cell($this->psize/8, $this->lsize, SAGU::formatNumber($totalPorOrigens[$meses][$origens]->receitaNominalRR), 1, null, 'R');
+                $this->cell($this->psize/8, $this->lsize, SAGU::formatNumber($totalPorOrigens[$meses][$origens]->receitaPrevistaRR), 1, null, 'R');
+                $this->cell($this->psize/8, $this->lsize, SAGU::formatNumber($totalPorOrigens[$meses][$origens]->receitaRealizada), 1, null, 'R');
+                $this->cell($this->psize/8, $this->lsize, SAGU::formatNumber($totalPorOrigens[$meses][$origens]->incentivosRR), 1, null, 'R');
+                $this->cell($this->psize/8, $this->lsize, SAGU::formatNumber($totalPorOrigens[$meses][$origens]->descontosRR), 1, null, 'R');
+                $this->cell($this->psize/8, $this->lsize, SAGU::formatNumber($totalPorOrigens[$meses][$origens]->jurosRR), 1, null, 'R');
+                $this->cell($this->psize/8, $this->lsize, $totalPorOrigens[$meses][$origens]->ttTotalmenteRR, 1, null, 'R');
+                $this->cell($this->psize/8, $this->lsize, $totalPorOrigens[$meses][$origens]->ttParcialmenteRR, 1, null, 'R');
+                $this->ln();
+                $this->setFont(DEFAULT_REPORT_FONT, 'BI', $this->fontSizeBody);
+                $this->SetFillColor(220,220,220);
+                $this->cell($this->psize, $this->lsize, _M('RECEITA NÃO REALIZADA', 'finance'), 1, null, 'C', 1);
+                $this->ln();
+                $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->fontSizeBody);
+                $this->cell($this->psize/7, $this->lsize, 'BRUTA', 1, null, 'C');
+                $this->cell($this->psize/7, $this->lsize, 'LÍQUIDA', 1, null, 'C');
+                $this->cell($this->psize/7, $this->lsize, 'ATUALIZADA', 1, null, 'C');
+                $this->cell($this->psize/7, $this->lsize, 'DESCONTOS', 1, null, 'C');
+                $this->cell($this->psize/7, $this->lsize, 'INCENTIVOS', 1, null, 'C');
+                $this->cell($this->psize/7, $this->lsize, 'TOTAL TÍTULOS', 1, null, 'C');
+                $this->cell($this->psize/7, $this->lsize, '% INADIMPLÊNCIA', 1, null, 'C');
+                $this->ln();
+                $this->setFont(DEFAULT_REPORT_FONT, '', $this->fontSizeBody);
+                $this->cell($this->psize/7, $this->lsize, SAGU::formatNumber($totalPorOrigens[$meses][$origens]->receitaNominalRA), 1, null, 'R');
+                $this->cell($this->psize/7, $this->lsize, SAGU::formatNumber($totalPorOrigens[$meses][$origens]->receitaPrevistaRA), 1, null, 'R');
+                $this->cell($this->psize/7, $this->lsize, SAGU::formatNumber($totalPorOrigens[$meses][$origens]->receitaEmAberto), 1, null, 'R');
+                $this->cell($this->psize/7, $this->lsize, SAGU::formatNumber($totalPorOrigens[$meses][$origens]->descontosNRA), 1, null, 'R');
+                $this->cell($this->psize/7, $this->lsize, SAGU::formatNumber($totalPorOrigens[$meses][$origens]->incentivosRA), 1, null, 'R');
+                $this->cell($this->psize/7, $this->lsize, $totalPorOrigens[$meses][$origens]->totalTitulosRA, 1, null, 'R');
+                $this->cell($this->psize/7, $this->lsize, SAGU::formatNumber(($totalPorOrigens[$meses][$origens]->totalTitulosRA/$totalPorOrigens[$meses][$origens]->totalTitulos)*100), 1, null, 'R');
+                $this->ln();
+                foreach ( $ltotal as $item => $value )
+                {
+                //    $totalPorMes[$meses]->$value += $curso->$value ;
+                }
+            }
+            $this->SetFillColor(180,180,180);
+            $this->ln();
+            $this->setFont(DEFAULT_REPORT_FONT, 'BI', $this->fontSizeBody);
+            $this->cell($this->psize, $this->lsize, 'Total por Mês: '. $meses, 1, null, 'L', 1);
+            $this->ln();
+            $this->setFont(DEFAULT_REPORT_FONT, 'BI', $this->fontSizeBody);
+            $this->SetFillColor(220,220,220);
+            $this->cell($this->psize, $this->lsize, _M('RECEITA PREVISTA', 'finance'), 1, null, 'C', 1);
+            $this->ln();
+            $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->fontSizeBody);
+            $this->cell($this->psize/5, $this->lsize, 'BRUTA', 1, null, 'C');
+            $this->cell($this->psize/5, $this->lsize, 'DESCONTOS', 1, null, 'C');
+            $this->cell($this->psize/5, $this->lsize, 'INCENTIVOS', 1, null, 'C');
+            $this->cell($this->psize/5, $this->lsize, 'LÍQUIDA', 1, null, 'C');
+            $this->cell($this->psize/5, $this->lsize, 'TÍTULOS', 1, null, 'C');
+            $this->ln();
+            $this->setFont(DEFAULT_REPORT_FONT, '', $this->fontSizeBody);
+            $this->cell($this->psize/5, $this->lsize, SAGU::formatNumber($totalPorMes[$meses]->receitaNominal), 1, null, 'R');
+            $this->cell($this->psize/5, $this->lsize, SAGU::formatNumber($totalPorMes[$meses]->descontos), 1, null, 'R');
+            $this->cell($this->psize/5, $this->lsize, SAGU::formatNumber($totalPorMes[$meses]->incentivos), 1, null, 'R');
+            $this->cell($this->psize/5, $this->lsize, SAGU::formatNumber($totalPorMes[$meses]->receitaPrevista), 1, null, 'R');
+            $this->cell($this->psize/5, $this->lsize, $totalPorMes[$meses]->totalTitulos, 1, null, 'R');
+            $this->ln();
+            $this->setFont(DEFAULT_REPORT_FONT, 'BI', $this->fontSizeBody);
+            $this->SetFillColor(220,220,220);
+            $this->cell($this->psize, $this->lsize, _M('RECEITA REALIZADA', 'finance'), 1, null, 'C', 1);
+            $this->ln();
+            $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->fontSizeBody);
+            $this->cell($this->psize/8, $this->lsize, 'DA RECEITA BRUTA', 1, null, 'C');
+            $this->cell($this->psize/8, $this->lsize, 'DA RECEITA LIQUIDA', 1, null, 'C');
+            $this->cell($this->psize/8, $this->lsize, 'REALIZADO', 1, null, 'C');
+            $this->cell($this->psize/8, $this->lsize, 'INCENTIVOS', 1, null, 'C');
+            $this->cell($this->psize/8, $this->lsize, 'DESCONTOS', 1, null, 'C');
+            $this->cell($this->psize/8, $this->lsize, 'JUROS', 1, null, 'C');
+            $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->fontSizeBody-2);
+            $this->cell($this->psize/8, $this->lsize, 'TITULOS PAGOS TOTALMENTE', 1, null, 'C');
+            $this->cell($this->psize/8, $this->lsize, 'TITULOS PAGOS PARCIALMENTE', 1, null, 'C');
+            $this->ln();
+            $this->setFont(DEFAULT_REPORT_FONT, '', $this->fontSizeBody);
+            $this->cell($this->psize/8, $this->lsize, SAGU::formatNumber($totalPorMes[$meses]->receitaNominalRR), 1, null, 'R');
+            $this->cell($this->psize/8, $this->lsize, SAGU::formatNumber($totalPorMes[$meses]->receitaPrevistaRR), 1, null, 'R');
+            $this->cell($this->psize/8, $this->lsize, SAGU::formatNumber($totalPorMes[$meses]->receitaRealizada), 1, null, 'R');
+            $this->cell($this->psize/8, $this->lsize, SAGU::formatNumber($totalPorMes[$meses]->incentivosRR), 1, null, 'R');
+            $this->cell($this->psize/8, $this->lsize, SAGU::formatNumber($totalPorMes[$meses]->descontosRR), 1, null, 'R');
+            $this->cell($this->psize/8, $this->lsize, SAGU::formatNumber($totalPorMes[$meses]->jurosRR), 1, null, 'R');
+            $this->cell($this->psize/8, $this->lsize, $totalPorMes[$meses]->ttTotalmenteRR, 1, null, 'R');
+            $this->cell($this->psize/8, $this->lsize, $totalPorMes[$meses]->ttParcialmenteRR, 1, null, 'R');
+            $this->ln();
+            $this->setFont(DEFAULT_REPORT_FONT, 'BI', $this->fontSizeBody);
+            $this->SetFillColor(220,220,220);
+            $this->cell($this->psize, $this->lsize, _M('RECEITA NÃO REALIZADA', 'finance'), 1, null, 'C', 1);
+            $this->ln();
+            $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->fontSizeBody);
+            $this->cell($this->psize/7, $this->lsize, 'BRUTA', 1, null, 'C');
+            $this->cell($this->psize/7, $this->lsize, 'LÍQUIDA', 1, null, 'C');
+            $this->cell($this->psize/7, $this->lsize, 'ATUALIZADA', 1, null, 'C');
+            $this->cell($this->psize/7, $this->lsize, 'DESCONTOS', 1, null, 'C');
+            $this->cell($this->psize/7, $this->lsize, 'INCENTIVOS', 1, null, 'C');
+            $this->cell($this->psize/7, $this->lsize, 'TOTAL TÍTULOS', 1, null, 'C');
+            $this->cell($this->psize/7, $this->lsize, '% INADIMPLÊNCIA', 1, null, 'C');
+            $this->ln();
+            $this->setFont(DEFAULT_REPORT_FONT, '', $this->fontSizeBody);
+            $this->cell($this->psize/7, $this->lsize, SAGU::formatNumber($totalPorMes[$meses]->receitaNominalRA), 1, null, 'R');
+            $this->cell($this->psize/7, $this->lsize, SAGU::formatNumber($totalPorMes[$meses]->receitaPrevistaRA), 1, null, 'R');
+            $this->cell($this->psize/7, $this->lsize, SAGU::formatNumber($totalPorMes[$meses]->receitaEmAberto), 1, null, 'R');
+            $this->cell($this->psize/7, $this->lsize, SAGU::formatNumber($totalPorMes[$meses]->descontosNRA), 1, null, 'R');
+            $this->cell($this->psize/7, $this->lsize, SAGU::formatNumber($totalPorMes[$meses]->incentivosRA), 1, null, 'R');
+            $this->cell($this->psize/7, $this->lsize, $totalPorMes[$meses]->totalTitulosRA, 1, null, 'R');
+            $this->cell($this->psize/7, $this->lsize, SAGU::formatNumber(($totalPorMes[$meses]->totalTitulosRA/$totalPorMes[$meses]->totalTitulos)*100), 1, null, 'R');
+            $this->ln();
+            foreach ( $ltotal as $item => $value )
+            {
+                $totalGeral->$value += $totalPorMes[$meses]->$value ;
+            }
+        }
+        $this->addPage($this->headerData->reportType == 1 ? 'P' : 'L', 'mm', 'A4');
+        $this->SetFillColor(180,180,180);
+        $this->ln();
+        $this->setFont(DEFAULT_REPORT_FONT, 'BI', $this->fontSizeBody);
+        $this->cell($this->psize, $this->lsize, 'TOTAL GERAL', 1, null, 'C', 1);
+        $this->ln();
+        $this->setFont(DEFAULT_REPORT_FONT, 'BI', $this->fontSizeBody);
+        $this->SetFillColor(220,220,220);
+        $this->cell($this->psize, $this->lsize, _M('RECEITA PREVISTA', 'finance'), 1, null, 'C', 1);
+        $this->ln();
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->fontSizeBody);
+        $this->cell($this->psize/5, $this->lsize, 'BRUTA', 1, null, 'C');
+        $this->cell($this->psize/5, $this->lsize, 'DESCONTOS', 1, null, 'C');
+        $this->cell($this->psize/5, $this->lsize, 'INCENTIVOS', 1, null, 'C');
+        $this->cell($this->psize/5, $this->lsize, 'LÍQUIDA', 1, null, 'C');
+        $this->cell($this->psize/5, $this->lsize, 'TÍTULOS', 1, null, 'C');
+        $this->ln();
+        $this->setFont(DEFAULT_REPORT_FONT, '', $this->fontSizeBody);
+        $this->cell($this->psize/5, $this->lsize, SAGU::formatNumber($totalGeral->receitaNominal), 1, null, 'R');
+        $this->cell($this->psize/5, $this->lsize, SAGU::formatNumber($totalGeral->descontos), 1, null, 'R');
+        $this->cell($this->psize/5, $this->lsize, SAGU::formatNumber($totalGeral->incentivos), 1, null, 'R');
+        $this->cell($this->psize/5, $this->lsize, SAGU::formatNumber($totalGeral->receitaPrevista), 1, null, 'R');
+        $this->cell($this->psize/5, $this->lsize, $totalGeral->totalTitulos, 1, null, 'R');
+        $this->ln();
+        $this->setFont(DEFAULT_REPORT_FONT, 'BI', $this->fontSizeBody);
+        $this->SetFillColor(220,220,220);
+        $this->cell($this->psize, $this->lsize, _M('RECEITA REALIZADA', 'finance'), 1, null, 'C', 1);
+        $this->ln();
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->fontSizeBody);
+        $this->cell($this->psize/8, $this->lsize, 'DA RECEITA BRUTA', 1, null, 'C');
+        $this->cell($this->psize/8, $this->lsize, 'DA RECEITA LIQUIDA', 1, null, 'C');
+        $this->cell($this->psize/8, $this->lsize, 'REALIZADO', 1, null, 'C');
+        $this->cell($this->psize/8, $this->lsize, 'INCENTIVOS', 1, null, 'C');
+        $this->cell($this->psize/8, $this->lsize, 'DESCONTOS', 1, null, 'C');
+        $this->cell($this->psize/8, $this->lsize, 'JUROS', 1, null, 'C');
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->fontSizeBody-2);
+        $this->cell($this->psize/8, $this->lsize, 'TITULOS PAGOS TOTALMENTE', 1, null, 'C');
+        $this->cell($this->psize/8, $this->lsize, 'TITULOS PAGOS PARCIALMENTE', 1, null, 'C');
+        $this->ln();
+        $this->setFont(DEFAULT_REPORT_FONT, '', $this->fontSizeBody);
+        $this->cell($this->psize/8, $this->lsize, SAGU::formatNumber($totalGeral->receitaNominalRR), 1, null, 'R');
+        $this->cell($this->psize/8, $this->lsize, SAGU::formatNumber($totalGeral->receitaPrevistaRR), 1, null, 'R');
+        $this->cell($this->psize/8, $this->lsize, SAGU::formatNumber($totalGeral->receitaRealizada), 1, null, 'R');
+        $this->cell($this->psize/8, $this->lsize, SAGU::formatNumber($totalGeral->incentivosRR), 1, null, 'R');
+        $this->cell($this->psize/8, $this->lsize, SAGU::formatNumber($totalGeral->descontosRR), 1, null, 'R');
+        $this->cell($this->psize/8, $this->lsize, SAGU::formatNumber($totalGeral->jurosRR), 1, null, 'R');
+        $this->cell($this->psize/8, $this->lsize, $totalGeral->ttTotalmenteRR, 1, null, 'R');
+        $this->cell($this->psize/8, $this->lsize, $totalGeral->ttParcialmenteRR, 1, null, 'R');
+        $this->ln();
+        $this->setFont(DEFAULT_REPORT_FONT, 'BI', $this->fontSizeBody);
+        $this->SetFillColor(220,220,220);
+        $this->cell($this->psize, $this->lsize, _M('RECEITA NÃO REALIZADA', 'finance'), 1, null, 'C', 1);
+        $this->ln();
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->fontSizeBody);
+        $this->cell($this->psize/7, $this->lsize, 'BRUTA', 1, null, 'C');
+        $this->cell($this->psize/7, $this->lsize, 'LÍQUIDA', 1, null, 'C');
+        $this->cell($this->psize/7, $this->lsize, 'ATUALIZADA', 1, null, 'C');
+        $this->cell($this->psize/7, $this->lsize, 'DESCONTOS', 1, null, 'C');
+        $this->cell($this->psize/7, $this->lsize, 'INCENTIVOS', 1, null, 'C');
+        $this->cell($this->psize/7, $this->lsize, 'TOTAL TÍTULOS', 1, null, 'C');
+        $this->cell($this->psize/7, $this->lsize, '% INADIMPLÊNCIA', 1, null, 'C');
+        $this->ln();
+        $this->setFont(DEFAULT_REPORT_FONT, '', $this->fontSizeBody);
+        $this->cell($this->psize/7, $this->lsize, SAGU::formatNumber($totalGeral->receitaNominalRA), 1, null, 'R');
+        $this->cell($this->psize/7, $this->lsize, SAGU::formatNumber($totalGeral->receitaPrevistaRA), 1, null, 'R');
+        $this->cell($this->psize/7, $this->lsize, SAGU::formatNumber($totalGeral->receitaEmAberto), 1, null, 'R');
+        $this->cell($this->psize/7, $this->lsize, SAGU::formatNumber($totalGeral->descontosNRA), 1, null, 'R');
+        $this->cell($this->psize/7, $this->lsize, SAGU::formatNumber($totalGeral->incentivosRA), 1, null, 'R');
+        $this->cell($this->psize/7, $this->lsize, $totalGeral->totalTitulosRA, 1, null, 'R');
+        $this->cell($this->psize/7, $this->lsize, SAGU::formatNumber(($totalGeral->totalTitulosRA/$totalGeral->totalTitulos)*100), 1, null, 'R');
+        $this->ln();
+    }
+
+    public function analytical()
+    {
+        $data = $this->data;
+        unset($this->data);
+        foreach($data as $titulo)
+        {
+            $d = explode("/",$titulo->vencimento);
+            if($titulo->valorEmAberto > 0 && $titulo->receitaRealizada > 0 )
+            {
+                $titulo->aberto = 'S';
+            }
+            else
+            {
+                $titulo->aberto = 'N';
+            }
+            $this->data[$d[1]][$titulo->origem][$titulo->courseId][]   = $titulo;
+            $cursoX[$titulo->courseId]   = $titulo->curso;
+            $origemX[$titulo->origem]    = $titulo->origemDescription;
+        }
+        $col->name['vencimento']        = _M('Maturity', 'finance');
+        $col->name['titulo']            = _M('Invoice', 'finance');
+        $col->name['personId']          = _M('Id', 'finance');
+        $col->name['nome']              = _M('Name', 'finance');
+        $col->name['receitaPrevista']   = _M('Estimated', 'finance');
+        $col->name['receitaNominal']    = _M('Par value', 'finance');
+        $col->name['descontos']         = _M('Discount', 'finance');
+        $col->name['incentivos']        = _M('Incentive', 'finance');
+        $col->name['juros']             = _M('Interest', 'finance');
+        $col->name['receitaRealizada']  = _M('Received', 'finance');
+        $col->name['aberto']  = _M('P', 'finance');
+        $col->size['vencimento']        = 18;
+        $col->size['titulo']            = 15;
+        $col->size['personId']          = 14;
+        $col->size['receitaPrevista']   = 17;
+        $col->size['receitaNominal']    = 17;
+        $col->size['descontos']         = 14;
+        $col->size['incentivos']        = 14;
+        $col->size['juros']             = 14;
+        $col->size['receitaRealizada']  = 17;
+        $col->size['aberto']            = 3;
+        $col->size['nome']              = $this->psize - array_sum($col->size);
+        $sumvalues = array('juros', 'receitaPrevista', 'receitaNominal', 'descontos', 'incentivos', 'receitaRealizada');
+        foreach( $this->data as $meses => $mes )
+        {
+            $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->fontSizeBody);
+            $this->SetFillColor(220,220,220);
+            $this->cell($this->psize, $this->lsize, 'Mês: '. $meses, 1, null, 'R', 1);
+            $this->ln();
+            foreach( $mes as $origens => $origem )
+            {
+                $this->SetFillColor(200,200,200);
+                $this->cell($this->psize, $this->lsize, 'Origem: '. $origemX[$origens], 1, null, 'C', 1);
+                $this->ln();
+                foreach( $origem as $cursos => $curso )
+                {
+                    $this->SetFillColor(180,180,180);
+                    $this->cell($this->psize, $this->lsize, 'Curso: '. $cursoX[$cursos], 1, null, 'L', 1);
+                    $this->ln();
+                    $c = 0;
+                    foreach ( $curso as $titulo )
+                    {
+                        if( $titulo->aberto == 'S' )
+                        {
+                            $this->SetFillColor(235,0,0);
+                        }
+                        $c++;
+                        if( $titulo2 == null )
+                        {
+                            $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->fontSizeBody-1);
+                            foreach($titulo as $item => $valor )
+                            {
+                                if($col->size[$item] > 0 )
+                                {
+                                    $this->cell($col->size[$item], $this->lsize, $col->name[$item], 1, null,  'C' ) ;
+                                }
+                            }
+                            $titulo2 = $titulo;
+                            $this->ln();
+                        }
+                        if ( ($this->y + $this->lsize) > $this->PageBreakTrigger )
+                        {
+                            $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->fontSizeBody-1);
+                            foreach($titulo2 as $item => $valor )
+                            {
+                                if($col->size[$item] > 0 )
+                                {
+                                    $this->cell($col->size[$item], $this->lsize, $col->name[$item], 1, null,  'C' );
+                                }
+                            }
+                            $this->ln();
+                        }
+                        $this->setFont(DEFAULT_REPORT_FONT, '', $this->fontSizeBody-1);
+                        unset($totalCol);
+                        foreach($titulo as $item => $valor )
+                        {
+                            if($col->size[$item] > 0 )
+                            {
+                                $this->cell($col->size[$item], $this->lsize, $valor, 1, null, $item == 'nome' ? 'L' : 'R' ,$titulo->aberto == 'S' ? 1 : null ); 
+                                if(in_array($item, $sumvalues))
+                                {
+                                    $col->sum['group'][$meses][$origens][$cursos][$item] += $valor;
+                                    $col->sum['group'][$meses][$origens][$item] += $valor;
+                                    $col->sum['group'][$meses][$item] += $valor;
+                                    $col->sum['total'][$item] += $valor;
+                                    $totalCol += $col->size[$item];
+                                }
+                            }
+                        }
+                        $totalCol += $col->size['aberto'] ;
+                        $this->ln();
+                    }
+                    $this->setFont(DEFAULT_REPORT_FONT, 'BI', $this->fontSizeBody-1);
+                    $this->cell($this->psize-$totalCol, $this->lsize, _M('TOTAL POR CURSO', 'finance') . ' ( '. $cursos . ' / ' . $origemX[$origens] . ' / '. $meses . ' )', 1, null, 'R');
+                    foreach($titulo2 as $item => $valor )
+                    {
+                        if($col->size[$item] > 0 )
+                        {
+                            if(in_array($item, $sumvalues))
+                            {
+                                $this->cell($col->size[$item], $this->lsize, SAGU::formatNumber($col->sum['group'][$meses][$origens][$cursos][$item]), 1, null, 'R');
+                            }
+                        }
+                    }
+                    $this->ln();
+                 }
+                $this->setFont(DEFAULT_REPORT_FONT, 'BI', $this->fontSizeBody-1);
+                $this->cell($this->psize-$totalCol, $this->lsize, _M('TOTAL POR ORIGEM ( '. $origemX[$origens] . ' / ' . $meses . ')', 'finance'), 1, null, 'R');
+                foreach($titulo2 as $item => $valor )
+                {
+                    if($col->size[$item] > 0 )
+                    {
+                        if(in_array($item, $sumvalues))
+                        {
+                            $this->cell($col->size[$item], $this->lsize, SAGU::formatNumber($col->sum['group'][$meses][$origens][$item]), 1, null, 'R');
+                        }
+                    }
+                }
+                $this->ln();
+            }
+            $this->setFont(DEFAULT_REPORT_FONT, 'BI', $this->fontSizeBody-1);
+            $this->cell($this->psize-$totalCol, $this->lsize, _M('TOTAL POR MÊS ( '. $meses .' )', 'finance'), 1, null, 'R');
+            foreach($titulo2 as $item => $valor )
+            {
+                if($col->size[$item] > 0 )
+                {
+                    if(in_array($item, $sumvalues))
+                    {
+                        $this->cell($col->size[$item], $this->lsize, SAGU::formatNumber($col->sum['group'][$meses][$item]), 1, null, 'R');
+                    }
+                }
+            }
+            $this->ln();
+        }
+        $this->setFont(DEFAULT_REPORT_FONT, 'BI', $this->fontSizeBody-1);
+        $this->cell($this->psize-$totalCol, $this->lsize, _M('TOTAL GLOBAL', 'finance'), 1, null, 'R');
+        foreach($titulo2 as $item => $valor )
+        {
+            if($col->size[$item] > 0 )
+            {
+                if(in_array($item, $sumvalues))
+                {
+                    $this->cell($col->size[$item], $this->lsize, SAGU::formatNumber($col->sum['total'][$item]), 1, null, 'R');
+                }
+            }
+        }
+        $this->ln();
+    }
+    
+    public function generatePDF()
+    {
+        $this->setFont(DEFAULT_REPORT_FONT, 'BI', $this->fontSizeBody);
+        $this->cell($this->psize-80, $this->lsize, _M('Print mode', 'finance').': ', null, null, 'R');
+        $this->setFont(DEFAULT_REPORT_FONT, '', $this->fontSizeBody);
+        $this->cell(80, $this->lsize, $this->headerData->reportType == 1 ? _M('Analytical', 'finance') : _M('Synthetic', 'finance') , null, null, 'L');
+        $this->ln();
+        $this->setFont(DEFAULT_REPORT_FONT, 'BI', $this->fontSizeBody);
+        $this->cell($this->psize-80, $this->lsize, _M('Year', 'basic').':  ', null, null, 'R');
+        $this->setFont(DEFAULT_REPORT_FONT, '', $this->fontSizeBody);
+        $this->cell(80, $this->lsize, $this->headerData->year , null, null, 'L');
+        $this->ln();
+        $this->setFont(DEFAULT_REPORT_FONT, 'BI', $this->fontSizeBody);
+        $this->cell($this->psize-80, $this->lsize, _M('Month', 'finance').'(s):  ', null, null, 'R');
+        $this->setFont(DEFAULT_REPORT_FONT, '', $this->fontSizeBody);
+        $this->cell(80, $this->lsize, implode(', ',$this->headerData->month) , null, null, 'L');
+        $this->ln();
+        $this->setFont(DEFAULT_REPORT_FONT, 'BI', $this->fontSizeBody);
+        $this->cell($this->psize-80, $this->lsize, _M('Income source', 'finance').'(s):  ', null, null, 'R');
+        $this->setFont(DEFAULT_REPORT_FONT, '', $this->fontSizeBody);
+        $this->cell(80, $this->lsize, implode(', ',$this->headerData->incomeSourceId) , null, null, 'L');
+        $this->ln();
+        if(count($this->data) == 0)
+        {
+            $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->fontSizeBody);
+            $this->SetFillColor(255,0,0);
+            $this->cell($this->psize, $this->lsize, _M('No data found to process', 'finance'), null, null, 'C', 1);
+            PDF::generatePDF();
+            return;
+        } 
+        
+        if($this->headerData->reportType == 1 )
+        {
+            $this->analytical();
+        }
+        else
+        {
+            $this->synthetic();
+        }
+        PDF::generatePDF();
+    }
+
+    public function Header()
+    {
+        parent::Header();
+    }
+
+    public function Footer()
+    {
+        parent::Footer();
+    }
+}
+?>

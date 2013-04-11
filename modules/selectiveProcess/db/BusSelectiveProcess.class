@@ -1,0 +1,475 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for sprSelectiveProcess table
+ *
+ * @author Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 05/09/2005
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to manipulate the sprSelectiveProcess table
+ **/
+class BusinessSelectiveProcessBusSelectiveProcess extends Business
+{
+
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module = is_null($module) ? 'selectiveProcess' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+    /**
+     * List all records from the table handled by the class
+     *
+     * @param: None
+     *
+     * @returns (array): Return an array with the entire table
+     *
+     **/
+    public function listSelectiveProcess($filters = NULL)
+    {
+        $sql = 'SELECT A.selectiveProcessId,
+                       A.selectiveProcessId || \' - \' ||A.description
+                  FROM sprSelectiveProcess A'; 
+		$where = '';
+        if ( strlen((string)$filters->endDateTime) > 0 )
+        {
+		    $sql   .= ' INNER JOIN sprInscriptionSetting B using(selectiveProcessId) ';
+            $where .= ' AND (B.endDate||\' \'||B.endHour)::timestamp >= ?::timestamp ';
+            $args[] = $filters->endDateTime;
+        }
+
+        $db = $this->getDatabase();
+        unset($result);
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE ' . substr($where, 4) . '
+                   ORDER BY A.beginDate DESC, A.description';
+
+            $sql = SAGU::prepare($sql, $args);
+        }
+        $db     = $this->getDatabase();
+        $result = $db->query($sql);
+
+        return $result;
+    }
+
+   /**
+    * Generate a array with all units basic information
+    *
+    * @param: No parameters
+    *
+    * @return (array): Return a array with all units registered on database
+    *
+   **/
+    public function listPlaces($selectiveProcessId = NULL)
+    {
+        $db  = $this->getDatabase();
+        $sql = '   SELECT A.placeId,
+                          A.description
+                     FROM sprPlace A,
+                          sprPlaceOccurrence B
+                    WHERE A.placeId = B.placeId
+                      AND B.selectiveProcessId = ?
+                 ORDER BY A.description ';
+        if ( strlen((string)$selectiveProcessId) > 0 )
+        {
+            $ret = $db->query(SAGU::Prepare($sql, $selectiveProcessId));
+        }
+
+        return $ret;
+    }
+
+    /**
+     * Return a specific record from the database
+     *
+     * @param $selectiveProcessId (integer): Primary key of the record to be retrieved
+     *
+     * @return (object): Return an object of the type handled by the class
+     *
+     **/
+    public function getSelectiveProcess($selectiveProcessId)
+    {
+        $sql = 'SELECT A.selectiveProcessId,
+                       A.companyId,
+                       B.name AS companyName,
+                       A.periodId,
+                       C.description AS periodDescription,
+                       A.description,
+                       TO_CHAR(A.beginDate,\'' . MASK_DATE . '\'),
+                       A.optionsNumber,
+                       A.isLanguage,
+                       A.isHighSchool,
+                       A.minimumPoints,
+                       A.maximumPoints,
+                       A.userName,
+                       TO_CHAR(A.dateTime,\'' . MASK_TIMESTAMP . '\'),
+                       A.ipAddress,
+                       A.institutionId,
+                       A.optionsNumberRequired
+                  FROM sprSelectiveProcess A
+             LEFT JOIN basCompanyConf B
+                    ON (B.companyId = A.companyId)
+             LEFT JOIN acdPeriod C
+                    ON (C.periodId = A.periodId)
+                 WHERE A.selectiveProcessId = ?';
+
+        $pk = array(
+                     $selectiveProcessId
+                   );
+
+        $db     = $this->getDatabase();
+        $result = $db->query(SAGU::prepare($sql, $pk));
+
+        $selectiveProcess = new SprSelectiveProcess();
+
+        list ( $selectiveProcess->selectiveProcessId,
+               $selectiveProcess->companyId,
+               $selectiveProcess->companyName,
+               $selectiveProcess->periodId,
+               $selectiveProcess->periodDescription,
+               $selectiveProcess->description,
+               $selectiveProcess->beginDate,
+               $selectiveProcess->optionsNumber,
+               $selectiveProcess->isLanguage,
+               $selectiveProcess->isHighSchool,
+               $selectiveProcess->minimumPoints,
+               $selectiveProcess->maximumPoints,
+               $selectiveProcess->userName,
+               $selectiveProcess->dateTime,
+               $selectiveProcess->ipAddress,
+               $selectiveProcess->institutionId,
+               $selectiveProcess->optionsNumberRequired ) = $result[0];
+
+        return $selectiveProcess; 
+    }
+
+    /**
+     * Return a specific record from the database
+     *
+     * @param $inscriptionId (integer): Primary key of the record to be retrieved
+     *
+     * @return (object): Return an object of the type handled by the class
+     *
+     **/
+    public function getSelectiveProcessByInscription($inscriptionId)
+    {
+        $sql = 'SELECT A.selectiveProcessId,
+                       A.companyId,
+                       B.name AS companyName,
+                       C.periodId,
+                       C.description AS periodDescription,
+                       TO_CHAR(A.beginDate,\'' . MASK_DATE . '\'),
+                       A.optionsNumber,
+                       A.isLanguage,
+                       A.isHighSchool,
+                       A.minimumPoints,
+                       A.maximumPoints,
+                       A.userName,
+                       TO_CHAR(A.dateTime,\'' . MASK_TIMESTAMP . '\'),
+                       A.ipAddress,
+                       A.description,
+                       A.optionsNumberRequired
+                  FROM sprSelectiveProcess A
+            INNER JOIN basCompanyConf B
+                    ON (B.companyId = A.companyId)
+            INNER JOIN acdPeriod C
+                    ON (C.periodId = A.periodId)
+            INNER JOIN sprInscription D
+                    ON (A.selectiveProcessId = D.selectiveProcessId)
+                 WHERE D.inscriptionId = ?';
+        $pk = array( $inscriptionId );
+
+        $db     = $this->getDatabase();
+        $result = $db->query(SAGU::prepare($sql, $pk));
+
+        $selectiveProcess = new SprSelectiveProcess();
+
+        list ( $selectiveProcess->selectiveProcessId,
+               $selectiveProcess->companyId,
+               $selectiveProcess->companyName,
+               $selectiveProcess->periodId,
+               $selectiveProcess->periodDescription,
+               $selectiveProcess->beginDate,
+               $selectiveProcess->optionsNumber,
+               $selectiveProcess->isLanguage,
+               $selectiveProcess->isHighSchool,
+               $selectiveProcess->minimumPoints,
+               $selectiveProcess->maximumPoints,
+               $selectiveProcess->userName,
+               $selectiveProcess->dateTime,
+               $selectiveProcess->ipAddress,
+               $selectiveProcess->description,
+               $selectiveProcess->optionsNumberRequired ) = $result[0];
+
+        return $selectiveProcess; 
+    }
+
+    /**
+     * Do a search on the database table handled by the class
+     *
+     * @param $filters (object): Search filters
+     *
+     * @return (array): An array containing the search results
+     **/
+    public function searchSelectiveProcess($filters)
+    {
+        $sql = 'SELECT A.selectiveProcessId,
+                       A.companyId,
+                       B.name AS companyName,
+                       A.periodId,
+                       C.description AS periodDescription,
+                       A.description,
+                       TO_CHAR(A.beginDate,\'' . MASK_DATE . '\'),
+                       A.optionsNumber,
+                       A.isLanguage,
+                       A.isHighSchool,
+                       A.minimumPoints,
+                       A.maximumPoints,
+                       A.userName,
+                       TO_CHAR(A.dateTime,\'' . MASK_TIMESTAMP . '\'),
+                       A.ipAddress,
+                       A.optionsNumberRequired
+                  FROM sprSelectiveProcess A
+             LEFT JOIN basCompanyConf B
+                    ON (B.companyId = A.companyId)
+             LEFT JOIN acdPeriod C
+                    ON (C.periodId = A.periodId)';
+
+        if ( strlen((string)$filters->selectiveProcessId) > 0 )
+        {
+            $where .= ' AND A.selectiveProcessId = ?';
+            $args[] = $filters->selectiveProcessId;
+        }
+        if ( strlen((string)$filters->companyId) > 0 )
+        {
+            $where .= ' AND A.companyId = ?';
+            $args[] = $filters->companyId;
+        }
+        if ( strlen((string)$filters->companyName) > 0 )
+        {
+            $where .= ' AND TO_ASCII(B.name) ILIKE TO_ASCII(?)';
+            $args[] = $filters->companyName . '%';
+        }
+        if ( strlen((string)$filters->periodId) > 0 )
+        {
+            $where .= ' AND A.periodId ILIKE ?';
+            $args[] = $filters->periodId;
+        }
+        if ( strlen((string)$filters->periodDescription) > 0 )
+        {
+            $where .= ' AND TO_ASCII(A.description) ILIKE TO_ASCII(?)';
+            $args[] = $filters->periodDescription . '%';
+        }
+        if ( strlen((string)$filters->beginDate) > 0 )
+        {
+            $where .= ' AND A.beginDate = TO_DATE(?,\'' . MASK_DATE . '\')';
+            $args[] = $filters->beginDate;
+        }
+        if ( strlen((string)$filters->optionsNumber) > 0 )
+        {
+            $where .= ' AND A.optionsNumber = ?';
+            $args[] = $filters->optionsNumber;
+        }
+        if ( strlen((string)$filters->isLanguage) > 0 )
+        {
+            $where .= ' AND A.isLanguage = ?';
+            $args[] = $filters->isLanguage;
+        }
+        if ( strlen((string)$filters->isHighSchool) > 0 )
+        {
+            $where .= ' AND A.isHighSchool = ?';
+            $args[] = $filters->isHighSchool;
+        }
+        if ( strlen((string)$filters->minimumPoints) > 0 )
+        {
+            $where .= ' AND A.minimumPoints = ?';
+            $args[] = $filters->minimumPoints;
+        }
+        if ( strlen((string)$filters->maximumPoints) > 0 )
+        {
+            $where .= ' AND A.maximumPoints = ?';
+            $args[] = $filters->maximumPoints;
+        }
+
+        unset($result);
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE ' . substr($where, 4) . '
+                   ORDER BY B.name';
+
+            $db = $this->getDatabase();
+            $result = $db->query(SAGU::prepare($sql, $args));
+        }
+
+        return $result;
+    }
+
+    /**
+     * Insert a new record
+     *
+     * @param $data (object): An object of the type handled by the class
+     *
+     * @return True if succed, otherwise False
+     *
+     **/
+    public function insertSelectiveProcess($data)
+    {
+        $sql = 'INSERT INTO sprSelectiveProcess
+                            (selectiveProcessId,
+                             companyId,
+                             institutionId,
+                             periodId,
+                             description,
+                             beginDate,
+                             optionsNumber,
+                             isLanguage,
+                             isHighSchool,
+                             minimumPoints,
+                             maximumPoints,
+                             optionsNumberRequired)
+                     VALUES (?,
+                             ?,
+                             ?,
+                             ?,
+                             ?,
+                             TO_DATE(?,\'' . MASK_DATE .'\'),
+                             ?,
+                             ?,
+                             ?,
+                             ?,
+                             ?,
+                             ?)';
+
+        $args = array( 
+                       $data->selectiveProcessId,
+                       $data->companyId,
+                       $data->institutionId,
+                       $data->periodId,
+                       $data->description,
+                       $data->beginDate,
+                       $data->optionsNumber,
+                       $data->isLanguage,
+                       $data->isHighSchool,
+                       $data->minimumPoints,
+                       $data->maximumPoints,
+                       $data->optionsNumberRequired
+                     );
+
+        $db     = $this->getDatabase();
+        $result = $db->execute(SAGU::prepare($sql, $args));
+
+        return $result;
+    }
+
+    /**
+     * Update data from a specific record
+     *
+     * @param $data (object): Data which will replace the old record data
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+    public function updateSelectiveProcess($data)
+    {
+        $sql = 'UPDATE sprSelectiveProcess
+                   SET companyId             = ?,
+                       institutionId         = ?,
+                       periodId              = ?,
+                       description           = ?,
+                       beginDate             = TO_DATE(?,\'' . MASK_DATE . '\'),
+                       optionsNumber         = ?,
+                       isLanguage            = ?,
+                       isHighSchool          = ?,
+                       minimumPoints         = ?,
+                       maximumPoints         = ?,
+                       optionsNumberRequired = ?
+                 WHERE selectiveProcessId    = ?';
+
+        $args = array(
+                       $data->companyId,
+                       $data->institutionId,
+                       $data->periodId,
+                       $data->description,
+                       $data->beginDate,
+                       $data->optionsNumber,
+                       $data->isLanguage,
+                       $data->isHighSchool,
+                       $data->minimumPoints,
+                       $data->maximumPoints,
+                       $data->optionsNumberRequired,
+                       $data->selectiveProcessId
+                     );
+
+        $db   = $this->getDatabase();
+        $sqls = SAGU::prepare($sql, $args);
+
+        for ( $i=0; $i<count($sqls); $i++ )
+        {
+            $result = $db->execute($sqls[$i]);
+        }
+
+        return $result;
+    }
+
+    /**
+     * Delete a record
+     *
+     * @param $selectiveProcessId (string): Primary key for deletion
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+    public function deleteSelectiveProcess($selectiveProcessId)
+    {
+        $sql = 'DELETE FROM sprSelectiveProcess
+                      WHERE selectiveProcessId = ?';
+
+        $pk = array(
+                     $selectiveProcessId
+                   );
+
+        $db     = $this->getDatabase();
+        $result = $db->execute(SAGU::prepare($sql, $pk));
+
+        return $result;
+    }
+
+}
+
+?>

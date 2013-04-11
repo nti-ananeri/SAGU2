@@ -1,0 +1,332 @@
+<?php
+
+/**
+ * Message form
+ *
+ * @author Rafael Luís Spengler [rafael@solis.coop.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ *
+ * @since
+ * Class created on 18/10/2005
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2005 SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+
+/**
+ * Form to manipulate a message
+ **/
+class FrmMessage extends MForm
+{
+
+    /**
+     * Class constructor
+     **/
+    function __construct()
+    {
+
+        $module = MIOLO::getCurrentModule();
+
+        if ( MIOLO::_request('function') == 'insert' )
+        {
+            parent::__construct(_M('Insert', $module));
+        }
+        else
+        {
+            parent::__construct(_M('Update', $module));
+        }
+
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+
+        $toolBar = new MToolBar('toolBar',$MIOLO->getActionURL($module,$action));
+
+        if ( $function == 'insert' )
+        {
+            $toolBar->disableButton('tbBtnDelete');
+            $toolBar->disableButton('tbBtnPrint');
+        }
+        elseif ( $function == 'delete' )
+        {
+            $toolBar->disableButton('tbBtnSave');
+        }
+        $fields[] = $toolBar;
+
+        if ( in_array($function,array('update','delete')) )
+        {
+			$bankId		= MIOLO::_request('bankId');
+			$policyId	= MIOLO::_request('policyId');
+			$business	= $MIOLO->getBusiness($module,'BusMessage');
+			$data		= $business->getMessage($bankId,$policyId);
+			$bankIdLbl	= new MTextLabel('bankIdLabel', $data->bankId, _M('Bank id',$module));
+			$bankIdLbl->setWidth(FIELD_LABEL_SIZE);
+			$bankId		= new MHiddenField('bankId',$data->bankId);
+			$bankIdDesc = new MTextLabel('bankIdDescription',$data->bankDescription,_M('Bank',$module));
+			$bank		= new MHContainer('hctBank',array($bankIdLbl,$bankIdDesc,$bankId));
+			$fields[]		= $bank;
+   			$policyIdLbl	= new MTextLabel('policyIdLabel', $data->policyId, _M('Policy id',$module));
+			$policyIdLbl->setWidth(FIELD_LABEL_SIZE);
+			$policyId		= new MHiddenField('policyId',$data->policyId);
+			$policyIdDesc	= new MTextLabel('policyIdDescription',$data->policyDescription,_M('Policy',$module));
+			$policy			= new MHContainer('hctPolicy',array($policyIdLbl,$policyIdDesc,$policyId));
+			$fields[]		= $policy;
+			$fields[]		= new MSeparator('&nbsp;');
+	    }
+        else
+        {
+        // Bank id
+			$bankLabel = new MText('bankIdLabel', _M('Bank id', $module). ':');
+		    $bankLabel->setWidth(FIELD_CONTAINER_SIZE);
+		    $bankId = new MLookupTextField('bankId', $data->bankId->value, '', FIELD_ID_SIZE, null, null, array('bankDescription'), $module, 'Bank', null, null, true);
+		    $bankId->setJsHint(_M('Enter the bank id', $module));
+		    $validators[] = new MRequiredValidator('bankId', _M('Bank id', $module));
+		    $bankLabel->setClass('m-caption m-caption-required');
+		
+		    $bankDescription = new MTextField('bankDescription', $this->bankDescription->value, '', FIELD_DESCRIPTION_SIZE);
+		    $bankDescription->setReadOnly(true);
+		
+		    $cntBank = new MHContainer('cntBank', array($bankLabel, $bankId, $bankDescription));
+		    $fields[] = $cntBank;
+        // Policy 
+		    $policyLabel = new MText('policyLabel', _M('Policy', $module). ':');
+		    $policyLabel->setWidth(FIELD_CONTAINER_SIZE);
+		    $policyLabel->setClass('m-caption m-caption-required');
+		    $policyId = new MLookupTextField('policyId', $this->getFormValue('policyId', $data->policyId), null, FIELD_ID_SIZE, null, null, 'policyDescription', 'finance', 'Policy', null, null, true);
+		    $policyId->setJsHint(_M('Select the policy id', $module));
+		    $validators[] = new MIntegerValidator('policyId', _M('Policy', $module), 'required');
+		
+		    $policyDescription = new MTextField('policyDescription', $this->getFormValue('policyDescription',$data->policyDescription), null, FIELD_DESCRIPTION_SIZE);
+		    $policyDescription->setReadOnly(true);
+		    $hctPolicy = new MHContainer('hctPolicy', array($policyLabel, $policyId, $policyDescription));
+		    $hctPolicy->setShowLabel(true);
+		    $fields[]   = $hctPolicy;
+		}
+		// Protest message
+		$messageProtestLabel = new MText('messageProtestLabel',_M('Protest message',$module));
+		$messageProtestLabel->setWidth(FIELD_CONTAINER_SIZE);
+		
+		$data->messageProtest = strlen((string)$this->getFormValue('messageProtest')) > 0 ? $this->getFormValue('messageProtest') : DEFAULT_PROTEST_MESSAGE;
+
+		$messageProtest = new MTextField('messageProtest',$data->messageProtest,'',FIELD_DESCRIPTION_SIZE);
+		$fields[]		= new MHContainer('hctMessageProtest',array($messageProtestLabel,$messageProtest));
+		
+		// Discount message
+		$messageDiscountLabel = new MText('messageDiscountLabel',_M('Discount message',$module));
+		$messageDiscountLabel->setWidth(FIELD_CONTAINER_SIZE);
+	
+		$data->messageDiscount = strlen((string)$this->getFormValue('messageDiscount')) > 0 ? $this->getFormValue('messageDiscount') : DEFAULT_DISCOUNT_MESSAGE;
+	
+		$messageDiscount = new MTextField('messageDiscount',$data->messageDiscount,'',FIELD_DESCRIPTION_SIZE);
+		$fields[]		= new MHContainer('hctMessageDiscount',array($messageDiscountLabel,$messageDiscount));
+
+		// Fine message
+		$messageFineLabel = new MText('messageFineLabel',_M('Fine message',$module));
+		$messageFineLabel->setWidth(FIELD_CONTAINER_SIZE);
+
+		$data->messageFine = strlen((string)$this->getFormValue('messageFine')) > 0 ? $this->getFormValue('messageFine') : DEFAULT_FINE_MESSAGE;
+	
+		$messageFine = new MTextField('messageFine',$data->messageFine,'',FIELD_DESCRIPTION_SIZE);
+		$fields[]		= new MHContainer('hctMessageFine',array($messageFineLabel,$messageFine));
+   		
+		// Bank message
+		$messageBankLabel = new MText('messageBankLabel',_M('Bank message',$module));
+		$messageBankLabel->setWidth(FIELD_CONTAINER_SIZE);
+		
+		$data->messageBank = strlen((string)$this->getFormValue('messageBank')) > 0 ? $this->getFormValue('messageBank') : DEFAULT_BANK_MESSAGE;
+		
+		$messageBank = new MTextField('messageBank',$data->messageBank,'',FIELD_DESCRIPTION_SIZE);
+		$fields[]		= new MHContainer('hctMessageBank',array($messageBankLabel,$messageBank));
+		if ( $function == 'update' )
+        {
+        // last modification
+			$fields[]       = new MTextLabel('lfinModification', '['.$data->userName.' - '.$data->dateTime.']', _M('Last modification', $module));
+        }
+
+        $fields[] = new Separator('');
+
+        $this->setFields($fields);
+        if ( count($validators) > 0 )
+        {
+            $this->setValidators($validators);
+        }
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+        $this->setClose($MIOLO->getActionURL($module,substr($action,0,strrpos($action,':'))));
+    }
+
+    /**
+     * Event triggered when user chooses New from the toolbar
+     **/
+    public function tbBtnNew_click($sender=NULL)
+    {
+    }
+
+    /**
+     * Event triggered when user chooses Delete from the toolbar
+     **/
+    public function tbBtnDelete_click($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $data   = $this->getTypesData();
+        $opts   = array('event'            => 'tbBtnDelete_confirm',
+                        'function'         => 'delete',
+                        'bankId'           => MIOLO::_request('bankId'),
+                        'collectionTypeId' => MIOLO::_request('collectionTypeId'),
+                        'messageOrder'     => MIOLO::_request('messageOrder'));
+
+        $gotoYes = $MIOLO->getActionURL( $module, $action, null, $opts );
+        $goto    = SAGU::getStackBackUrl();
+        $gotoNo  = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+        $msg     = MSG_CONFIRM_RECORD_DELETE;
+        $caption = _M('Question',$module);
+        $MIOLO->question($msg, $gotoYes, $gotoNo);
+    }
+
+    /**
+     * Event triggered when user chooses Yes from the Delete prompt dialog
+     **/
+    public function tbBtnDelete_confirm($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $business = $MIOLO->getBusiness($module, 'BusMessage');
+        $ok = $business->deleteMessage($this->bankId->value, $this->policyId->value);
+
+        if ( $ok )
+        {
+            $msg  = MSG_RECORD_DELETED;
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Information',$module);
+            $MIOLO->information($msg, $goto);
+        }
+        else
+        {
+            $msg  = _M('Error executing requested operation.',$module);
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Error',$module);
+            $MIOLO->error( $msg, $goto, $caption );
+        }
+    }
+
+    /**
+     * Event triggered when user chooses Save from the toolbar
+     **/
+    public function tbBtnSave_click($sender=NULL)
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+
+        $data     = $this->getTypesData();
+
+        $business = $MIOLO->getBusiness($module, 'BusMessage');
+
+        if ( $function == 'update' )
+        {
+            $ok  = $business->updateMessage($data);
+            $msg = MSG_RECORD_UPDATED;
+        }
+        else
+        {
+            $dataMessage = $business->getMessage($data->bankId, $data->policyId);
+            if ((strlen((string)$dataMessage->bankId)>0) && (strlen((string)$dataMessage->policyId)>0))
+            {
+                $opts    = array('bankId'=>$data->bankId, 'policyId'=>$data->policyId, 'function'=>'update'); 
+                $gotoYes = $MIOLO->getActionURL($module, $action, null, $opts); 
+                $opts    = array('bankIdS'=>$data->bankId, 'policyIdS'=>$data->policyId, 'event'=>'btnSearch_click'); 
+                $gotoNo  = $MIOLO->getActionURL($module, $action, null, $opts); 
+                $msg     = _M('Message for bank @1, policy id @2 already exists, do you want edit that message?', $module, $data->bankId, $data->policyId); 
+                $MIOLO->question($msg, $gotoYes, $gotoNo); 
+            }
+            else
+            {
+                $ok  = $business->insertMessage($data);
+                $msg = MSG_RECORD_INSERTED;
+            }
+        }
+
+        if ( $ok )
+        {
+            $opts = array('bankIdS'           => $data->bankId,
+                          'policyIdS'		  => $data->policyId);
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL( $module, $action, null, $opts);
+            if ( $function == 'update' )
+            {
+                $MIOLO->information($msg, $goto);
+            }
+            else
+            {
+                $opts    = array('event'=>'tbBtnNew_click',
+                                 'function'=>'insert');
+
+                $gotoYes = $MIOLO->getActionURL($module, $action, null, $opts);
+                $MIOLO->question($msg, $gotoYes, $goto);
+            }
+        }
+        else
+        {
+            $msg  = _M('Error executing requested operation.',$module);
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Error',$module);
+            $MIOLO->error( $msg, $goto, $caption );
+        }
+    }
+
+    /**
+     * Method to gather all information from the form fields
+     * and put them on a database compatible object
+     **/
+    public function getTypesData()
+    {
+        $data = new FinMessage();
+        $data->bankId           = $this->bankId->value;
+        $data->policyId			= $this->policyId->value;
+		$data->messageProtest	= $this->messageProtest->value;
+   		$data->messageDiscount	= $this->messageDiscount->value;
+		$data->messageFine		= $this->messageFine->value;
+		$data->messageBank		= $this->messageBank->value;
+     return $data;
+    }
+}
+
+?>

@@ -1,0 +1,660 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for basDocument table
+ *
+ * @author Daniel Afonso Heisler [daniel@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 05/09/2005
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to manipulate the basDocument table
+ **/
+
+class BusinessBasicBusDocument extends Business
+{
+    public $db;
+
+    /**
+     * Class constructor
+     **/
+    public function BusinessBasicBusDocument()
+    {
+        $this->db = $this->getDatabase();
+    }
+
+   /**
+    * Get a database connection
+    *
+    * @param: No parameters needed
+    *
+    * @return (object): MIOLO Database connection
+    *
+   **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module = is_null($module) ? 'basic' : $module;
+
+        return $MIOLO->GetDatabase($module);
+    }
+
+    /**
+     *
+     * get a specific document
+     *
+     * @param $personId (int): Document primary key
+     * @param $documentTypeId (int): Document priary key
+     *
+     * @return (object): document object referred by primary key
+     *
+    **/
+    public function getDocument($personId, $documentTypeId)
+    {
+        $sql = 'SELECT A.personId,
+                       B.name,
+                       A.documentTypeId,
+                       C.name,
+                       A.content,
+                       A.isDelivered,
+                       A.obs,
+                       A.cityId,
+                       D.name,
+                       A.organ,
+                       to_char(A.dateExpedition, \'' . MASK_DATE . '\'),
+                       A.userName,
+                       to_char(A.dateTime, \'' . MASK_TIMESTAMP . '\'),
+                       A.ipAddress,
+                       A.isExcused
+                       FROM basDocument A
+            INNER JOIN ONLY basPhysicalPerson B
+                      USING (personId)
+                 INNER JOIN basDocumentType C
+                      USING (documentTypeId)
+                  LEFT JOIN basCity D
+                         ON (A.cityId = D.cityId) 
+                      WHERE A.personId       = ?
+                        AND A.documentTypeId = ?';
+
+        $args = array( $personId,
+                       $documentTypeId );
+
+        $result = $this->db->query(SAGU::prepare($sql, $args));
+
+        $document = new basDocument();
+        list ( $document->personId,
+               $document->personName,
+               $document->documentTypeId,
+               $document->documentTypeName,
+               $document->content,
+               $document->isDelivered,
+               $document->obs,
+               $document->cityId,
+               $document->cityName,
+               $document->organ,
+               $document->dateExpedition,
+               $document->userName,
+               $document->dateTime,
+               $document->ipAddress,
+               $document->isExcused ) = $result[0];
+
+        return $document;
+    }
+
+    /**
+     * Search a specific document filtering by specific fields
+     *
+     * @param $range (object): MIOLO PageNavigator Object
+     * @param $filter (object): Object containing filters
+     *
+     * @return (array): Array containing a document list 
+     *
+    **/
+    public function searchDocument($filter)
+    {
+        $sql = 'SELECT A.personId,
+                       B.name,
+                       A.documentTypeId,
+                       C.name,
+                       A.content,
+                       A.isDelivered,
+                       A.obs,
+                       A.cityId,
+                       D.name,
+                       A.organ,
+                       TO_CHAR(A.dateExpedition,\'' . MASK_DATE . '\'),
+                       A.userName,
+                       TO_CHAR(A.dateTime,\'' . MASK_TIMESTAMP . '\'),
+                       A.ipAddress,
+                       A.isExcused
+                       FROM basDocument A
+             LEFT JOIN ONLY basPerson B
+                      USING (personId)
+                  LEFT JOIN basDocumentType C
+                      USING (documentTypeId)
+                  LEFT JOIN basCity D
+                         ON (A.cityId = D.cityId) ';
+
+        if ( strlen((string)$filter->personId) > 0 )
+        {
+            $where .= ' AND A.personId = ? ';
+            $args[] = $filter->personId;
+        }
+
+        if ( strlen((string)$filter->documentTypeId)>0 )
+        {
+            $where .= ' AND A.documentTypeId = ? ';
+            $args[] = $filter->documentTypeId;
+        }
+
+        if ( strlen((string)$filter->content)>0 )
+        {
+            $where .= ' AND A.content ILIKE ? ';
+            $args[] = $filter->content;
+        }
+        if ( strlen((string)$filter->nonPersonId) > 0 )
+        {
+            $where .= ' AND B.personId <> ? ';
+            $args[] = $filter->nonPersonId;
+        }
+
+        if ( strlen((string)$where)>0 )
+        {
+            $sql   .= ' WHERE ' . substr($where, 4, strlen((string)$where)) . 
+                   ' ORDER BY B.name, 
+                              C.name';
+
+            $result = $this->db->query(SAGU::Prepare($sql,$args));
+        }
+        return $result;
+    }
+
+    /**
+     * Insert a specific document
+     *
+     * @param $data (object): document object
+     *
+     * @return (boolean): True if succed otherwise false
+     *
+     **/
+    public function insertDocument($data)
+    {
+
+        $sql = 'INSERT INTO basDocument
+                           (personId,
+                            documentTypeId,
+                            content,
+                            isDelivered,
+                            obs,
+                            cityId,
+                            organ,
+                            dateExpedition';
+
+        $values = 'VALUES (?,?,?,?,?,?,?,TO_DATE(?, \'' . MASK_DATE . '\')';
+
+        $args = array( $data->personId,
+                       $data->documentTypeId,
+                       $data->content,
+                       $data->isDelivered,
+                       $data->obs,
+                       $data->cityId,
+                       $data->organ,
+                       $data->dateExpedition);
+
+        if ( strlen((string)$data->isExcused) > 0 )
+        {
+            $sql    .= ', isExcused';
+            $values .= ',?';
+            $args[]  = $data->isExcused;
+        }
+        $sql    .= ')';
+        $values .= ')';
+
+        $sql .= $values;
+
+        $result = $this->db->execute(SAGU::prepare($sql, $args) );
+        return $result;
+    }
+
+    /**
+     * Update a specific document
+     *
+     * @param $data (object): Document object containing data to update
+     *
+     * @return (boolean): True if succed otherwise false
+     *
+    **/
+    public function updateDocument($data)
+    {
+        $sql = ' UPDATE basDocument SET ';
+
+        $sql   .= ' content = ?, ';
+        $args[] = $data->content;
+
+        if ( strlen((string)$data->isDelivered)>0 )
+        {
+            $sql   .= ' isDelivered = ?, ';
+            $args[] = $data->isDelivered;
+        }
+        if ( strlen((string)$data->obs)>0 )
+        {
+            $sql   .= ' obs = ?, ';
+            $args[] = $data->obs;
+        }
+        if ( strlen((string)$data->cityId)>0 )
+        {
+            $sql   .= ' cityId = ?, ';
+            $args[] = $data->cityId;
+        }
+        if ( strlen((string)$data->organ)>0 )
+        {
+            $sql   .= ' organ = ?, ';
+            $args[] = $data->organ;
+        }
+        if ( strlen((string)$data->dateExpedition)>0 )
+        {
+            $sql   .= ' dateExpedition = TO_DATE(?, \'' . MASK_DATE . '\'), ';
+            $args[] = $data->dateExpedition;
+        }
+        if ( strlen((string)$data->isExcused) > 0 )
+        {
+            $sql   .= ' isExcused = ?, ';
+            $args[] = $data->isExcused;
+        }
+
+        if ( count($args)>0 )
+        {
+            $sql .= ' WHERE personId = '.$data->personId.' AND documentTypeId = '.$data->documentTypeId.'';
+            $sql = str_replace(',  WHERE',' WHERE',$sql);
+            $sqls = SAGU::prepare($sql, $args);
+
+            for ( $i=0; $i<count($sqls); $i++ )
+            {
+                $result = $this->db->execute($sqls[$i]);
+            }
+        }
+
+        return $result;
+    }
+
+    /**
+     * delete a specific document
+     *
+     * @param $personId (int): Document primary key
+     * @param $documentTypeId (int): Document priary key
+     *
+     * @return (boolean): True if succed otherwise fails
+     *
+    **/
+    public function deleteDocument($personId, $documentTypeId)
+    {
+        $sql  = 'DELETE FROM basDocument
+                       WHERE personId       = ?
+                         AND documentTypeId = ?';
+
+        $args = array( $personId,
+                       $documentTypeId );
+
+        $result = $this->db->Execute(SAGU::Prepare($sql, $args));
+
+        return $result;
+    }
+    
+    /**
+     * Vefify if a person delivered the needed documents
+     * 
+     * @param $personId (int): id of the person to be verified
+     * 
+     * @return (array): list of missing documents
+     *
+    **/
+    public function checkMissingDocuments($personId, $contractId=null)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+
+        // definir se a pessoa eh juridica ou fisica
+        $sql = 'SELECT CASE WHEN ( SELECT COUNT(*) > 0 
+                                FROM ONLY basPhysicalPerson 
+                                    WHERE personId = ? )
+                            THEN \'P\' 
+                            ELSE CASE WHEN ( SELECT COUNT(*) > 0 
+                                          FROM ONLY basLegalPerson 
+                                              WHERE personId = ?)
+                                      THEN \'L\'
+                                 END
+                       END';
+
+        $args = array( $personId,
+                       $personId );
+
+        $personType = $this->db->query(SAGU::prepare($sql, $args));
+
+        $personType = $personType[0][0];
+
+        // obter os dados da pessoa conforme o seu tipo
+        if ($personType == 'P')
+        {
+            $busPerson  = $MIOLO->getBusiness('basic', 'BusPhysicalPerson');
+            $personData = $busPerson->getPhysicalPerson($personId);
+        }
+        elseif ($personType == 'L')
+        {
+            $busPerson  = $MIOLO->getBusiness('basic', 'BusLegalPerson');
+            $personData = $busPerson->getLegalPerson($personId);
+        }
+        else
+        {
+            $busPerson  = $MIOLO->getBusiness('basic', 'BusPerson');
+            $personData = $busPerson->getPerson($personId);
+        }
+
+        // obter lista de documentos nao entregues pela pessoa
+        $sql = 'SELECT documentTypeId,
+                       name,
+                       minAge,
+                       maxAge,
+                       needDeliver,
+                       isBlockEnroll
+                  FROM basDocumentType
+                 WHERE documentTypeId NOT IN (SELECT documentTypeId 
+                                                FROM basDocument 
+                                               WHERE personId = ?
+                                                 AND (isDelivered = \'' . DB_TRUE . '\'
+                                                      OR isExcused = \'' . DB_TRUE . '\'))
+                   AND (sex = ? OR sex IS NULL)
+                   AND (minAge <= EXTRACT(YEAR FROM AGE(TO_DATE(?, \'' . MASK_DATE . '\'))) OR minAge IS NULL)
+                   AND (maxAge >= EXTRACT(YEAR FROM AGE(TO_DATE(?, \'' . MASK_DATE . '\'))) OR maxAge IS NULL)
+                   AND personType = ?';
+
+        $args = array( $personId, 
+                       $personData->sex,
+                       $personData->dateBirth,
+                       $personData->dateBirth,
+                       $personType );
+
+        $result = $this->db->query(SAGU::prepare($sql, $args));
+
+        if ( strlen((string)$contractId) > 0 )
+        {
+            $busContract  = $MIOLO->getBusiness('academic', 'BusContract');
+            $contractData = $busContract->getContract($contractId);
+            
+            $busCourse  = $MIOLO->getBusiness('academic', 'BusCourse');
+            $courseData = $busCourse->getCourse($contractData->courseId);
+        }
+        else
+        {
+            unset($contractData);
+        }
+
+        // a partir da lista de documentos nao entregues, verificar os que
+        // realmente deveriam ter sido entregues
+        if ( count($result) > 0 )
+        {
+            foreach ( $result as $row )
+            {
+                list ( $documentTypeId,
+                       $documentName,
+                       $minAge,
+                       $maxAge,
+                       $needDeliver,
+                       $isBlockEnroll ) = $row;
+
+                $add = false;
+                if ( $needDeliver == DB_TRUE )
+                {
+                    if ( $documentTypeId == DEFAULT_DOCUMENT_TYPE_ID_MARITAL_STATUS && $personType == 'P' )
+                    {
+                        // teste para obrigar apresentacao do documento de solteiro emancipado
+                        $sql = 'SELECT maritalStatusId
+                             FROM ONLY basPhysicalPerson
+                                 WHERE personId = ?';
+
+                        $res = $this->db->query(SAGU::prepare($sql, $personId));
+
+                        if ( strtoupper($res[0][0]) == strtoupper(EMANCIPATED_PERSON) )
+                        {
+                            $add = true;
+                        }
+                    }
+                    elseif ( $documentTypeId == DEFAULT_DOCUMENT_TYPE_ID_ELEITORAL_QUIT && $personType == 'P' )
+                    {
+                        // testar se a pessoa precisa entregar comprovacao de quitacao eleitoral
+                        // verificando se a pessoa, na data da ultima eleicao, ja tinha a idade
+                        // minima ou ainda nao tinha passado da data maxima.
+
+                        // pega a data da ultima eleicao e, se nao existir, pega a data atual
+                        $sql = 'SELECT TO_CHAR(electionDate, \'' . MASK_DATE . '\')
+                                  FROM acdElection
+                              ORDER BY electionDate DESC
+                                 LIMIT 1';
+
+                        $res = $this->db->query($sql);
+
+                        $electionDate = ( strlen((string)$res[0][0]) > 0 ) ? $res[0][0] : date(MASK_DATE_PHP);
+
+                        // pega a data de nascimento da pessoa
+                        $sql = 'SELECT TO_CHAR(dateBirth, \'' . MASK_DATE . '\')
+                             FROM ONLY basPhysicalPerson
+                                 WHERE personId = ?';
+                        $res = $this->db->query(SAGU::prepare($sql, $personId));
+                        $birthDate = ( strlen((string)$res[0][0]) > 0 ) ? $res[0][0] : date(MASK_DATE_PHP);
+
+                        $sql = 'SELECT EXTRACT(YEAR FROM AGE(TO_DATE(?, \'' . MASK_DATE . '\'), TO_DATE(?, \'' . MASK_DATE . '\')))';
+
+                        $res = $this->db->query(SAGU::prepare($sql, array($electionDate, $birthDate)));
+
+                        // idade da pessoa na data da ultima eleicao
+                        $idade = $res[0][0];
+
+                        // verificar se, na data da eleicao, a pessoa tinha a idade minima ou maxima
+                        if ( ($idade >= $minAge || is_null($minAge)) && ($idade <= $maxAge || is_null($maxAge)) )
+                        {
+                            $add = true;
+                        }
+                    }
+                    else
+                    {
+                        $add = true;
+                    }
+                }
+
+                // verificar se ha registros nos documentos restritos
+                if ( isset($contractData) )
+                {
+                    $sql1 = 'SELECT documentTypeId
+                               FROM acdRestrictedDocuments
+                              WHERE documentTypeId = '.$documentTypeId.'';
+
+                    $res1 = $this->db->query($sql1);
+
+                    if ( count($res1) > 0 ) //Is restricted document
+                    {
+                        $sql2 = 'SELECT documentTypeId
+                                   FROM acdRestrictedDocuments
+                                  WHERE documentTypeId    = ?
+                                    AND (courseId         = ? OR courseId IS NULL)
+                                    AND (courseVersion    = ? OR courseVersion IS NULL)
+                                    AND (turnId           = ? OR turnId IS NULL)
+                                    AND (unitId           = ? OR unitId IS NULL)
+                                    AND (formationLevelId = ? OR formationLevelId IS NULL)
+                                    AND isIn              = TRUE';
+
+                        $args2 = array ( $documentTypeId,
+                                         $contractData->courseId,
+                                         $contractData->courseVersion,
+                                         $contractData->turnId,
+                                         $contractData->unitId,
+                                         $courseData->formationLevelId );
+
+                        $res2 = $this->db->query(SAGU::prepare($sql2, $args2));
+
+                        if ( count($res2) > 0 )
+                        {
+                            $add = true;
+                        }
+                        else
+                        {
+                            $add = false;
+                        }
+                    }
+                }
+
+                if ( $add )
+                {
+                    $retVal[$documentTypeId]->documentName   = $documentName;
+                    $retVal[$documentTypeId]->isBlockEnroll  = ($isBlockEnroll == DB_TRUE);
+                }
+            }
+        }
+
+        return $retVal;
+    }
+    
+    public function checkDocumentsObs($personId)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        
+        $sql = 'SELECT A.documentTypeId,
+                       B.name,
+                       A.obs
+                  FROM basDocument A
+            INNER JOIN basDocumentType B
+                    ON (B.documentTypeId = A.documentTypeId)
+                 WHERE A.personId = ?
+                   AND length(A.obs) > 0';
+                   
+        $result = $this->db->query(SAGU::prepare($sql, $personId));
+        
+        return $result;
+    }
+
+    /**
+     * Verify if the birth date is  that the document max age of the document
+     * 
+     * @param $personId (int): Id of the person
+     * @param $documentTypeId (int): Id of the document type
+     * 
+     * @return (array): Return true if the birth date is <= and false otherwise
+     *
+    **/
+    public function checkMaxAge($personId, $documentTypeId, $birthDate=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+
+        $sql = 'SELECT maxAge 
+                  FROM basDocumentType
+                 WHERE documentTypeId = ?';
+
+        $result = $this->db->query(SAGU::prepare($sql, $documentTypeId));
+        $years  = strlen((string)$result[0][0]) == 0 ? '0' : $result[0][0];
+
+        $sql = 'SELECT CASE WHEN (A.dateBirth + \'' . $years . ' years\'::INTERVAL) <= date(now())
+                            THEN true
+                            ELSE false
+                             END
+             FROM ONLY basPhysicalPerson A
+                 WHERE A.personId = ?';
+
+        $result = $this->db->query(SAGU::prepare($sql, $personId));
+
+        if ( $result[0][0] == NULL )
+        {
+            $sql = 'SELECT CASE WHEN (TO_DATE(?, \'' . MASK_DATE . '\') + \'' . $years . ' years\'::INTERVAL) <= date(now())
+                                THEN true
+                                ELSE false
+                                 END';
+
+            $result = $this->db->query(SAGU::prepare($sql, $birthDate));
+        }
+
+        if ( $result[0][0] == DB_TRUE )
+        {
+            return true;
+        }
+        else
+        {
+            return false;
+        }
+    }
+
+    /**
+     * Verify if the birth date is > that the document min age of the document
+     * 
+     * @param $personId (int): Id of the person
+     * @param $documentTypeId (int): Id of the document type
+     * 
+     * @return (array): Return true if the birth date is >= and false otherwise
+     *
+    **/
+    public function checkMinAge($personId, $documentTypeId, $birthDate=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+
+        $sql = 'SELECT minAge 
+                  FROM basDocumentType
+                 WHERE documentTypeId = ?';
+
+        $result = $this->db->query(SAGU::prepare($sql, $documentTypeId));
+        $years  = strlen((string)$result[0][0]) == 0 ? '0' : $result[0][0];
+
+        $sql = 'SELECT CASE WHEN (date(now()) - \'' . $years . ' years\'::INTERVAL) >= A.dateBirth
+                            THEN true
+                            ELSE false
+                             END
+             FROM ONLY basPhysicalPerson A
+                 WHERE A.personId = ?';
+
+        $result = $this->db->query(SAGU::prepare($sql, $personId));
+        
+        if ( $result[0][0] == NULL )
+        {
+            $sql = 'SELECT CASE WHEN (date(now()) - \'' . $years . ' years\'::INTERVAL) >= TO_DATE(?, \'' . MASK_DATE . '\')
+                                THEN true
+                                ELSE false
+                                 END';
+
+            $result = $this->db->query(SAGU::prepare($sql, $birthDate));
+        }
+
+        if ( $result[0][0] == DB_TRUE )
+        {
+            return true;
+        }
+        else
+        {
+            return false;
+        }
+    }
+
+}
+?>

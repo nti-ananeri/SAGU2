@@ -1,0 +1,117 @@
+<?
+/**
+*
+* @author Giovani Murilo Dantas Correa [gmurilo@isolution.inf.br]
+*
+* $version: $Id$
+*
+* \b Maintainers \n
+* Daniel Afonso Heisler [daniel@isolution.inf.br]
+*
+* @since
+* Class created on 24/09/2008
+*
+* \b Organization: \n
+* iSolution - Soluções de Internet \n
+* The iSolution TEAM
+*
+* \b CopyLeft: \n
+* CopyLeft (L) 2007 iSolution - Soluções de Internet \n
+*
+* \b License \n
+* Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+*
+* \b History \n
+* See history in CVS repository: http://isolution.inf.br   
+*
+**/
+set_time_limit(0);        
+$MIOLO = MIOLO::getInstance();
+$module = 'academic';
+
+define('FPDF_FONTPATH', $MIOLO->getModulePath('basic', '/classes/fpdf/font/'));
+define('REPORT_ID', strtoupper(_M('Report card',$module)));
+$MIOLO->Uses('classes/RptSchoolYield.class', 'academic');
+class RptSchoolYieldInLot extends RptSchoolYield
+{
+    public function __construct($data = NULL)
+    {
+        $MIOLO = MIOLO::getInstance();
+
+        $this->title = strtoupper(_M('Report card', $this->module));
+        
+        PDF::__construct();
+
+        foreach($data as $item => $value)
+        {
+            $this->data2->{$item} = $value;
+        }
+
+        $this->useUserInfo = false;
+        $this->aliasNbPages(); 
+        $businessClassPupil 	    = $MIOLO->getBusiness('academic', 'BusClassPupil'); 
+        $result = $businessClassPupil->searchClassPupil($this->data2);
+        foreach($result as $contractX)
+        {
+            $this->data2->contractId[] = $contractX[2];
+        }
+
+        $busContract            = $MIOLO->getBusiness($this->module, 'BusContract');
+        $businessStamp 	    = $MIOLO->getBusiness('basic', 'BusStamp'); 
+        $stamp = $businessStamp->getStamp($this->data2->stampId);
+        $this->businessBoletim 	= $MIOLO->getBusiness('academic', 'BusBoletim'); 
+        foreach ($this->data2->contractId as $contractField => $contractId )
+        {
+            if(strlen((string)$contractId) > 0 )
+            {
+                unset($this->data);
+                $this->data = $this->data2;
+                unset($this->data->contractId);
+                $contractSearch->classId      = $this->data->classId;
+                $contractSearch->contractId   = $contractId;
+                $contractSearch->periodId     = $this->data->periodId;
+                $contract                     = $busContract->searchContract($contractSearch);
+                $this->data->contractId       = $contractId;
+                $this->data->personId         = $contract[0][1];
+                $this->data->personName       = $contract[0][2];
+                $this->data->courseName       = $contract[0][4];
+                $this->data->courseVersion    = $contract[0][5];
+                $this->data->turnDescription  = $contract[0][6];
+                $this->data->courseId         = $contract[0][11];
+                $this->data->turnId           = $contract[0][12];
+                $this->data->unitId           = $contract[0][13];
+                $this->data->serie            = $contract[0][14];
+                $this->data->stamp            = $stamp;
+                $this->data->groups     = $this->businessBoletim->getGroupsByPeriod($this->data->contractId, $this->data->periodId);
+                
+                //Degrees
+                if( count($this->data->groups) > 0)
+                {
+                    $this->addPage('P', 'mm', 'A4');
+
+                    foreach ($this->data->groups as $groups )
+                    {
+                        $groupIds[] = $groups[1];
+                    }
+                    $groupId = implode(',',$groupIds);
+                    $this->data->degrees    = $this->businessBoletim->getDegreesByGroups($groupId);
+                    foreach ($this->data->degrees as $item => $value)
+                    {
+                        $this->data->degreesDescription[$this->data->degrees[$item][2]] =$this->data->degrees[$item][1];  
+                    }
+                    $this->lsize = $this->lsize+2;
+                    $this->putInfos();
+                    $this->putBoletimNotes();
+                }
+                else
+                {
+               //$this->addPage('P', 'mm', 'A4');
+               //$this->putInfos();
+                }
+                unset($this->data);
+            }
+        }
+        $this->outPut(str_replace(' ', '_', strtolower(_M('School yield', 'academic')) . $this->data->classId . $this->data->periodId).date('dmYhis') . '.pdf','D');
+    } 
+}
+?>

@@ -1,0 +1,205 @@
+<?php
+
+/**
+ * GenerateMultipleLearningPeriod form
+ *
+ * @author Leovan Tavares da Silva [leovan@solis.coop.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * Armando Taffarel Neto [taffarel@solis.coop.br]
+ *
+ * @since
+ * Class created on 20/06/2006
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2005 SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+
+/**
+ * Form to generate Multiple Learning Period
+ **/
+class FrmEnrollBookData extends MForm
+{
+    private $home;
+    public $filters;
+    /**
+     * Class constructor
+     **/
+    function __construct($data)
+    {
+
+        $module = MIOLO::getCurrentModule();
+
+        $this->home   = $data->home;
+
+        parent::__construct(_M('Enroll book data', $module));
+
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+
+        $toolBar = new MToolBar('toolBar',$MIOLO->getActionURL($module,$action));
+
+        $toolBar->disableButton('tbBtnNew');
+        $toolBar->disableButton('tbBtnDelete');
+        $toolBar->disableButton('tbBtnPrint');
+        $toolBar->disableButton('tbBtnSave');
+        $toolBar->disableButton('tbBtnSearch');
+
+        //favoritos
+        $enabledImage  = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-20x20.png');
+        $disabledImage = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-disabled-20x20.png');
+        $url           = $MIOLO->getActionURL($module, $this->home, null, array('function' => 'search', 'event' => 'bookmark'));
+        $toolBar->addButton('tbBtnBookmark', _M('Add to bookmarks', 'basic'), $url, null, true, $enabledImage, $disabledImage);
+
+        if ( MIOLO::_request('event') == 'bookmark' )
+        {
+            $MIOLO->getClass('basic', 'access');
+            access::insert('Enroll book data', $this->home, 'enrollBookData-16x16.png', true);
+        }
+        //fim favoritos
+
+        $fields[] = $toolBar;
+        $fields[] = new MSeparator('');
+        
+        $businessPeriod = $MIOLO->getBusiness($module, 'BusPeriod');
+        $periodId       = new MComboBox('periodId', $this->getFormValue('periodId', CURRENT_PERIOD_ID), _M('Period',$module), $businessPeriod->listPeriod() );
+        $validators[]   = new MRequiredValidator('periodId');
+        $fields[]         = $periodId;
+        
+        $fields[] = new MSeparator('');
+        $btnNext = new MButton('btnNext', _M('Next', $module));
+        $fields[] = $btnNext;
+        
+        $this->setFields($fields);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+        if ( count($validators) > 0 )
+        {
+            $this->setValidators($validators);
+        }
+        $this->setClose($MIOLO->getActionURL($module,substr($action,0,strrpos($action,':'))));
+    }
+
+    /**
+     * Event triggered when user chooses Generate from the toolbar
+     **/
+    public function btnNext_click($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+        
+        $data     = $this->getData();
+
+        $business = $MIOLO->getBusiness($module, 'BusEnrollBook');
+        $businessPeriod = $MIOLO->getBusiness($module, 'BusPeriod');
+        if ( strlen((string)$data->periodId) == 0 )
+        {
+            $this->addError(_M('No period selected.', $module));
+        }
+        elseif ( $business->isAlreadyGenerated($data->periodId) )
+        {
+            $periodEnrollBookDate = $businessPeriod->getPeriodEnrollBookDate($data->periodId);
+            if ( $MIOLO->checkAccess($module, ACD_ADMIN, false, false) )
+            {
+                $vars       = array('periodId'=>$data->periodId);
+                $nextAction = substr($action,0,strrpos($action,':')) . ':enrollBookOptions';
+                $gotoNo     = $MIOLO->getActionURL($module, $nextAction, null, $vars);
+
+                $gotoCancel = $MIOLO->getActionURL($module, $action, null, $vars);
+
+                $vars['event'] = 'generateEnrollBook';
+                $gotoYes    = $MIOLO->getActionURL($module, $action, null, $vars);
+
+                $msg = _M('The enroll book data for selected period was already generated in @1.', $module, $periodEnrollBookDate) . 
+                $msg .= '<ul>' .
+                        ' <li>' . _M('Click YES to generate all data again (this may take some minutes).', $module) . '</li>' .
+                        ' <li>' . _M('Click NO to go to the report options page.', $module) . '</li>' .
+                        ' <li>' . _M('Click CANCEL to go back.', $module) . '</li>' .
+                        '</ul>';
+
+                $prompt = new MPrompt(_M('Question', $module), $msg);
+                $prompt->setType('question');
+                $prompt->addButton(_M('Yes', $module), $gotoYes);
+                $prompt->addButton(_M('No', $module), $gotoNo);
+                $prompt->addButton(_M('Cancel', $module), $gotoCancel);
+
+                $this->setFields($prompt);
+            }
+            else
+            {
+                $this->addError(_M('The enroll book data for selected period was already generated in @1.', $module, $periodEnrollBookDate) . ' ' . _M('You don\'t have the right to generate the enroll book data again.', $module));
+            }
+        }
+        elseif ( $MIOLO->checkAccess($module, ACD_ADMIN, false, false) )
+        {
+            $vars   = array('periodId'=>$data->periodId);
+            $gotoNo = $MIOLO->getActionURL($module, $action, null, $vars);
+
+            $vars['event'] = 'generateEnrollBook';
+            $gotoYes    = $MIOLO->getActionURL($module, $action, null, $vars);
+
+            $MIOLO->question(_M('Do you want to generate the enroll book data for @1?', $module, $data->periodId) . ' ' . _M('This operation may take a long time.', $module), $gotoYes, $gotoNo);
+        }
+        else
+        {
+            $this->addError(_M('You don\'t have the right to generate the enroll book data.', $module));
+        }
+    }
+
+    public function generateEnrollBook()
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+        
+        $data     = $this->getData();
+
+        $business = $MIOLO->getBusiness($module, 'BusEnrollBook');
+        
+        $x = $business->generateEnrollBookTable($data->periodId);
+        
+        if (count($business->getErrors()) > 0)
+        {
+            $this->addError($business->getErrors());
+        }
+        else
+        {
+            $nextAction = substr($action,0,strrpos($action,':')) . ':enrollBookOptions';
+            $vars       = array('periodId'=>$data->periodId);
+            $nextUrl    = $MIOLO->getActionURL($module, $nextAction, null, $vars);
+
+            $MIOLO->information(_M('Enroll book generated. @1 records inserted.', $module, $x) . ' ' . _M('Click OK to go to the report options page.', $module), $nextUrl);
+        }
+    }
+}
+
+?>

@@ -1,0 +1,297 @@
+<?php
+/**
+ *
+ * Shows a list of pupils enrolled in the specified group and allow the professor
+ * to register their frequencies
+ *
+ * @author Armando Taffarel Neto [taffarel@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Armando Taffarel Neto [taffarel@solis.coop.br]
+ * 
+ * @since
+ * Class created on 10/09/2007
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Report to show pupils ou employees financial situations
+ */
+class FrmSetSupervisedTrainingNew extends MForm
+{
+    
+    /**
+     * Class constructor
+     */
+    function __construct()
+    {
+        $MIOLO  = MIOLO::getInstance();
+
+        parent::__construct(_M('Set supervised training', 'academic'));
+
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+        $this->setShowPostButton(false);
+        $this->defineFields();
+        $this->eventHandler();
+    }
+
+    /**
+     *  Default method to define fields
+     */
+    public function defineFields()
+    {
+        $MIOLO      = MIOLO::getInstance();
+        $module     = MIOLO::getCurrentModule();
+        $action     = MIOLO::getCurrentAction();
+        
+        $toolBar = new MToolBar('toolBar',$MIOLO->getActionURL('services',$action));
+
+        //Toolbar exit
+        $enabledImage  = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'exit-20x20.png' );
+        $disabledImage = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'exit-disabled-20x20.png' );        
+        $toolBar->addButton('tbBtnClose', _M('Close', 'miolo'), $MIOLO->getActionURL( 'services', 'main:professor:curricularComponentsNew'), _M('Close', 'miolo'), true, $enabledImage, $disabledImage);
+ 
+        //Toolbar desable all 
+        $toolBar->hideButton('tbBtnExit');
+        $toolBar->hideButton('tbBtnNew');
+        $toolBar->hideButton('tbBtnDelete');
+        $toolBar->hideButton('tbBtnSearch');
+        $toolBar->hideButton('tbBtnPrint');
+        $toolBar->hideButton('tbBtnBack');
+        $toolBar->hideButton('tbBtnReset');
+        $fields[] = $toolBar;
+
+        $data->professorId = $this->getFormValue('professorId', MIOLO::_REQUEST('professorId'));
+        $data->groupId     = $this->getFormValue('groupId', MIOLO::_REQUEST('groupId'));
+        
+        //busca disciplina oferecida
+        $business       = $MIOLO->getBusiness('services', 'BusProfessorFrequencyNew');
+        $professorGroup = $business->getProfessorGroup($data);
+
+        //Cabeçalho
+        $title    = $professorGroup->curricularComponentId . '/' . $professorGroup->curricularComponentVersion . ' - '. $professorGroup->curricularComponentName;
+        foreach ( $professorGroup->schedules  as $schedule )
+        {
+            $title .= ' <br>( ' . $schedule->weekDayDescription . ' - "' . $schedule->beginHour . ' - ' . $schedule->endHour . '" )';
+        }
+        $pupilsTable = new MTableRaw($title, null, null);
+        $fields[]    = $pupilsTable;
+
+        $businessSupervisedTraining = $MIOLO->getBusiness('academic', 'BusSupervisedTraining');
+        $businessCallList           = $MIOLO->getBusiness('academic', 'BusCallList');
+
+        $divError = new MDiv('divError', null, null, 'align=center');
+        $fields[] = $divError;
+
+        //campos ocultos
+        $fields[] = new MHiddenField('professorId', $this->getFormValue('professorId', MIOLO::_REQUEST('professorId')));
+        $fields[] = new MHiddenField('groupId', $this->getFormValue('groupId', MIOLO::_REQUEST('groupId')));
+
+        //Percorre os alunos
+        $pupils = $businessCallList->getPupils($data);
+
+        if ( count($pupils)>0 )
+        {
+            foreach ( $pupils as $pupil )
+            {
+                //pega os dados desse aluno
+                $supervisedTraining = $businessSupervisedTraining->getSupervisedTrainingByEnrollId($pupil->enrollId);
+
+                //código
+                $supervisedTrainingId = new MHiddenField('supervisedTrainingId_' . $pupil->contractId, $this->getFormValue('supervisedTrainingId_' . $pupil->contractId, $supervisedTraining->supervisedTrainingId));
+                $fields[]             = $supervisedTrainingId;
+
+                //Matrícula
+                $enrollId = new MHiddenField('enrollId_' . $pupil->contractId, $this->getFormValue('enrollId_' . $pupil->contractId, $pupil->enrollId));
+                $fields[] = $enrollId;
+
+                //pessoa
+                $personLabel = new MText('personLabel_' . $pupil->contractId, _M('Person','academic') . ':');
+                $personLabel->setWidth(FIELD_CONTAINER_SIZE);
+
+                $personId    = new MTextLabel('personId_' . $pupil->contractId, $pupil->personId);
+
+                $personName  = new MTextLabel('personName_' . $pupil->contractId, $pupil->personName);
+
+                $hctPerson   = new MHContainer('hctPerson_' . $pupil->contractId, array($personLabel, $personId, $personName));
+                $hctPerson->setShowLabel(true);
+                $fields[]    = $hctPerson;
+
+                $personId    = new MHiddenField('personId_' . $pupil->contractId, $pupil->personId);
+                $fields[]    = $personId;
+
+                //contrato
+                $contractLabel         = new MText('contractLabel_' . $pupil->contractId, _M('Contract','academic') . ':');
+                $contractLabel->setWidth(FIELD_CONTAINER_SIZE);
+                $flds[]                = $contractLabel;
+                $contractId            = new MTextLabel('contractId_' . $pupil->contractId, $pupil->contractId);
+
+                $hctContract           = new MHContainer('hctContract_' . $pupil->contractId, array($contractLabel, $contractId));
+                $fields[]              = $hctContract;
+
+                $contractId = new MHiddenField('contractId_' . $pupil->contractId, $pupil->contractId);
+                $fields[]   = $contractId;
+
+                //estágio
+                $description = new MTextField('description_' . $pupil->contractId, $this->getFormValue('description_' . $pupil->contractId, $supervisedTraining->description), _M('Training','academic'), FIELD_DESCRIPTION_SIZE);
+                $fields[]    = $description;
+
+                //instituicao
+                $institutionLabel = new MText('institutionLabel_' . $pupil->contractId, _M('Company','academic') . ':');
+                $institutionLabel->setWidth(FIELD_CONTAINER_SIZE);
+
+                $institutionId    = new MLookupTextField('institutionId_' . $pupil->contractId, $this->getFormValue('institutionId_' . $pupil->contractId, $supervisedTraining->institutionId), '', FIELD_LOOKUPFIELD_SIZE, null, null, 'institutionName_' . $pupil->contractId, 'basic', 'LegalPersonWork', null, null, true);
+                $validators[]     = new MIntegerValidator('institutionId_' . $pupil->contractId, _M('Institution','academic'), 'optional');
+
+                $institutionName  = new MTextField('institutionName_' . $pupil->contractId, $this->getFormValue('institutionId_' . $pupil->contractId, $supervisedTraining->institutionId), '', FIELD_DESCRIPTION_SIZE);
+                $institutionName->setJsHint(_M('Institution name','academic'));
+                $institutionName->setReadOnly(true);
+
+                $hctInstitution   = new MHContainer('hctInstitution_' . $pupil->contractId, array($institutionLabel, $institutionId, $institutionName));
+                $hctInstitution->setShowLabel(true);
+                $fields[]         = $hctInstitution;
+
+                //responsável supervisor
+                $supervisorLabel = new MText('supervisorLabel_' . $pupil->contractId, _M('Supervisor','academic') . ':');
+                $supervisorLabel->setWidth(FIELD_CONTAINER_SIZE);
+
+                $supervisorId    = new MLookupTextField('supervisorId_' . $pupil->contractId, $this->getFormValue('supervisorId', $supervisedTraining->supervisorId), '', FIELD_LOOKUPFIELD_SIZE, null, null, 'supervisorName_' . $pupil->contractId, 'basic', 'PhysicalPerson', null, array('workId' => 'institutionId_' . $pupil->contractId, 'workName' => 'institutionName_' . $pupil->contractId), true);
+                $validators[]    = new MIntegerValidator('supervisorId_' . $pupil->contractId, _M('Supervisor','academic'), 'optional');
+
+                $supervisorName  = new MTextField('supervisorName_' . $pupil->contractId, $this->getFormValue('supervisorName_' . $pupil->contractId, $supervisedTraining->supervisorName), '', FIELD_DESCRIPTION_SIZE);
+                $supervisorName->setJsHint(_M('Supervisor','academic'));
+                $supervisorName->setReadOnly(true);
+
+                $hctSupervisor   = new MHContainer('hctSupervisor_' . $pupil->contractId, array($supervisorLabel, $supervisorId, $supervisorName));
+                $hctSupervisor->setShowLabel(true);
+                $fields[]        = $hctSupervisor;
+
+                //data inicial
+                $beginDate = new MCalendarField('beginDate_' . $pupil->contractId, $this->getFormValue('beginDate_' . $pupil->contractId, $supervisedTraining->beginDate), _M('Begin date', 'academic'), FIELD_DATE_SIZE);
+                $beginDate->setJsHint(_M('Enter the begin date', 'academic'));
+                $beginDate->setValidator(new MDATEDMYValidator('beginDate_' . $pupil->contractId, _M('Begin date','academic'), 'optional'));
+                $fields[]  = $beginDate;
+
+                //data final
+                $endDate   = new MCalendarField('endDate_' . $pupil->contractId, $this->getFormValue('endDate_' . $pupil->contractId, $supervisedTraining->endDate), _M('End date', 'academic'), FIELD_DATE_SIZE);
+                $endDate->setJsHint(_M('Enter the end date', 'academic'));
+                $endDate->setValidator(new MDATEDMYValidator('endDate_' . $pupil->contractId, _M('End date','academic'), 'optional'));
+                $fields[]  = $endDate;
+
+                //separador
+                $fields[] = new MSeparator('<hr>');
+            }
+        }
+        else
+        {
+            $msg       = _M('None student eneolled.', $module);
+            $lblMsg2   = new MText('lblMsg2', '<b>' . $msg . '</b>');
+            $lblMsg2->color = 'red';
+
+            $cntErrors = new MVContainer('cntErrors2', array(new Separator(''), $lblMsg2, new Separator('')));
+            $divError  = new MDiv('divError2', null, null, 'align=center');
+            $fields[]  = $cntErrors;
+        }
+
+        $this->setFields($fields);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        
+    }
+
+    /**
+     * Event triggered when user click on the save button
+     **/
+    public function tbBtnSave_click($sender=null)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $action = MIOLO::getCurrentAction();
+        $module = 'services';
+        $data   = $this->getTypesData();
+
+        if ( count($data->pupils) >= 0 )
+        {
+            $businessSupervisedTraining = $MIOLO->getBusiness('academic', 'BusSupervisedTraining');
+            $ok = $businessSupervisedTraining->setSupervisedTraining($data);
+
+            if ( $ok == true )
+            {
+                $msg       = _M('Data saved with success.', 'academic');
+                $lblMsg1   = new MText('lblMsg1', '<b>' . $msg . '</b>');
+                $lblMsg1->color = 'green';
+
+                $cntErrors = new MVContainer('cntErrors', array(new Separator(''), $lblMsg1, new Separator('')));
+                $this->divError->addControl($cntErrors);
+            }
+            else
+            {
+                $msg       = _M('Error executing requested operation.', 'academic');
+                $lblMsg1   = new MText('lblMsg1', '<b>' . $msg . '</b>');
+                $lblMsg1->color = 'red';
+
+                $cntErrors = new MVContainer('cntErrors', array(new Separator(''), $lblMsg1, new Separator('')));
+                $this->divError->addControl($cntErrors);
+            }
+        }
+        else
+        {
+            $msg       = _M('None student eneolled.', $module);
+            $lblMsg1   = new MText('lblMsg1', '<b>' . $msg . '</b>');
+            $lblMsg1->color = 'red';
+
+            $cntErrors = new MVContainer('cntErrors', array(new Separator(''), $lblMsg1, new Separator('')));
+            $this->divError->addControl($cntErrors);
+        }
+    }
+
+    public function getTypesData()
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $action = MIOLO::getCurrentAction();
+
+        $data->professorId = $this->getFormValue('professorId', MIOLO::_REQUEST('professorId'));
+        $data->groupId     = $this->getFormValue('groupId', MIOLO::_REQUEST('groupId'));
+        
+        $businessSupervisedTraining = $MIOLO->getBusiness('academic', 'BusSupervisedTraining');
+        $businessCallList           = $MIOLO->getBusiness('academic', 'BusCallList');
+
+        $pupils = $businessCallList->getPupils($data);
+
+        if ( count($pupils)>0 )
+        {
+            $x = 0;
+            foreach ( $pupils as $pupil )
+            {
+                $supervisedTraining = $businessSupervisedTraining->getSupervisedTrainingByEnrollId($pupil->enrollId);
+
+                $data->pupils[$x]->contractId     = $this->getFormValue('contractId_' . $pupil->contractId);
+                $data->pupils[$x]->enrollId       = $this->getFormValue('enrollId_' . $pupil->contractId);
+                $data->pupils[$x]->description    = $this->getFormValue('description_' . $pupil->contractId);
+                $data->pupils[$x]->institutionId  = $this->getFormValue('institutionId_' . $pupil->contractId);
+                $data->pupils[$x]->supervisorId   = $this->getFormValue('supervisorId_' . $pupil->contractId);
+                $data->pupils[$x]->beginDate      = $this->getFormValue('beginDate_' . $pupil->contractId);
+                $data->pupils[$x]->endDate        = $this->getFormValue('endDate_' . $pupil->contractId);
+                $x++;
+            }
+        }
+
+        return $data;
+    }
+}
+
+?>

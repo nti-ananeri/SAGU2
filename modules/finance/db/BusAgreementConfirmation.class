@@ -1,0 +1,129 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for finEntry table
+ *
+ * @author William Prigol Lopes [william@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * Rafael Luís Spengler [rafael@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * Armando Taffarel Neto [taffarel@solis.coop.br]
+ *
+ * @since
+ * Class created on 13/12/2005
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to manipulate the Entry table
+ **/
+class BusinessFinanceBusAgreementConfirmation extends MBusiness
+{
+    public $db;
+    
+    function __construct()
+    {
+        $this->db = $this->getDatabase();
+    }
+
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module = is_null($module) ? 'finance' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+    public function insertAgreement ( $data )
+    {
+        
+        $a = get_object_vars($data);
+        unset($a['date']);
+        unset($a['personName']);
+        foreach ( $a as $item => $value )
+        {
+            if ( stristr( $item, 'date') )
+            {
+                $keys[] = 'TO_DATE(?, \''. MASK_DATE . '\')';
+            }
+            else
+            {
+                $keys[] = '?';
+            }
+        }
+        $x = $this->db->query('SELECT nextval(\'seq_agreementConfirmationId\')');
+        $sql  = 'INSERT INTO finAgreementConfirmation (agreementConfirmationId, '.implode(',',array_keys($a)).' ) values ( '.$x[0][0].', '.(implode(',', $keys)).' ) ';
+        foreach($a as $item => $value )
+        {
+            $args[] = $value;
+        }
+        $ok = $this->db->execute(SAGU::prepare($sql,$args));
+        if ( !$ok )
+        {
+            $this->db->query('SELECT setval(\'seq_agreementConfirmationId\', max(agreementConfirmationId)) FROM finAgreementConfirmation');
+        }
+        else
+        {
+            return $x[0][0];
+        }
+    }
+
+    public function listAgreements ( $personId = null )
+    {
+        if ( strlen((string)$personId) == 0 )
+        {
+            return null;
+        }
+        $sql = 'SELECT
+                    DISTINCT
+                    agreementId, agreementId::varchar || \' - \' || TO_CHAR(A.datetime, \'' . MASK_DATE. '\'), A.datetime
+                FROM 
+                    finAgreementHistory A INNER JOIN 
+                    finAgreementHistoryParcels B USING ( agreementId ) INNER JOIN
+                    finReceivableInvoice C USING (invoiceId)
+                WHERE 
+                    C.personId = '.$personId. '
+                ORDER BY A.dateTime ';
+        $result = $this->db->query($sql);
+        if ( count ( $result ) > 0 )
+        {
+            foreach ( $result as $item => $value )
+            {
+                unset($value[2]);
+                $result2[$item] = $value;
+            }
+            return $result2;
+        }
+        return null;
+    }
+}
+?>

@@ -1,0 +1,242 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for basHoliday table
+ *
+ * @author Giovani Murilo Dantas Corrêa [gmurilo@isolution.inf.br] 
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Daniel Afonso Heisler [daniel@isolution.inf.br]
+ *
+ * @since
+ * Class created on 01/02/2009
+ *
+ * \b @organization \n
+ * iSolution - Soluções em TI \n
+ * The iSolution Development Team
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to manipulate Holidays
+ **/
+class BusinessPontoBusVacation extends Business
+{
+
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module = is_null($module) ? 'basic' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+    /**
+     * Return a specific record from the database
+     *
+     * @param $date (date): Primary key of the record to be retrieved
+     *
+     * @return (object): Return an object of the type handled by the class
+     *
+     **/
+    public function getVacation($data)
+    {
+        $sql = 'SELECT A.personId, 
+                       A.referenceYear,
+                       TO_CHAR(A.beginDate,\''.MASK_DATE.'\'),
+                       TO_CHAR(A.endDate,\''.MASK_DATE.'\'),
+                       A.userName,
+                       TO_CHAR(A.dateTime,\'' . MASK_TIMESTAMP . '\'),
+                       A.ipAddress,
+                       B.name
+                  FROM pntVacation A INNER JOIN ONLY basPhysicalPersonEmployee B ON ( A.personId = B.personId ) 
+                 WHERE A.personId = ?
+                 AND A.referenceYear = ? ';
+        $args = array($data->personId, $data->referenceYear);
+        $db     = $this->getDatabase();
+        $result = $db->query(SAGU::prepare($sql, $args));
+
+        $vacation  = new PntVacation();
+        list (  $vacation->personId,
+                $vacation->referenceYear,
+                $vacation->beginDate,
+                $vacation->endDate,
+                $vacation->userName,
+                $vacation->dateTime,
+                $vacation->ipAddress,
+                $vacation->personName) = $result[0];
+
+        return $vacation; 
+    }
+
+    /**
+     * Do a search on the database table handled by the class
+     *
+     * @param $filters (object): Search filters
+     *
+     * @return (array): An array containing the search results
+     **/
+    public function searchVacation($filters)
+    {
+        $sql = 'SELECT A.personId,
+                       B.name,
+                       A.referenceYear,
+                       TO_CHAR(A.beginDate,\''. MASK_DATE .'\'),
+                       TO_CHAR(A.endDate,\''. MASK_DATE .'\'),
+                       A.userName,
+                       TO_CHAR(A.dateTime,\'' . MASK_TIMESTAMP . '\'),
+                       A.ipAddress
+                  FROM pntVacation A 
+                  INNER JOIN ONLY basPhysicalPersonEmployee B ON ( A.personId = B.personId ) ';
+
+/*        if ( strlen((string)$filters->beginDate) > 0 && strlen((string)$filters->endDate) > 0 )
+        {
+            $where .= ' AND A.beginDate BETWEEN TO_DATE(?,\''.MASK_DATE.'\') AND TO_DATE(?, \''.MASK_DATE.'\')';
+            $args[] = $filters->beginDate;
+            $args[] = $filters->endDate;
+
+        }*/
+        if ( strlen((string)$filters->beginDate) > 0 )
+        {
+            $where .= ' AND A.beginDate = TO_DATE(?,\''.MASK_DATE.'\')';
+            $args[] = $filters->beginDate;
+        }
+        if ( strlen((string)$filters->endDate) > 0 )
+        {
+            $where .= ' AND A.endDate = TO_DATE(?,\''.MASK_DATE.'\')';
+            $args[] = $filters->endDate;
+        }
+
+        if ( strlen((string)$filters->personName) > 0 )
+        {
+            $where .= ' AND TO_ASCII(B.name) ILIKE TO_ASCII(?) ';
+            $args[] = $filters->personName . '%';
+        }
+
+        if ( strlen((string)$filters->personId) > 0 )
+        {
+            $where .= ' AND A.personId =  ? ';
+            $args[] = $filters->personId ;
+        }
+
+        if ( strlen((string)$filters->referenceYear) > 0 )
+        {
+            $where .= ' AND A.referenceYear =  ? ';
+            $args[] = $filters->referenceYear ;
+        }
+        
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE ' . substr($where, 4) . ' ';
+
+            $db     = $this->getDatabase();
+
+            $result = $db->query(SAGU::prepare($sql,$args));
+
+        }
+
+        return $result;
+    }
+
+    /**
+     * Insert a new record
+     *
+     * @param $data (object): An object of the type handled by the class
+     *
+     * @return True if succed, otherwise False
+     *
+     **/
+    public function insertVacation($data)
+    {
+        $db  = $this->getDatabase();
+
+
+
+        $sql = 'INSERT INTO pntVacation
+                            (personId,
+                             referenceYear,
+                             beginDate,
+                             endDate)
+                     VALUES (?,
+                             ?,
+                             TO_DATE(?,\''.MASK_DATE.'\'),
+                             TO_DATE(?, \''.MASK_DATE.'\'))';
+
+        $args = array(  $data->personId,
+                        $data->referenceYear,
+                        $data->beginDate,
+                        $data->endDate );
+
+        $result = $db->execute(SAGU::prepare($sql, $args));
+        return $result;
+    }
+
+    /**
+     * Update data from a specific record
+     *
+     * @param $data (object): Data which will replace the old record data
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+   public function updateVacation($data)
+   {
+        $sql = 'UPDATE pntVacation
+                   SET beginDate  = TO_DATE(?, \'' . MASK_DATE . '\'),
+                       endDate  = TO_DATE(?, \'' . MASK_DATE . '\')
+                 WHERE personId    = ? AND referenceYear = ? ';
+
+        $args = array(  $data->beginDate,
+                        $data->endDate,
+                        $data->personId,
+                        $data->referenceYear);
+
+        $db   = $this->getDatabase();
+        $sql = SAGU::prepare($sql, $args);
+
+        $result = $db->execute($sql);
+        return $result;
+    }
+
+    /**
+     * Delete a record
+     *
+     * @param $holidayDate (date): Primary key for deletion
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+    public function deleteVacation($data)
+    {
+        $sql = 'DELETE 
+                    FROM pntVacation
+                WHERE 
+                    personId = ? AND
+                    referenceYear = ?';
+        $args[] = $data->personId;
+        $args[] = $data->referenceYear;
+
+        $db     = $this->getDatabase();
+        $result = $db->execute(SAGU::prepare($sql, $args));
+        return $result;
+    }
+
+}
+
+?>

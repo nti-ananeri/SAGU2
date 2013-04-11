@@ -1,0 +1,345 @@
+<?php
+
+/**
+ * Class to generate the bank remittance
+ */
+class RemittanceInvoice237BIC extends RemittanceInvoice
+{
+
+    public $history;
+    public $fileBody;
+    public $fileData;
+
+    public function __construct($data)
+    {
+        parent::__construct($data);
+    }
+    /*
+     * generate the header for the remittance invoice
+     * 
+     * @param $data (object): Data information for header information
+     *
+     * @return (string): String containing the header formatted
+     *
+     */
+    public function header($data)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $business = $MIOLO->getBusiness($module, 'BusRemittanceInvoice237BIC');
+        $data->companyId = DEFAULT_COMPANY_CONF; 
+        $dataCompany     = $business->getCompanyData($data->companyId);
+        $dataBankAccount = $business->getBankAccountData($data->bankAccountId, $data->bankContractId );
+
+        // 001 - 009 - Constante 01REMESSA
+        $line = '01REMESSA';
+        // 010 - 026 - Em branco
+        $line .= DefaultFormat::formatField('01COBRANCA', 'A', 17);
+        // 027 - 046 - Código do Cedente
+        // 027 - 036 - Código do Contrato
+        $line .= DefaultFormat::formatField($data->bankContractId, 'N', 10);
+        // 037 - 043 - Brancos
+        $line .= DefaultFormat::formatField(' ', 'A', 7);
+        // 044 - 046 - Agência
+        $line .=  DefaultFormat::formatField('042', 'N', 3);
+        // 047 - 076 - Nome da Empresa
+        $line .= DefaultFormat::formatField($dataCompany->name, 'A', 30);
+        // 077 - 094 - Em branco
+        $line .= DefaultFormat::formatField('320BICBANCO', 'A', 18);
+        // 095 - 100 - Data Gravação do arquivo
+        $line .= date('dmy');
+        // 101 - 108 - Em branco
+        $line .= DefaultFormat::formatField('01600BPI', 'A', 8);
+        // 109 - 115 - Identificação do Sistema
+        $line .= DefaultFormat::formatField($dataBankAccount->remittanceSequence, 'N', 7);
+        // 116 - 394 - Em branco
+        $line .= DefaultFormat::formatField(' ', 'A', 279);
+        // 395 - 400 - Constante 000001
+        $line .= DefaultFormat::formatField('1', 'N', 6);
+        // Tira acentos, coloca em caixa alta e quebra linha
+        $lineS .= strToUpper( SAGU::stringToASCII($line) ). "\r\n";
+
+        return $lineS;
+    }
+    
+    /**
+     * Generate the details remittance data
+     * 
+     * @param $data (object): Data information for header information
+     *
+     * @return (string): String containing the header formatted
+     *
+     */
+    public function details($data)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $business = $MIOLO->getBusiness($module, 'BusRemittanceInvoice237BIC');
+        $dataDetails     = $business->listDetails($data);
+        if(!is_array($dataDetails))
+        {
+            return false;
+        }
+
+        // contador de linhas ... começa no 1 por causa do header.
+        $counter = 1;
+        $Total_Remessa = 0;
+        
+        foreach ($dataDetails as $key => $oneLine )
+        {
+            $counter++;
+            $data->collectionBranch= $oneLine[0];
+            $data->wallet          = $oneLine[1];
+            $data->accountNumber   = $oneLine[2];
+            $data->accountNumberDigit = $oneLine[3];
+            $data->invoiceId       = $oneLine[4];
+            $data->isFineInPercent = $oneLine[5];
+            $data->fine            = $oneLine[6];
+            $data->bankInvoiceId   = DefaultFormat::formatField($oneLine[7], 'N',6);
+            $data->maturityDate    = $oneLine[8];
+            $data->value           = $oneLine[9];
+            $data->emissionDate    = $oneLine[10];
+            $data->interest        = $oneLine[11];
+            $data->discountDate    = $oneLine[12];
+            $data->discount        = $oneLine[13];
+            $data->personType      = 'F'; 
+            $document->personName  = $oneLine[14];
+            $document->content     = $oneLine[15];
+            $data->address         = $oneLine[16];
+            $data->branchNumber    = $oneLine[17];
+            $data->neighborhood    = $oneLine[18];
+            $data->zipCode         = $oneLine[19];
+            $data->cityName        = $oneLine[20];
+            $data->stateId         = $oneLine[21];
+
+            // 001 - 001 - constante 1
+            $line = '1';
+            
+            // 002 - 003 - Identifição do Tipo do Sacado (2)
+            $ts = '02';
+            $line .= DefaultFormat::formatField($ts, 'N', 2);
+        
+            $data->companyId = DEFAULT_COMPANY_CONF; 
+            $dataCompany     = $business->getCompanyData($data->companyId);
+
+            // 004 - 017 - CNPJ ou CPF da Inscrição da Empresa (14) N
+            $line .= DefaultFormat::formatField($dataCompany->cnpj, 'N', 14);
+
+            // 018 - 027 - Identificação da Empresa no Banco (10) N
+            $line .= DefaultFormat::formatField($data->bankContractId, 'N', 10);
+
+            // 028 - 037 - Brancos (10)
+            $line .= DefaultFormat::formatField(' ', 'A', 10);
+
+            // 038 - 062 - Campo Livre Uso da Empresa (25)
+            $line .= DefaultFormat::formatField(' ', 'A', 25);
+
+            // 063 - 070 - Identificação do Título no Banco (8)
+            $m11 = $this->digitoVerificador_nossonumero('042'. $data->bankInvoiceId);
+            $line .= DefaultFormat::formatField('0'.$data->bankInvoiceId.$m11, 'A', 8);
+
+            // 071 - 107 - Brancos (37)
+            $line .= DefaultFormat::formatField(' ', 'A', 37);
+
+            // 108 - 108 - Tipo de Cobrança 1- Simples e 4- Caucionada (1)
+            $line .= DefaultFormat::formatField('3', 'N', 1);
+
+            // 109 - 110 - Identificação da Ocorrência
+            $line .= DefaultFormat::formatField($this->getOccurrenceOption($data->occurrence), 'A', 2);
+
+            // 111 - 120 - Seu número, Código identificador do título dentro da instituição.
+            $line .= DefaultFormat::formatField($data->invoiceId, 'A', 10);
+
+            // 121 - 126 - Data de vencimento. 'ddmmyy'
+            $line .= DefaultFormat::formatField($data->maturityDate, 'N', 6);
+
+            // 127 - 139 - Valor do Título.
+            $line .= DefaultFormat::formatField($data->value, 'N', 13);
+
+            // 140 - 142 - Banco encarregado da cobrança (Em Branco)
+            $line .= DefaultFormat::formatField('320', 'A', 3);
+
+            // 143 - 147 - Agência Depositária (Em branco)
+            $line .= DefaultFormat::formatField($data->collectionBranch, 'A', 5);
+
+            // 148 - 149 -Espécie do titulo
+            $line .= DefaultFormat::formatField($this->getEspecieTitulo($data->especie), 'N', 2);
+
+            // 150 - 150 - Código aceite - N - Não aceite | A - Aceite
+            $line .= 'N';
+
+            // 151 - 156 - // Data emissão do título
+            $line .=  DefaultFormat::formatField($data->emissionDate, 'N', 6);;
+
+            // 157 - 158 - Código da primeira instrução.
+            $line .= DefaultFormat::formatField(94, 'N', 2);
+
+            // 159 - 160 - Código da segunda instrução.
+            $line .= DefaultFormat::formatField(0, 'N', 2);
+
+            // 161 - 173 - Valor a ser cobrado por dia de atraso
+            $line .= DefaultFormat::formatField($data->interest, 'N', 13);
+
+            // 174 - 179 - Data para concessão do desconto
+            $line .= DefaultFormat::formatField($data->discountDate, 'N', 6);
+    
+            // 180 - 192 - Valor do desconto a ser concedido
+            $line .= DefaultFormat::formatField($data->discount, 'N', 13);
+
+            // 193 - 205 - Valor iof
+            $line .= DefaultFormat::formatField('0', 'N', 13);
+
+            // 206 - 218 - Valor abatimento a ser concedido ou cancelado
+            $line .= DefaultFormat::formatField('0', 'N', 13);
+
+            // 219 - 220 - Identifição do Tipo do Sacado (2)
+            $ts = '01';
+            $line .= DefaultFormat::formatField($ts, 'N', 2);
+
+            // 221 - 234 - Número da inscrição ( número do CPF ou CGC )
+            $line .= DefaultFormat::formatField($document->content, 'N', 14);
+
+            // 235 - 274 - Nome do sacado
+            $line .= DefaultFormat::formatField($document->personName, 'A', 40);  // nome da pessoa
+
+            // 275 - 308 - Endereço sacado
+            $line .= DefaultFormat::formatField($data->address, 'A', 34);
+
+            // 309 - 314 - Brancos (6)
+            $line .= DefaultFormat::formatField(' ', 'A', 6);
+
+            // 315 - 326 - Bairro do Sacado
+            $line .= DefaultFormat::formatField($data->neighborhood, 'A', 12);
+
+            // 327 - 334 - CEP do sacado
+            $line .= DefaultFormat::formatField($data->zipCode, 'N', 8);
+    
+            // 335 - 349 - Praça do Sacado
+            $line .= DefaultFormat::formatField($data->cityName, 'A', 15);
+
+            // 350 - 351 - Estado do Sacado
+            $line .= DefaultFormat::formatField($data->stateId, 'A', 2);
+    
+            // 352 - 391 - Sacador avalista
+            $line .= DefaultFormat::formatField(' ', 'A', 40);
+
+            // 392 - 393 - Quantidade de Dias Para Protesto
+            $line .= DefaultFormat::formatField(0, 'N', 2);
+
+            // 394 - 394 - Tipo de Moeda
+            $line .= DefaultFormat::formatField(9, 'N', 1);
+
+            // 395 - 400 - Número Sequencial do Registro
+            $line .= DefaultFormat::formatField($counter, 'N', 6);
+            $lineS .= strToUpper( SAGU::stringToASCII($line) ) . "\r\n";
+        }
+        $this->traillerValue = $traillerValue;
+        $this->counter = $counter;
+        return $lineS;
+    }
+
+
+   /**
+     * Generate the message remittance data
+     * 
+     * @param $data (object): Data information for header information
+     *
+     * @return (string): String containing the header formatted
+     *
+     */
+
+    public function trailler()
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+
+        // 001 - 001 - Constante 9 - Obrigatório
+        $line .= '9';
+        // 002 - 394 - Em branco 
+        $line .= DefaultFormat::formatField('', 'A', 393);
+        // 395 - 400 - Número da sequência do registro.
+        $counter = $this->counter + 1;
+        $line .= DefaultFormat::formatField($counter, 'N', 6);
+        
+        $lineS .= strToUpper( SAGU::stringToASCII($line) );
+        return $lineS;
+    }
+
+    private function digitoVerificador_nossonumero($numero)
+    {
+        $resto2 = $this->modulo_11($numero, 9, 1);
+        $digito = $resto2;
+        if ($digito == 10 || $digito == 0 )
+        {
+            $dv = 1;
+        }
+        elseif($digito == 1 || $digito == 11)
+        {
+            $dv = 0;
+        }
+        else
+        {
+            $dv = 11 - $digito;
+        }
+        
+        return $dv;
+    }
+
+    private function getOccurrenceOption ( $occurrence = null )
+    {
+        /*
+        01..Remessa
+        02..Pedido de baixa
+        03..Pedido de Protesto Falimentar
+        04..Concessão de abatimento
+        05..Cancelamento de abatimento concedido
+        06..Alteração de vencimento
+        07..Alteração do controle do participante
+        08..Alteração de seu número
+        09..Pedido de protesto
+        18..Sustar protesto e baixar Título
+        19..Sustar protesto e manter em carteira
+        22..Transferência Cessão crédito ID. Prod. 10
+        23..Transferência entre Carteiras
+        24..Dev. Transferência entre Carteiras
+        31..Alteração de outros dados
+        35..Desagendamento do débito automático
+        68..Acerto nos dados do rateio de Crédito
+        69..Cancelamento do rateio de crédito.
+        */
+        $occurrences = array ( '01', '02', '03', '04', '05', '06', '07', '08', '09', '18', '19', '22', '23', '24', '31', '35', '68', '69' );
+        if ( in_array($occurrence, $occurrences) != false )
+        {
+            return $occurrence;
+        }
+        else
+        {
+            return '01';
+        }
+    }
+
+    private function getEspecieTitulo ( $especie = null )
+    {
+        /*
+        01-Duplicata
+        02-Nota Promissória
+        03-Nota de Seguro
+        04-Cobrança Seriada
+        05-Recibo
+        10-Letras de Câmbio
+        11-Nota de Débito
+        12-Duplicata de Serv.
+        99-Outros
+         */
+        $especies = array ( '01', '02', '03', '04', '05', '10', '11', '12', '99' );
+        if ( in_array($especie, $especies) != false )
+        {
+            return $especie;
+        }
+        else
+        {
+            return '92';
+        }
+    }
+}
+?>

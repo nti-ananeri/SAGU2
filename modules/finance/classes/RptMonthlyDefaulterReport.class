@@ -1,0 +1,212 @@
+<?
+/**
+*
+* @author Giovani Murilo Dantas Correa [gmurilo@isolution.inf.br]
+*
+* $version: $Id$
+*
+* \b Maintainers \n
+* Daniel Afonso Heisler [daniel@isolution.inf.br]
+*
+* @since
+* Class created on 24/09/2008
+*
+* \b Organization: \n
+* iSolution - Soluções de Internet \n
+* The iSolution TEAM
+*
+* \b CopyLeft: \n
+* CopyLeft (L) 2007 iSolution - Soluções de Internet \n
+*
+* \b License \n
+* Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+*
+* \b History \n
+* See history in CVS repository: http://isolution.inf.br   
+*
+**/
+set_time_limit(0);        
+$MIOLO = MIOLO::getInstance();
+$module = 'finance';
+
+define('FPDF_FONTPATH', $MIOLO->getModulePath('basic', '/classes/fpdf/font/'));
+define('REPORT_ID', _M('Monthly defaulter',$module));
+$MIOLO->Uses('classes/fpdf/fpdf.php', 'basic');
+class PDF extends FPDF
+{
+    public $title;    
+    public $fontSizeBody;
+    public $psize;
+    public $lsize;
+    public $module;
+    public $useUserInfo = true;
+    
+    public function __construct($orientation='L',$unit='mm',$format='A4')
+    {
+        parent::__construct($orientation, $unit, $format);
+    }
+
+    public function Header()
+    {
+     	$MIOLO  = MIOLO::getInstance();
+        $this->module = MIOLO::getCurrentModule();
+		$bCompany = $MIOLO->getBusiness('basic','BusCompany');
+		$bPerson = $MIOLO->getBusiness('basic','BusPhysicalPerson');
+		$bLPerson = $MIOLO->getBusiness('basic','BusLegalPerson');
+		$dataC   = $bCompany->getCompany(DEFAULT_COMPANY_CONF);
+		$dataLP	 = $bLPerson->getLegalPerson($dataC->personId);
+        //Imagem do cabeçalho
+        $this->psize =   (($this->wPt/$this->k)-($this->lMargin*2));
+        $FONT_SIZE_CB = 8;
+        $this->fontSizeBody = 8;
+        $FONT_SIZE_TITLE = 11;
+        $this->lsize = 4;
+        $this->setFont(DEFAULT_REPORT_FONT, 'I', $this->fontSizeBody);
+        $y = 0;
+        if($this->useUserInfo)
+        {
+            $this->cell($this->psize, $this->lsize, _M('Username', 'admin').': '.trim($MIOLO->login->id), NULL, null, 'R', 0);
+            $this->ln();
+            $this->cell($this->psize, $this->lsize, _M('Date', 'basic').': '.date(MASK_DATE_PHP.' h:i:s'), '', null, 'R', 0);
+            $this->ln();
+            $y=($this->lsize*2);
+        }
+        $this->cell($this->psize, $this->lsize, $title, 'LRT', null, null, 0);
+        $this->ln();
+        //Titulo do relatorio  
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', $FONT_SIZE_CB);
+        $this->cell($this->psize, $this->lsize, $dataC->name .' - '.$dataC->acronym, 'LR', null, 'C');
+        $this->ln();
+        $this->cell($this->psize, $this->lsize, $dataLP->name .' - '. $dataLP->shortname, 'LR', null, 'C');
+        $this->ln();
+        $this->cell($this->psize, $this->lsize, strtoupper($dataLP->location . ', '._M('Number', $this->module) . ' ' . $dataLP->number . ' - ' . $dataLP->neighborhood . ' /  ' . $dataLP->cityName . '-' . $dataLP->stateId . ' | ' . _M('Phone', $this->module). ': '.$dataLP->phone), 'LR', null, 'C');
+        $this->ln();
+        $x=$this->lsize*2;
+        if(strlen((string)$this->title) > 0 )
+        {
+            $this->cell($this->psize, $this->lsize, null, 'LR', null, null, 0);
+            $this->ln();
+            $this->setFont(DEFAULT_REPORT_FONT, 'B', $FONT_SIZE_TITLE);
+            $this->cell($this->psize, $LINE_SIZE, $this->title, 'LR', null, 'C');
+            $this->ln();
+            $x=0;
+        }
+        $this->Image(SAGUFile::getPhotoPath($dataC->personId), $this->lMargin+4, $this->tMargin+0.5+$y, NULL, (round(PHOTO_HEIGHT/$this->k,0)/1.8)-$x, PHOTO_FORMAT);
+        $this->cell($this->psize, $this->lsize, null, 'LRB', null, null, 0);
+        $this->ln();
+    }
+    public function Footer()
+    {
+        $this->setY(-15);
+        $pn = $this->PageNo().'/{nb}';
+        $this->cell($this->psize, $this->lsize, '', 'B', 1);
+        $this->ln(); 
+		$this->setFont(DEFAULT_REPORT_FONT, 'I', 8);
+		$this->cell($this->psize, $this->lsize, _M('REPORT @1 ', 'academic', REPORT_ID).' '._M('Page @1', $this->module, $pn), 0, 0, 'R');
+   		//$this->cell($this->psize, $this->lsize, _M('REPORT @1 ', 'academic', REPORT_ID), 0, 0, 'R');
+        $this->ln();
+    }
+}
+class RptMonthlyDefaulterReport extends PDF
+{
+    public $start = 0;
+    public function __construct($filters = NULL)
+    {
+        parent::__construct();
+        $this->useUserInfo = true;
+        $this->title = REPORT_ID;
+        $this->addPage();
+        $this->aliasNbPages();
+        $this->criaReport($filters);
+		$this->output();
+    }
+    
+    public function tableHeader($nCols = NULL)
+    {
+        //$colSize = ($this->psize-150) / $nCols;
+        if ($this->start > 0 )
+        {
+            $this->addPage();
+        }
+        $this->start++;
+        $this->ln();
+        $this->ln();
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', 7);    
+        //$this->cell(12, $this->lsize, _M('Invoice', 'finance'), 'LTB', NULL, 'C');
+        $this->cell(10, $this->lsize, _M('Id', 'basic'), 'LTB', NULL, 'C');
+        $this->cell(61, $this->lsize, _M('Person', 'basic'), 'LTB', NULL, 'C');
+        $this->cell(17, $this->lsize, _M('Maturity', 'finance'), 'LTB', NULL, 'C');
+        $this->cell(12, $this->lsize, _M('Value', 'finance'), 'LTB', NULL, 'C');
+        $this->cell(104, $this->lsize, 'Endereço', 'LTB', NULL, 'C');
+        $this->cell(55, $this->lsize, _M('Phone', 'basic'), 'LTB', NULL, 'C');
+        $this->cell(18, $this->lsize, 'CPF', 'LTBR', NULL, 'C');
+        //$this->cell(40, $this->lsize, _M('Responsable', 'basic'), 'LTB', NULL, 'C');
+        //$this->cell(18, $this->lsize, 'Resp. CPF', 'LTBR', NULL, 'C');
+        $this->ln();
+    }
+    public function criaReport($filters)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $business = $MIOLO->getBusiness('finance', 'BusMonthlyDefaulter');
+        $data2 = $business->searchMonthlyDefaulter($filters);
+        for($y = 0; $y < count($data2); $y++)
+        {
+            $data->pupil[$data2[$y][15]] = array($data2[$y][1], 
+                                                $data2[$y][2], 
+                                                $data2[$y][3], 
+                                                $data2[$y][4], 
+                                                $data2[$y][5], 
+                                                $data2[$y][6], 
+                                                $data2[$y][7],
+                                                $data2[$y][8],
+                                                $data2[$y][9],
+                                                $data2[$y][10],
+                                                $data2[$y][11],
+                                                $data2[$y][12],
+                                                $data2[$y][13],
+                                                $data2[$y][14],
+                                                $data2[$y][0],
+                                                $data2[$y][16]); 
+
+        }
+        foreach ($data->pupil as $itemN1 => $value)
+        {
+            $ret->personId      = $value[14];
+            $ret->name          = $value[0];
+            $ret->fullAddress   = $value[1] . ' ' . $value[2] . ', ' . $value[3] . ' - '. $value[4]; 
+            $ret->cpf           = $value[5];
+            $ret->phone         = $value[6] . ' / ' . $value[7] . ' / '  . $value[8] . ' / ' . $value[9];
+            $ret->responsable   = $value[10];
+            $ret->cpfResp       = $value[11];
+            $ret->maturityDate  = $value[12];
+            $ret->balance       = $value[13];
+            $ret->invoiceId     = $itemN1;
+            $ret->incomeSource  = $value[15];
+            $nCols = 1;
+            $colSize = ($this->psize-150) / $nCols;
+            $x++;
+            $mod = $x % 45;
+            if ($x == 1 || $mod == NULL )
+            {
+                $this->tableHeader();
+                $this->setFont(DEFAULT_REPORT_FONT, NULL, 6);
+            }
+            //$this->cell(12, $this->lsize, $ret->invoiceId, 'LTB', NULL, 'C');
+            $this->cell(10, $this->lsize-1, $ret->personId, 'LTB', NULL, 'C');
+            $this->cell(61, $this->lsize-1, $ret->name, 'LTB', NULL, 'L');
+            $this->cell(17, $this->lsize-1, $ret->maturityDate, 'LTB', NULL, 'C');
+            $this->cell(12, $this->lsize-1, $ret->balance, 'LTB', NULL, 'R');
+            $this->cell(104, $this->lsize-1, $ret->fullAddress, 'LTB', NULL, 'L');
+            $this->cell(55, $this->lsize-1, $ret->phone, 'LTB', NULL, 'L');
+            $this->cell(18, $this->lsize-1, $ret->cpf, 'LTBR', NULL, 'C');
+            //$this->cell(40, $this->lsize-1, $ret->responsable, 'LTBR', NULL, 'L');
+            //$this->cell(18, $this->lsize-1, $ret->cpfResp, 'LTBR', NULL, 'C');
+            $this->ln();
+            $total += $ret->balance;
+        }
+        $this->ln();
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', 12);
+        $this->cell($this->psize-4, $this->lsize+4, 'TOTAL R$ '. number_format(SAGU::formatNumber($total),2,',', '.'), NULL, NULL, 'R');
+    }
+}
+?>

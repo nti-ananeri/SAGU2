@@ -1,0 +1,277 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for basLocation table
+ *
+ * @author Daniel Afonso Heisler [daniel@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 10/08/2005
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to manipulate the basLocation table
+ **/
+class BusinessBasicBusLocation extends Business
+{
+
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module = is_null($module) ? 'basic' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+    /**
+     * List all records from the table handled by the class
+     *
+     * @param: None
+     *
+     * @returns (array): Return an array with the entire table
+     *
+     **/
+    public function listLocation()
+    {
+        $db  = $this->getDatabase();
+        $sql = 'SELECT zipCode,
+                       name
+                  FROM basLocation
+              ORDER BY name';
+        $ret = $db->query($sql);
+        //$db->close();
+        return $ret;
+    }
+    
+    /**
+     * Return a specific record from the database
+     *
+     * @param $zipCode (integer): Primary key of the record to be retrieved
+     *
+     * @return (object): Return an object of the type handled by the class
+     *
+     **/
+    public function getLocation($zipCode)
+    {
+        $sql = 'SELECT A.zipCode,
+                       A.name,
+                       A.cityId,
+                       B.name,
+                       A.neighborhoodId,
+                       C.name,
+                       A.userName,
+                       TO_CHAR(A.dateTime,\'' . MASK_TIMESTAMP . '\'),
+                       A.ipAddress
+                  FROM basLocation A
+             LEFT JOIN basCity B
+                    ON ( A.cityId = B.cityId )
+             LEFT JOIN basNeighborhood C
+                    ON ( A.neighborhoodId = C.neighborhoodId )
+                 WHERE A.locationId = ?';
+
+        $db     = $this->getDatabase();
+        $result = $db->query(SAGU::prepare($sql, $zipCode));
+        //$db->close();
+
+        $location  = new basLocation();
+        list ( $location->zipCode,
+               $location->name,
+               $location->cityId,
+               $location->cityName,
+               $location->neighborhoodId,
+               $location->neighborhoodName,
+               $location->userName,
+               $location->dateTime,
+               $location->ipAddress ) = $result[0];
+
+        return $location; 
+    }
+
+    /**
+     * Do a search on the database table handled by the class
+     *
+     * @param $filters (object): Search filters
+     *
+     * @return (array): An array containing the search results
+     **/
+    public function searchLocation($filters)
+    {
+        $sql = 'SELECT A.locationId,
+                       A.zipCode,
+                       A.name,
+                       A.cityId,
+                       B.name,
+                       A.neighborhoodId,
+                       C.name,
+                       A.userName,
+                       TO_CHAR(A.dateTime,\'' . MASK_TIMESTAMP . '\'),
+                       A.ipAddress
+                  FROM basLocation A
+             LEFT JOIN basCity B
+                    ON ( A.cityId = B.cityId )
+             LEFT JOIN basNeighborhood C
+                    ON ( A.neighborhoodId = C.neighborhoodId ) ' ;
+
+        if ( strlen((string)$filters->zipCode) > 0 )
+        {
+            $where .= ' AND A.zipCode ILIKE ? ';
+            $args[] = $filters->zipCode . '%';
+        }
+        if ( strlen((string)$filters->name) > 0 )
+        {
+            $where .= ' AND TO_ASCII(A.name) ILIKE TO_ASCII(?) ';
+            $args[] = $filters->name . '%';
+        }
+        if ( strlen((string)$filters->cityId) > 0 )
+        {
+            $where .= ' AND A.cityId = ? ';
+            $args[] = $filters->cityId;
+        }
+        if ( strlen((string)$filters->cityName) > 0 )
+        {
+            $where .= ' AND TO_ASCII(B.name) ILIKE TO_ASCII(?) ';
+            $args[] = $filters->cityName . '%';
+        }
+        if ( strlen((string)$filters->neighborhoodId) > 0 )
+        {
+            $where .= ' AND A.neighborhoodId = ? ';
+            $args[] = $filters->neighborhoodId;
+        }
+        if ( strlen((string)$filters->neighborhoodName) > 0 )
+        {
+            $where .= ' AND TO_ASCII(C.name) ILIKE TO_ASCII(?) ';
+            $args[] = $filters->neighborhoodName . '%';
+        }
+
+        unset($result);
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE ' . substr($where, 4) . ' ORDER BY B.name, 
+                                                               A.name';
+            $db     = $this->getDatabase();
+
+            $result = $db->query(SAGU::prepare($sql, $args));
+            //$db->close();
+        }
+        return $result;
+    }
+
+    /**
+     * Insert a new record
+     *
+     * @param $data (object): An object of the type handled by the class
+     *
+     * @return True if succed, otherwise False
+     *
+     **/
+    public function insertLocation($data)
+    {
+        $sql = 'INSERT INTO basLocation
+                            (zipCode,
+                             name,
+                             cityId,
+                             neighborhoodId)
+                     VALUES (?,?,?,?)';
+
+        $args = array( $data->zipCode,
+                       $data->name,
+                       $data->cityId,
+                       $data->neighborhoodId );
+
+        $db     = $this->getDatabase();
+        $result = $db->execute(SAGU::prepare($sql, $args));
+
+        //$db->close();
+
+        return $result;
+    }
+
+    /**
+     * Update data from a specific record
+     *
+     * @param $data (object): Data which will replace the old record data
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+    public function updateLocation($data)
+    {
+        $sql = 'UPDATE basLocation
+                   SET zipCode        = ?,
+                       name           = ?,
+                       cityId         = ?,
+                       neighborhoodId = ?
+                 WHERE locationId     = ?';
+              
+        $args = array( $data->zipCode,
+                       $data->name,
+                       $data->cityId,
+                       $data->neighborhoodId,
+                       $data->locationId );
+
+        $db   = $this->getDatabase();
+        $sqls = SAGU::prepare($sql, $args);
+
+        for ( $i=0; $i<count($sqls); $i++ )
+        {
+            $result = $db->execute($sqls[$i]);
+        }
+
+        //$db->close();
+
+        return $result;
+    }
+
+    /**
+     * Delete a record
+     *
+     * @param $zipCode (string): Primary key for deletion
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+   public function deleteLocation($locationId)
+    {
+        $sql = 'DELETE FROM basLocation 
+                      WHERE locationId = ?';
+
+        $db     = $this->getDatabase();
+        $result = $db->execute(SAGU::prepare($sql, $locationId));
+        //$db->close();
+
+        return $result;
+    }
+
+}
+
+?>

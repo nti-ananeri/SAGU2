@@ -1,0 +1,594 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for finEntry table
+ *
+ * @author Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+ * @maintainer: William Prigol Lopes [william@solis.coop.br]
+ *              Remake most functions to process correctly
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Armando Taffarel Neto [taffarel@solis.coop.br]
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Eduardo Beal Miglioransa [eduardo@solis.coop.br]   
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 16/12/2005
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Form to search the finInvoice table
+ */
+class FrmIncomeForecastReport extends MForm
+{
+    private $module;
+     /**
+     * Class constructor
+     */
+    function __construct()
+    {
+        $module = MIOLO::getCurrentModule();
+
+        if ( MIOLO::_request('function') == 'insert' )
+        {
+            parent::__construct(_M('Insert', $module));
+        }
+        else
+        {
+            parent::__construct(_M('Update', $module));
+        }
+
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+
+    }
+    
+    /**
+     *  Default method to define fields
+     */
+    public function createFields()
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+
+        $toolBar = new MToolBar('toolBar',$MIOLO->getActionURL($module,$action));
+       
+        if ( $function == 'insert' )
+        {
+            $toolBar->disableButton('tbBtnDelete');
+            $toolBar->disableButton('tbBtnPrint');
+        }
+        elseif ( $function == 'delete' )
+        {
+            $toolBar->disableButton('tbBtnSave');
+            $toolBar->disableButton('tbBtnNew');
+        }
+        elseif ( $function == 'update' )
+        {
+            $toolBar->disableButton('tbBtnNew');
+        }
+
+
+        $fields[] = $toolBar;
+        
+        if ( in_array($function,array('update','delete')) )
+        {
+
+            $incomeForecastId = $_GET['incomeForecastId'] ? $_GET['incomeForecastId'] : $_POST['incomeForecastId'];
+            $contractId = $_GET['contractId'] ? $_GET['contractId'] : $_POST['contractId'];
+            $learningPeriodId = $_GET['learningPeriodId'] ? $_GET['learningPeriodId'] : $_POST['learningPeriodId'];
+
+            $business = $MIOLO->getBusiness($module,'BusIncomeForecast');
+            $data     = $business->getIncomeForecastEditPerson($incomeForecastId, $contractId, $learningPeriodId);
+        }
+
+        $incomeForecastId  = new MTextField('incomeForecastId', $this->getFormValue('incomeForecastId', $data->incomeForecastId), _M('Income forecast id'));
+        $validators[] = new MIntegerValidator('incomeForecastId', '', 'required');
+        $incomeForecastId->setReadOnly(true);
+        $fields[]   = $incomeForecastId;
+
+        $contractPersonLabel = new MText('contractPersonLabel', _M('Person contract',$module).':');
+        $contractPersonLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $contractPersonLabel->setClass('m-caption m-caption-required');
+         
+        $contractPersonId = new MLookupTextField('contractPersonId', $this->getFormValue('contractPersonId',$data->contractPersonId), _M('',$module), FIELD_ID_SIZE, null, null, array('contractId', 'contractPersonId', 'contractPersonName', 'contractCourseId', 'contractCourseName', 'contractCourseVersion', 'contractTurnId', 'contractUnitId'), 'academic', 'PersonContract', null, array('personId' => 'contractPersonId'), true);
+        $validators[] = new MIntegerValidator('contractPersonId', '', 'required');
+        if ($data->isProcessed==DB_TRUE)
+        {
+              $contractPersonId->setReadOnly(true);
+        }
+
+
+        $contractPersonId->setJsHint(_M('Enter the person code',$module));
+        $validators[] = new MIntegerValidator('contractPersonId','', 'required');
+        $contractPersonName = new MTextField('contractPersonName', $this->getFormValue('contractPersonName',$data->contractPersonName), _M('',$module), FIELD_DESCRIPTION_SIZE);
+        $contractPersonName->setReadOnly(true);
+        $hctContractPerson = new MHContainer('hctContractPerson', array($contractPersonLabel, $contractPersonId, $contractPersonName));
+        $hctContractPerson->setShowLabel(true);
+        $fields[] = $hctContractPerson;
+
+        
+        $contractIdLabel = new MText('contractIdLabel', _M('Contract id',$module).':');
+        $contractIdLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $contractIdLabel->setClass('m-caption m-caption-required');
+        $flds[]              = $contractIdLabel;
+        $contractId = new MLookupTextField('contractId', $this->getFormValue('contractId',$data->contractId), _M('',$module), FIELD_ID_SIZE, null, null, array('contractPersonId', 'contractPersonName', 'contractCourseId', 'contractCourseName', 'contractCourseVersion', 'contractTurnId', $limbo, 'contractUnitId'), 'academic', 'Contract', null, array('personId' => 'contractPersonId'), true);
+        $contractId->setJsHint(_M('Enter the contract code',$module));
+        $validators[] = new MRequiredValidator('contractId','', 'required');
+        if ($data->isProcessed==DB_TRUE)
+        {
+              $contractId->setReadOnly(true);
+        }
+        $flds[]           = $contractId;
+        $contractCourseId = new MTextField('contractCourseId', $this->getFormValue('contractCourseId',$data->contractCourseId), _M('',$module), FIELD_ID_SIZE);
+        $contractCourseId->setReadOnly(true);
+        $flds[]           = $contractCourseId;
+        $contractCourseVersion = new MTextField('contractCourseVersion', $this->getFormValue('contractCourseVersion',$data->contractCourseVersion), _M('',$module), 2);
+        $contractCourseVersion->setReadOnly(true);
+        $flds[]                = $contractCourseVersion;
+        $contractCourseName = new MTextField('contractCourseName', $this->getFormValue('contractCourseName',$data->contractCourseName), _M('',$module), FIELD_DESCRIPTION_SIZE);
+        $contractCourseName->setReadOnly(true);
+        $flds[]             = $contractCourseName;
+        $hctContract = new MHContainer('hctContract', $flds);
+        $hctContract->setShowLabel(true);
+        $fields[]    = $hctContract;
+        unset($flds);
+
+        $businessPeriod = $MIOLO->getBusiness('academic','BusPeriod');
+        $periodId = new MComboBox('periodId', strlen((string)$this->getFormValue('periodId', $data->periodId))>0 ? $this->getFormValue('periodId', $data->periodId) : CURRENT_PERIOD_ID, _M('Period',$module), $businessPeriod->listPeriod(), true );
+        $fields[] = $periodId;
+
+        $learningPeriodLabel = new MText('learningPeriodLabel', _M('Learning period',$module).':');
+        $learningPeriodLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $learningPeriodLabel->setClass('m-caption m-caption-required');
+
+
+        $learningPeriodId = new MLookupTextField('learningPeriodId', $this->getFormValue('learningPeriodId', $data->learningPeriodId), null, FIELD_ID_SIZE, null, null, 'limbo,limbo,limbo,limbo,limbo,learningPeriodDescription', 'academic', 'LearningPeriod', null, array('periodId' => 'periodId'), true);
+
+        if ($data->isProcessed==DB_TRUE)
+        {
+              $learningPeriodId->setReadOnly(true);
+        }
+
+        $validators[]     = new MIntegerValidator('learningPeriodId', '', 'required');
+
+        $learningPeriodDescription = new MTextField('learningPeriodDescription', $this->getFormValue('learningPeriodDescription', $data->learningPeriodDescription), null, FIELD_DESCRIPTION_SIZE);
+        $learningPeriodDescription->setReadOnly(true);
+
+        $hctLearningPeriod = new MHContainer('hctLearningPeriod', array($learningPeriodLabel, $learningPeriodId, $learningPeriodDescription));
+        $hctLearningPeriod->setShowLabel(true);
+
+        $fields[] = $hctLearningPeriod;
+
+
+        $accountSchemeLabel = new MText('accountSchemeLabel', _M('Account scheme',$module).':');
+        $accountSchemeLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $accountSchemeLabel->setClass('m-caption m-caption-required');
+        $accountSchemeId = new MLookupTextField('accountSchemeId', $this->getFormValue('accountSchemeId',$data->accountSchemeId), null, 15, null, null,  'accountSchemeDescription',
+           'accountancy', 'AccountScheme', null, null, true);
+        if ($data->isProcessed==DB_TRUE)
+        {
+              $accountSchemeId->setReadOnly(true);
+        }
+        $accountSchemeId->setJsHint(_M('Select the account scheme id', $module));
+        $validators[] = new MRequiredValidator('accountSchemeId', _M('Account scheme',$module), 'required');
+        $accountSchemeDescription = new MTextField('accountSchemeDescription', $this->getFormValue('accountSchemeDescription',$data->accountSchemeDescription), null, FIELD_DESCRIPTION_SIZE);
+        $accountSchemeDescription->setReadOnly(true);
+        $hctAccountScheme = new MHContainer('hctAccountScheme', array($accountSchemeLabel, $accountSchemeId, $accountSchemeDescription));
+        $hctAccountScheme->setShowLabel(true);
+        $fields[]   = $hctAccountScheme;
+ 
+        $costCenterLabel = new MText('costCenterLabel', _M('Cost center',$module).':');
+        $costCenterLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $costCenterLabel->setClass('m-caption m-caption-required');
+        $costCenterId = new MLookupTextField('costCenterId',$this->getFormValue('costCenterId',$data->costCenterId), null, FIELD_ID_SIZE, null, null,
+               'costCenterDescription',
+               'accountancy', 'CostCenter', null, null, true);
+        if ($data->isProcessed==DB_TRUE)
+        {
+              $costCenterId->setReadOnly(true);
+        }
+
+        $costCenterId->setJsHint(_M('Select the cost center id', $module));
+        $validators[] = new MRequiredValidator('costCenterId',_M('Cost center',$module), 'required');
+        $costCenterDescription = new MTextField('costCenterDescription',$this->getFormValue('costCenterDescription',$data->costCenterDescription), null, FIELD_DESCRIPTION_SIZE);
+        $costCenterDescription->setReadOnly(true);
+        $hctCostCenter = new MHContainer('hctCostCenter', array($costCenterLabel, $costCenterId, $costCenterDescription));
+        $hctCostCenter->setShowLabel(true);
+        $fields[]   = $hctCostCenter;
+
+        $value   = new MTextField('value', SAGU::formatNumber($this->getFormValue('value', $data->value)), _M('Value', $module), FIELD_MONETARY_SIZE);
+        $validators[] =   new MFloatValidator('value', '', FLOAT_SEPARATOR, REAL_ROUND_VALUE, 'required');
+        if ($data->isProcessed==DB_TRUE)
+        {
+              $value->setReadOnly(true);
+        }
+        $fields[] = $value;
+
+        $comments = new MTextField('comments', $this->getFormValue('comments', $data->comments), _M('Comments', $module), FIELD_DESCRIPTION_SIZE);
+        if ($data->isProcessed==DB_TRUE)
+        {
+            $comments->setReadOnly(true); 
+        }
+        $fields[] = $comments;
+
+
+        $recordDate   = new MCalendarField('recordDate', $this->getFormValue('recordDate', $data->recordDate), _M('Record date', $module), FIELD_DATE_SIZE);
+        $recordDate->setJsHint(_M('Record date', $module));
+        if ($data->isProcessed==DB_TRUE)
+        {
+            $recordDate->setReadOnly(true);
+        }
+
+        $fields[]     = $recordDate;
+        $validators[] = new MDATEDMYValidator('recordDate', '', 'required');
+
+
+        $maturityDate = new MCalendarField('maturityDate', $this->getFormValue('maturityDate', $data->maturityDate), _M('Maturity date', $module), FIELD_DATE_SIZE);
+        $maturityDate->setJsHint(_M('Maturity date', $module));
+        $fields[]     = $maturityDate;
+
+        $validators[] = new MDATEDMYValidator('maturityDate', '', 'required');
+
+
+        $operationId = new MLookupTextField('operationId', $this->getFormValue('operationId', $data->operationId), _M('Operation id',$module), FIELD_ID_SIZE, null, null, 'operationDescription,operationTypeId', $module, 'Operation', null, null, true);
+        $operationId->setJsHint(_M('Enter the operation id',$module));
+        $validators[] = new MIntegerValidator('operationId','', 'required');
+
+
+        if ( $data->isProcessed==DB_TRUE)
+        {
+              $operationId->setReadOnly(true);
+        }
+
+        $fields[]   = $operationId;
+        $operationTypeId = new MTextField('operationTypeId', $this->getFormValue('operationTypeId', $data->operationTypeId), _M('Operation type id',$module), FIELD_ID_SIZE);
+        $operationTypeId->setJsHint(_M('Enter the operation type id',$module));
+        $operationTypeId->setReadOnly(true);
+        $fields[]        = $operationTypeId;
+
+        $isGenerated = new MSelection('isGenerated', $this->getFormValue('isGenerated', $data->isGenerated ? $data->isGenerated : f ), _M('Is automatic generated',$module), SAGU::listTrueFalse());
+        $validators[] = new MRequiredValidator('isGenerated','', 'required');
+
+        $isGenerated->setReadOnly(true);
+        $fields[]    = $isGenerated;
+
+        $isAccounted = new MSelection('isAccounted', $this->getFormValue('isAccounted', $data->isAccounted ? $data->isAccounted : f ), _M('Is accounted',$module), SAGU::listTrueFalse());
+        $validators[] = new MRequiredValidator('isAccounted','', 'required');
+        $isAccounted->setReadOnly(true);
+        $fields[]    = $isAccounted;
+
+        if ($data->isProcessed==DB_TRUE)
+        {
+            $isProcessed = new MTextField('isProcessed', $this->getFormValue('isProcessed', $data->isProcessed), _M('Is processed', $module), 13);
+            $isProcessed->setReadOnly(true);
+        }
+        else
+        {
+            $isProcessed = new MSelection('isProcessed', $this->getFormValue('isProcessed', $data->isProcessed ? $data->isProcessed : f ), _M('Is processed',$module), SAGU::listTrueFalse());
+        }
+        $validators[] = new MRequiredValidator('isProcessed','', 'required');
+        $fields[]    = $isProcessed;
+        if ( $function == 'update' )
+        {
+            $fields[] = new MTextLabel('lastModification', '[' . $data->userName . ' - ' . $data->dateTime . ']', _M('Last modification',$module));
+        }
+
+        $fields[] = new Separator('');
+        
+        $this->setFields($fields);
+        $this->setValidators($validators);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+
+        $MIOLO->uses('classes/msuspendedform.class', 'basic');        
+        
+        $htmlFields .=  '<table align="left" border="0">
+                            <tr>
+                                <th align="left" width="100px">
+                                    <font face="arial" size="2">' . _M('Comments', $module). ':</font>
+                                </th>
+                                <th width="100px">
+                                    <input type="text" id="textFieldParam1" name="textFieldParam1">
+                                </th>
+                            </tr>
+                            <tr>
+                                <th colspan="2">
+                                    <input type="submit" value="' . _M('Continue', $module) . '">
+                                </th>
+                            </tr>
+                        </table>
+                        <br> ';
+
+        $size = '200px';
+        $suspendedForm = new MSuspendedForm('frmCommentsForm', _M('Comments form', $module), $htmlFields);
+
+        $this->page->addJsCode($suspendedForm->generateJsCode());
+   }
+
+    public function tbBtnGenerate_click($sender = null)
+    { 
+        $MIOLO      = MIOLO::getInstance();
+        $module     = MIOLO::getCurrentModule();
+        $gotoNo     = MIOLO::_request('goto') ? MIOLO::_request('goto') : MIOLO::_request('goto', 'GET');
+
+        $isProcessed             = MIOLO::_request('isProcessed', 'GET');
+        $incomeForecastId        = MIOLO::_request('incomeForecastId', 'GET');
+        $data->contractId        = MIOLO::_request('contractId', 'GET');
+        $data->learningPeriodId  = MIOLO::_request('learningPeriodId', 'GET');
+        $data->maturityDate      = MIOLO::_request('maturityDate', 'GET');
+        $accountSchemeId         = MIOLO::_request('accountSchemeId', 'GET');
+        $costCenterId            = MIOLO::_request('costCenterId', 'GET');
+        $comments                = MIOLO::_request('comments', 'GET');
+
+
+        $business = $MIOLO->getBusiness($module, 'BusIncomeForecast');
+        $value    = $business->getCurrentMonthValue($data);
+        $month      = $value[0][0];
+        $monthValue = $value[0][1];
+        $opts = array('function'=>'generate_yes',
+                      'incomeForecastId'=>$incomeForecastId,
+                      'contractId'=>$data->contractId,
+                      'learningPeriodId'=>$data->learningPeriodId,
+                      'maturityDate'=>$data->maturityDate,
+                      'month'=>$month,
+                      'monthValue'=>$monthValue,
+                      'accountSchemeId'=>$accountSchemeId,
+                      'costCenterId'=>$costCenterId,
+                      'comments'=>$comments,
+                      'event'=>'Generate_click_yes',
+                      'goto'=>urlencode($MIOLO->getActionURL($module, $home, null, $opts)));
+
+        $opts2 = array('function'=>'search',
+                       'contractId'=>$data->contractId,
+                       'learningPeriodId'=>$data->learningPeriodId,
+                       'event'=>'btnSearch_click'
+                       //'goto'=>urlencode($MIOLO->getActionURL($module, 'main:report:incomeForecast', null, $opts))
+                        );
+
+        $gotoNo  = $MIOLO->getActionURL( $module, 'main:report:incomeForecast', null, $opts2 );
+
+        $gotoYes = $MIOLO->getActionURL( $module, $home, null, $opts );
+        $msg     = _M('Are you sure to close the income forecast?', $module);
+        $caption = _M('Question',$module);
+        $MIOLO->question($msg, $gotoYes, $gotoNo);
+    
+    }
+
+
+     public function Generate_click_yes($sender = null)
+    {
+        $MIOLO             = MIOLO::getInstance();
+        $module            = MIOLO::getCurrentModule();
+        $goto              = MIOLO::_request('goto') ? MIOLO::_request('goto') : MIOLO::_request('goto', 'GET');
+
+//        $isProcessed             = MIOLO::_request('isProcessed', 'GET');
+        $data->contractId        = MIOLO::_request('contractId', 'GET');
+        $data->maturityDate      = MIOLO::_request('maturityDate', 'GET');
+        $data->month             = MIOLO::_request('month', 'GET');
+        $data->year              = SAGU::formatDate($data->maturityDate, 'yyyy'); 
+
+//        $business = $MIOLO->getBusiness($module, 'BusIncomeForecast');
+        $business = $MIOLO->getBusiness($module, 'BusReceivableInvoice');
+//        $closed_  = $business->generateCloseIncomeForecast($data);
+        $closed_  = $business->generateReceivableInvoices($data);
+        
+        if ($closed_)
+        {  
+            $opts = array('function'=>'search',
+                          'contractId'=>$data->contractId,
+                          'learningPeriodId'=>$data->learningPeriodId,
+                          'event'=>'btnSearch_click'
+                          );
+            $goto  = $MIOLO->getActionURL( $module, 'main:report:incomeForecast', null, $opts );
+            $MIOLO->information(_M('Success! Generate correctly.',$module), $goto);
+        }
+        else
+        {
+            $msg  = _M('Error executing requested operation.',$module);
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Error',$module);
+            $MIOLO->error( $msg, $goto, $caption );
+ 
+        }
+    }
+
+
+    public function update_click($sender = null)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $data->contractId        = MIOLO::_request('contractId', 'GET');
+        $data->learningPeriodId  = MIOLO::_request('learningPeriodId', 'GET');
+        $isProcessed     = MIOLO::_request('isProcessed', 'GET');
+
+        $opts = array('function'=>'search',
+                      'contractId'=>$data->contractId,
+                      'learningPeriodId'=>$data->learningPeriodId,
+                      'event'=>'btnSearch_click'
+                         );
+
+        $goto  = $MIOLO->getActionURL( $module, 'main:report:incomeForecast', null, $opts );
+        if ($isAccounted == 't')
+        {
+            $MIOLO->information(_M('You cannot modify this forecast', $module), $goto);
+        }
+        
+    }
+
+     /**
+     * Event triggered when user chooses Delete from the toolbar
+     **/
+    public function tbBtnDelete_click($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $data->contractId        = MIOLO::_request('contractId', 'GET');
+        $data->learningPeriodId  = MIOLO::_request('learningPeriodId', 'GET');
+        $isProcessed             = MIOLO::_request('isProcessed', 'GET');
+        $incomeForecastId        = MIOLO::_request('incomeForecastId', 'GET');
+
+
+//        $data   = $this->getTypesData();
+        $opts   = array('event'=>'tbBtnDelete_confirm',
+                        'function'=>'delete',
+                        'incomeForecastId'=>$incomeForecastId );
+
+        $isProcessed = MIOLO::_request('isProcessed', 'GET');
+        if ($isProcessed == 't')
+        {
+             $opts = array('function'=>'search',
+                           'contractId'=>$data->contractId,
+                           'learningPeriodId'=>$data->learningPeriodId,
+                           'event'=>'btnSearch_click'
+                            );
+
+             $goto  = $MIOLO->getActionURL( $module, 'main:report:incomeForecast', null, $opts );
+
+             $MIOLO->information(_M('You cannot erase this forecast', $module), $goto);
+        }
+        else
+        {
+            $gotoYes = $MIOLO->getActionURL( $module, $action, null, $opts );
+            $goto    = SAGU::getStackBackUrl();
+        $gotoNo  = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $msg     = MSG_CONFIRM_RECORD_DELETE;
+            $caption = _M('Question',$module);
+            $MIOLO->question($msg, $gotoYes, $gotoNo);
+        }
+    }
+
+     /**
+     * Event triggered when user chooses Yes from the Delete prompt dialog
+     **/
+    public function tbBtnDelete_confirm($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $business = $MIOLO->getBusiness($module, 'BusIncomeForecast');
+        $ok = $business->deleteIncomeForecast($this->incomeForecastId->value);
+
+        if ( $ok )
+        {
+            $msg  = MSG_RECORD_DELETED;
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Information',$module);
+            $MIOLO->information($msg, $goto);
+        }
+        else
+        {
+            $msg  = _M('Error executing requested operation.',$module);
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Error',$module);
+            $MIOLO->error( $msg, $goto, $caption );
+        }
+    }
+
+   /**
+    * Event triggered when user chooses Save from the toolbar
+   **/
+    public function tbBtnSave_click($sender=NULL)
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+
+        $data     = $this->getTypesData();
+        $data->isGenerated = 'f';
+        $data->isAccounted = 'f';
+
+        $business = $MIOLO->getBusiness($module, 'BusIncomeForecast');
+
+        if ( $function == 'update' )
+        {
+            $ok  = $business->updateIncomeForecast($data);
+            $msg = MSG_RECORD_UPDATED;
+        }
+        else
+        {
+            $ok  = $business->insertIncomeForecast($data);
+            $msg = MSG_RECORD_INSERTED;
+        }
+
+        if ( $ok )
+        {
+            $opts = array('incomeForecastId'=>$data->incomeForecastId);
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL( $module, $action, null, $opts);
+            if ( $function == 'update' )
+            {
+                $MIOLO->information($msg, $goto);
+            }
+            else
+            {
+                $opts    = array('event'=>'tbBtnNew_click',
+                                 'function'=>'insert');
+
+                $gotoYes = $MIOLO->getActionURL($module, $action, null, $opts);
+                $MIOLO->question($msg, $gotoYes, $goto);
+            }
+        }
+        else
+        {
+            $msg  = _M('Error executing requested operation.',$module);
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Error',$module);
+            $MIOLO->error( $msg, $goto, $caption );
+        }
+    }
+
+    /**
+     * Method to gather all information from the form fields
+     * and put them on a database compatible object
+     **/
+    public function getTypesData()
+    {
+        $data = new FinIncomeForecast();
+        $vars = get_object_vars($data);
+        foreach ( $vars as $var => $value )
+        {
+            if ( $this->$var )
+            {
+                eval('$data->' . $var . ' = $this->' . $var . '->value;');
+            }
+        }
+
+        return $data;
+    }
+
+ 
+
+}
+
+?>

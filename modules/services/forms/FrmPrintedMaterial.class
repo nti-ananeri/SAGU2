@@ -1,0 +1,87 @@
+<?php
+class FrmPrintedMaterial extends MForm
+{
+    private $home;
+
+    /**
+     * Class constructor
+     **/
+    function __construct($data)
+    {
+        $this->home = $data->home;
+
+        parent::__construct(_M('Printed material', 'services'));
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+        $this->eventHandler();
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_REQUEST('function');
+        $event    = MIOLO::_REQUEST('event');
+
+        $mioloUserName = trim($MIOLO->getLogin()->id);
+        $busPerson     = $MIOLO->getBusiness('basic', 'BusPerson');
+
+        //se for um usuário do sistema logado
+        if ( strlen((string)$mioloUserName) >  0 )
+        {
+            $personData = $busPerson->getPersonByMioloUserName($mioloUserName);
+        }
+        else //caso for um aluno
+        {
+            $session = $MIOLO->session;
+            $personData->personId = $session->getValue('loginUid');
+            $personData->password = $session->getValue('loginPasswd');
+        }
+
+        $busProfessor = $MIOLO->getBusiness('services', 'BusProfessor');
+        $periodId     = $this->getFormValue('selPeriodId', (strlen((string)MIOLO::_request('periodId')) > 0) ? MIOLO::_request('periodId') : CURRENT_PERIOD_ID);
+        $selPeriodId  = new MSelection('selPeriodId', $periodId, _M('Period', 'services'), $busProfessor->listProfessorPeriods($personData->personId), true);
+        $selPeriodId->setAutoSubmit(true);
+
+        $fields[]     = $selPeriodId;
+        $validators[] = new MRequiredValidator('periodId', _M('Period','academic'), 'required');
+
+        $fields[]   = new MSeparator();
+
+        $this->setFields($fields);
+        $this->setValidators($validators);
+        $this->page->onLoad('document.' . $this->name . '.selPeriodId.focus();');
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setClose($MIOLO->getActionURL('services', substr($action, 0, strrpos($action, ':'))));
+        $this->setShowPostButton(false);
+
+        if ( $periodId )
+        {
+            $data->emissionDate = date(MASK_DATE_PHP);
+
+            $business    = $MIOLO->getBusiness('services', 'BusProfessor');
+
+            if ( ACADEMIC_REGISTER_LAYER_INDIVIDUAL == 'YES' )
+            {
+                $listingData = $busProfessor->listProfessorCurricularComponents($personData->personId, $periodId);
+            }
+            elseif ( ACADEMIC_REGISTER_LAYER_INDIVIDUAL == 'NO' )
+            {
+                $listingData = $busProfessor->listProfessorCurricularComponentsSummary($personData->personId, $periodId);
+            }
+
+            $data->home     = $this->home;
+            $data->personId = $personData->personId;
+            $grid           = $MIOLO->getUI()->getGrid('services', 'GrdPrintedMaterial', $data);
+            $grid->setData($listingData);
+            if ( count($listingData) > 0 )
+            {
+                $this->addField($grid);
+            }
+        }
+    }
+}
+
+?>

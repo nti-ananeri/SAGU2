@@ -1,0 +1,235 @@
+<?php
+
+/**
+ * Long term short term process form
+ *
+ * @author Daniel Afonso Heisler [daniel@hsti.inf.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ *
+ * @since
+ * Class created on 25/09/2007
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2005 SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+
+/**
+ * Form to control import return files for bank
+ **/
+class FrmReturnInvoice104 extends MForm
+{
+    private $home;
+
+    /**
+     * Class constructor
+     **/
+    function __construct($data)
+    {
+        $module = MIOLO::getCurrentModule();
+        $this->home   = $data->home;
+        parent::__construct(_M('Return invoice', $module));
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+        $this->eventHandler();
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {   
+        $MIOLO   = MIOLO::getInstance();
+        $module  = MIOLO::getCurrentModule();
+        $action  = MIOLO::getCurrentAction();
+
+        $toolBar = new MToolBar('toolBar', $MIOLO->getActionURL($module, $action));
+        
+        $toolBar->disableButton('tbBtnNew');
+        $toolBar->disableButton('tbBtnSave');
+        $toolBar->disableButton('tbBtnDelete');
+        $toolBar->disableButton('tbBtnSearch');
+        $toolBar->disableButton('tbBtnPrint');
+        
+
+        //favoritos
+        $enabledImage  = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-20x20.png');
+        $disabledImage = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-disabled-20x20.png');
+        $url           = $MIOLO->getActionURL($module, $this->home, null, array('function' => 'search', 'event' => 'bookmark'));
+        $toolBar->addButton('tbBtnBookmark', _M('Add to bookmarks', 'basic'), $url, null, true, $enabledImage, $disabledImage);
+
+        if ( MIOLO::_request('event') == 'bookmark' )
+        {
+            $MIOLO->getClass('basic', 'access');
+            access::insert(_M('Return invoice for @1', $module, 'Caixa Econômica Federal'), $this->home, 'returnInvoice-16x16.png', true);
+        }
+        //fim favoritos
+
+        $fields[] = $toolBar;
+
+        $businessBankAccount = $MIOLO->getBusiness($module, 'BusBankAccount');
+        $data->bankAccountId = $this->getFormValue('bankAccountId', $data->bankAccountId);
+        $data->bankId        = '104';
+        $dataBankAccount = $businessBankAccount->listBankAccount($data);
+
+        $field = new MSelection('bankAccountId', $this->getFormValue('bankAccountId', $data->bankAccountId), _M('Bank account id', $module), $dataBankAccount);
+        $field->setAutoSubmit(true);
+        $fields[] = $field;
+        $validators[] = new MRequiredValidator('bankAccountId', _M('Bank account id', $module));
+
+        $bankAccountId = $this->getFormValue('bankAccountId', $data->bankAccountId);
+        if (strlen((string)$bankAccountId)>0)
+        {
+            $bankId = $businessBankAccount->getBankIdByBankAccountId($bankAccountId);
+            if (strlen((string)$bankId)>0)
+            {
+                $MIOLO->getClass($module, 'ReturnInvoice');
+                if (ReturnInvoice::returnExists($bankId))
+                {
+                    $fields[] = new MFileField('importInvoiceFile', $this->getFormValue('importInvoiceFile', $data->importInvoiceFile), _M('Import return file', $module));
+                    $validators[] = new MRequiredValidator('importInvoiceFile', _M('Import return file', $module));
+                }
+                else
+                {
+                    $fields[] = new MSeparator(_M('Sorry, but the system do not have support to import this file', $module));
+                }
+            }
+            else
+            {
+                $fields[] = new MSeparator(_M('This bank account do not have a bank registered. Please register one before continue this process.', $module));
+            }
+        }
+        else
+        {
+            $fields[] = new MSeparator(_M('Please, select a bank account to continue this process.', $module));
+        }
+        
+        $this->setFields($fields);
+        if (count($validators)>0)
+        {
+            $this->setValidators($validators);
+        }
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setClose($MIOLO->getActionURL($module, substr($action, 0, strrpos($action, ':'))));
+    }
+
+    /**
+     * Event triggered when user set new from the toolbar
+     */
+    public function submit_button_Click($sender = null)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+        $data   = $this->getTypesData();
+        
+        if ($_FILES["importInvoiceFile"]["error"] === 0)
+        {
+            $data->fileName  = $_FILES["importInvoiceFile"]["name"];
+            $data->fileType  = $_FILES["importInvoiceFile"]["type"];
+            $data->localPath = $_FILES["importInvoiceFile"]["tmp_name"];
+            $data->size      = $_FILES["importInvoiceFile"]["size"];
+        }
+        else
+        {
+            $MIOLO->Information(_M('Some problems occurred on update the file. Please, try again.', $module));
+        }
+        
+        // descriminaçào de arquivo para gravação na tabela
+        $data->fileType      = 'I';
+        $data->inputOrOutput = 'I';
+        $data->isProcessed   = DB_FALSE;
+        $businessFile = $MIOLO->getBusiness('finance', 'BusFile');
+        
+        // Data to put information on files
+        $dataFile = $businessFile->insertFinanceFile($data);
+        if ($dataFile == false)
+        {
+            $MIOLO->Information(_M('Some problems occurred on update the file. Please, try again.', $module));
+        }
+        else
+        {
+			if (SAGUFile::saveFileToLocal($data->localPath, $dataFile->fileId))
+            {
+                $args = array('event'=>'process_click',
+                              'fileId'=>$dataFile->fileId,
+                              'bankAccountId'=>$data->bankAccountId
+                             );
+                             
+                $goProcessUrl = $MIOLO->getActionURL($module, $action, '', $args);
+                $MIOLO->Information(_M('File uploaded with success. Please, click on "OK" button to continue the process', $module), $goProcessUrl);
+            }
+        }
+    }
+
+    /**
+     * Event triggered when user set new from the toolbar
+     */
+    public function process_click($sender = null)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+        
+        $data->bankAccountId = MIOLO::_request('bankAccountId');
+        $data->fileId        = MIOLO::_request('fileId');
+        $data->selected      = MIOLO::_request('selected');
+        
+        $businessBankAccount = $MIOLO->getBusiness($module, 'BusBankAccount');
+        $dataBankAccount     = $businessBankAccount->getBankAccount($data->bankAccountId);
+        $data->bankId = $dataBankAccount->bankId;
+        $MIOLO->getClass($module, 'ReturnInvoice104');
+        $importInvoice = new ReturnInvoice104($data);
+        $goTo = $MIOLO->getActionURL($module, $action);
+		$notFound = '';
+		if(count($importInvoice->processInfo->notFoundInvoices) > 0)
+		{
+			$notFound = '<span style=\'color:red;\'>Listagem de títulos não encontrados:<br>';
+			for($x=0; $x < count($importInvoice->processInfo->notFoundInvoices); $x++)
+			{
+
+                //$notFound .= 'Título: '.$importInvoice->processInfo->notFoundInvoices[$x].' '.$importInvoice->processInfo->notFoundConv[$x].'<br>';
+                $notFound .= 'Boleta: <span style=\'color:blue;\'>'.$importInvoice->processInfo->notFoundInvoices[$x].'</span><br>CÃ³digo do TÃ­tulo:<span style=\'color:blue;\'>'.$importInvoice->processInfo->notFoundConv[$x].'</span><br><b>Valor:</b> <span style=\'color:blue;\'>'.SAGU::formatNumber($importInvoice->processInfo->notFoundPayedValue[$x]).'</span><br>Data Pagamento: <span style=\'color:blue;\'>'.$importInvoice->processInfo->notFoundEntryDate[$x].'</span><br>Vencimento:<span style=\'color:blue;\'>'.$importInvoice->processInfo->notFoundMaturityDate[$x].'</span><br><br>';
+
+			}
+			$notFound .= '</span>';
+		}
+		$MIOLO->information('Títulos Processados '.$importInvoice->processInfo->processed.'<br>'.
+							'Títulos já baixados '.$importInvoice->processInfo->alreadyClosed.'<br>'.
+							'Títulos baixados '.$importInvoice->processInfo->closed.'<br>'.
+   							'Títulos não encontratos '.$importInvoice->processInfo->notFound.'<br>'.
+							$notFound
+							,$goTo);
+        $MIOLO->getClass($module,'RptReturnRelation');
+
+     }
+     
+    /**
+     *
+     * Get the data from form and returns as a object
+     *
+     */
+    public function getTypesData()
+    {
+        $data->bankAccountId = $this->getFormValue('bankAccountId');
+        return $data;
+    }
+}
+?>

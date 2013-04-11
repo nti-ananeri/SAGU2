@@ -1,0 +1,216 @@
+<?php
+
+/**
+ * Long term short term process form
+ *
+ * @author William Prigol Lopes [william@solis.coop.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ *
+ * @since
+ * Class created on 07/12/2005
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2005 SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+
+/**
+ * Form to control import return files for bank
+ **/
+class FrmAutomaticDebit extends MForm
+{
+
+    /**
+     * Class constructor
+     **/
+    function __construct()
+    {
+        $module = MIOLO::getCurrentModule();
+        parent::__construct(_M('Import bank return files', $module));
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+        $MIOLO   = MIOLO::getInstance();
+        $module  = MIOLO::getCurrentModule();
+        $action  = MIOLO::getCurrentAction();
+        
+        $toolBar = new MToolBar('toolBar', $MIOLO->getActionURL($module, $action));
+        
+        $toolBar->disableButton('tbBtnSave');
+        $toolBar->disableButton('tbBtnDelete');
+        $toolBar->disableButton('tbBtnPrint');
+        
+        $fields[] = $toolBar;
+
+        $businessBank = $MIOLO->getBusiness($module, 'BusBank');
+        $dataBank = $businessBank->listBank();
+
+        $field = new MSelection('bankId', $this->getFormValue('bankId', $data->bankId), _M('Bank id', $module), $dataBank);
+        $fields[] = $field;
+        $validators[] = new MRequiredValidator('bankId');
+
+        $contractPersonId = new MLookupTextField( 'contractPersonId',
+                                                  $this->getFormValue('contractPersonId', $data->contractPersonId),
+                                                  _M('Id', $module),
+                                                  FIELD_ID_SIZE,
+                                                  null,
+                                                  null,
+                                                  array('contractId',
+                                                        'contractPersonId',
+                                                        'contractPersonName',
+                                                        'contractCourseId',
+                                                        'contractCourseName',
+                                                        'contractCourseVersion'),
+                                                  'academic',
+                                                  'PersonContract',
+                                                  null,
+                                                  array('personId' => 'contractPersonId'),
+                                                  true
+                                                );
+
+        $contractPersonId->setJsHint(_M('Person', $module));
+        $fields[] = $contractPersonId;
+        $validators[] = new RequiredValidator('contractPersonId');
+        
+
+        $contractPersonName = new MTextField('contractPersonName', $this->getFormValue('contractPersonName', $data->contractPersonName), _M('Contract person name', $module), FIELD_DESCRIPTION_SIZE);
+        $contractPersonName->setReadOnly(true);
+        $fields[] = $contractPersonName;
+
+        $contractId = new MTextField('contractId', $this->getFormValue('contractId', $data->contractId), _M('Contract id', $module), FIELD_DESCRIPTION_SIZE);
+        $contractId->setReadOnly(true);
+        $fields[] = $contractId;
+
+        $contractCourseId = new MTextField('contractCourseId', $this->getFormValue('contractCourseId', $data->contractCourseId), _M('Contract course id', $module), FIELD_DESCRIPTION_SIZE);
+        $contractCourseId->setReadOnly(true);
+        $fields[] = $contractCourseId;
+
+        $contractCourseName = new MTextField('contractCourseName', $this->getFormValue('contractCourseName', $data->contractCourseName), _M('Contract course name', $module), FIELD_DESCRIPTION_SIZE);
+        $contractCourseName->setReadOnly(true);
+        $fields[] = $contractCourseName;
+       
+       $contractCourseVersion = new MTextField('contractCourseVersion', $this->getFormValue('contractCourseVersion', $data->contractCourseVersion), _M('Contract course version', $module), FIELD_DESCRIPTION_SIZE);
+        $contractCourseVersion->setReadOnly(true);
+        $fields[] = $contractCourseVersion;     
+
+        $branchNumberId = new MTextField('branchNumberId', $this->getFormValue('branchNumberId', $data->branchNumberId), _M('Branch id', $module), FIELD_ID_SIZE);
+        $fields[] = $branchNumberId;
+        $validators[] = new MRequiredValidator('branchNumberId');
+
+        $fields[] = new MTextField('branchNumberDigit', $this->getFormValue('branchNumberDigit', $data->branchNumberDigit), _M('Branch digit', $module), 2);
+        $validators[] = new MRequiredValidator('branchNumberDigit');
+        
+        $fields[] = new MTextField('accountNumber', $this->getFormValue('accountNumber', $data->accountNumber), _M('Account number', $module), FIELD_ID_SIZE);
+        $validators[] = new MRequiredValidator('accountNumber');
+
+        $fields[] = new MTextField('accountDigit', $this->getFormValue('accountDigit', $data->accountDigit), _M('Account digit', $module), 2);
+        $validators[] = new MRequiredValidator('accountDigit');
+
+        $fields[] = new Separator('');
+
+        $this->setFields($fields);
+        $this->setValidators($validators);
+        $this->setShowPostButton(false);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setClose($MIOLO->getActionURL($module, substr($action, 0, strrpos($action, ':'))));
+    }
+
+    /**
+     * Event triggered when user set new from the toolbar
+     */
+    public function submit_button_Click($sender = null)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+        $data   = $this->getTypesData();
+
+        if ($_FILES["importReturnFile"]["error"] === 0)
+        {
+            $data->fileName  = $_FILES["importReturnFile"]["name"];
+            $data->fileType  = $_FILES["importReturnFile"]["type"];
+            $data->localPath = $_FILES["importReturnFile"]["tmp_name"];
+            $data->size      = $_FILES["importReturnFile"]["size"];
+        }
+        else
+        {
+            $MIOLO->Information(_M('Some problems occurred on update the file. Please, try again.', $module));
+        }
+        
+        $businessFile = $MIOLO->getBusiness('basic', 'BusFile');
+        
+        // Data to put information on files
+        $dataFile = $businessFile->insertFile($data);
+        if ($dataFile == false)
+        {
+            $MIOLO->Information(_M('Some problems occurred on update the file. Please, try again.', $module));
+        }
+        else
+        {
+            if (SAGUFile::saveFileToLocal($data->localPath, $dataFile->fileId))
+            {
+                $args = array('event'=>'process_click',
+                              'fileId'=>$dataFile->fileId,
+                              'bankAccountId'=>$data->bankAccountId
+                             );
+                             
+                $goProcessUrl = $MIOLO->getActionURL($module, $action, '', $args);
+                $MIOLO->Information(_M('File uploaded with success. Please, click on "OK" button to continue the process', $module), $goProcessUrl);
+            }
+        }
+    }
+
+    /**
+     * Event triggered when user set new from the toolbar
+     */
+    public function process_click($sender = null)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+        
+        $data->bankAccountId = MIOLO::_request('bankAccountId');
+        $data->fileId        = MIOLO::_request('fileId');
+        
+        $businessBankAccount = $MIOLO->getBusiness($module, 'BusBankAccount');
+        $dataBankAccount     = $businessBankAccount->getBankAccount($data->bankAccountId);
+        $MIOLO->getClass($module, 'AutomaticDebit');
+        $data->bankId = $dataBankAccount->bankId;
+        $importReturn = new AutomaticDebit($data);
+    }
+     
+    /**
+     * Get the data from form and returns as a object
+     */
+    public function getTypesData()
+    {
+        $data->bankAccountId = $this->getFormValue('bankAccountId');
+        return $data;
+    }
+}
+?>

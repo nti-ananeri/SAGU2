@@ -1,0 +1,300 @@
+<?php
+
+/**
+ * External course form
+ *
+ * @author Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ *
+ * @since
+ * Class created on 16/09/2005
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2005 SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+
+/**
+ * Form to manipulate a externalCourse
+ **/
+class FrmExternalCourse extends MForm
+{
+
+    /**
+     * Class constructor
+     **/
+    function __construct()
+    {
+
+        $module = MIOLO::getCurrentModule();
+
+        if ( MIOLO::_request('function') == 'insert' )
+        {
+            parent::__construct(_M('Insert', $module));
+        }
+        else
+        {
+            parent::__construct(_M('Update', $module));
+        }
+
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+
+        $toolBar = new MToolBar('toolBar',$MIOLO->getActionURL($module,$action));
+
+        if ( $function == 'insert' )
+        {
+            $toolBar->disableButton('tbBtnDelete');
+            $toolBar->disableButton('tbBtnPrint');
+        }
+        elseif ( $function == 'delete' )
+        {
+            $toolBar->disableButton('tbBtnSave');
+        }
+        $fields[] = $toolBar;
+
+        if ( in_array($function,array('update','delete')) )
+        {
+            $externalCourseId = $_GET['externalCourseId'] ? $_GET['externalCourseId'] : $_POST['externalCourseId'];
+            $fields[] = new MTextLabel('externalCourseId', $externalCourseId, _M('External course id',$module));
+            $fields[] = new MHiddenField('externalCourseId', $externalCourseId);
+
+            $business = $MIOLO->getBusiness($module,'BusExternalCourse');
+            $data = $business->getExternalCourse($externalCourseId);
+        }
+        $this->page->onLoad('document.' . $this->name . '.externalCourseName.focus();');
+
+        $externalCourseName = new MTextField('externalCourseName', $this->getFormValue('externalCourseName', $data->name), _M('Name',$module), 40);
+        $externalCourseName->setJsHint(_M('Enter the external course name',$module));
+        $validators[] = new MRequiredValidator('externalCourseName');
+        $fields[] = $externalCourseName;
+
+        $externalCourseShortName = new MTextField('externalCourseShortName', $this->getFormValue('externalCourseShortName', $data->shortName), _M('Short name',$module), 40);
+        $externalCourseShortName->setJsHint(_M('Enter the external course short name',$module));
+        $validators[] = new MRequiredValidator('externalCourseShortName');
+        $fields[] = $externalCourseShortName;
+
+        $obs = new MMultiLineField('obs', $this->getFormValue('obs', $data->obs), _M('Observation',$module), 100, 5, 40);
+        $obs->setJsHint(_M('Enter the external course short name',$module));
+        $fields[] = $obs;
+
+        /*
+         * MLookupTextField class constructor prototype:
+         *
+         * function __construct($name = '', $value     = '',       $label   = '', $size         = 10,
+         *                      $hint = '', $validator = null,     $related = '', $module       = '',
+         *                      $item = '', $event     = 'filler', $filter  = '', $autocomplete = false)
+         */
+        $knowledgeAreaLabel = new MText('knowledgeAreaLabel', _M('Knowledge area',$module).':');
+        $knowledgeAreaLabel->setWidth('137');
+
+        $knowledgeAreaId = new MLookupTextField('knowledgeAreaId', $this->getFormValue('knowledgeAreaId', $data->knowledgeAreaId), '', FIELD_LOOKUPFIELD_SIZE, null, null, 'knowledgeAreaName', $module, 'KnowledgeArea', null, null, true);
+        $knowledgeAreaId->setJsHint(_M('Knowledge area id',$module));
+        $validators[] = new MIntegerValidator('knowledgeAreaId', '', 'optional');
+
+        $knowledgeAreaName = new MTextField('knowledgeAreaName', $this->getFormValue('knowledgeAreaName', $data->knowledgeAreaName), '', FIELD_DESCRIPTION_SIZE);
+        $knowledgeAreaName->setReadOnly(true);
+        $knowledgeAreaName->setJsHint(_M('Knowledge area name',$module));
+
+        $hctKnowledgeArea  = new MHContainer('hctKnowledgeArea', array($knowledgeAreaLabel, $knowledgeAreaId, $knowledgeAreaName));
+        $hctKnowledgeArea->setShowLabel(true);
+        $fields[] = $hctKnowledgeArea;
+
+        if ( $function == 'update' )
+        {
+            $fields[] = new MTextLabel('lastModification', '[' . $data->userName . ' - ' . $data->dateTime . ']', _M('Last modification',$module));
+        }
+        
+        $fields[] = new Separator('');
+
+        $this->setFields($fields);
+        if ( isset($validators) )
+        {
+            $this->setValidators($validators);
+        }
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+        $this->setClose($MIOLO->getActionURL($module,substr($action,0,strrpos($action,':'))));
+
+    }
+
+    /**
+     * Event triggered when user chooses New from the toolbar
+     **/
+    public function tbBtnNew_click($sender=NULL)
+    {
+        /*
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $data = $this->getTypesData();
+        $vars = get_object_vars($data);
+
+        foreach ( $vars as $var => $value )
+        {
+            $this->$var->value = $this->getFormValue($var . 'S','');
+        }
+        */
+    }
+
+    /**
+     * Event triggered when user chooses Delete from the toolbar
+     **/
+    public function tbBtnDelete_click($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $data   = $this->getTypesData();
+        $opts   = array('event'    => 'tbBtnDelete_confirm',
+                        'function' => 'delete',
+                        'externalCourseId' => MIOLO::_request('externalCourseId'));
+
+        $gotoYes = $MIOLO->getActionURL( $module, $action, null, $opts );
+
+        // This return the primary key to the search form so that user
+        // can see the record he would delete
+        $opts   = array('externalCourseIdS' => MIOLO::_request('externalCourseId'));
+        $goto    = SAGU::getStackBackUrl();
+        $gotoNo  = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+
+        $caption = _M('Question',$module);
+        $MIOLO->question(MSG_CONFIRM_RECORD_DELETE, $gotoYes, $gotoNo);
+    }
+
+    /**
+     * Event triggered when user chooses Yes from the Delete prompt dialog
+     **/
+    public function tbBtnDelete_confirm($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $business = $MIOLO->getBusiness($module, 'BusExternalCourse');
+        $ok = $business->deleteExternalCourse($this->externalCourseId->value);
+
+        if ( $ok )
+        {
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Information',$module);
+            $MIOLO->information(MSG_RECORD_DELETED, $goto);
+        }
+        else
+        {
+            $msg  = _M('Error executing requested operation.',$module);
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Error',$module);
+            $MIOLO->error( $msg, $goto, $caption );
+        }
+    }
+
+    /**
+     * Event triggered when user chooses Save from the toolbar
+     **/
+    public function tbBtnSave_click($sender=NULL)
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+
+        $data     = $this->getTypesData();
+        $business = $MIOLO->getBusiness($module, 'BusExternalCourse');
+
+        if ( $function == 'update' )
+        {
+            $ok  = $business->updateExternalCourse($data);
+            $msg = MSG_RECORD_UPDATED;
+        }
+        else
+        {
+            $ok  = $business->insertExternalCourse($data);
+            $msg = MSG_RECORD_INSERTED;
+        }
+
+        if ( $ok )
+        {
+            // This returns the primary key data to the search form
+            // so that the user can see the inserted/updated record.
+            $opts = array('externalCourseIdS' => $data->externalCourseId);
+
+            if ( $function == 'update' )
+            {
+                $caption = _M('Information', $module);
+                $MIOLO->information($msg, $MIOLO->getActionURL( $module, $action, null, $opts));
+            }
+            else
+            {
+                unset($opts);
+                $goto = SAGU::getStackBackUrl();
+                $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL( $module, $action, null, $opts);
+                $opts = array('function'=>'insert');
+
+                $gotoYes = $MIOLO->getActionURL($module, $action, null, $opts);
+                $caption = _M('Question',$module);
+                $MIOLO->question($msg, $gotoYes, $goto);
+            }
+        }
+        else
+        {
+            $msg  = _M('Error executing requested operation.',$module);
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Error',$module);
+            $MIOLO->error( $msg, $goto, $caption );
+        }
+    }
+
+    /**
+     * Method to gather all information from the form fields
+     * and put them on a database compatible object
+     **/
+    public function getTypesData()
+    {
+        $data = new AcdExternalCourse();
+        $data->externalCourseId = $this->externalCourseId->value;
+        $data->name             = $this->externalCourseName->value;
+        $data->shortName        = $this->externalCourseShortName->value;
+        $data->obs              = $this->obs->value;
+        $data->knowledgeAreaId  = $this->knowledgeAreaId->value;
+
+        return $data;
+    }
+
+}
+
+?>

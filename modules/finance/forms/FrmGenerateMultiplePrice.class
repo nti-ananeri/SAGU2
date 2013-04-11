@@ -1,0 +1,194 @@
+<?php
+
+/**
+ * GenerateMultiplePrice form
+ *
+ * @author Armando Taffarel Neto [taffarel@solis.coop.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * Armando Taffarel Neto [taffarel@solis.coop.br]
+ *
+ * @since
+ * Class created on 16/05/2006
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2005 SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+
+/**
+ * Form to generate Multiple Price
+ **/
+class FrmGenerateMultiplePrice extends MForm
+{
+    /**
+     * Class constructor
+     **/
+    function __construct()
+    {
+
+        $module = MIOLO::getCurrentModule();
+
+        parent::__construct(_M('Generate multiple price', $module));
+
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+
+
+        $toolBar = new MToolBar('toolBar',$MIOLO->getActionURL($module,$action));
+
+        $toolBar->disableButton('tbBtnNew');
+        $toolBar->disableButton('tbBtnDelete');
+        $toolBar->disableButton('tbBtnPrint');
+        $toolBar->disableButton('tbBtnSave');
+        $toolBar->disableButton('tbBtnSearch');
+        $fields[] = $toolBar; 
+
+        $startDate = new MCalendarField('startDate', $this->getFormValue('startDate', $data->startDate), _M('Begin date lessons', $module), FIELD_DATE_SIZE);
+        $startDate->setValidator(new MDATEDMYValidator('startDate', '', 'required'));
+        $fields[] = $startDate;
+
+        $endDate = new MCalendarField('endDate', $this->getFormValue('endDate', $data->endDate), _M('End date lessons', $module), FIELD_DATE_SIZE);
+        $endDate->setValidator(new MDATEDMYValidator('endDate', '', 'required'));
+        $fields[] = $endDate;
+
+        $value = new MTextField('value', SAGU::formatNumber($this->getFormValue('value', $data->value)), _M('Value',$module), FIELD_MONETARY_SIZE);
+        $value->setJsHint(_M('Enter the value',$module));
+        $validators[] = new MRequiredValidator('value');
+        $fields[] = $value;
+
+        $enrollValue = new MTextField('enrollValue', SAGU::formatNumber($this->getFormValue('enrollValue', $data->enrollValue)), _M('Enroll value',$module), FIELD_MONETARY_SIZE, _M('If informed, will be generated a invoice to the pupil, with their value.', $module));
+        $enrollValue->setJsHint(_M('Enter the enroll value',$module));
+        $validators[] = new MFloatValidator('enrollValue', _M('Enroll value', $module), FLOAT_SEPARATOR, REAL_ROUND_VALUE,'');
+        $fields[] = $enrollValue;
+
+        $minimumCurricularComponent = new MTextField('minimumCurricularComponent', $this->getFormValue('minimumCurricularComponent', $data->minimumCurricularComponent), _M('Minimum of curricular components',$module), FIELD_MONETARY_SIZE, _M('Minimum of curricular componentes that the student must be enrolled to be charged the full value of the semester. Valid only for the serial regimen.', $module));
+        $minimumCurricularComponent->setJsHint(_M('Enter minimum of curricular components',$module));
+        $validators[] = new MIntegerValidator('minimumCurricularComponent');
+        $fields[]     = $minimumCurricularComponent;
+   
+        //preco por disciplina
+        $curricularComponentPrice = new MTextField('curricularComponentPrice', SAGU::formatNumber($this->getFormValue('curricularComponentPrice', $data->curricularComponentPrice)), _M('Curricular component value',$module), FIELD_MONETARY_SIZE, _M('Curricular component value if the student does not meet the minimum of curricular components in its enrollment. Valid only for the serial regimen.', $module));
+        $curricularComponentPrice->setJsHint(_M('Enter the curricular component value',$module));
+        $validators[] = new MFloatValidator('curricularComponentPrice', '', FLOAT_SEPARATOR, REAL_ROUND_VALUE, 'optional');
+        $fields[]     = $curricularComponentPrice;
+
+       
+        $fields[] = new Separator('');
+        
+        $fields[] = new MButton('btnGenerate', _M('Generate', $module));
+
+        $fields[] = new Separator('');
+        
+        $this->setFields($fields);
+        $this->setValidators($validators);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+
+    }
+    
+    /**
+     * Event triggered when user chooses Generate from the toolbar
+     **/
+    public function btnGenerate_click($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+        
+        $data     = $this->getTypesData();
+        $business  = $MIOLO->getBusiness($module, 'BusPrice');
+        $business2 = $MIOLO->getBusiness($module, 'BusGenerateMultiplePrice');
+
+        $learningPeriodIds = MIOLO::_request('learningPeriodIds');
+
+        $x = 0;
+        
+        $business2->beginTransaction();
+        
+        foreach ( $learningPeriodIds as $learningPeriodId )
+        {
+            
+            $data->learningPeriodId  = $learningPeriodId;
+
+            $ok  = $business->insertPrice($data);
+
+            if ( $ok )
+            {
+                $x++;
+            }
+        }
+        
+        $business2->commit();
+        
+        $msg = _M('@1 records inserted', $module, $x);
+
+        if ( $x > 0 )
+        {
+            $postAction = substr($action,0,strrpos($action,':')) . ':generateMultiplePriceCourse';
+            $goto = $MIOLO->getActionURL($module, $postAction, null, null);
+
+            $caption = _M('Information', $module);
+            $MIOLO->information($msg, $goto);
+        }
+        else
+        {
+            $msg  = _M('Error executing requested operation.', $module);
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Error', $module);
+            $MIOLO->error( $msg, $goto, $caption );
+            
+        }
+
+        
+    } 
+    
+    /**
+     * Method to gather all information from the form fields
+     * and put them on a database compatible object
+     **/
+    public function getTypesData()
+    {
+        $data = new FinPrice();
+        $vars = get_object_vars($data);
+        foreach ( $vars as $var => $value )
+        {
+            $data->$var = $this->$var->value;
+        }
+
+        return $data;
+
+    } 
+
+}
+
+?>

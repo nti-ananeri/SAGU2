@@ -1,0 +1,720 @@
+<?php
+
+/**
+ * Person form
+ *
+ * @author Daniel Afonso Heisler [daniel@solis.coop.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ *
+ * @since
+ * Class created on 29/08/2005
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2005 SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+
+/**
+ * Form to manipulate tabbs
+ **/
+ 
+class FrmPerson extends MForm
+{
+
+    private $data;
+    private $documents;
+
+    /**
+     * Class constructor
+     **/
+    function __construct($data=null)
+    {
+        $MIOLO           = MIOLO::getInstance();
+        $module          = MIOLO::getCurrentModule();
+        $personData      = unserialize(urldecode(stripslashes(MIOLO::_request('personData'))));
+        $this->data      = $personData;
+        //$this->data      = $data;
+        $this->documents = unserialize(urldecode(stripslashes(MIOLO::_request('documents'))));
+
+        if ( MIOLO::_request('function') == 'insert' )
+        {
+            parent::__construct(_M('Insert', $module) . ' ' . _M('person', $module));
+        }
+        else
+        {
+            parent::__construct(_M('Update', $module) . ' ' .  _M('person', $module));
+        }
+
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+
+        $MIOLO     = MIOLO::getInstance();
+        $module    = MIOLO::getCurrentModule();
+        $action    = MIOLO::getCurrentAction();
+        $function  = MIOLO::_request('function');
+        $event     = MIOLO::_request('event');
+        $page      = MIOLO::_request('page');
+        $documents = MIOLO::_request('documents');
+        $data      = $this->data;
+
+        $toolBar = new MToolBar('toolBar',$MIOLO->getActionURL($module,$action));
+
+        $toolBar->disableButton('tbBtnPrint');
+        $toolBar->disableButton('tbBtnBack');
+        if ( $function == 'insert' )
+        {
+            $toolBar->disableButton('tbBtnDelete');
+            $toolBar->disableButton('tbBtnSave');
+        }
+        elseif ( $function == 'delete' )
+        {
+            $toolBar->disableButton('tbBtnSave');
+        }
+        $fields[] = $toolBar;
+
+        $fields[] = new Separator();
+        $divError = new MDiv('divError', null, null, 'align=center');
+        $fields[] = $divError;
+
+        //carrega os dados
+        $personId = MIOLO::_request('personId');
+        if ( strlen((string)$personId)>0 )
+        {
+            if ( strstr(strtolower($action), 'physical') )
+            {
+                $business = $MIOLO->getBusiness($module,'BusPhysicalPerson');
+                $data     = $business->getPhysicalPerson($personId);
+            }
+            elseif ( strstr(strtolower($action), 'legal') )
+            {
+                $business = $MIOLO->getBusiness($module,'BusLegalPerson');
+                $data     = $business->getLegalPerson($personId);
+            }
+            $business = $MIOLO->getBusiness($module,'BusDocument');
+            $data2    = $business->searchDocument($data);
+            if ( count($data2)>0 )
+            {
+                foreach ( $data2 as $row )
+                {
+                    $this->documents->content[$row[2]]        = $row[4];
+                    $this->documents->cityId[$row[2]]         = $row[7];
+                    $this->documents->organ[$row[2]]          = $row[9];
+                    $this->documents->dateExpedition[$row[2]] = $row[10];
+                    $this->documents->isDelivered[$row[2]]    = $row[5];
+                    $this->documents->obs[$row[2]]            = $row[6];
+                }
+            }
+        }
+
+        //seta os campos da tabela de pessoas fisicas ou juridicas
+        $person     = new BasPerson();
+        $varsPerson = array_keys(get_object_vars($person));
+        if ( strstr(strtolower($action), 'physical') )
+        {
+            $person = new BasPhysicalPerson();
+            $pictureDescription = _M('Photo', $module);
+        }
+        elseif ( strstr(strtolower($action), 'legal') )
+        {
+            $person = new BasLegalPerson();
+            $pictureDescription = _M('Logo', $module);
+        }
+        $vars = array_keys(get_object_vars($person));
+        $vars = array_diff($vars, $varsPerson);
+
+        foreach ( $vars as $var )
+        {
+            $fields[]  = new MHiddenField($var, $data->$var);
+        }
+        $personId = ( strlen((string)$personId)>0 ) ? $personId : $data->personId;
+
+        //controla os uploads das imagens
+        $timeStamp = strlen((string)$this->getFormValue('timeStamp',$data->timeStamp)) > 0 ? $this->getFormValue('timeStamp',$data->timeStamp) : time();
+        $fields[]  = new MHiddenField('timeStamp', $timeStamp);
+
+        //coloca a imagem da pessoa no temp
+        if ( $function == 'update' && strlen((string)$event) == 0 && strlen((string)$page) == 0 )
+        {
+            $output = $MIOLO->getModulePath('basic', PHOTO_PATH . '/' . $timeStamp . '.tmp.' . PHOTO_FORMAT);
+            $input  = $MIOLO->getModulePath('basic', PHOTO_PATH . '/' . $personId . '.' . PHOTO_FORMAT);
+            if ( file_exists($input) )
+            {
+                copy($input, $output);
+            }
+        }
+
+        //BaseGroup 1
+        if ( strlen((string)$personId)>0 || strlen((string)$data->personId)>0 )
+        {
+            $personId1 = new MTextLabel('personId', $personId, _M('Person id',$module));
+            $personId2 = new MHiddenField('personId', $personId);
+        }
+        $uploadFile = new MFileField('uploadFile', $this->getFormValue('uploadFile', $data->uploadFile), $pictureDescription, 20);
+
+        $btn1[] = new MSeparator();
+        $btnViewImage = new MButton('btnViewImage', _M('Import image', $module));
+        $btnViewImage->setTarget('frameUtil');
+        $btn1[] = $btnViewImage;
+        $btn1[] = new MButton('btnReviewImage', _M('Refresh image', $module), 'reloadImage()');
+        $div1   = new MDiv('div1', $btn1, null, 'align=center');
+        unset($btn1);
+
+        $path = $MIOLO->getActionUrl($module, "html:images:upload:{$timeStamp}" . '.tmp.' . PHOTO_FORMAT);
+        $script = 'function reloadImage()
+                   {
+                       setUtilLocation(\'' . $path . '\');
+					   if(document.getElementById(\'personFile\'))
+					   {
+	                       document.getElementById(\'personFile\').src = \'' . $path . '\';
+					   }
+                   }';
+        $this->page->addJsCode($script);
+
+        $personIdBorder = new MBaseGroup('personIdBorder', NULL, array($personId1, $personId2, $uploadFile, $div1), 'vertical', false);
+
+        $hctPerson1 = new MVContainer('hctPerson1', array($personFileBorder, $personIdBorder));
+
+        $personFile       = new MImage('personFile', NULL, $path, 'width="' . (int)(PHOTO_WIDTH/100*80) . '" height="' . (int)(PHOTO_HEIGHT/100*80) . '"');
+
+        $personFileBorder = new MBaseGroup('personFileBorder', $pictureDescription, array($personFile), 'horizontal');
+
+        $personFileBorder->setWidth((int)(PHOTO_WIDTH/100*80)+10);
+        //$personFileBorder->setHeight((int)(PHOTO_HEIGHT/100*80)+10);
+        $personFileBorder->height = ((int)(PHOTO_HEIGHT/100*80)+10);
+
+        $hctPersonId = new MHContainer('hctPersonId', array($personFileBorder, $hctPerson1));
+        $flds[]      = $hctPersonId;
+        $flds[]      = new MSeparator();
+
+        if ( strstr(strtolower($action), 'physical') )
+        {
+            $busPersonTitle = $MIOLO->getBusiness($module, 'BusPersonTitle');
+            $txtPersonTitleId = new MSelection('txtPersonTitleId', $this->getFormValue('txtPersonTitleId', $data->personTitleId), _M('Person title', $module) . ':', $busPersonTitle->listPersonTitle(), false, _M('Enter the person\'s title', $module));
+            $flds[] = $txtPersonTitleId;
+        }
+
+        $personLabel  = new MText('personLabel', _M('Name',$module) . ':');
+        $personLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $personLabel->setClass('m-caption m-caption-required');
+
+        $personName   = new MTextField('personName', $this->getFormValue('personName',$data->name), NULL, FIELD_DESCRIPTION_SIZE);
+        $personName->setJsHint(_M('Enter the person name',$module));
+        $validators[] = new MRequiredValidator('personName', _M('Person name', $module));
+
+        $hctPerson    = new MVContainer('hctPerson', array($personLabel, $personName));
+        $hctPerson->setShowLabel(true);
+        $flds[]       = $hctPerson;
+
+        $shortName    = new MTextField('shortName', $this->getFormValue('shortName',$data->shortName), _M('Short name',$module), 20);
+        $shortName->setJsHint(_M('Enter the person short name',$module));
+        $flds[]       = $shortName;
+
+        $emailLabel  = new MText('emailLabel', _M('E-mail',$module) . ':');
+        $emailLabel->setWidth(FIELD_CONTAINER_SIZE);
+
+        $email        = new MTextField('email', strtolower($this->getFormValue('email',$data->email)), NULL, FIELD_DESCRIPTION_SIZE);
+        $email->setJsHint(_M('Enter the person e-mail',$module));
+        $validators[] = new MEmailValidator('email','','optional');
+
+        $hctEmail    = new MVContainer('hctEmail', array($emailLabel, $email));
+        $hctEmail->setShowLabel(true);
+        $flds[]       = $hctEmail;
+
+        $emailAlternative = new MTextField('emailAlternative', strtolower($this->getFormValue('emailAlternative',$data->emailAlternative)), _M('E-mail alternative',$module), 30);
+        $emailAlternative->setJsHint(_M('Enter the person alternative e-mail',$module));
+        $validators[] = new MEmailValidator('emailAlternative','','optional');
+        $flds[]       = $emailAlternative;
+
+        $url          = new MTextField('url', strtolower($this->getFormValue('url',$data->url)), _M('URL',$module), 30);
+        $url->setJsHint(_M('Enter the person url',$module));
+        $flds[]       = $url;
+
+        $password     = new MPasswordField('password', $this->getFormValue('password',$data->password), _M('Password',$module), 15);
+        $password->setJsHint(_M('Enter the person password',$module));
+        $flds[]       = $password;
+
+        $isAllowPersonalDataLabel = new MText('isAllowPersonalDataLabel', _M('Allow personal data',$module));
+        $isAllowPersonalDataLabel->setClass('m-caption m-caption-required');
+
+        $isAllowPersonalData = $this->getFormValue('isAllowPersonalData',is_null($data->isAllowPersonalData) ? DB_FALSE : $data->isAllowPersonalData);
+        $isAllowPersonalData = new MRadioButtonGroup('isAllowPersonalData', '', SAGU::listYesNo(1), $isAllowPersonalData, null, 'horizontal');
+        $isAllowPersonalData->setShowLabel(false);
+
+        $hctIsAllowPersonalData = new MHContainer('hctIsAllowPersonalData', array($isAllowPersonalDataLabel, $isAllowPersonalData));
+        $flds[]                 = $hctIsAllowPersonalData;
+
+        $bsg1            = new BaseGroup('bsg1',_M('General data',$module),$flds,'vertical');
+        $bsg1->showLabel = true;
+        $bsg1->width     = '50%';
+        unset($flds);
+
+        //BaseGroup 2
+        $zipCodeLabel  = new MText('zipCodeLabel', _M('Zip code',$module) . ':');
+        $zipCodeLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $zipCodeLabel->setClass('m-caption m-caption-required');
+
+        if ( $function == 'update' )
+        {
+            $zipCode = new MTextField('zipCode', $this->getFormValue('zipCode',$data->zipCode), NULL, FIELD_ZIPCODE_SIZE );
+        }
+        else
+        {
+            $zipCode = new MLookupTextField('zipCode', $this->getFormValue('zipCode',$data->zipCode), NULL, FIELD_ZIPCODE_SIZE, null, null, 'location, limbo, countryName, limbo, stateName, cityId, cityName, neighborhoodId, neighborhood', $module, 'Location', null, null, true );
+        }
+        
+        $zipCode->setJsHint(_M('Enter the person zip code',$module));
+        $validators[] = new MRangeValidator('zipCode', _M('Zip code',$module), '00000000', '99999999', 'i', 'required');
+
+        $hctZipCode   = new MVContainer('hctZipCode', array($zipCodeLabel, $zipCode));
+        $hctZipCode->setShowLabel(true);
+        $flds[]       = $hctZipCode;
+
+        $cityLabel  = new MText('cityLabel', _M('City',$module) . ':');
+        $cityLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $cityLabel->setClass('m-caption m-caption-required');
+
+        $fields[] = new MHiddenField('limbo');
+        $fields[] = new MHiddenField('stateId');
+        $fields[] = new MHiddenField('countryId');
+
+        if ( ! isset($data->zipCode) )
+        {
+            $cityId   = new MLookupTextField('cityId', $this->getFormValue('cityId',$data->cityId), NULL, FIELD_ID_SIZE, null, null, 'cityName, stateId, stateName, countryId, countryName, zipCode', $module, 'City', null, null, true);
+        }
+        else
+        {
+            $cityId   = new MLookupTextField('cityId', $this->getFormValue('cityId',$data->cityId), NULL, FIELD_ID_SIZE, null, null, 'cityName, limbo, stateName, limbo, countryName', $module, 'City', null, null, true);
+        }
+        $cityId->setJsHint(_M('Enter the person city code',$module));
+        $validators[] = new MIntegerValidator('cityId', _M('City', $module), 'required');
+
+        $cityName     = new MTextField('cityName', $this->getFormValue('cityName',$data->cityName), _M('City name',$module), FIELD_DESCRIPTION_SIZE);
+        $cityName->setReadOnly(true);
+ 
+        $hctCity    = new MVContainer('hctCity', array($cityLabel, $cityId, $cityName));
+        $hctCity->setShowLabel(true);
+        $flds[]     = $hctCity;
+
+        $stateName    = new MTextField('stateName', $this->getFormValue('stateName',$data->stateName), _M('State name',$module), 20);
+        $stateName->setReadOnly(true);
+        $flds[]       = $stateName;
+ 
+        $countryName  = new MTextField('countryName', $this->getFormValue('countryName',$data->countryName), _M('Country name',$module), 20);
+        $countryName->setReadOnly(true);
+        $flds[]       = $countryName;
+
+        $locationLabel  = new MText('locationLabel', _M('Location',$module) . ':');
+        $locationLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $locationLabel->setClass('m-caption m-caption-required');
+
+        $location     = new MTextField('location', $this->getFormValue('location',$data->location), NULL, FIELD_DESCRIPTION_SIZE);
+        $location->setJsHint(_M('Enter the person location',$module));
+
+        $hctLocation  = new MVContainer('hctLocation', array($locationLabel, $location));
+        $hctLocation->setShowLabel(true);
+        $flds[]       = $hctLocation;
+        $validators[] = new MRequiredValidator('location', _M('Location', $module));
+
+        $numberLabel  = new MText('numberLabel', _M('Number',$module) . ':');
+        $numberLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $numberLabel->setClass('m-caption m-caption-required');
+
+        $number       = new MTextField('number', $this->getFormValue('number',$data->number), NULL, FIELD_ID_SIZE);
+        $number->setJsHint(_M('Enter the number of location',$module));
+
+        $hctNumber    = new MVContainer('hctNumber', array($numberLabel, $number));
+        $hctNumber->setShowLabel(true);
+        $flds[]       = $hctNumber;
+        $validators[] = new MRequiredValidator('number', _M('Number', $module));
+
+        $complement   = new MTextField('complement', $this->getFormValue('complement',$data->complement), _M('Complement',$module), 10);
+        $location->setJsHint(_M('Enter the location complement',$module));
+        $flds[]       = $complement;
+
+        $neighborhoodLabel = new MText('neighborhoodLabel', _M('Neighborhood',$module).':');
+        $neighborhoodLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $neighborhoodLabel->setClass('m-caption m-caption-required');
+
+        $neighborhoodId = new MLookupTextField('neighborhoodId', $this->getFormValue('neighborhoodId',$data->neighborhoodId), '', FIELD_LOOKUPFIELD_SIZE, null, null,
+            'neighborhood',
+            $module, 'Neighborhood', null, null, true);
+        $validators[] = new MIntegerValidator('neighborhoodId', _M('Neighborhood', $module), 'required');
+        $neighborhoodId->setJsHint(_M('Enter the neighborhood code',$module));
+
+        $neighborhood = new MTextField('neighborhood', $this->getFormValue('neighborhood',$data->neighborhood), '', FIELD_DESCRIPTION_SIZE);
+        $neighborhood->setJsHint(_M('Neighborhood name',$module));
+        $neighborhood->setReadOnly(true);
+
+        $hctNeighborhood = new MVContainer('hctNeighborhood', array($neighborhoodLabel, new MHContainer('hctNeighborhood', array ( $neighborhoodId, $neighborhood))));
+        $hctCity->setShowLabel(true);
+        $flds[]  = $hctNeighborhood;
+
+        $validators[] = new MRequiredValidator('neighborhood', _M('Neighborhood', $module), 'required');
+
+        if ( $MIOLO->checkAccess($module, A_ADMIN, false, false) )
+        {
+            $mioloLabel  = new MText('mioloLabel', _M('Miolo user name',$module) . ':');
+            $mioloLabel->setWidth(FIELD_CONTAINER_SIZE);
+
+            $mioloUserName = new MTextField('mioloUserName', $this->getFormValue('mioloUserName',$data->mioloUserName), NULL, FIELD_ID_SIZE);
+            $mioloUserName->setReadOnly(true);
+
+            $miololk     = new MLookupField('miololk', null, null, null, 'mioloUserName', 'admin', 'User', null, null, true);
+
+            $path     = $MIOLO->getActionURL($module, 'html:images:delete-20x20.png');
+            $btnClean = new MImage('btnClean', _M('Clear', 'basic'), $path);
+            $btnClean->setAttribute('onclick', 'Javascript:document.' . $this->getName() . '.mioloUserName.value = \'\';');
+
+            $hctMiolo    = new MVContainer('hctMiolo', array($mioloLabel, new MHContainer('hctButtons', array($mioloUserName, $miololk, $btnClean))));
+            $hctMiolo->setShowLabel(true);
+            $flds[]      = $hctMiolo;
+        }
+
+        $bsg2            = new BaseGroup('bsg2',_M('Location',$module),$flds,'vertical');
+        $bsg2->showLabel = true;
+        $bsg2->width     = '48%';
+        unset($flds);
+
+        //HorizontalContainer 1: BaseGroup 1 + BaseGroup 2
+        $hct1            = new MHContainer('hct1',array($bsg1,$bsg2));
+        $hct1->showLabel = true;
+        $fields[]        = $hct1;
+
+        $fields[] = new Separator();
+        $btn1[]   = new MButton('btnNext', _M('Next', $module) . ' >>');
+
+        $div1     = new MDiv('div1', $btn1, null, 'align=center');
+        $fields[] = $div1;
+        
+        $this->setFields($fields);
+        $this->setValidators($validators);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+        $this->setClose($MIOLO->getActionURL($module,substr($action,0,strrpos($action,':'))));
+		if ( strstr(strtolower($action), 'physical') )
+		{
+	        $this->page->onLoad('document.' . $this->name . '.txtPersonTitleId.focus()');
+		}
+		else if($event != 'tbBtnSave:click')
+		{
+			$this->page->onLoad('document.' . $this->name. '.personName.focus()');
+		}
+
+    }
+
+    /**
+     * Event triggered when user click next
+     **/
+    public function btnNext_click($sender = null)
+    {
+        //check validators
+        if ( $this->checkValidators() == false )
+        {
+            $MIOLO    = MIOLO::getInstance();
+            $module   = MIOLO::getCurrentModule();
+            $action   = MIOLO::getCurrentAction();
+            $function = MIOLO::_request('function');
+            $page     = MIOLO::_request('page');
+
+            $this->btnViewImage_click();
+
+            if ( strlen((string)$page) == 0 || $page == 1 )
+            {
+                $personData = serialize($this->getTypesData($action));
+
+                $args = array(
+                               'function'   => $function,
+                               'page'       => 2,
+                               'personData' => $personData,
+                               'documents'  => urlencode(serialize($this->documents))
+                             );
+
+                $this->page->mGoto($MIOLO->getActionURL($module, $postAction, NULL, $args));
+
+            }
+        }
+    }
+
+    /**
+     * Event triggered when user chooses Save from the toolbar
+     **/
+    public function tbBtnSave_click($sender=NULL)
+    {
+        //check validators
+        if ( $this->checkValidators() == false )
+        {
+
+            $MIOLO    = MIOLO::getInstance();
+            $module   = MIOLO::getCurrentModule();
+            $action   = MIOLO::getCurrentAction();
+            $function = MIOLO::_request('function');
+
+            $data     = $this->getTypesData($action);
+
+            if ( strlen((string)$action) == 0 )
+            {
+                $business = $MIOLO->getBusiness($module, 'BusPerson');
+                $ok       = $business->updatePerson($data);
+            }
+            elseif ( strstr(strtolower($action), 'physical') )
+            {
+                $business = $MIOLO->getBusiness($module, 'BusPhysicalPerson');
+                $ok       = $business->updatePhysicalPerson($data);
+            }
+            elseif ( strstr(strtolower($action), 'legal') )
+            {
+                $business = $MIOLO->getBusiness($module, 'BusLegalPerson');
+                $ok       = $business->updateLegalPerson($data);
+            }
+            
+            $msg = MSG_RECORD_UPDATED;
+
+            if ( $ok )
+            {
+
+                if ( strlen((string)$this->uploadFile->getFileName())>0 )
+                {
+                    $this->btnViewImage_click();
+                }
+                //Grava a imagem da pessoa
+                if ( strlen((string)$data->timeStamp) > 0 )
+                {
+                    $this->btnSaveImage_click(NULL, $data);
+                }
+                $opts = array('personIdS'=>$data->personId);
+                if ( $function == 'update' )
+                {
+                    $caption = _M('Information', $module);
+                    $MIOLO->information($msg, $MIOLO->getActionURL( $module, $action, null, $opts));
+                }
+            }
+            else
+            {
+                $msg  = _M('Error executing requested operation.',$module);
+                $goto = SAGU::getStackBackUrl();
+                $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+                $caption = _M('Error',$module);
+                $MIOLO->error( $msg, $goto, $caption );
+            }
+        }
+    }
+
+    /**
+     * Event triggered when user chooses Delete from the toolbar
+     **/
+    public function tbBtnDelete_click($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $data   = $this->getTypesData();
+        $opts   = array('event'    => 'tbBtnDelete_confirm',
+                        'function' => 'delete',
+                        'personId' => MIOLO::_request('personId'));
+
+        $gotoYes = $MIOLO->getActionURL( $module, $action, null, $opts );
+        $goto    = SAGU::getStackBackUrl();
+        $gotoNo  = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+        $msg     = MSG_CONFIRM_RECORD_DELETE;
+        $caption = _M('Question',$module);
+        $MIOLO->question($msg, $gotoYes, $gotoNo);
+    }
+
+    /**
+     * Event triggered when user chooses Yes from the Delete prompt dialog
+     **/
+    public function tbBtnDelete_confirm($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        if ( strlen((string)$action) == 0 )
+        {
+            $business = $MIOLO->getBusiness($module, 'BusPerson');
+            $ok       = $business->deletePerson($this->personId->value);
+        }
+        elseif ( strstr(strtolower($action), 'physical') )
+        {
+            $business = $MIOLO->getBusiness($module, 'BusPhysicalPerson');
+            $ok       = $business->deletePhysicalPerson($this->personId->value);
+        }
+        elseif ( strstr(strtolower($action), 'legal') )
+        {
+            $business = $MIOLO->getBusiness($module, 'BusLegalPerson');
+            $ok       = $business->deleteLegalPerson($this->personId->value);
+        }
+
+        if ( $ok )
+        {
+            $msg  = MSG_RECORD_DELETED;
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Information',$module);
+            $MIOLO->information($msg, $goto);
+        }
+        else
+        {
+            $msg  = _M('Error executing requested operation.',$module);
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Error',$module);
+            $MIOLO->error( $msg, $goto, $caption );
+        }
+    }
+
+    /**
+     * Event triggered when user click save
+     **/
+    public function btnViewImage_click($sender = null)
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+
+        $data     = $this->getTypesData();
+
+        $path = $MIOLO->getActionUrl($module, "html:images:upload:{$this->timeStamp->value}" . '.tmp.' . PHOTO_FORMAT);
+
+        if ( strlen((string)$data->uploadFile) == 0 )
+        {
+            $tmpFile  = $MIOLO->getModulePath('basic', PHOTO_PATH . '/' . $data->timeStamp . '.tmp.' . PHOTO_FORMAT);
+            $fileType = $this->uploadFile->getFileType();
+
+            if ( is_numeric(stripos($fileType, 'image')) )
+            {
+                $this->uploadFile->copyFile($tmpFile);
+                $data->uploadFile = $tmpFile;
+            }
+
+            $fileType = $this->uploadFile->getFileType();
+            if ( is_numeric(stripos($fileType, 'image')) )
+            {
+                $type                 = strtoupper(str_replace('image/', '', $fileType));
+                list($width, $height) = getimagesize($data->uploadFile);
+                $new_width  = PHOTO_WIDTH;
+                $new_height = PHOTO_HEIGHT;
+
+                eval('$im   = ImageCreateFrom' . $type . '($data->uploadFile);');
+                $im_dest = imagecreatetruecolor ($new_width, $new_height);
+                imagealphablending($im_dest, false);
+                imagecopyresized($im_dest, $im, 0, 0, 0, 0, $new_width, $new_height, $width, $height);
+                imagesavealpha($im_dest, false);
+                $output = $MIOLO->getModulePath('basic', PHOTO_PATH . '/' . $data->timeStamp . '.tmp.' . PHOTO_FORMAT);
+                eval('$ok = image' . strtolower(PHOTO_FORMAT) . '($im_dest, $output);');
+                if ( $ok )
+                {
+                    $this->page->addJsCode('parent.reloadImage();');
+                }
+            }
+
+        }
+
+    }
+
+    /**
+     * Method to gather all information from the form fields
+     * and put them on a database compatible object
+     **/
+    public function getTypesData($action = NULL)
+    {
+        global $MIOLO;
+
+        if ( strlen((string)$action) == 0 )
+        {
+            $data = new BasPerson();
+        }
+        elseif ( strstr(strtolower($action), 'physical') )
+        {
+            $data = new BasPhysicalPerson();
+        }
+        elseif ( strstr(strtolower($action), 'legal') )
+        {
+            $data = new BasLegalPerson();
+        }
+
+        $vars = get_object_vars($data);
+        foreach ( $vars as $var => $value )
+        {
+            if ( $this->$var && $var != 'name' )
+            {
+                $data->$var = MIOLO::_request($var);
+            }
+        }
+        $data->name       = $this->personName->value;
+        $data->personTitleId = $this->txtPersonTitleId->value;
+
+        return $data;
+    }
+
+    /**
+     * Event triggered when user click save
+     **/
+    public function btnSaveImage_click($sender = null, $data)
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+
+        $input  = $MIOLO->getModulePath('basic', PHOTO_PATH . '/' . $data->timeStamp . '.tmp.' . PHOTO_FORMAT);
+        $output = $MIOLO->getModulePath('basic', PHOTO_PATH . '/' . $data->personId . '.' . PHOTO_FORMAT);
+        if ( file_exists($input) )
+        {
+            if ( copy($input, $output) )
+            {
+                unlink($input);
+            }
+        }
+    }
+
+    /**
+     * Event triggered when user click save or next button
+     **/
+    public function checkValidators()
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+
+        $data = $this->getTypesData();
+
+        $bus = $MIOLO->getBusiness($module, 'BusCity');
+        $city = $bus->getCity($data->cityId);
+        if ( is_null($city->cityId) )
+        {
+            $this->addError(_M('The @1 id entered does not exists.', $module, _M('city', $module)));
+        }
+
+        // deve retornar false para continuar
+        return ($this->hasErrors() > 0);
+    }
+}

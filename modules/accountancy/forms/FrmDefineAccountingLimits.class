@@ -1,0 +1,231 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for finoperation table
+ *
+ * @author Armando Taffarel Neto [taffarel@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Armando Taffarel Neto [taffarel@solis.coop.br]
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 05/10/2006
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Form to search the accDefineAccountingLimits table
+ */
+class FrmDefineAccountingLimits extends MForm
+{
+    private $home;
+    private $module;
+
+    /**
+     * Class constructor
+     */
+    function __construct($data)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $this->module = $module;
+
+        $this->home   = $data->home;
+
+        parent::__construct(_M('Define accounting limits', $module));
+
+        // hide the 'Submit' button
+        $this->setShowPostButton(false);
+
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+
+    }
+
+    /**
+     *  Default method to define fields
+     */
+    public function createFields()
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $toolBar = new MToolBar('toolBar',$MIOLO->getActionURL($module,$action));
+        
+        $toolBar->disableButton('tbBtnNew');
+        $toolBar->disableButton('tbBtnSearch');
+        $toolBar->disableButton('tbBtnSave');
+        $toolBar->disableButton('tbBtnDelete');
+        $toolBar->disableButton('tbBtnPrint');
+
+        //favoritos
+        $enabledImage  = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-20x20.png');
+        $disabledImage = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-disabled-20x20.png');
+        $url           = $MIOLO->getActionURL($module, $this->home, null, array('function' => 'search', 'event' => 'bookmark'));
+        $toolBar->addButton('tbBtnBookmark', _M('Add to bookmarks', 'basic'), $url, null, true, $enabledImage, $disabledImage);
+
+        if ( MIOLO::_request('event') == 'bookmark' )
+        {
+            $MIOLO->getClass('basic', 'access');
+            access::insert('Define accounting limits', $this->home, 'defineAccountingLimits-16x16.png', true);
+        }
+        //fim favoritos
+
+        $fields[] = $toolBar;
+        
+        // Record date
+        $recordDateLabel = new MText('recordDateLabel', _M('Limit date', $module).':');
+        $recordDateLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $recordDateLabel->setClass('m-caption m-caption-required');
+        $recordDate      = new MCalendarField('recordDate', $this->getFormValue('recordDate',date(MASK_DATE_PHP)), '', FIELD_DATE_SIZE);
+        $recordDate->setJsHint(_M('Enter the limit date',$module));
+        $validators[] = new MDATEDMYValidator('recordDate', '', 'required');
+        $fields[] = new MHContainer('hctRecordDate', array($recordDateLabel, $recordDate));
+        
+        // Accounting user
+        $accountingUserLabel = new MText('accountingUserLabel', _M('Defined by', $module).':');
+        $accountingUserLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $accountingUserLabel->setClass('m-caption m-caption-required');
+        $accountingUser = new MTextField('accountingUser', $this->getFormValue('accountingUser',$MIOLO->getLogin()->id), '', FIELD_DESCRIPTION_SIZE);
+        $accountingUser->setJsHint(_M('Enter your name',$module));
+        $validators[] = new MRequiredValidator('accountingUser', '', 'required');
+        $fields[] = new MHContainer('hctAccountingUser', array($accountingUserLabel, $accountingUser));
+        
+        $button   = new MButton('btnInclude', _M('Include', $module));
+        $fields[] = new MDiv('divButton', $button, null);
+        
+        $fields[] = new MSeparator('<hr>');
+
+        $this->setFields($fields);
+        $this->setValidators($validators);
+        
+        $grdResults = $MIOLO->getUI()->getGrid($module,'GrdDefineAccountingLimits');
+        $business = $this->manager->getBusiness($module,'BusDefineAccountingLimits');
+        $data = $business->getDefineAccountingLimits();
+        $grdResults->setData($data);
+        $this->addField($grdResults);
+    }
+
+    /**
+     * Event triggered when user chooses New from the toolbar
+     **/
+    public function btnInclude_click($sender = null)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $data     = $this->getTypesData();
+        $business = $MIOLO->getBusiness($module, 'BusDefineAccountingLimits');
+        
+        $ok  = $business->insertAccountingLimit($data);
+        $msg = _M('Record inserted sucessfully', $module);
+
+        if ( $ok )
+        {
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL( $module, $action, null, $opts);
+
+            $caption = _M('Information', $module);
+            $MIOLO->information($msg, $goto);
+        }
+        else
+        {
+            $msg  = _M('Error executing requested operation.', $module);
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Error', $module);
+            $MIOLO->error( $msg, $goto, $caption );
+        }
+    }
+
+    /**
+     * Event triggered when user chooses Delete from the toolbar
+     **/
+    public function tbBtnDelete_click($sender = null)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $opts   = array('event'                => 'tbBtnDelete_confirm',
+                        'function'             => 'delete',
+                        'accountingLimitId'    => MIOLO::_request('accountingLimitId')
+                       );
+                       
+        $gotoYes = $MIOLO->getActionURL( $module, $action, null, $opts );
+        $goto    = SAGU::getStackBackUrl();
+        $gotoNo  = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+        $msg     = MSG_CONFIRM_RECORD_DELETE;
+        $caption = _M('Question',$module);
+        $MIOLO->question($msg, $gotoYes, $gotoNo);
+    }
+
+    /**
+     * Event triggered when user chooses Yes from the Delete prompt dialog
+     **/
+    public function tbBtnDelete_confirm($sender = null)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $business = $MIOLO->getBusiness($module, 'BusDefineAccountingLimits');
+        $ok = $business->deleteAccountingLimit(MIOLO::_request('accountingLimitId'));
+
+        if ( $ok )
+        {
+            $msg  = MSG_RECORD_DELETED;
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Information',$module);
+            $MIOLO->information($msg, $goto);
+        }
+        else
+        {
+            $msg  = _M('Error executing requested operation.',$module);
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Error', $module);
+            $MIOLO->error( $msg, $goto, $caption );
+        }
+    }
+
+    public function getTypesData()
+    {
+        $data = new AccAccountingLimit();
+        $vars = get_object_vars($data);
+        foreach ( $vars as $var => $value )
+        {
+            $data->$var = $this->$var->value;
+        }
+
+        return $data;
+    }
+
+
+}
+
+?>

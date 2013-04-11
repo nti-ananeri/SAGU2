@@ -1,0 +1,129 @@
+<?php
+
+/**
+ * Class to generate the bank remittance
+ * FEBRABAN
+ */
+class ReturnInvoice237
+{
+	public $header;
+	public $treiler;
+	public $detail;
+	public function ReturnInvoice237($data)
+	{
+		$file = SAGUFile::GetFilePath($data->fileId);
+		$MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+		$businessReturn = $MIOLO->getBusiness($module, 'BusReturnInvoice');
+		if(file_exists($file))
+		{
+			$fread = file($file);
+			$size = strlen((string)str_replace("\n",'',$fread[0]))-1;
+			$businessReturn->fileId = $data->fileId;
+			//CNAB 400
+			if($size == 400) 
+			{
+				if(substr($fread[0],0,1) == 0)
+				{
+                    //DESCRIÇÃO                         N.ORDEM     POSIÇÃO         TAMANHO     TIPO    CONTEÚDO
+                    
+                    //IDENTIFICAÇÃO DO REGISTRO         001         001-001         001         NÚM     0
+            
+                    //IDENTIFICAÇÃO DO ARQUIVO RETORNO  002         002-002         001         NÚM     2
+
+                    //LITERAL RETORNO                   003         003-009         007         ALFA    RETORNO
+
+                    //CÓDIGO DO SERVIÇO                 004         010-011         002         NÚM     01
+
+                    //LITERAL SERVIÇO                   005         012-026         015         ALFA    COBRANÇA
+
+                    //CÓDIGO DA EMPRESA                 006         027-046         020         NÚM     (NÚMERO DA EMPRESA)
+					$this->header->accord		= (int)substr($fread[0],26,20);
+                    //NOME DA EMPRESA POR EXTENSO       007         047-076         030         ALFA    (RAZÃO SOCIAL)
+
+                    //CÓDIGO DO BANCO                   008         077-079         003         NÚM     237
+					$this->header->bankId		= (int)substr($fread[0],76,3);                
+                    //NOME DO BANCO POR EXTENSO         009         080-094         015         ALFA    BRADESCO
+
+                    //DATA DE GRAVAÇÃO DO ARQUIVO       010         095-100         006         NÚM     (DDMMAA)
+
+                    //DENSIDADE DA GRAVAÇÃO             011         101-108         008         NÚM     01600000
+
+                    //NÚMERO AVISO BANCÁRIO             012         109-113         005         NÚM     (NÚMERO AVISO) (?)
+
+                    //BRANCOS                           013         114-379         266         ALFA    (ESPAÇOS)
+
+                    //DATA DO CRÉDITO                   014         380-385         006         NÚM     (DDMMAA)
+					$this->header->genDate		= substr($fread[0],380,6);
+                    //BRANCOS                           015         386-394         009         ALFA    (ESPAÇOS)
+
+                    //SEQUENCIA DO REGISTRO             016         395-400         006         NÚM     000001
+					$this->header->serviceLot	= substr($fread[0],394,6);
+
+					$this->header->fileHeader	= substr($fread[0],7,1);
+                    $dt->assignorCode = $this->header->accord;
+                    $dt->bankId = $this->header->bankId;
+            		$dt2 = $businessReturn->getBankAccount($dt);
+                    $this->header->bankAccountId = $dt2[0][0];
+//                  $this->header->bankContractId = $dt[0][1];
+                    $this->header->accord = $dt2[0][1];
+
+//					$this->header->cnpj			= substr($fread[0],18,14);
+//					$this->header->branch		= substr($fread[0],27,4);
+//					$this->header->branchDigit	= substr($fread[0],,1);
+//					$this->header->account		= substr($fread[0],32,7);
+//					$this->header->accountDigit	= substr($fread[0],71,1);
+//					$this->header->type			= substr($fread[0],142,1);
+//					$this->header->genTime		= '000000';
+				}
+				if(substr($fread[count($fread)-1],0,1) == 9)
+				{
+					$this->treiler->bankId		= substr($fread[count($fread)-1],4,3);
+					$this->treiler->serviceLot	= substr($fread[count($fread)-1],394,6);
+					$this->treiler->totalLot	= substr($fread[count($fread)-1],7,8);
+					$this->treiler->totalRegist	= substr($fread[count($fread)-1],7,8);
+				}
+			}
+			//$businessReturn->openTransaction();
+			for($x = 1; $x < (count($fread)-1); $x++)
+			{
+				unset($this->detail);
+				if($size == 400) 
+				{
+					if( substr($fread[$x],0,1) == 1 )
+					{
+						$this->detail->bankInvoiceId	= (float)substr($fread[$x],72,9);
+						$this->detail->documentNumber	= substr($fread[$x],58,15);
+						$this->detail->maturityDate		= substr($fread[$x],146,2).substr($fread[$x],148,2).'20'.substr($fread[$x],150,2);
+						$this->detail->value			= (float)(substr($fread[$x],152,13)/100);
+						$this->detail->myBankInvoiceId  = substr($fread[$x],116,10);
+						//$this->detail->inscription		= substr($fread[$x],133,15);
+						$this->detail->name				= substr($fread[$x],311,40);
+						//$this->detail->tax				= (float)(substr($fread[$x],175,13)/100);
+						//$this->detail->cnab			    = substr($fread[$x],223,17);
+						//$this->detail->charges			= (float)(substr($fread[$x],17,15)/100);
+
+						$this->detail->interest			= (float)(substr($fread[$x],266,13)/100);
+						$this->detail->fine				= (float)(substr($fread[$x],214,13)/100);
+						$this->detail->discount			= (float)(substr($fread[$x],227,13)/100);
+						$this->detail->payedValue		= (float)(substr($fread[$x],253,13)/100);
+						$this->detail->entryDate		= substr($fread[$x],110,2).substr($fread[$x],112,2).'20'.substr($fread[$x],114,2);
+						//$this->detail->ourNumber		= substr($fread[$x],213,20);
+						$dataX = $this->detail;
+//                        MIOLO::vd($dataX);
+						$dataX->bankAccountId = $this->header->bankAccountId;
+						$dataX->accord = $this->header->accord;
+						if(in_array(substr($fread[$x],108,2),array('06', '17')))
+						{
+							//MIOLO::vd(substr($fread[$x],108,2));
+                            $businessReturn->processDetail($dataX);
+						}
+					}
+				}
+			}
+			$businessReturn->closeTransaction();
+			$this->processInfo = $businessReturn->processInfo;
+		}
+	}
+}
+?>

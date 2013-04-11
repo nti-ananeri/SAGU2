@@ -1,0 +1,266 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for finBank table
+ *
+ * @author Rudi Uhrig Neto [rudi@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * Rafael Luís Spengler [rafael@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+ *
+ * @since
+ * Class created on 22/12/2005
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to manipulate the Bank table
+ **/
+class BusinessFinanceBusBank extends MBusiness
+{
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module = is_null($module) ? 'finance' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+    /**
+     * List all records from the table handled by the class
+     *
+     * @param: None
+     *
+     * @returns (array): Return an array with the entire table
+     *
+     **/
+    public function listBank()
+    {
+        $sql = ' SELECT A.bankId,
+                        A.description
+                   FROM finBank A
+               ORDER BY 2, 1 ';
+
+        $db = $this->getDatabase();
+        
+        $return = $db->query($sql);
+
+        return $return;
+    }
+
+
+    /**
+     * Return a specific record from the database
+     *
+     * @param $paymentPlaceId (integer): Primary key of the record to be retrieved
+     *
+     * @return (object): Return an object of the type handled by the class
+     *
+     **/
+    public function getBank($bankId)
+    {
+        $sql = 'SELECT A.bankId,
+                       A.description,
+                       A.bankIdVd,
+					   A.url,
+                       A.userName,
+                       TO_CHAR(A.dateTime,\'' . MASK_TIMESTAMP . '\')
+                  FROM finBank A
+                 WHERE A.bankId = ? ';
+
+        $db = $this->getDatabase();
+        $sqls = SAGU::prepare($sql,$bankId);
+
+        $result = $db->query($sqls);
+        //$db->close();
+
+        $bank = new FinBank();
+
+        list ( $bank->bankId,
+               $bank->description,
+               $bank->bankIdVd,
+			   $bank->url,
+               $bank->userName,
+               $bank->dateTime ) = $result[0];
+
+        return $bank;
+    }
+
+    /**
+     * Do a search on the database table handled by the class
+     *
+     * @param $filters (object): Search filters
+     *
+     * @last modification: William Prigol Lopes [william@solis.coop.br]
+     *                     Make the search capable to get partial words with % in varchar fields
+     *
+     * @return (array): An array containing the search results
+     **/
+    public function searchBank($data,$uselink = false)
+    {
+
+
+        $sql = 'SELECT A.bankId,
+                       A.bankIdVd,
+                       A.description,';
+				if ( $uselink )
+				{
+					$sql .= "(CASE WHEN length(A.url) > 2 THEN '<a target=\"_blank\" href=\"http://'||A.url||'\">'||A.url||'</a>' ELSE ''  END) ";
+				}
+				else
+				{
+					$sql .= 'A.url ';
+				}
+        $sql .= ' FROM finBank A';
+
+        $where = '';
+        unset($args);
+        if ( strlen((string)$data->bankId) > 0 )
+        {
+            $where .= '    AND   A.bankId ILIKE ?';
+            $args[] = $data->bankId.'%';
+        }
+        if ( strlen((string)$data->description) > 0 )
+        {
+            $where .= '    AND   A.description ILIKE ?';
+            $args[] = $data->description.'%';
+        }
+        if ( strlen((string)$data->bankIdVd) > 0 )
+        {
+            $where .= '    AND   A.bankIdVd ILIKE ?';
+            $args[] = $data->bankIdVd.'%';
+        }
+        if ( strlen((string)$data->url) > 0 )
+        {
+            $where .= '    AND   A.url ILIKE ?';
+            $args[] = $data->url.'%';
+        }
+        if ( strlen((string)$where) > 0 )
+        {
+            $sql .= ' WHERE ' . substr($where,8) .
+                    ' ORDER BY A.description';
+
+            $db     = $this->getDatabase();
+            $sqls   = SAGU::prepare($sql,$args);
+            $result = $db->query($sqls);
+        }
+
+        return $result;
+    }
+
+    /**
+     * Insert a new record
+     *
+     * @param $data (object): An object of the type handled by the class
+     *
+     * @return True if succed, otherwise False
+     *
+     **/
+    public function insertBank($data)
+    {
+        $db = $this->getDatabase();
+
+        $sql = 'INSERT INTO finBank
+                            (bankId,
+                             description,
+                             bankIdVd,
+							 url)
+                        VALUES (?,?,?,?)';
+
+        $args = array($data->bankId,
+                      $data->description,
+                      $data->bankIdVd,
+					  $data->url);
+
+        $return = $db->execute(SAGU::prepare($sql, $args));
+        return $return;
+    }
+
+    /**
+     * Update data from a specific record
+     *
+     * @param $data (object): Data which will replace the old record data
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+    public function updateBank($data)
+    {
+        $sql = 'UPDATE finBank
+                   SET description = ?,
+                       bankIdVd    = ?,
+					   url		   = ?
+                 WHERE bankId      = ?';
+
+        $args = array($data->description,
+                      $data->bankIdVd,
+					  $data->url,
+                      $data->bankId);
+
+        $db = $this->getDatabase();
+        $sqls = SAGU::prepare($sql,$args);
+
+        for ( $i=0; $i<count($sqls); $i++ )
+        {
+            $result = $db->execute($sqls[$i]);
+        }
+        //$this->checkError($db);
+        //$db->close();
+
+        return $result;
+    }
+
+    /**
+     * Delete a record
+     *
+     * @param $bankId(string): Primary key for deletion
+     *
+     * @return (boolean): True if succeed, otherwise False
+     *
+     **/
+    public function deleteBank($bankId)
+    {
+        $sql = 'DELETE FROM finBank
+                      WHERE bankId = ?';
+
+        $args = array($bankId);
+
+        $db = $this->getDatabase();
+        $result = $db->execute(SAGU::prepare($sql,$args));
+        //$this->checkError($db);
+        //$db->close();
+
+        return $result;
+    }
+
+}
+
+?>

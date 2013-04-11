@@ -1,0 +1,210 @@
+<?php
+
+/**
+ *
+ * This file handles the connection and actions for basTax table
+ *
+ * @author Rudi Uhrig Neto [rudi@solis.coop.br]
+ *
+ * $version: $IdS$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 20/12/2005
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Form to search the basTax table
+ */
+class FrmTaxSearch extends MForm
+{
+    private $home;
+    private $module;
+
+    /**
+     * Class constructor
+     */
+    function __construct($data)
+    {
+        $this->module = 'finance';
+        $module = $this->module;
+
+        $this->home   = $data->home;
+
+        parent::__construct(_M('Search',$module));
+
+        // hide the 'Submit' button
+        $this->setShowPostButton(false);
+
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+
+    }
+
+    /**
+     *  Default method to define fields
+     */
+    public function createFields()
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $toolBar = new MToolBar('toolBar',$MIOLO->getActionURL($module,$action));
+//        $toolBar->disableButton('tbBtnSearch');
+        $toolBar->disableButton('tbBtnSave');
+        $toolBar->disableButton('tbBtnDelete');
+//        $toolBar->disableButton('tbBtnPrint');
+
+        //favoritos
+        $enabledImage  = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-20x20.png');
+        $disabledImage = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-disabled-20x20.png');
+        $url           = $MIOLO->getActionURL($module, $this->home, null, array('function' => 'search', 'event' => 'bookmark'));
+        $toolBar->addButton('tbBtnBookmark', _M('Add to bookmarks', 'basic'), $url, null, true, $enabledImage, $disabledImage);
+
+        if ( MIOLO::_request('event') == 'bookmark' )
+        {
+            $MIOLO->getClass('basic', 'access');
+            access::insert('Tax', $this->home, 'tax-16x16.png', true);
+        }
+        //fim favoritos
+
+        $fields[] = $toolBar;
+
+        $taxIdS = new MTextField('taxIdS', $this->taxIdS->value, _M('Id', $module), FIELD_ID_SIZE);
+        $taxIdS->setJsHint(_M('Enter the tax code', $module));
+        $fields[] = $taxIdS;
+        $validators[] = new MIntegerValidator('taxIdS');
+
+        $descriptionS = new MTextField('descriptionS', $this->taxNameS->value, _M('Description', $module), FIELD_DESCRIPTION_SIZE);
+        $descriptionS->setJsHint(_M('Enter the tax description', $module));
+        $fields[] = $descriptionS;
+
+        // Policy 
+        $policyLabel = new MText('policyLabel', _M('Policy', $module). ':');
+        $policyLabel->setWidth(FIELD_CONTAINER_SIZE);
+//        $policyLabel->setClass('m-caption m-caption-required');
+        $policyIdS = new MLookupTextField('policyIdS', $this->getFormValue('policyIdS',$data->policyIdS), null, FIELD_ID_SIZE, null, null,
+            array('policyDescriptionS', 'limbo', 'operationIdS', 'limbo', 'limbo', 'limbo', 'limbo','limbo', 'limbo', 'limbo','limbo', 'operationDescriptionS', 'incomeSourceIdS', 'incomeSourceDescriptionS' ),
+            'finance', 'Policy', null, null, true);
+        $policyIdS->setJsHint(_M('Select the policy id', $module));
+        $validators[] = new MIntegerValidator('policyIdS',_M('Policy', $module), '');
+        $policyDescriptionS = new MTextField('policyDescriptionS', $this->getFormValue('policyDescriptionS',$data->policyDescriptionS), null, FIELD_DESCRIPTION_SIZE);
+        //$policyDescriptionS->setReadOnly(true);
+        $hctPolicy = new MHContainer('hctPolicy', array($policyLabel, $policyIdS, $policyDescriptionS));
+        $hctPolicy->setShowLabel(true);
+        $fields[]   = $hctPolicy;
+ 
+        // income source
+        $incomeSourceLabel = new MText('incomeSourceLabel', _M('Income source',$module).':');
+        $incomeSourceLabel->setWidth(FIELD_CONTAINER_SIZE);        
+ //       $incomeSourceLabel->setClass('m-caption m-caption-required');
+        $incomeSourceIdS = new MLookupTextField('incomeSourceIdS', $this->getFormValue('incomeSourceIdS',$data->incomeSourceIdS), null,FIELD_ID_SIZE, null, null,
+            'incomeSourceDescriptionS',
+            'finance', 'IncomeSource', null, null, true);
+        $incomeSourceIdS->setJsHint(_M('Select the income source id', $module));
+        $validators[] = new MIntegerValidator('incomeSourceIdS', _M('Income source',$module), '');
+        $incomeSourceDescriptionS = new MTextField('incomeSourceDescriptionS', $this->getFormValue('incomeSourceDescriptionS',$data->incomeSourceDescriptionS), null, FIELD_DESCRIPTION_SIZE);
+   //     $incomeSourceDescriptionS->setReadOnly(true);
+        $hctIncomeSource = new MHContainer('hctIncomeSource', array($incomeSourceLabel, $incomeSourceIdS, $incomeSourceDescriptionS));
+        $hctIncomeSource->setShowLabel(true);
+        $fields[]   = $hctIncomeSource;        
+
+        // Operation
+        $operationLabel = new MText('eOperationLabel', _M('Operation id suggested', $module));
+        $operationLabel->setWidth(FIELD_CONTAINER_SIZE);
+        //$operationLabel->setClass('m-caption m-caption-required');
+        $operationIdS    = new MLookupTextField('operationIdS', $this->getformValue('operationIdS'), null, FIELD_ID_SIZE, null, null, array('operationDescriptionS'), $module, 'Operation', null, true);
+        $validators[]   = new MIntegerValidator('operationIdS');
+        $operationName  = new MTextField('operationDescriptionS', $this->getFormValue('operationDescriptionS'), '', FIELD_DESCRIPTION_SIZE);
+        //$operationName->setReadOnly(true);
+        $fields[]       = new MHcontainer('hctOperation', array($operationLabel, $operationIdS, $operationName));
+ 
+        // Account Scheme
+        $accountSchemeLabel = new MText('accountSchemeLabel', _M('Account scheme',$module).':');
+        $accountSchemeLabel->setWidth(FIELD_CONTAINER_SIZE);
+        //$accountSchemeLabel->setClass('m-caption m-caption-required');
+        $accountSchemeIdS = new MLookupTextField('accountSchemeIdS', $this->getFormValue('accountSchemeIdS',$data->accountSchemeIdS), null,FIELD_ID_SIZE, null, null,
+            'accountSchemeDescriptionS',
+            'accountancy', 'AccountScheme', null, null, true);
+        $accountSchemeIdS->setJsHint(_M('Select the account scheme id', $module));
+  //      $validators[] = new MRequiredValidator('accountSchemeIdS',_M('Account scheme',$module), '');        
+        $accountSchemeDescriptionS = new MTextField('accountSchemeDescriptionS', $this->getFormValue('accountSchemeDescriptionS',$data->accountSchemeDescriptionS), null, FIELD_DESCRIPTION_SIZE);
+//        $accountSchemeDescriptionS->setReadOnly(true);
+        $hctAccountScheme = new MHContainer('hctAccountScheme', array($accountSchemeLabel, $accountSchemeIdS, $accountSchemeDescriptionS));
+        $hctAccountScheme->setShowLabel(true);
+        $fields[]   = $hctAccountScheme;
+
+        // Cost Center
+        $costCenterLabel = new MText('costCenterLabel', _M('Cost center',$module).':');
+        $costCenterLabel->setWidth(FIELD_CONTAINER_SIZE);
+        //$costCenterLabel->setClass('m-caption m-caption-required');
+        $costCenterIdS = new MLookupTextField('costCenterIdS',$this->getFormValue('costCenterIdS',$data->costCenterIdS), null,FIELD_ID_SIZE, null, null,
+            'costCenterDescriptionS',
+            'accountancy', 'CostCenter', null, null, true);
+        $costCenterIdS->setJsHint(_M('Select the cost center id', $module));
+//        $validators[] = new MRequiredValidator('costCenterIdS',_M('Cost center',$module), false);                
+        $costCenterDescriptionS = new MTextField('costCenterDescriptionS',$this->getFormValue('costCenterDescriptionS',$data->costCenterDescriptionS), null, FIELD_DESCRIPTION_SIZE);
+//        $costCenterDescriptionS->setReadOnly(true);
+        $hctCostCenter = new MHContainer('hctCostCenter', array($costCenterLabel, $costCenterIdS, $costCenterDescriptionS));
+        $hctCostCenter->setShowLabel(true);
+        $fields[]   = $hctCostCenter;
+        
+
+        $fields[] = new MButton('btnSearch', _M('Search', $module));
+
+        if (is_array($validators))
+        {
+            $this->setValidators($validators);
+        }
+        $this->setFields($fields);
+
+        $data = new FinTax();
+        $vars = get_object_vars($data);
+        foreach ( $vars as $var => $value )
+        {
+            if ( $this->{$var}.'S' && $var != 'name' )
+            {
+                eval('$filters->' . $var . ' = $this->' . $var . 'S->value;');
+            }
+        }
+
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $grdResults = $MIOLO->getUI()->getGrid($module,'GrdTaxSearch',$filters);
+        $business = $this->manager->getBusiness($module,'BusTax');
+        $data = $business->searchTax($filters);
+        $grdResults->setData($data);
+        //###GRID///is_array($data) ? $grdResults->SetScrollHeight(GRID_SCROLL_HEIGHT) : false;
+        $this->addField($grdResults);
+
+        if ( $this->isSubmitted() )
+        {
+            $this->page->onLoad('document.' . $this->name . '.taxIdS.focus();');
+        }
+
+    }
+
+}
+
+?>

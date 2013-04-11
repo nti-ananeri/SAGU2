@@ -1,0 +1,232 @@
+<?php
+
+/**
+ *
+ * This file handles the connection and actions for stored balances table
+ 
+ *
+ * @author Daniel Afonso Heisler [daniel@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Armando Taffarel Neto [taffarel@solis.coop.br]
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 29/09/2006
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Form to search the accountancy and finance table
+ */
+class FrmForecastAndInvoices extends MForm
+{
+    private $home;
+    private $module;
+
+    /**
+     * Class constructor
+     */
+    function __construct($data)
+    {
+        $MIOLO      = MIOLO::getInstance();
+        $module     = MIOLO::getCurrentModule();
+        $this->home = $data->home;
+        $initialDate = MIOLO::_request('initialDate');
+        $limitDate   = MIOLO::_request('limitDate');
+        if ( MIOLO::_request('type') == 'ALL' )
+        {
+            parent::__construct(_M('Forecasts and entries report', $module) . ' - ' . _M('from', $module) . ' ' . $initialDate . ' ' . _M('to', $module) . ' ' . $limitDate);
+        }
+        else
+        {
+            parent::__construct(_M('Forecasts report', $module) . ' - ' . _M('from', $module) . ' ' . $initialDate . ' ' . _M('to', $module) . ' ' . $limitDate);
+        }
+
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+    }
+
+    /**
+     *  Default method to define fields
+     */
+    public function createFields()
+    {
+        $MIOLO       = MIOLO::getInstance();
+        $module      = MIOLO::getCurrentModule();
+        $action      = MIOLO::getCurrentAction();
+        $initialDate = MIOLO::_request('initialDate');
+        $limitDate   = MIOLO::_request('limitDate');
+        $type        = MIOLO::_request('type');
+
+        $business  = $MIOLO->getBusiness('basic', 'BusConfig');
+        $constants = $business->getModuleValues('basic');
+        foreach ( $constants as $cnt )
+        {
+            define($cnt[0],$cnt[1]);
+        }
+
+        $business = $MIOLO->getBusiness($module, 'BusAccountBalance');
+        if ( strtoupper($type) == 'ALL' )
+        {
+            $result = $business->getForecastsAndInvoices($initialDate, $limitDate);
+        }
+        else
+        {
+            $result = $business->getForecasts($initialDate, $limitDate);
+        }
+
+
+        //$columns[] = "<div style=\"text-align: center;\">" . _M('Course id', $module) . "</div>";
+        //$columns[] = "<div style=\"text-align: center;\">" . _M('Course name', $module) . "</div>";
+        //$columns[] = "<div style=\"text-align: center;\">" . _M('Value', $module) . "</div>";
+
+        if ( count($result) > 0 )
+        {
+            $accountSchemeIdOld          = $result[0][0];
+            $accountSchemeDescriptionOld = $result[0][5];
+            foreach ( $result as $row )
+            {
+                list (
+                        $accountSchemeId,
+                        $courseId,
+                        $courseName,
+                        $unitId,
+                        $source,
+                        $accountSchemeDescription,
+                        $value
+                     ) = $row;
+
+                if ( $accountSchemeId != $accountSchemeIdOld )
+                {
+                    if ( strtoupper($type) == 'ALL' )
+                    {
+                        //$valueTotal = $business->getForecastsAndInvoicesBalance($initialDate, $limitDate, $accountSchemeIdOld);
+                    }
+                    else
+                    {
+                        //$valueTotal = $business->getForecastsBalance($initialDate, $limitDate, $accountSchemeIdOld);
+                    }
+                    $matrix[]   = array('<b>' . _M('Total', $module) . ': </b><i>' . FINANCE::formatFinanceReportNumber(str_replace(',', '.', $valueTotal)) . '</i>');
+                    $title = new MDiv('div1', FINANCE::formatAccountSchemeId($accountSchemeIdOld) . ' - ' . $accountSchemeDescriptionOld, null, 'align=left');
+                    $title->addStyle('width', '100%');
+
+                    $tableRaw = new MTableRaw($title, $matrix, $columns);
+                    $tableRaw->setAlternate(true);
+                    $tableRaw->addStyle('width', '100%');
+
+                    $tableRaw->setCellAttribute(0, 0, 'width', '20%');
+                    $tableRaw->setCellAttribute(0, 1, 'width', '60%');
+                    $tableRaw->setCellAttribute(0, 2, 'width', '20%');
+
+                    $fields[] = $tableRaw;
+
+                    unset($valueTotal, $matrix);
+                    $accountSchemeIdOld          = $accountSchemeId;
+                    $accountSchemeDescriptionOld = $accountSchemeDescription;
+                }
+
+                $valueTotal += $value;
+                $matrix[] = array($courseId, $source . ' : ' . $courseName, FINANCE::formatFinanceReportNumber($value));
+            }
+
+        }
+
+        if ( strtoupper($type) == 'ALL' )
+        {
+            $valueTotal = $business->getForecastsAndInvoicesBalance($initialDate, $limitDate, $accountSchemeIdOld);
+        }
+        else
+        {
+            $valueTotal = $business->getForecastsBalance($initialDate, $limitDate, $accountSchemeIdOld);
+        }
+        $matrix[]   = array('<b>' . _M('Total', $module) . ': </b><i>' . FINANCE::formatFinanceReportNumber($valueTotal) . '</i>');
+        $title = new MDiv('div1', FINANCE::formatAccountSchemeId($accountSchemeIdOld) . ' - ' . $accountSchemeDescriptionOld, null, 'align=left');
+        $title->addStyle('width', '100%');
+
+        $tableRaw = new MTableRaw($title, $matrix, $columns);
+        $tableRaw->setAlternate(true);
+        $tableRaw->addStyle('width', '100%');
+
+        $tableRaw->setCellAttribute(0, 0, 'width', '20%');
+        $tableRaw->setCellAttribute(0, 1, 'width', '60%');
+        $tableRaw->setCellAttribute(0, 2, 'width', '20%');
+
+        $fields[] = $tableRaw;
+
+        if ( strtoupper($type) == 'ALL' )
+        {
+                          $valueTotal = $business->getForecastsAndInvoicesBalance($initialDate, $limitDate);
+       }
+        else
+        {
+            $valueTotal = $business->getForecastsBalance($initialDate, $limitDate);
+        }
+        $fields[]   = new Separator();
+        $title      = new MDiv('div1', '<b>' . _M('Balance: ', $module) . '<i>' . FINANCE::formatFinanceReportNumber($valueTotal) . '</i></b>', null, 'align=left');
+        $title->addStyle('width', '100%');
+        $tableRaw   = new MTableRaw($title, null, array(array()));
+        $fields[]   = $tableRaw;
+
+        $fields[]   = new Separator();
+        $btnBack    = new MButton('btnBack', _M('Back', $module));
+        $divButtons = new MDiv('divButtons', $btnBack, null, 'align=center');
+        $divButtons->addStyle('text-align', 'center');
+        $fields[]   = $divButtons;
+        $fields[]   = new Separator();
+
+        if ( count($fields) > 0 )
+        {
+            $this->setFields($fields);
+        }
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+        $this->setClose($MIOLO->getActionURL($module, substr($action, 0, strrpos($action, ':'))));
+
+    }
+
+    /**
+     * Event triggered when user chooses button Back
+     **/
+    public function btnBack_click($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        if ( MIOLO::_request('type') == 'ALL' )
+        {
+            $opts['initialDate2'] = MIOLO::_request('initialDate');
+            $opts['limitDate2']   = MIOLO::_request('limitDate');
+        }
+        else
+        {
+            $opts['initialDate3'] = MIOLO::_request('initialDate');
+            $opts['limitDate3']   = MIOLO::_request('limitDate');
+        }
+
+        $this->page->mGoto($MIOLO->getActionURL($module, 'main:process:accountancyBalance', null, $opts));
+    }
+
+}
+
+?>

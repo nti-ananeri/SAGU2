@@ -1,0 +1,425 @@
+<?
+/**
+*
+* @author Giovani Murilo Dantas Correa [gmurilo@isolution.inf.br]
+*
+* $version: $Id$
+*
+* \b Maintainers \n
+* Daniel Afonso Heisler [daniel@isolution.inf.br]
+*
+* @since
+* Class created on 25/03/2009
+*
+* \b Organization: \n
+* iSolution - Soluções de Internet \n
+* The iSolution TEAM
+*
+* \b CopyLeft: \n
+* CopyLeft (L) 2007 iSolution - Soluções de Internet \n
+*
+* \b License \n
+* Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+*
+* \b History \n
+* See history in CVS repository: http://isolution.inf.br   
+*
+**/
+set_time_limit(0);        
+$MIOLO = MIOLO::getInstance();
+
+define('FPDF_FONTPATH', $MIOLO->getModulePath('basic', '/classes/fpdf/font/'));
+$MIOLO->Uses('classes/fpdf/pdf.php', 'basic');
+
+class RptCurriculum extends PDF
+{
+    public $module = 'academic';
+    public $isInLot = false;
+    
+    public function __construct($filters = NULL)
+    {
+        unset($this->totais);
+        $MIOLO = MIOLO::getInstance();
+        $this->useUserInfo = false;
+        $this->title = strtoupper(_M('Curriculum', 'academic'));
+        parent::__construct($filters);
+        $busCurriculum = $MIOLO->getBusiness($this->module, 'BusCurriculumPDF');
+        unset($this->curriculums, $this->contract);
+        $this->curriculums = $busCurriculum->getCurriculum($this->filters);
+        if ( count($this->curriculums->curricularComponents) == 0 )
+        {
+            return;
+        }
+        
+        if ( strlen((string)$filters->contractId) > 0 )
+        {
+            $this->contract = $busCurriculum->getContract($this->filters);
+        }
+        $this->addPage('L', 'mm', 'A4');
+        $this->aliasNbPages();
+        $this->PageBreakTrigger = ($this->h-$this->tMargin)-2;
+        $this->generatePDF();
+    }
+    
+    public function Header()
+    {
+        parent::Header();
+    }
+    
+    public function reportHeader()
+    {
+        $y = $this->y-3;
+        $this->setY($y);
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->fontSizeBody);
+        $courseSize = ( $this->getStringWidth($this->curriculums->courseName . ' / ' . $this->curriculums->courseVersion) +4);
+        $this->setFont(DEFAULT_REPORT_FONT, '', $this->fontSizeBody);
+        $this->cell(($this->psize/2) - $courseSize, $this->lsize, _M('Course', 'academic') . ' / ' . _M('Version', 'academic') . ':', null, null, 'L');
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->fontSizeBody);
+        $this->cell($courseSize, $this->lsize, $this->curriculums->courseName . ' / ' . $this->curriculums->courseVersion, null, null, 'L');
+        $turnUnitSize = ( $this->getStringWidth($this->curriculums->turnDescription . ' / ' . $this->curriculums->unitDescription) +1 );
+        $this->setFont(DEFAULT_REPORT_FONT, '', $this->fontSizeBody);
+        $this->cell(($this->psize/2) - $turnUnitSize, $this->lsize, _M('Turn', 'academic') . ' / ' . _M('Unit', 'academic') . ':', null, null, 'L');
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->fontSizeBody);
+        $this->cell($turnUnitSize, $this->lsize, $this->curriculums->turnDescription . ' / ' . $this->curriculums->unitDescription, null, null, 'L');
+        $this->ln();
+        $totalNumberHoursSize = ( $this->getStringWidth($this->curriculums->totalRegisteredNumberHours)+2 );
+        $this->setFont(DEFAULT_REPORT_FONT, '', $this->fontSizeBody);
+        $this->cell(($this->psize/6) - $totalNumberHoursSize, $this->lsize, _M('Course total number hours', 'academic') . ':', null, null, 'L');
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->fontSizeBody);
+        $this->cell($totalNumberHoursSize, $this->lsize, $this->curriculums->totalRegisteredNumberHours . " H/A", null, null, 'L');
+        $this->ln();
+        if ( isset($this->contract) )
+        {
+            $this->setFont(DEFAULT_REPORT_FONT, '', $this->fontSizeBody);
+            $this->cell($this->getStringWidth(_M('Contract', 'academic') . ': ')+2, $this->lsize, _M('Contract', 'academic') . ':', null, null, 'L');
+            $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->fontSizeBody);
+            $this->cell(10, $this->lsize, $this->contract->contractId, null, null, 'L');
+
+            $this->setFont(DEFAULT_REPORT_FONT, '', $this->fontSizeBody);
+            $pSize = $this->getStringWidth(_M('Pupil', 'academic') . ': ')+2;
+            $this->cell($pSize, $this->lsize, _M('Pupil', 'academic') . ':', null, null, 'L');
+            $this->setFont(DEFAULT_REPORT_FONT, 'B', $this->fontSizeBody);
+            $this->cell($this->psize-$pSize, $this->lsize, $this->contract->personId . ' - ' . $this->contract->personName, null, null, 'L');
+            $this->ln();
+        }
+        unset($this->oldCurriculums);
+        $this->oldCurriculums = $this->curriculums;
+    }
+
+    public function generatePDF()
+    {
+        $data = $this->getUsualSize($this->fontSizeBody);
+        $this->reportHeader();
+        $oldSemester = 1;
+        $oldSemesterX = 1;
+        $y = $this->y;
+        $oldX = $this->x;
+        $ph = 0;
+        foreach ( $this->curriculums->curricularComponents as $item => $value )
+        {
+            if ( $value->curriculumTypeId == ACD_CURRICULUM_TYPE_CURRICULAR_INTEGRATE )
+            {
+                if( $value->semester != $oldSemester )
+                {
+                    $this->setY($this->PageBreakTrigger-$this->lsize);
+                    $this->setX($oldX);
+                    $this->setFont(DEFAULT_REPORT_FONT, 'BI', $data->fontSize); 
+                    $this->cell(($data->maxSize[$oldSemester]*$data->multiplier)-1, $this->lsize, $this->totais[$oldSemester] . " H/A", 1, null, 'C');
+                    $oldX = ($oldX + (($data->maxSize[$value->semester-1]*$data->multiplier)));
+                    $oldX += 1 / count($data->maxSize);
+                    $this->setY($y);
+                    $oldSemester = $value->semester;
+                    $ph = 0;
+                }
+                $this->setX($oldX);
+                if ( $ph == 0 )
+                {
+                    $this->setFont(DEFAULT_REPORT_FONT, 'B', $data->fontSize); 
+                    $this->multiCell(($data->maxSize[$value->semester]*$data->multiplier)-1, $this->lsize, strtoupper(_M('Semester', 'finance') . ' ' . $value->semester ), 1, 'C');
+                    $this->ln(1);
+                    $this->setFont(DEFAULT_REPORT_FONT, '', $data->fontSize); 
+                }
+                $this->setX($oldX);
+                $ph++;
+                $fill = null;
+                if ( $value->curricularComponentTypeId == CURRICULAR_COMPONENT_TYPE_ELECTIVE )
+                {
+                    $this->SetFillColor(220);
+                    $fill = true;
+                    $electiveGroups[$value->curricularComponentTypeId][] = $value->curriculumId;
+                    $electiveGroupsInfo[$value->curriculumId] = $value;
+                }
+                else if ( $value->curricularComponentTypeId == CURRICULAR_COMPONENT_TYPE_TRAINING )
+                {
+                    //Estagio
+                    $this->SetFillColor( 112,128,144 );
+                    $fill = true;
+                }
+                if ( isset($this->contract->approvedCurriculums) && array_key_exists($value->curriculumId, $this->contract->approvedCurriculums) !== FALSE )
+                {
+                    $fill = true;
+                    if ( $this->contract->approvedCurriculums[$value->curriculumId] == ENROLL_STATUS_EXCUSED )
+                    {
+                        $this->setFillColor( 238,232,170 );
+                    }
+                    else 
+                    {
+                        $this->setFillColor( 121,173,227 );
+                    }
+                }
+                else if ( isset($this->contract->enrolledCurriculums) && array_key_exists($value->curriculumId, $this->contract->enrolledCurriculums) !== FALSE )
+                {
+                    $fill = true;
+                    $this->setFillColor(  0,255,127 );
+                }
+                else if ( isset($this->contract->disapprovedCurriculums) && array_key_exists($value->curriculumId, $this->contract->disapprovedCurriculums) !== FALSE )
+                {
+                    $fill = true;
+                    $this->setFillColor( 205,92,92 );
+                }
+                $this->multiCell(($data->maxSize[$value->semester]*$data->multiplier)-1, $this->lsize, $value->shortname . "\n" . $value->lessonNumberHours . " H/A" , 1, 'C', $fill);
+                $this->ln(1);
+                $this->totais[$value->semester] += $value->lessonNumberHours;
+            }
+            else
+            {
+                $curriculumType[$value->curriculumTypeId] += 1;
+            }
+        }
+        $y = $this->y;
+        $this->setY($this->PageBreakTrigger-4);
+        $this->setX($oldX);
+        $this->setFont(DEFAULT_REPORT_FONT, 'BI', $data->fontSize); 
+        $fs = $data->fontSize;
+        $this->multiCell(($data->maxSize[$oldSemester]*$data->multiplier)-1, $this->lsize, $this->totais[$oldSemester] . " H/A", 1, 'C');
+        if ( isset($this->contract) )
+        {
+            if ( $y <= ($this->PageBreakTrigger - 26) )
+            {
+                while ( (($data->maxSize[$oldSemester]*$data->multiplier)-1) < $this->getStringWidth(_M('Exploitation', 'academic'))+10 )
+                {
+                    $fs -= 0.1;
+                    $this->setFont(DEFAULT_REPORT_FONT, 'BI', $fs); 
+                }
+                $this->setY($this->PageBreakTrigger-26);
+                $this->Rect($oldX, $this->y-1, ($data->maxSize[$oldSemester]*$data->multiplier)-1, 21);
+                $this->setX($oldX);
+                $this->cell(($data->maxSize[$oldSemester]*$data->multiplier)-1, $this->lsize-1, _M('Legenda', 'academic') . ':', 'B', null, 'C');
+                $this->ln(4);
+                $this->setFillColor( 121,173,227 );
+                $this->setX($oldX+1);
+                $this->Rect($oldX+1, $this->y, $this->lsize-1, $this->lsize-1, 'FD');
+                $this->setX(($oldX+1)+($this->lsize+2));
+                $this->cell((($data->maxSize[$oldSemester]*$data->multiplier)-1)-($this->lsize+2), $this->lsize, _M('Approved', 'academic'));
+                $this->ln();
+                $this->setFillColor( 238,232,170 );
+                $this->setX($oldX+1);
+                $this->Rect($oldX+1, $this->y, $this->lsize-1, $this->lsize-1, 'FD');
+                $this->setX(($oldX+1)+($this->lsize+2));
+                $this->cell((($data->maxSize[$oldSemester]*$data->multiplier)-1)-($this->lsize+2), $this->lsize, _M('Exploitation', 'academic'));
+                $this->ln();
+                $this->setFillColor( 205,92,92 );
+                $this->setX($oldX+1);
+                $this->Rect($oldX+1, $this->y, $this->lsize-1, $this->lsize-1, 'FD');
+                $this->setX(($oldX+1)+($this->lsize+2));
+                $this->cell((($data->maxSize[$oldSemester]*$data->multiplier)-1)-($this->lsize+2), $this->lsize, _M('Disapproved', 'academic'));
+                $this->ln();
+                $this->setFillColor(  0,255,127 );
+                $this->setX($oldX+1);
+                $this->Rect($oldX+1, $this->y, $this->lsize-1, $this->lsize-1, 'FD');
+                $this->setX(($oldX+1)+($this->lsize+2));
+                $this->cell((($data->maxSize[$oldSemester]*$data->multiplier)-1)-($this->lsize+2), $this->lsize, _M('Enrolled', 'academic'));
+            }
+        }
+        else
+        {
+            if ( $y <= ($this->PageBreakTrigger - 23) )
+            {
+                while ( (($data->maxSize[$oldSemester]*$data->multiplier)-1) < $this->getStringWidth(_M('Curricular component', 'academic'))+10 )
+                {
+                    $fs -= 0.1;
+                    $this->setFont(DEFAULT_REPORT_FONT, 'BI', $fs); 
+                }
+                $this->setY($this->PageBreakTrigger-23);
+                $this->Rect($oldX, $this->y-1, ($data->maxSize[$oldSemester]*$data->multiplier)-1, 18);
+                $this->setX($oldX);
+                $this->cell(($data->maxSize[$oldSemester]*$data->multiplier)-1, $this->lsize-1, _M('Legenda', 'academic') . ':', 'B', null, 'C');
+                $this->ln(4);
+                $this->setFillColor( 255 );
+                $this->setX($oldX+1);
+                $this->Rect($oldX+1, $this->y, $this->lsize-1, $this->lsize-1, 'FD');
+                $this->setX(($oldX+1)+($this->lsize+2));
+                $this->cell((($data->maxSize[$oldSemester]*$data->multiplier)-1)-($this->lsize+2), $this->lsize, _M('Curricular component', 'academic'));
+                $this->ln();
+                $this->setFillColor( 220 );
+                $this->setX($oldX+1);
+                $this->Rect($oldX+1, $this->y, $this->lsize-1, $this->lsize-1, 'FD');
+                $this->setX(($oldX+1)+($this->lsize+2));
+                $this->cell((($data->maxSize[$oldSemester]*$data->multiplier)-1)-($this->lsize+2), $this->lsize, _M('Elective', 'academic'));
+                $this->ln();
+                $this->setFillColor( 112,128,144 );
+                $this->setX($oldX+1);
+                $this->Rect($oldX+1, $this->y, $this->lsize-1, $this->lsize-1, 'FD');
+                $this->setX(($oldX+1)+($this->lsize+2));
+                $this->cell((($data->maxSize[$oldSemester]*$data->multiplier)-1)-($this->lsize+2), $this->lsize, _M('Training', 'academic'));
+                $this->ln();
+            }
+
+        }
+
+        if ( count($curriculumType) > 0 )
+        {
+            $this->addPage('L', 'mm', 'A4');
+            $this->reportHeader();
+            foreach ( $curriculumType as $item => $value )
+            {
+                if ( count($this->curriculums) == 0 )
+                {
+                    break;
+                }
+                foreach ( $this->curriculums->curricularComponents as $id => $obj )
+                {
+                    if ( in_array($obj->masterCurriculumId, $electiveGroups[CURRICULAR_COMPONENT_TYPE_ELECTIVE] ) )
+                    {
+
+                        //$this->cell($this->psize, $this->lsize, $obj->name . ' ' . $electiveGroupsInfo[$obj->masterCurriculumId]->name);
+                        $electives[$obj->masterCurriculumId][] = $obj;
+                    }
+                }
+            }
+        
+            if ( count($electives) > 0 )
+            {
+                $this->setFont(DEFAULT_REPORT_FONT, 'B', 8);
+                $this->SetFillColor(253,253,10);
+                $this->cell($this->psize, $this->lsize, strtoupper(_M('Elective group', 'academic')), 1, null, 'C', 1);
+                $this->ln();
+                $headerElective = array( 5 => _M('Id', 'basic'), 8 => _M('Version', 'academic'), 37 => _M('Curricular component', 'academic'), 7 => _M('Semester', 'academic'), 13 => _M('Lesson number hour', 'academic'), 16 => _M('Academic number hours', 'academic'), 14 => _M('Practice number hour', 'academic') );
+                foreach ( $electives as $curriculumId => $values )
+                {
+                    $this->setFont(DEFAULT_REPORT_FONT, 'B', $data->fontSize); 
+                    $this->cell($this->psize, $this->lsize, $electiveGroupsInfo[$curriculumId]->name, 1, null, 'C');
+                    $this->ln();
+                    foreach ( $headerElective as $item => $value )
+                    {
+                        $this->cell(($item/100)*$this->psize, $this->lsize, $value, 1, null, 'C');
+                    }
+                    $this->ln();
+                    if ( count($values) > 0 )
+                    {
+                        $this->setFont(DEFAULT_REPORT_FONT, '', $data->fontSize); 
+                        foreach($values as $obj )
+                        {
+                            $x = 0;
+                            foreach ( $headerElective as $item => $value )
+                            {
+                                $x++;
+                                unset($value2);
+                                switch ( $x )
+                                {
+                                    case 1:
+                                        $value2 = $obj->curricularComponentId;
+                                        break;
+                                    case 2:
+                                        $value2 = $obj->curricularComponentVersion;
+                                        break;
+                                    case 3:
+                                        $value2 = $obj->name;
+                                        break;
+                                    case 4:
+                                        $value2 = $obj->semester;
+                                        break;
+                                    case 5:
+                                        $value2 = $obj->lessonNumberHours;
+                                        break;
+                                    case 6:
+                                        $value2 = $obj->academicNumberHours;
+                                        break;
+                                    case 7:
+                                        $value2 = $obj->practiceNumberHours;
+                                        break;
+                                }
+                                if ( $this->getStringWidth($value2)+1 > ($item/100)*$this->psize )
+                                {
+                                    $f = $data->fontSize;
+                                    $f -= 0.1;
+                                    $this->setFont(DEFAULT_REPORT_FONT, '', $f); 
+                                    while ( $this->getStringWidth($value2)+1 > ($item/100)*$this->psize )
+                                    {
+                                        $f -= 0.1;
+                                        $this->setFont(DEFAULT_REPORT_FONT, '', $f); 
+                                    }
+                                    
+                                }
+                                else
+                                {
+                                        $this->setFont(DEFAULT_REPORT_FONT, '', $data->fontSize); 
+                                }
+                                $this->cell(($item/100)*$this->psize, $this->lsize, $value2, 1, null, 'C');
+                            }
+                            $this->ln();
+                        }
+                    }
+                }
+            }
+        }
+
+        if ( $this->isInLot == false )
+        {
+            $this->generatePDF();
+        }
+    }
+
+    public function getUsualSize($size)
+    {
+        $this->setFont(DEFAULT_REPORT_FONT, '', $size); 
+        foreach ( $this->curriculums->curricularComponents as $item => $value )
+        {
+            if ( $value->curriculumTypeId == ACD_CURRICULUM_TYPE_CURRICULAR_INTEGRATE )
+            {
+                $semesterTotal[$value->semester][$item]->curriculumId =  $value->curriculumId;
+                $explode = explode(' ', $value->shortname);
+                foreach ( $explode as $item => $valuex )
+                {
+                    if ( $maxSize[$value->semester] <  $this->getStringWidth($valuex)+3 || strlen((string)$maxSize[$value->semester]) == 0 )
+                    {
+                         $maxSize[$value->semester] = $this->getStringWidth($valuex)+3;
+                    }
+                }
+                $maxSemester = ($maxSemester < $value->semester) ? $value->semester : $maxSemester;
+            }
+        }
+        
+        if ( array_sum($maxSize) > $this->w )
+        {
+            $this->getUsualSize($size-0.1);
+        }
+        else
+        {
+            $data->maxSize = $maxSize;
+            $data->maxSemester = $maxSemester;
+            $data->multiplier = $this->psize / array_sum($maxSize);
+            $data->fontSize = $size;
+            return $data;
+        }
+    }
+    public function Footer()
+    {
+        $this->setY(-15);
+        $pn = $this->PageNo();
+        if($this->AutoPageBreak)
+        {
+            $pn .='/{nb}';
+        }
+        $this->cell($this->psize, $this->lsize, '', 'B', 1);
+        $this->ln(); 
+		$this->setFont(DEFAULT_REPORT_FONT, 'BI', 8);
+		$this->cell($this->psize/3, $this->lsize, $this->title, 0, 0, 'L');
+   		$this->setFont(DEFAULT_REPORT_FONT, 'B', 8);
+		$this->cell($this->psize/3, $this->lsize, $this->oldCurriculums->courseName . ' - ' . $this->oldCurriculums->courseVersion . ' / ' . $this->oldCurriculums->turnDescription .' / '. $this->oldCurriculums->unitDescription, 0, 0, 'L');
+		$this->setFont(DEFAULT_REPORT_FONT, 'I', 8);
+		$this->cell($this->psize/3, $this->lsize, _M('Page @1', $this->module, $pn), 0, 0, 'R');
+        $this->ln();
+    }
+}
+?>

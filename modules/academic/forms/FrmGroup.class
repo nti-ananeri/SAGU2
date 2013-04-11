@@ -1,0 +1,690 @@
+<?php
+
+/**
+ * Form to manipulate acdGroup table records
+ *
+ * @author Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ *
+ * @since
+ * Class created on 22/09/2005
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2005 SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+
+class FrmGroup extends MForm
+{
+    /**
+     * Class constructor
+     **/
+    function __construct()
+    {
+
+        $module = MIOLO::getCurrentModule();
+
+        if ( MIOLO::_request('function') == 'insert' )
+        {
+            parent::__construct(_M('Offer curricular component', $module));
+        }
+        else
+        {
+            parent::__construct(_M('Update group', $module));
+        }
+
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        if (($f = $this->page->request('cpaint_function')) != "") 
+        {
+            $this->manager->getTheme()->clearContent();
+            $this->$f($this->page->request('cpaint_argument'));
+            $this->page->generateMethod = 'generateAJAX';
+        }
+        else
+        {
+            $this->defineFields();
+            $this->eventHandler();
+        }
+
+        //$this->eventHandler();
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function defineFields()
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+        
+        $urlLearningPeriodId = MIOLO::_request('learningPeriodId');
+
+        $toolBar = new MToolBar('toolBar',$MIOLO->getActionURL($module,$action));
+
+        if ( $function == 'insert' )
+        {
+            $toolBar->disableButton('tbBtnDelete');
+            $toolBar->disableButton('tbBtnPrint');
+            $toolBar->disableButton('tbBtnSave');
+            //$toolBar->disableButton('tbBtnSearch');
+        }
+        elseif ( $function == 'delete' )
+        {
+            $toolBar->disableButton('tbBtnSave');
+        }
+        
+        if (INCREASE_SECURITY_LEVEL == 'YES')
+        {
+            $toolBar->disableButton('tbBtnDelete');
+        }
+        
+        $fields[] = $toolBar;
+
+        if ( in_array($function,array('update','delete')) )
+        {
+            $toolBar->disableButton('tbBtnPrint');
+            //$toolBar->disableButton('tbBtnSearch');
+
+            $groupId = $_GET['groupId'] ? $_GET['groupId'] : $_POST['groupId'];
+            $fields[] = new MTextLabel('groupId', $groupId, _M('Offered curricular component id',$module));
+            $fields[] = new MHiddenField('groupId', $groupId);
+
+            $business = $MIOLO->getBusiness($module,'BusGroup');
+
+            $scheduleId = MIOLO::_request('scheduleId');
+
+            if ( strlen((string)$scheduleId) > 0 )
+            {
+                $busSchedule  = $MIOLO->getBusiness($module, 'BusSchedule');
+                $dataSchedule = $busSchedule->getSchedule($scheduleId);
+
+                $groupId->value = $dataSchedule->groupId;
+            }
+
+
+            if ( strlen((string)$groupId->value) > 0 )
+            {
+                $data     = $business->getGroup($groupId->value);
+            }
+            else if ( strlen((string)MIOLO::_request('groupId')) > 0 )
+            {
+                $data     = $business->getGroup($groupId);
+            }
+            
+            $data->content_ = $data->content;
+
+            $busCurriculum = $MIOLO->getBusiness($module, 'BusCurriculum');
+            $curriculumData = $busCurriculum->getCurriculum($data->curriculumId);
+
+            $fields[] = new MHiddenField('courseId',      $curriculumData->courseId);
+            $fields[] = new MHiddenField('courseVersion', $curriculumData->courseVersion);
+            $fields[] = new MHiddenField('turnId',        $curriculumData->turnId);
+            $fields[] = new MHiddenField('unitId',        $curriculumData->unitId);
+            $fields[] = new MHiddenField('periodId',      NULL);
+
+            $data->curricularComponentId = $curriculumData->curricularComponentId;
+            $data->curricularComponentVersion = $curriculumData->curricularComponentId;
+
+            $this->page->onLoad('document.' . $this->name . '.learningPeriodId.focus();');
+        }
+        else
+        {
+            //Course
+            $courseLabel   = new MText('courseLabel', _M('Course',$module) . ':');
+            $courseLabel->setWidth(FIELD_CONTAINER_SIZE);
+            //$courseLabel->setClass('m-caption m-caption-required');
+
+            $courseId      = new MLookupTextField('courseId', $this->getFormValue('courseId', $data->courseId), '', FIELD_LOOKUPFIELD_SIZE, null, null, 'courseVersion, courseName, unitId, unitDescription, turnId, turnDescription', $module, 'CourseOccurrence', null, array('courseId' => 'courseId'), !$this->page->isPostBack());
+            $courseId->setJsHint(_M('Enter the course code',$module));
+
+            $courseName    = new MTextField('courseName', $this->getFormValue('courseName'), '', FIELD_DESCRIPTION_SIZE);
+            $courseName->setReadOnly(true);
+            $courseName->setJsHint(_M('Course name',$module));
+
+            $courseVersion = new MTextField('courseVersion', $this->getFormValue('courseVersion'), '', FIELD_ID_SIZE);
+            $courseVersion->setReadOnly(true);
+            $courseVersion->setJsHint(_M('Course version code',$module));
+
+            $hctCourse     = new MHContainer('hctCourse', array($courseLabel, $courseId, $courseVersion, $courseName));
+            $hctCourse->setShowLabel(true);
+            $fields[]      = $hctCourse;
+
+            $turnLabel = new MText('turnLabel', _M('Turn',$module) . ':');
+            $turnLabel->setWidth(FIELD_CONTAINER_SIZE);
+            $turnId = new MTextField('turnId', null, '', FIELD_ID_SIZE);
+            $turnId->setReadOnly(true);
+            $turnDescription = new MTextField('turnDescription', null, '', FIELD_DESCRIPTION_SIZE);
+            $turnDescription->setReadOnly(true);
+            $hctTurn = new MHContainer('hctTurn', array($turnLabel, $turnId, $turnDescription));
+            $hctTurn->setShowLabel(true);
+            $fields[] = $hctTurn;
+
+            $unitLabel = new MText('unitLabel', _M('Unit',$module) . ':');
+            $unitLabel->setWidth(FIELD_CONTAINER_SIZE);
+            $unitId = new MTextField('unitId', null, '', FIELD_ID_SIZE);
+            $unitId->setReadOnly(true);
+            $unitDescription = new MTextField('unitDescription', null, '', FIELD_DESCRIPTION_SIZE);
+            $unitDescription->setReadOnly(true);
+            $hctUnit = new MHContainer('hctUnit', array($unitLabel, $unitId, $unitDescription));
+            $hctUnit->setShowLabel(true);
+            $fields[] = $hctUnit;
+
+            $businessPeriod = $MIOLO->getBusiness($module,'BusPeriod');
+            $periodId = new MComboBox('periodId', $this->getFormValue('periodId', CURRENT_PERIOD_ID), _M('Period',$module), $businessPeriod->listPeriod(), true );
+            $fields[] = $periodId;
+            
+            $this->page->onLoad('document.' . $this->name . '.courseId.focus();');
+        }
+
+       /*
+        $learningPeriodLabel = new MText('learningPeriodLabel', _M('Learning period',$module) . ':');
+        $learningPeriodLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $learningPeriodLabel->setClass('m-caption m-caption-required');
+
+        $learningPeriodId = new MLookupTextField('learningPeriodId', $this->getFormValue('learningPeriodId', $data->learningPeriodId), null, FIELD_LOOKUPFIELD_SIZE, null, null, 'limbo,limbo,limbo,limbo,limbo,learningPeriodDescription', $module, 'LearningPeriod', null, array('periodId'=>'periodId', 'courseId'=>'courseId', 'courseVersion'=>'courseVersion', 'turnId'=>'turnId', 'unitId'=>'unitId'), true);
+        $validators[]     = new MIntegerValidator('learningPeriodId', _M('Learning period',$module), 'required');
+
+        $learningPeriodDescription = new MTextField('learningPeriodDescription', $this->getFormValue('learningPeriodDescription', $data->learningPeriodDescription), null, FIELD_DESCRIPTION_SIZE);
+        $learningPeriodDescription->setReadOnly(true);
+
+        $hctLearningPeriod = new MHContainer('hctLearningPeriod', array($learningPeriodLabel, $learningPeriodId, $learningPeriodDescription));
+        $hctLearningPeriod->setShowLabel(true);
+
+        $fields[] = $hctLearningPeriod;
+       */
+        
+        $learningPeriodLabel = new MText('learningPeriodLabel', _M('Learning period',$module).':');
+        $learningPeriodLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $learningPeriodLabel->setClass('m-caption m-caption-required');
+
+        $learningPeriodId = new MLookupTextField('learningPeriodId', $this->getFormValue('learningPeriodId', $data->learningPeriodId), '', FIELD_LOOKUPFIELD_SIZE, null, null, 'limbo, courseId, courseVersion, turnId, unitId, learningPeriodDescription, limbo, limbo, limbo, limbo, limbo, limbo, limbo, limbo, limbo, limbo, courseName, turnDescription, unitDescription', $module, 'LearningPeriod', null, $lookupFilters, true);
+        $learningPeriodId->setJsHint(_M('Enter the learning period code',$module));
+        $validators[] = new MRequiredValidator('learningPeriodId', _M('Learning period',$module));
+
+        $learningPeriodDescription = new MTextField('learningPeriodDescription', $this->getFormValue('learningPeriodDescription', $data->learningPeriodDescription), '', FIELD_DESCRIPTION_SIZE);
+        $learningPeriodDescription->setJsHint(_M('Learning period description',$module));
+        $learningPeriodDescription->setReadOnly(true);
+
+        $hctlearningPeriod = new MHContainer('hctlearningPeriod', array($learningPeriodLabel, $learningPeriodId, $learningPeriodDescription));
+        $hctlearningPeriod->setShowLabel(true);
+        $fields[]  = $hctlearningPeriod;
+
+        $curriculumIdLabel = new MText('curriculumIdLabel', _M('Curriculum id',$module) . ':');
+        $curriculumIdLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $curriculumIdLabel->setClass('m-caption m-caption-required');
+
+        $curriculumId = new MLookupTextField('curriculumId', $this->getFormValue('curriculumId', $data->curriculumId), '', FIELD_LOOKUPFIELD_SIZE, null, null, 'limbo, limbo, limbo, limbo, limbo, curriculumDescription', $module, 'Curriculum', null, array ( 'courseId'=>'courseId', 'courseVersion'=>'courseVersion', 'turnId'=> 'turnId', 'unitId'=>'unitId'), true);
+        $curriculumId->setJsHint(_M('Enter the curriculum id.',$module));
+        $validators[] = new MIntegerValidator('curriculumId', _M('Curriculum id',$module), 'required');
+
+        $curriculumDescription = new MTextField('curriculumDescription', $this->curriculumDescription->value, '', FIELD_DESCRIPTION_SIZE);
+        $curriculumDescription->setJsHint(_M('Curricular component description',$module));
+        $curriculumDescription->setReadOnly(true);
+
+        $hctCurriculum  = new MHContainer('hctCurriculum',
+                array($curriculumIdLabel, $curriculumId, $curriculumDescription ));
+        $hctCurriculum->setShowLabel(true);
+
+        $fields[]  = $hctCurriculum;
+
+        $business  = $MIOLO->getBusiness($module, 'BusRegimen');
+        $regimenId = new MComboBox('regimenId', $this->getFormValue('regimenId', $data->regimenId), _M('Regimen', $module), $business->listRegimen());
+        $fields[]  = $regimenId;
+        $validators[] = new MRequiredValidator('regimenId');
+
+        $vacant = new MTextField('vacant', $this->getFormValue('vacant', $data->vacant), _M('Vacant', $module), 10);
+        $vacant->setJsHint(_M('Enter the vacant', $module));
+        $validators[] = new MRegExpValidator('vacant','','(^-?[0-9][0-9]*$)');
+        $fields[] = $vacant;
+
+        $isUseWebDailyLabel = new MText('isUseWebDaily', _M('Does it use web daily',$module) .'?');
+        $isUseWebDailyLabel->setWidth(FIELD_CONTAINER_SIZE);
+
+        $isUseWebDailyOptions = array( 
+                                       array(_M('Yes', $module), 't'),
+                                       array(_M('No', $module), 'f')
+                                     );
+
+        $isUseWebDaily = strlen((string)$this->getFormValue('isUseWebDaily', $data->isUseWebDaily)) > 0 ? $this->getFormValue('isUseWebDaily', $data->isUseWebDaily) : DB_TRUE;
+        $isUseWebDaily = new MRadioButtonGroup('isUseWebDaily', null, SAGU::listTrueFalse(1), $isUseWebDaily, null, 'horizontal');
+        $isUseWebDaily->setShowLabel(false);
+
+        $hctIsUseWebDaily = new MHContainer('hctIsUseWebDaily', array($isUseWebDailyLabel, $isUseWebDaily));
+        $fields[] = $hctIsUseWebDaily;
+        
+        $classLabel = new MText('classLabel', _M('Class',$module) . ':');
+        $classLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $flds[]     = $classLabel;
+
+        $classId = new MLookupTextField('classId', $this->getFormValue('classId', $data->classId), _M('Class id',$module), FIELD_LOOKUPFIELD_SIZE, null, null, array('className_'), $module, 'Class', null, array('courseId' => 'courseId', 'courseVersion' => 'courseVersion'), true);
+        $flds[]  = $classId;
+        
+        $className = new MTextField('className_', $this->getFormValue('className_', $data->className), _M('Class name', $module), FIELD_DESCRIPTION_SIZE);
+        $className->setReadOnly(true);
+        $flds[]    = $className;
+        
+        $hctClass = new MHContainer('hctClass', array($classLabel, $classId, $className));
+        $hctClass->setShowLabel(false);
+        $fields[] = $hctClass;
+        unset($flds);
+        
+        if ( $function == 'update' )
+        {
+            $isClosedLabel = new MText('isClosed', _M('Is it closed',$module) .'?');
+            $isClosedLabel->setWidth(FIELD_CONTAINER_SIZE);
+
+            $isClosed = new MRadioButtonGroup('isClosed', null, SAGU::listTrueFalse(1), $this->getFormValue('isClosed', $data->isClosed), null, 'horizontal');
+            $isClosed->setShowLabel(false);
+
+            $hctIsClosed = new MHContainer('hctIsClosed', array($isClosedLabel, $isClosed));
+            $fields[]    = $hctIsClosed;
+
+            $isCancellationLabel = new MText('isCancellationLabel', _M('Is it cancelled',$module) .'?');
+            $isCancellationLabel->setWidth(FIELD_CONTAINER_SIZE);
+
+            $isCancellation = new MRadioButtonGroup('isCancellation', null, SAGU::listTrueFalse(1), $this->getFormValue('isCancellation', $data->isCancellation), null, 'horizontal');
+            $isCancellation->setShowLabel(false);
+
+            $hctIsCancellation = new MHContainer('hctIsCancellation', array($isCancellationLabel, $isCancellation));
+            $fields[] = $hctIsCancellation;
+
+            $isContentProgrammarianLabel = new MText('isContentProgrammarianLabel', _M('Does it have content programmarian',$module) .'?');
+            $isContentProgrammarianLabel->setWidth(FIELD_CONTAINER_SIZE);
+
+            $isContentProgrammarianOptions = array(
+                                                    array(_M('Yes', $module), 't'),
+                                                    array(_M('No', $module), 'f')
+                                                  );
+
+            $isContentProgrammarian = $this->GetFormValue('isContentProgrammarian',$data->isContentProgrammarian);
+            if (! isset($isContentProgrammarian) )
+            {
+                //default false
+                $isContentProgrammarian = 'f';
+            }
+            $isContentProgrammarian = new MRadioButtonGroup('isContentProgrammarian', null, SAGU::listTrueFalse(1), $isContentProgrammarian, null, 'horizontal');
+            $isContentProgrammarian->setShowLabel(false);
+
+            $hctIsContentProgrammarian = new MHContainer('hctIsContentProgrammarian', array($isContentProgrammarianLabel, $isContentProgrammarian));
+            $fields[] = $hctIsContentProgrammarian;
+        
+            $objectives = new MMultiLineField('objectives', $this->getFormValue('objectives', $data->objectives), _M('Objectives', $module), 100, 5, 40);
+            $objectives->setJsHint(_M('Enter the objectives', $module));
+            $fields[] = $objectives;
+
+            $content = new MMultiLineField('content_', $this->getFormValue('content_', $data->content_), _M('Content', $module), 100, 5, 40);
+            $content->setJsHint(_M('Enter the content', $module));
+            $fields[] = $content;
+
+            $methodology = new MMultiLineField('methodology', $this->getFormValue('methodology', $data->methodology), _M('Methodology', $module), 100, 5, 40);
+            $methodology->setJsHint(_M('Enter the methodology', $module));
+            $fields[] = $methodology;
+
+            $evaluation = new MMultiLineField('evaluation', $this->getFormValue('evaluation', $data->evaluation), _M('Evaluation', $module), 100, 5, 40);
+            $evaluation->setJsHint(_M('Enter the evaluation', $module));
+            $fields[] = $evaluation;
+
+            if ( MODULE_GNUTECA_INSTALLED == "YES" )
+            {
+                $mfield = new MLookupTextField('controlNumber', $this->getFormValue('controlNumber', $data->controlNumber), _M('Code',$module), FIELD_LOOKUPFIELD_SIZE, null, null, '', $module, 'GnutecaBibliography', null, null, true);
+                
+                $fields[]          = new MMultiTextField2('basicBibliography', $this->getFormValue('basicBibliography', $data->basicBibliography), _M('Basic bibliography', $module), array( $mfield ), 200, true, 'horizontal' );
+                
+                $fields[]          = new MMultiTextField2('complementaryBibliography', $this->getFormValue('complementaryBibliography', $data->complementaryBibliography), _M('Complementary bibliography', $module), array( $mfield ), 200, true, 'horizontal' );
+    
+                $observation = new MMultiLineField('observation', $this->getFormValue('observation', $data->observation), _M('Observation', $module), 100, 5, 40);
+                $observation->setJsHint(_M('Enter the observation', $module));
+                $fields[] = $observation;
+    
+                $complement = new MMultiLineField('complement', $this->getFormValue('complement', $data->complement), _M('Complement', $module), 100, 5, 40);
+                $complement->setJsHint(_M('Enter the complement', $module));
+                $fields[] = $complement;
+    
+    
+                $bibliographyDescription = new MMultiLineField('bibliographyDescription', $this->getFormValue('bibliographyDescription', $data->bibliographyDescription), _M('Bibliography description', $module), 100, 5, 40);
+                $objectives->setJsHint(_M('Enter the bibliography description', $module));
+                $fields[] = $bibliographyDescription;
+            }
+
+            $filters->groupId = $this->getFormValue('groupId', $data->groupId);
+
+            $busSchedule  = $MIOLO->getBusiness($module,'BusSchedule');
+            $scheduleData = $busSchedule->searchSchedule($filters);
+
+            if ( count($scheduleData) > 0 )
+            {
+                $grdResults = $MIOLO->getUI()->getGrid($module,'GrdScheduleSearch',$filters);
+
+                $curricularComponentId = $this->getFormValue('curriculumCurricularComponentId', $data->curriculumCurricularComponentId);
+
+                $curricularComponentName = $this->getFormValue('curriculumCurricularComponentName', $data->curriculumCurricularComponentName);
+
+                $grdResults->setTitle(_M('Schedules for', $module) . ' ' . $curricularComponentId . ' - ' . $curricularComponentName);
+
+                $grdResults->setData($scheduleData);
+
+            }
+
+            $fields[] = new MTextLabel('lastModification', '[' . $data->userName . ' - ' . $data->dateTime . ']', _M('Last modification',$module));
+        }
+
+        $fields[] = new Separator();
+
+        $btnNext    = new MButton('btnNext', _M('Save and insert schedule to this group', $module) . ' >>');
+        $btnSave    = new MButton('btnSave', _M('Save and not insert schedule to this group', $module));
+        $div1       = new MDiv('div1', array($btnSave, $btnNext), null, 'align=center');
+
+        $fields[] = $div1;
+        $fields[] = new Separator('');
+        
+        if (isSet($grdResults))
+        {
+            $fields[] = $grdResults;
+            $fields[] = new Separator('');
+        }
+
+        $currentUrl = str_replace('&amp;', '&', $this->manager->getCurrentURL());
+
+        $MIOLO->getRequiredJS4Ajax();
+
+        $this->setFields($fields);
+        if ( isset($validators) )
+        {
+            $this->setValidators($validators);
+        }
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+        $this->setClose($MIOLO->getActionURL($module,substr($action,0,strrpos($action,':'))));
+
+    }
+
+    private function saveData($buttonPressed)
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+
+        $busLearning  = $MIOLO->getBusiness($module, 'BusLearningPeriod');
+        $dataLearning = $busLearning->getLearningPeriod($this->learningPeriodId->value);
+
+        $busCourseVersion  = $MIOLO->getBusiness($module, 'BusCourseVersion');
+        $dataCourseVersion = $busCourseVersion->getCourseVersion($dataLearning->courseId, $dataLearning->courseVersion);
+
+        $filters->curricularComponentId      = $this->curricularComponentId->value;
+        $filters->curricularComponentVersion = $this->curricularComponentVersion->value;
+        $filters->courseId                   = $dataLearning->courseId;
+        $filters->courseVersion              = $dataLearning->courseVersion;
+        $filters->courseTurnId               = $dataLearning->turnId;
+        $filters->courseUnitId               = $dataLearning->unitId;
+
+        $data     = $this->getTypesData();
+
+        if ((in_array($dataCourseVersion->courseVersionTypeId, explode(',', SERIAL_ENROLL_TYPE_IDS))) && (strlen((string)$data->classId) == 0))
+        {
+            $busCourseVersionType  = $MIOLO->getBusiness($module, 'BusCourseVersionType');
+
+            $dataCourseVersionType = $busCourseVersionType->getCourseVersionType($dataCourseVersion->courseVersionTypeId);
+
+            $msg = _M('For the course version type', $module) . ' ' . $dataCourseVersionType->description . ' ' . _M('the field CLASS is required', $module) . '.';
+
+            $this->addError($msg);
+        }
+        else
+        {
+            $business = $MIOLO->getBusiness($module, 'BusGroup'); 
+
+            if ( $function == 'insert')
+            {
+                $groupId = $business->insertGroup($data);
+                $currMessage = MSG_RECORD_INSERTED;
+                $ok = (count($business->getErrors()) == 0);
+
+                if (!$ok)
+                {
+                    $msg  = _M('Error executing requested operation.', $module) . ' ' . $currMessage;
+                    $this->addError($msg);
+                }
+            }
+            elseif ( $function == 'update' )
+            {
+
+                $updateGroup = $business->updateGroup($data);
+                $groupId = $data->groupId;
+                $currMessage = MSG_RECORD_UPDATED;
+                $ok = (count($business->getErrors()) == 0);
+                if (!$ok)
+                {
+                    $msg  = _M('Error executing requested operation.', $module) . ' ' . $currMessage;
+                    $this->addError( $msg );
+                }
+            }
+
+            if ( $ok )
+            {
+
+                if ( $buttonPressed == 'btnNext' )
+                {
+                    $postAction = substr($action,0,strrpos($action,':')) . ':schedule';
+
+                    $this->page->mGoto($MIOLO->getActionURL($module, $postAction, null, array('groupId'=>$groupId, 'learningPeriodId'=>$data->learningPeriodId, 'function'=>'insert')));
+                }
+                elseif ( $buttonPressed == 'btnSave' )
+                {
+                    if ( $function == 'insert' )
+                    {
+                        unset($opts);
+                        $goto = SAGU::getStackBackUrl();
+
+                        $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action, null, array('groupIdS'=>$groupId, 'learningPeriodIdS'=>$data->learningPeriodId, 'function'=>'search'));
+                        $opts = array('function'=>'insert');
+
+                        $gotoYes = $MIOLO->getActionURL($module, $action, null, $opts);
+                        $caption = _M('Question',$module);
+                        $MIOLO->question($currMessage, $gotoYes, $goto);
+                    }
+                    else
+                    {
+                        $goto = SAGU::getStackBackUrl();
+                        $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+                        $MIOLO->information($currMessage, $goto);
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Event triggered when user clicks the next button
+     **/
+    public function btnNext_click()
+    {
+        $this->saveData('btnNext');
+    }
+
+    /**
+     * Event triggered when user chooses Save from the toolbar
+     **/
+    public function tbBtnSave_click($sender=NULL)
+    {
+        $this->saveData('btnSave');
+    }
+ 
+    /**
+     * Event triggered when user clicks the SAVE button
+     **/
+    public function btnSave_click()
+    {
+        $this->saveData('btnSave');
+    }
+
+    /**
+     * Event triggered when user chooses New from the toolbar
+     **/
+    public function tbBtnNew_click($sender=NULL)
+    {
+    }
+
+    /**
+     * Event triggered when user chooses Delete from the toolbar
+     **/
+    public function tbBtnDelete_click($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $data   = $this->getTypesData();
+        $opts   = array('event'    => 'tbBtnDelete_confirm',
+                        'function' => 'delete',
+                        'groupId' => MIOLO::_request('groupId'));
+
+        $gotoYes = $MIOLO->getActionURL( $module, $action, null, $opts );
+
+        // This return the primary key to the search form so that user
+        // can see the record he would delete
+        $opts    = array('groupIdS' => MIOLO::_request('groupId'));
+        $goto    = SAGU::getStackBackUrl();
+        $gotoNo  = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+
+        $caption = _M('Question',$module);
+        $MIOLO->question(MSG_CONFIRM_RECORD_DELETE, $gotoYes, $gotoNo);
+    }
+
+    /**
+     * Event triggered when user chooses Yes from the Delete prompt dialog
+     **/
+    public function tbBtnDelete_confirm($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+//        $action = MIOLO::getCurrentAction();
+
+        $action = 'main:process:group:group';
+
+        $business = $MIOLO->getBusiness($module, 'BusGroup');
+
+        $ok = $business->begin();
+        $ok = $business->deleteGroupRelatedData($this->groupId->value);
+        $ok = $business->deleteGroup($this->groupId->value);
+        $ok = $business->commit();
+
+        if ( $ok )
+        {
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Information',$module);
+            $MIOLO->information(MSG_RECORD_DELETED, $goto);
+        }
+        else
+        {
+            $msg  = _M('Error executing requested operation.',$module);
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Error',$module);
+            $MIOLO->error( $msg, $goto, $caption );
+        }
+    }
+
+    public function tbBtnPrint_click($sender=null)
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+        $groupId  = MIOLO::_request('groupId');
+
+        if ($function == 'printContent')
+        {
+            $data->groupId = $groupId;
+
+            $MIOLO->getClass($module, 'RptContentProgrammarian');
+            $report = new RptContentProgrammarian($data);
+        }
+    }
+
+    /**
+     * Method to gather all information from the form fields
+     * and put them on a database compatible object
+     **/
+    public function getTypesData()
+    {
+        $data = new AcdGroup();
+        $data->groupId                              = $this->groupId->value;
+        $data->groupName                            = $this->groupName->value;
+        $data->learningPeriodId                     = $this->learningPeriodId->value;
+        $data->curriculumId                         = $this->curriculumId->value;
+        $data->turnId                               = $this->turnId->value;
+        $data->unitId                               = $this->unitId->value;
+        $data->complement                           = $this->complement->value;
+        $data->vacant                               = $this->vacant->value;
+        $data->leaderId                             = $this->leaderId->value;
+        $data->subLeaderId                          = $this->subLeaderId->value;
+        $data->objectives                           = $this->objectives->value;
+        $data->content                              = $this->content_->value;
+        $data->methodology                          = $this->methodology->value;
+        $data->evaluation                           = $this->evaluation->value;
+        //$data->basicBibliography                    = $this->basicBibliography->value;
+        //$data->complementaryBibliography            = $this->complementaryBibliography->value;
+        $data->observation                          = $this->observation->value;
+        $data->regimenId                            = $this->regimenId->value; 
+        $data->bibliographyDescription              = $this->bibliographyDescription->value;
+        $data->classId                              = $this->classId->value;
+        
+        $this->isCancellation->value         ? $data->isCancellation = $this->isCancellation->value : null;
+        $this->isUseWebDaily->value          ? $data->isUseWebDaily = $this->isUseWebDaily->value : null;
+        $this->isClosed->value               ? $data->isClosed = $this->isClosed->value : null;
+        $this->isContentProgrammarian->value ? $data->isContentProgrammarian = $this->isContentProgrammarian->value : null;
+        
+        
+        unset($data->basicBibliography);
+        if ( count($this->basicBibliography->value) > 0 )
+        {
+            foreach ( $this->basicBibliography->value as $row )
+            {
+                $data->basicBibliography[] = str_replace(']', '', str_replace('[', '', $row));
+            }
+        }
+        else
+        {
+            $data->basicBibliography[] = NULL;
+        }
+        
+        unset($data->complementaryBibliography);
+        if ( count($this->complementaryBibliography->value) > 0 )
+        {
+            foreach ( $this->complementaryBibliography->value as $row )
+            {
+                $data->complementaryBibliography[] = str_replace(']', '', str_replace('[', '', $row));
+            }
+        }
+        else
+        {
+            $data->complementaryBibliography[] = NULL;
+        }
+        return $data;
+    }
+
+}
+
+?>

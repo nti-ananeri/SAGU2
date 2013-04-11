@@ -1,0 +1,223 @@
+<?php
+/**
+ *
+ * This file handles view of complete history
+ *
+ * @author Armando Taffarel Neto [taffarel@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Armando Taffarel Neto [taffarel@solis.coop.br]
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 27/06/2006
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ */
+class FrmCompleteHistory extends MForm
+{
+    private $home;
+    private $module;
+
+    /**
+     * Class constructor
+     */
+    function __construct($data)
+    {
+        $module = MIOLO::getCurrentModule();
+
+        $this->home   = $data->home;
+
+        parent::__construct(_M('Complete history', $module));
+
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+
+    }
+
+    /**
+     *  Default method to define fields
+     */
+    public function createFields()
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+
+        $toolBar = new MToolBar('toolBar',$MIOLO->getActionURL($module,$action));
+        
+        $toolBar->disableButton('tbBtnDelete');
+        $toolBar->disableButton('tbBtnPrint');
+        $toolBar->disableButton('tbBtnSave');
+        $toolBar->disableButton('tbBtnSearch');
+        $toolBar->disableButton('tbBtnNew');
+
+        //favoritos
+        $enabledImage  = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-20x20.png');
+        $disabledImage = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-disabled-20x20.png');
+        $url           = $MIOLO->getActionURL($module, $this->home, null, array('function' => 'search', 'event' => 'bookmark'));
+        $toolBar->addButton('tbBtnBookmark', _M('Add to bookmarks', 'basic'), $url, null, true, $enabledImage, $disabledImage);
+
+        if ( MIOLO::_request('event') == 'bookmark' )
+        {
+            $MIOLO->getClass('basic', 'access');
+            access::insert('Complete history', $this->home, 'completeHistory-16x16.png', true);
+        }
+        //fim favoritos
+       
+        $fields[] = $toolBar;
+
+        // Operation
+        $operationLabel = new MText('operationLabel', _M('Operation id', $module).':');
+        $operationLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $operationLabel->setClass('m-caption m-caption-required');
+
+        $operationId = new MLookupTextField('operationId', $data->operationId ?  $data->operationId : $this->getFormValue('operationId',$data->operationId), '', FIELD_ID_SIZE, null, null, 'operationDescription', $module, 'Operation', null, null, true);
+        $operationId->setJsHint(_M('Enter the operation id',$module));
+        $validators[] = new MIntegerValidator('operationId', _M('Operation id', $module), 'required');
+
+        $operationDescription = new MTextField('operationDescription', $this->getFormValue('operationDescription',$data->operationDescription), '', FIELD_DESCRIPTION_SIZE);
+        $operationDescription->setReadOnly(true);
+        $fields[] = new MHContainer('hctOperation', array($operationLabel, $operationId, $operationDescription));
+
+        // beginDate
+        $beginDateLabel = new MText('beginDateLabel', _M('Begin date', $module).':');
+        $beginDateLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $beginDateLabel->setClass('m-caption m-caption-required');
+        $beginDate      = new MCalendarField('beginDate', $this->getFormValue('beginDate',$data->beginDate), '', FIELD_DATE_SIZE);
+        $beginDate->setJsHint(_M('Enter the begin date',$module));
+        $validators[] = new MDATEDMYValidator('beginDate', _M('Begin date', $module), 'required');
+        $fields[] = new MHContainer('hctBeginDate', array($beginDateLabel, $beginDate));
+
+        // EndDate
+        $endDateLabel = new MText('endDateLabel', _M('End date', $module).':');
+        $endDateLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $endDateLabel->setClass('m-caption m-caption-required');
+        $endDate      = new MCalendarField('endDate', $this->getFormValue('endDate',$data->endDate), '', FIELD_DATE_SIZE);
+        $endDate->setJsHint(_M('Enter the end date',$module));
+        $validators[] = new MDATEDMYValidator('endDate', _M('End date', $module), 'required');
+        $fields[] = new MHContainer('hctEndDate', array($endDateLabel, $endDate));
+
+        $fields[] = new MButton('btnSearch',_M('Search',$module));
+        $fields[] = new Separator('');
+
+        $filters->operationId        = $this->getFormValue('operationId');
+        $filters->beginDate          = $this->getFormValue('beginDate');
+        $filters->endDate            = $this->getFormValue('endDate');
+
+        $this->setFields($fields);
+
+        $grdResults = $MIOLO->getUI()->getGrid($module,'GrdCompleteHistoryValue');
+        $business = $MIOLO->getBusiness($module, 'BusCompleteHistory');
+
+        $totalValue = 0;
+        unset($data);
+        if ( strlen((string)$filters->operationId) > 0 &&
+             strlen((string)$filters->beginDate) > 0   &&
+             strlen((string)$filters->endDate) > 0 )
+        { 
+            $data = $business->searchCompleteHistory($filters);
+
+            if ( count($data) > 0 )
+            {
+                foreach ( $data as $value)
+                {
+                    $total[] = $value[6];
+                    
+                    //memory full
+                    if (count($total) >= 500 )
+                    {
+                        $temp = SAGU::calcNumber(implode($total, ' + '));
+                        unset($total);
+                        $total[] = $temp;
+                    }
+                }
+                $totalValue = SAGU::calcNumber(implode($total, ' + '));
+            }
+        }
+        $grdResults->setData($data);
+        $this->addField($grdResults);
+
+        unset($fields);
+        $totalValueField1 = new MText('totalValueField1', _M('Total', $module) . ': ' . $totalValue);
+        $totalValueField1->fontWeight = 'bold';
+        $div1       = new MDiv('div1', $totalValueField1, null, 'align=right');
+        $div1->width='98%';
+        $fields[] = $div1;
+        
+        $fields[] = new MSeparator();
+        $this->addField($fields);
+
+        unset($total, $totalValue);
+        $grdResults = $MIOLO->getUI()->getGrid($module,'GrdCompleteHistoryAccord');
+
+        $totalValue = 0;
+        unset($data);
+        if ( strlen((string)$filters->beginDate) > 0   &&
+             strlen((string)$filters->endDate) > 0 )
+        {
+            $data = $business->searchCompleteHistoryAccord($filters);
+
+            if ( count($data) > 0 )
+            {
+                foreach ( $data as $value)
+                {
+                    $total[] = $value[3];
+                    //memory full
+                    if (count($total) >= 500 )
+                    {
+                        $temp = SAGU::calcNumber(implode(' + ', $total));
+                        unset($total);
+                        $total[] = $temp;
+                    }
+                }
+                $totalValue = SAGU::calcNumber(implode(' + ', $total));
+            }
+        }
+
+        $grdResults->setData($data);
+        $this->addField($grdResults);
+
+        unset($fields);
+        $totalValueField2 = new MText('totalValueField2', _M('Total', $module) . ': ' . $totalValue);
+        $totalValueField2->fontWeight = 'bold';
+        $div2       = new MDiv('div2', $totalValueField2, null, 'align=right');
+        $div2->width='98%';
+        $fields[] = $div2;
+        
+        $fields[] = new MSeparator();
+        $this->addField($fields);
+
+        $this->setValidators($validators);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+        $this->setClose($MIOLO->getActionURL($module, substr($action, 0, strrpos($action, ':'))));
+
+    }
+
+}
+
+?>

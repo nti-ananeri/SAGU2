@@ -1,0 +1,395 @@
+<?php
+
+/**
+ * Document form
+ *
+ * @author Daniel Afonso Heisler [daniel@solis.coop.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ *
+ * @since
+ * Class created on 05/09/2005
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2005 SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+
+/**
+ * Form to manipulate a document type
+ **/
+class FrmDocumentInscription extends MForm
+{
+    private $inscriptionData;
+    /**
+     * Class constructor
+     **/
+    function __construct()
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+
+        $this->inscriptionData = unserialize(urldecode(stripslashes($MIOLO->session->getValue('inscriptionData'))));
+
+        parent::__construct(_M('Step', $module) . ' 1 ' . _M('of', $module) .  ' '.$this->inscriptionData->stepTotal.' -> ' . _M('Informations', $module));
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+        $this->eventHandler();
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+
+        $divError = new MDiv('divError', null, null, 'align=center');
+        $fields[] = $divError;
+
+        $separator = new Separator('');
+
+        $fontText = new MText('fontText', "<font color=" . INSCRIPTION_TEXT_COLOR . ">");
+        $fields[] = $fontText;
+
+        $msgInscription     = new MText('msgInscription', $this->inscriptionData->message->messageDocumentInscription);
+
+        $rgLabel = new MText('rgLabel', _M('Identity (RG)',$module).':');
+        $rgLabel->setWidth(FIELD_CONTAINER_SIZE);
+
+        $rgId   = new MTextField('rgId', $this->getFormValue('rgId', $this->inscriptionData->document->rgNumber), '', 20);
+        $rgId->setJsHint(_M('Inform the identity number (rg)',$module));
+
+        $hctRg = new MHContainer('hctRg', array($rgLabel, $rgId));
+        $hctRg->setShowLabel(true);
+
+        $cpfLabel = new MText('cpfLabel', _M('CPF',$module).':');
+        $cpfLabel->setWidth(FIELD_CONTAINER_SIZE);
+
+        $cpfId   = new MTextField('cpfId', $this->getFormValue('cpfId', $this->inscriptionData->document->cpf), '', 20/*, 'Inform the identity number (rg)'*/);
+        $cpfId->setJsHint(_M('Inform the cpf number',$module));
+
+        $validators[]  = new MCPFValidator('cpfId', _M('CPF',$module), 'optional');
+
+
+        $hctCpf = new MHContainer('hctCpf', array($cpfLabel, $cpfId));
+        $hctCpf->setShowLabel(true);
+
+
+        $emailLabel = new MText('emailLabel', _M('E-mail',$module).':');
+        $emailLabel->setWidth(FIELD_CONTAINER_SIZE);
+
+        $emailId   = new MTextField('emailId', $this->getFormValue('emailId', $this->inscriptionData->physicalPerson->email), '', 20/*, 'Inform the identity number (rg)'*/);
+        $emailId->setJsHint(_M('Inform the e-mail',$module));
+
+        $hctEmail = new MHContainer('hctEmail', array($emailLabel, $emailId));
+        $hctEmail->setShowLabel(true);
+
+        $btnSend = new MButton('btnSend', _M('Step', $module) . ' 2 >>');
+
+        $btnSend->attachEventHandler('click', 'tbBtnSend_click', true);
+
+        $div1       = new MDiv('div1', $btnSend, null, 'align=center');
+
+        $cntInscription     = new MHContainer('cntInscription', array($msgInscription, $hctRg, $separator, $hctCpf, $separator, $hctEmail, $separator, $div1, $separator, $separator));
+
+        $cntInscription->addBoxStyle('background', 'white');
+        $cntInscription->setDisposition('center');
+
+        $fields[] = $cntInscription;
+
+        $fontText1 = new MText('fontText1', "</font>");
+        $fields[] = $fontText1;
+
+        $this->inscriptionData->document->rgNumber     = $rgId->value;
+        $this->inscriptionData->document->cpf          = $cpfId->value;
+        $this->inscriptionData->physicalPerson->email  = $emailId->value;
+
+        $this->setFields($fields);
+        $this->setValidators($validators);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+        $this->setClose($MIOLO->getActionURL($module,substr($action,0,strrpos($action,':'))));
+        $this->page->onLoad('document.' . $this->name . '.rgId.focus()');
+    }
+
+
+    public function tbBtnSend_click($sender = null)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $businessDocument       = $MIOLO->getBusiness('basic','BusDocument');
+        $businessPerson         = $MIOLO->getBusiness('basic','BusPhysicalPerson');
+
+        $rgId    = MIOLO::_request('rgId');
+        $cpfId   = MIOLO::_request('cpfId');
+        $emailId = MIOLO::_request('emailId');
+
+        $flag = TRUE;
+
+        if ( (strlen((string)$rgId) > 0) && (strlen((string)$cpfId) > 0))
+        {
+            $readOnlyDocument = 1;
+        }
+        elseif (strlen((string)$rgId) > 0)
+        {
+            $readOnlyDocument = 2;
+        }
+        elseif (strlen((string)$cpfId) > 0)
+        {
+            $readOnlyDocument = 3;
+        }
+        else
+        {
+            $lblMsg1 = new MText('lblMsg1', _M('Required RG, CPF or both',$module));
+            $lblMsg1->color = 'red';
+
+            $cntErrors      = new MVContainer('cntErrors', array($lblMsg1));
+            $this->divError->addControl($cntErrors);
+
+            $flag = FALSE;
+
+        }
+
+        if ( $flag )
+        {
+            $this->inscriptionData->documentReadOnly = $readOnlyDocument; //is document readonly 
+                                                                          //in personInformation
+            if ( (strlen((string)$rgId) > 0) || (strlen((string)$cpfId) > 0) )
+            {
+                if ( strlen((string)$rgId) > 0 )
+                {
+                    $filters->documentTypeId = RG_CODE;
+                    $filters->content        = $rgId;
+                    $this->inscriptionData->document->organ    = $filters->organ;
+                    $this->inscriptionData->document->rgNumber = $rgId;
+                }
+                elseif (strlen((string)$cpfId) > 0)
+                {
+                    $filters->documentTypeId = CPF_CODE;
+                    $filters->content        = SAGU::convertInCPFWithoutDelimiters($cpfId);
+                    $this->inscriptionData->document->cpf = $cpfId;
+                }
+
+                $documentPerson = $businessDocument->searchDocument($filters);
+
+                if ( $documentPerson )
+                {
+                    $person = $businessPerson->getPhysicalPerson($documentPerson[0][0]);
+                }
+            }
+            elseif (strlen((string)$emailId) > 0)
+            {
+                $filters->email            = $emailId;
+                $person1 = $businessPerson->searchPerson($filters);
+                $person  = $businessPerson->getPhysicalPerson($person1[0][0]);
+
+                if ( !$person1 )
+                {
+                    unset($filters);
+                    $filters->emailAlternative            = $emailId;
+                    $person1 = $businessPerson->searchPerson($filters);
+                    $person  = $businessPerson->getPhysicalPerson($person1[0][0]);
+                }
+            }
+
+            if ( $person )
+            {
+                $this->inscriptionData->physicalPerson->personId              = $person->personId;
+                $this->inscriptionData->physicalPerson->sex                   = $person->sex;
+                $this->inscriptionData->physicalPerson->maritalStatusId       = $person->maritalStatusId;
+                $this->inscriptionData->physicalPerson->residentialPhone      = $person->residentialPhone;
+                $this->inscriptionData->physicalPerson->workPhone             = $person->workPhone;
+                $this->inscriptionData->physicalPerson->cellPhone             = $person->cellPhone;
+                $this->inscriptionData->physicalPerson->dateBirth             = $person->dateBirth;
+                $this->inscriptionData->physicalPerson->cityIdBirth           = $person->cityIdBirth;
+                $this->inscriptionData->physicalPerson->countryIdBirth        = $person->countryIdBirth;
+                $this->inscriptionData->physicalPerson->fatherId              = $person->fatherId;
+                $this->inscriptionData->physicalPerson->motherId              = $person->motherId;
+                $this->inscriptionData->physicalPerson->specialNecessityId    = $person->specialNecessityId ;
+                $this->inscriptionData->physicalPerson->specialNecessityDescription = $person->specialNecessityDescription ;
+                $this->inscriptionData->physicalPerson->ethnicOriginId        = $person->ethnicOriginId;
+                $this->inscriptionData->physicalPerson->name                  = $person->name;
+                $this->inscriptionData->physicalPerson->zipCode               = $person->zipCode;
+                $this->inscriptionData->physicalPerson->cityId                = $person->cityId;
+                $this->inscriptionData->physicalPerson->location              = $person->location;
+                $this->inscriptionData->physicalPerson->number                = $person->number;
+                $this->inscriptionData->physicalPerson->complement            = $person->complement;
+                $this->inscriptionData->physicalPerson->neighborhood          = $person->neighborhood;
+                $this->inscriptionData->physicalPerson->email                 = $person->email;
+    
+                $businessDocument1       = $MIOLO->getBusiness('basic', 'BusDocument');
+    
+                $personRG  = $businessDocument1->getDocument($person->personId, RG_CODE);
+                $personCPF = $businessDocument1->getDocument($person->personId, CPF_CODE);
+    
+                $this->inscriptionData->document->rgNumber = $personRG->content;
+                $this->inscriptionData->document->organ    = $personRG->organ;
+
+                strlen((string)$personCPF->content) > 0 ? $this->inscriptionData->document->cpf      = SAGU::convertInCPFFormat($personCPF->content) : $this->inscriptionData->document->cpf      = "" ;
+
+                $businessPhysicalPerson = $MIOLO->getBusiness('basic', 'BusPhysicalPersonStudent');
+                $physicalPersonStudent = $businessPhysicalPerson->getPhysicalPersonStudent($person->personId);
+    
+                $this->inscriptionData->physicalPersonStudent->institutionIdHs = $physicalPersonStudent->institutionIdHs;
+    
+                $this->inscriptionData->physicalPersonStudent->cityIdHs = $physicalPersonStudent->cityIdHs;
+    
+                $businessInscription          = $MIOLO->getBusiness('selectiveProcess', 'BusInscription');
+                $filters1->personId           = $person->personId;
+                $filters1->selectiveProcessId = $this->inscriptionData->inscription->selectiveProcessId;
+                $inscription                  = $businessInscription->searchInscription($filters1);
+
+                if ( is_array( $inscription ) )
+                {
+                    //$inscription[0][0];//inscriptionId
+    
+                    $this->inscriptionData->inscription->isHighSchool      = $inscription[0][20];//isHighSchool
+                    $this->inscriptionData->inscription->cityExam          = $inscription[0][4];//placeRoomId
+                    $this->inscriptionData->inscription->inscriptionId     = $inscription[0][0];//inscriptionId
+    
+                    //Verifica, e cria as opções de curso, língua e local de prova quando necessário
+                    $businessSelectiveProcess    = $MIOLO->getBusiness($module, 'BusSelectiveProcess');
+                    
+                       $filters3->selectiveProcessId = $this->inscriptionData->inscription->selectiveProcessId;
+                    $selectiveProcess           = $businessSelectiveProcess->searchSelectiveProcess($filters3);
+    
+                    if ( $selectiveProcess[0][8] == DB_TRUE )     //selective process can language ocurrence
+                    {
+                        $this->inscriptionData->inscription->languageId = $inscription[0][6];//languageId
+                    }
+    
+                    $optionsNumber = $selectiveProcess[0][7];
+    
+                    $businessInscriptionOption    = $MIOLO->getBusiness($module, 'BusInscriptionOption');
+                    $filters4->inscriptionId      = $this->inscriptionData->inscription->inscriptionId;
+                    $filters4->selectiveProcessId = $this->inscriptionData->inscription->selectiveProcessId;
+
+                    $searchInscOption         = $businessInscriptionOption->searchInscriptionOptionWeb($filters4);
+    
+                    if ( is_array($searchInscOption) )
+                    {
+
+                        foreach ( $searchInscOption as $value1 )
+                        {
+                            eval('$this->inscriptionData->inscriptionOption->o'.$value1[3].'->optionNumber = $value1[3];');
+                            eval('$this->inscriptionData->inscriptionOption->o'.$value1[3].'->courseOccurrenceId = $value1[2];');
+                        }
+                    }
+    
+                    //Se existe outros processos seletivos, cadastras os dados deles
+                    $businessSelectiveProcessOccurrence = $MIOLO->getBusiness('selectiveProcess', 'BusSelectiveProcessOccurrence');
+                       $filters6->selectiveProcessId = $this->inscriptionData->inscription->selectiveProcessId ;
+                    
+                    $othersSelectiveProcess = $businessSelectiveProcessOccurrence->searchSelectiveProcessOccurrence($filters6);
+    
+                    $businessExamOccurrence = $MIOLO->getBusiness('selectiveProcess', 'BusExamOccurrence');
+    
+                    $businessSelectiveProcessTypeData = $MIOLO->getBusiness('selectiveProcess', 'BusSelectiveProcessTypeData');
+    
+                    foreach ( $othersSelectiveProcess as $selectiveProcess )
+                    {
+                        if ( $selectiveProcess[2] != DEFAULT_SELECTIVE_PROCESS_TYPE )
+                        {
+                            eval('$this->inscriptionData->selectiveProcessTypeData->o'.$selectiveProcess[2].'->selectiveProcessTypeId = '.$selectiveProcess[2].';');
+    
+                            $filters7->inscriptionId          = $this->inscriptionData->inscription->inscriptionId;
+    
+                            $filters7->selectiveProcessTypeId = $selectiveProcess[2];
+    
+                            $searchSelProcTypeData = $businessSelectiveProcessTypeData->searchSelectiveProcessTypeData($filters7);
+    
+                            if ( is_array($searchSelProcTypeData) )
+                            {
+                                eval('$this->inscriptionData->selectiveProcessTypeData->o'.$selectiveProcess[2].'->numberInscription = $searchSelProcTypeData[0][2];');
+    
+                                   $filters3->selectiveProcessId = $this->inscriptionData->inscription->selectiveProcessId ;
+                                $filters3->selectiveProcessTypeId = $selectiveProcess[2];
+                                $examsOccurrences = $businessExamOccurrence->searchExamOccurrence($filters3);
+    
+                                $businessNotes = $MIOLO->getBusiness('selectiveProcess', 'BusNote');
+    
+                                foreach ( $examsOccurrences as $examOccurrence )
+                                {
+                                    eval('$this->inscriptionData->selectiveProcessTypeData->o'.$selectiveProcess[2].'->o'.$examOccurrence[0].'->examOccurrenceId  = '.$examOccurrence[0].';');
+    
+                                    $filters8->inscriptionId      = $this->inscriptionData->inscription->inscriptionId;
+                                    $filters8->selectiveProcessId = $this->inscriptionData->inscription->selectiveProcessId;
+ 
+                                    $filters8->examOccurrenceId   = $examOccurrence[0];
+    
+                                    $searchNotes = $businessNotes->searchNote($filters8);
+    
+                                    if ( is_array($searchNotes) )
+                                    {
+                                        eval('$this->inscriptionData->selectiveProcessTypeData->o'.$selectiveProcess[2].'->o'.$examOccurrence[0].'->note = $searchNotes[0][6];');
+                                    }
+                                }
+                            }
+                        }
+                    }
+    
+                    //Informações sócio-econômicas
+                    $filters->formId = FORM_INSCRIPTION_ID;
+    
+                    $businessForm            = $MIOLO->getBusiness('research', 'BusForm');
+                    $businessQuestions       = $MIOLO->getBusiness('research', 'BusQuestion');
+                    $businessOption          = $MIOLO->getBusiness('research', 'BusOption');
+                    $businessAnswer          = $MIOLO->getBusiness('research', 'BusAnswer');
+
+                    $socialEconomicForm      = $businessForm->getForm(FORM_INSCRIPTION_ID);
+                    $socialEconomicQuestions = $businessQuestions->searchQuestion($filters);
+
+                    if ( count($socialEconomicQuestions) > 0 )
+                    {
+                        foreach($socialEconomicQuestions as $socialEconomicQuestion)  //Laço para cada questão
+                        {
+                            eval('$this->inscriptionData->answer->o'.$socialEconomicQuestion[0].'->questionId = '.$socialEconomicQuestion[0].';');
+    
+                            $filters8->questionId = $socialEconomicQuestion[0];
+                            $filters8->personId   = $this->inscriptionData->physicalPerson->personId;
+                            $searchAnswer = $businessAnswer->searchAnswer($filters8);
+
+                            if ( count($searchAnswer) > 1  )
+                            {
+                                foreach ( $searchAnswer as $key1 => $searchAnswerAux )
+                                {
+                                    eval('$this->inscriptionData->answer->o'.$socialEconomicQuestion[0].'->optionId[$key1] = $searchAnswerAux[5];');
+                                }
+                            }
+                            else
+                            {
+                                eval('$this->inscriptionData->answer->o'.$socialEconomicQuestion[0].'->optionId = $searchAnswer[0][5];');
+                            }
+                        }
+                    }
+                }
+            }
+            $MIOLO->session->setValue('inscriptionData', urlencode(serialize($this->inscriptionData)));
+
+            $opts = array('page' => '3');  //Verify documents
+
+            $this->page->mGoto($MIOLO->getActionURL($module, $action, null, $opts));
+        }
+    }
+}

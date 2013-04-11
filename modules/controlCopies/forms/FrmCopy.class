@@ -1,0 +1,371 @@
+<?php
+
+/**
+ * Copy form
+ *
+ * @author Jamiel Spezia [jamiel@solis.coop.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ *
+ * @since
+ * Class created on 15/09/2005
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2005 SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+
+/**
+ * Form to manipulate a Copy
+ **/
+class FrmCopy extends MForm
+{
+
+    /**
+     * Class constructor
+     **/
+    function __construct()
+    {
+
+        $module = MIOLO::getCurrentModule();
+
+        if ( MIOLO::_request('function') == 'insert' )
+        {
+            parent::__construct(_M('Insert', $module));
+        }
+        else
+        {
+            parent::__construct(_M('Update', $module));
+        }
+
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+
+        $toolBar = new MToolBar('toolBar',$MIOLO->getActionURL($module,$action));
+
+        if ( $function == 'insert' )
+        {
+            $toolBar->disableButton('tbBtnDelete');
+            $toolBar->disableButton('tbBtnPrint');
+
+            $businessCopy = $MIOLO->getBusiness($module, 'BusCopy');
+            $lastCopy = $businessCopy->getLastRegister($MIOLO->auth->login->id);
+            $data->physicalResourceId = $lastCopy->physicalResourceId;
+            $data->physicalResourceVersion = $lastCopy->physicalResourceVersion;
+            $currentPeriodId = explode(',', str_replace(' ', '', CURRENTPERIODID));
+            $data->periodId = $currentPeriodId[0];
+
+            $copyId = MIOLO::_request('copyId');
+            if (!$copyId)
+            {
+                $copyId = $businessCopy->nextvalCopy();
+            }
+            $fields[] = new MHiddenField('copyId', $copyId);
+        }
+        elseif ( $function == 'delete' )
+        {
+            $toolBar->disableButton('tbBtnSave');
+        }
+        $fields[] = $toolBar;
+
+        if ( in_array($function,array('update','delete')) )
+        {
+            $copyId = $_GET['copyId'] ? $_GET['copyId'] : $_POST['copyId'];
+            $fields[] = new MTextLabel('copyId', $copyId, _M('Copies id',$module));
+            $fields[] = new MHiddenField('copyId', $copyId);
+
+            $business = $MIOLO->getBusiness($module,'BusCopy');
+            $data     = $business->getCopy($copyId);
+        }
+
+        //Error container
+        $divError        = new MDiv('divError', $lblMsg, null, 'align=center');
+        $fields[]        = $divError;
+        $fields[]        = new Separator();
+
+        $periodId = new MTextLabel('periodId', $this->getFormValue('periodId', $data->periodId), _M('Period id', $module), 10);
+        $periodId->setReadOnly(true);
+        $flds1[] = $periodId;
+
+        $physicalResourceId   = new MLookupTextField('physicalResourceId', $this->getFormValue('physicalResourceId', $data->physicalResourceId), _M('Physical resource id',$module), 10, null, null, 'physicalResourceId,physicalResourceVersion,physicalResourceDescription', 'institutional', 'PhysicalResource', null, null, true);
+        $physicalResourceId->setJsHint(_M('Enter the physical resource code',$module));
+        $flds1[]              = $physicalResourceId;
+        $validators[]         = new MRequiredValidator('physicalResourceId');
+
+        $physicalResourceVersion = new MTextField('physicalResourceVersion', $this->getFormValue('physicalResourceVersion', $data->physicalResourceVersion), _M('Version', $module), 10);
+        $physicalResourceVersion->setReadOnly(true);
+        $flds1[] = $physicalResourceVersion;
+        $validators[] = new MRequiredValidator('physicalResourceVersion');
+
+        $physicalResourceDescription = new MTextField('physicalResourceDescription', $this->getFormValue('physicalResourceDescription', $data->physicalResourceDescription), _M('Description', $module), 10);
+        $physicalResourceDescription->setReadOnly(true);
+        $flds1[] = $physicalResourceDescription;
+        $validators[] = new MRequiredValidator('physicalResourceDescription');
+
+        $fields[] = $flds1;
+        $fields[]        = new Separator('<br>');
+
+        $personId           = new MLookupTextField('personId', $this->getFormValue('personId', $data->personId), _M('Person id',$module), 10, null, null, 'personName,possibleCopies,effectedCopies,remainingCopies', $module, 'Person', null, null, true);
+        $personId->setJsHint(_M('Enter the person code',$module));
+        $fields[]           = $personId;
+        $validators[]       = new MRequiredValidator('personId');
+
+        $password = new MPasswordField('password', $this->password->value, _M('Password',$module), 10);
+        $password->setJsHint(_M('Enter the password',$module));
+        $fields[]           = $password;
+
+        $copiesNumber = new MTextField('copiesNumber', $this->getFormValue('copiesNumber', $data->copiesNumber), _M('Copies number',$module), 10);
+        $copiesNumber->setJsHint(_M('Enter the copies number',$module));
+        $fields[]           = $copiesNumber;
+        $validators[]       = new MRequiredValidator('copiesNumber');
+
+
+        $personName = new MTextField('personName', $this->getFormValue('personName', $data->personName), _M('Person name',$module), 40);
+        $personName->setReadOnly(true);
+        $fields[]           = $personName;
+
+        $possibleCopies = new MTextField('possibleCopies', $this->possibleCopies->value, _M('Possible copies',$module), 10);
+        $possibleCopies->setReadOnly(true);
+        $fields[]           = $possibleCopies;
+
+        $effectedCopies = new MTextField('effectedCopies', $this->effectedCopies->value, _M('Effected copies',$module), 10);
+        $effectedCopies->setReadOnly(true);
+        $fields[]           = $effectedCopies;
+
+        $remainingCopies = new MTextField('remainingCopies', $this->remainingCopies->value, _M('Remaining copies',$module), 10);
+        $remainingCopies->setReadOnly(true);
+        $fields[]           = $remainingCopies;
+
+        if ( $function == 'update' )
+        {
+            $fields[] = new MTextLabel('lastModification', '[' . $data->userName . ' - ' . $data->dateTime . ']', _M('Last modification',$module));
+
+        }
+
+        $fields[] = new Separator('');
+
+        $saveButton = new MButton('tbBtnSave',_M('Save',$module));
+        $fields[] = $saveButton;
+
+        $this->setFields($fields);
+        $this->setValidators($validators);
+        $this->setLabelWidth(140);
+        $this->setShowPostButton(false);
+        $this->setClose($MIOLO->getActionURL($module,substr($action,0,strrpos($action,':'))));
+        $this->page->onLoad('document.' . $this->name . '.personId.focus();' );
+    }
+
+    /**
+     * Event triggered when user chooses New from the toolbar
+     **/
+    public function tbBtnNew_click($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+    }
+
+    /**
+     * Event triggered when user chooses Delete from the toolbar
+     **/
+    public function tbBtnDelete_click($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $data   = $this->getTypesData();
+        $opts   = array('event'            => 'tbBtnDelete_confirm',
+                        'function'         => 'delete',
+                        'copyId' => MIOLO::_request('copyId') );
+
+        $gotoYes = $MIOLO->getActionURL( $module, $action, null, $opts );
+        $goto    = SAGU::getStackBackUrl();
+        $gotoNo  = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+        $msg     = _M(MSG_CONFIRM_RECORD_DELETE,$module);
+        $caption = _M('Question',$module);
+        $MIOLO->question($msg, $gotoYes, $gotoNo);
+    }
+
+    /**
+     * Event triggered when user chooses Yes from the Delete prompt dialog
+     **/
+    public function tbBtnDelete_confirm($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $business = $MIOLO->getBusiness($module, 'BusCopy');
+        $ok       = $business->deleteCopy(MIOLO::_request('copyId'));
+
+        if ( $ok )
+        {
+            $msg  = _M(MSG_RECORD_DELETED,$module);
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Information',$module);
+            $MIOLO->information($msg, $goto);
+        }
+        else
+        {
+            $msg  = _M('Error executing requested operation.',$module);
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Error',$module);
+            $MIOLO->error( $msg, $goto, $caption );
+        }
+    }
+
+    /**
+     * Event triggered when user chooses Save from the toolbar
+     **/
+    public function tbBtnSave_click($sender=NULL)
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+
+        $data     = $this->getTypesData();
+        $business = $MIOLO->getBusiness($module, 'BusCopy');
+
+        $mioloClone = clone $this;
+
+        //Valida somente por LDAP
+        if ( false)//!@$this->manager->auth->Authenticate($data->personId, $this->password->value, false) )
+        {
+            $msg           = _M('Invalid password, please tries again',$module);
+            $lblMsg        = new MText('lblMsg',$msg);
+            $lblMsg->color = 'red';
+
+            $fields[] = $lblMsg;
+            $fields[] = new Separator('');
+
+            $this->divError->addControl($fields);
+            $this->page->onLoad('document.' . $this->name . '.password.focus();' );
+        }
+        else
+        {
+            if ( $this->remainingCopies->value < $data->copiesNumber )
+            {
+                $msg           = _M('The number of copies was exceeded',$module);
+                $lblMsg        = new MText('lblMsg',$msg);
+                $lblMsg->color = 'red';
+
+                $fields[] = $lblMsg;
+                $fields[] = new Separator('');
+
+                $this->divError->addControl($fields);
+                $this->page->onLoad('document.' . $this->name . '.copiesNumber.focus();' );
+            }
+            else
+            {
+                if ( $function == 'update' )
+                {
+                    $ok  = $business->updateCopy($data);
+                    $msg = _M(MSG_RECORD_UPDATED,$module);
+                }
+                else
+                {
+                    $data->date = date(MASK_DATE_PHP . ' '. MASK_TIME_PHP);
+                    $ok  = $business->insertCopy($data);
+                    $msg = _M(MSG_RECORD_INSERTED,$module);
+                }
+
+                if ( $ok )
+                {
+                    if ( $function == 'update' || strtoupper(INSERTMESSAGE) == 'YES' )
+                    {
+                        $opts = array('personIdS' => $data->personId);
+                        $goto = SAGU::getStackBackUrl();
+                        $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action, null, $opts);
+                        if ( $function == 'update' )
+                        {
+                            $caption = _M('Information',$module);
+                            $MIOLO->information($msg, $goto);
+                        }
+                        else
+                        {
+                            $opts    = array('event'    => 'tbBtnNew_click',
+                                            'function' => 'insert');
+
+                            $gotoYes = $MIOLO->getActionURL($module, $action, null, $opts);
+                            $caption = _M('Question',$module);
+                            $MIOLO->question($msg, $gotoYes, $goto);
+                        }
+                    }
+                    else
+                    {
+                        $copyId = $business->nextvalCopy();
+                        $this->setFieldValue('copyId',          $copyId);
+                        $this->setFieldValue('personId',        '');
+                        $this->setFieldValue('password',        '');
+                        $this->setFieldValue('copiesNumber',    '');
+                        $this->setFieldValue('personName',      '');
+                        $this->setFieldValue('possibleCopies',  '');
+                        $this->setFieldValue('effectedCopies',  '');
+                        $this->setFieldValue('remainingCopies', '');
+                    }
+                }
+                else
+                {
+                    $msg  = _M('Error executing requested operation.',$module);
+                    $goto = SAGU::getStackBackUrl();
+                    $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action, null, $opts);
+                    $caption = _M('Error',$module);
+                    $MIOLO->error( $msg, $goto, $caption );
+                }
+            }
+        }
+    }
+
+    /**
+     * Method to gather all information from the form fields
+     * and put them on a database compatible object
+     **/
+    public function getTypesData()
+    {
+        $data = new ccpCopy();
+        $vars = get_object_vars($data);
+        foreach ( $vars as $var => $value )
+        {
+            if ( $this->$var && $var != 'name' )
+            {
+                eval('$data->' . $var . ' = $this->' . $var . '->value;');
+            }
+        }
+
+        return $data;
+    }
+}
+
+?>

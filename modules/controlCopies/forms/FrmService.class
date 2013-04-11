@@ -1,0 +1,215 @@
+<?php
+/**
+ *
+ * @author Rafael Dutra [rdutra@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * Rafael Dutra [rdutra@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 27/07/2006
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n $module, $m[4]
+ * Copyleft (L) 2006 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+class FrmService extends MForm
+{
+    function __construct()
+    {
+    $MIOLO  = MIOLO::getInstance();
+    $action = MIOLO::getCurrentAction();
+        $module = MIOLO::getCurrentModule();
+
+        if ( MIOLO::_request('function') == 'insert' )
+        {
+            parent::__construct(_M('Insert', $module));
+            $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+            $this->eventHandler(); 
+        }
+        else
+        {
+            parent::__construct(_M('Update', $module));
+            $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+            $this->eventHandler(); 
+        }
+
+    }
+
+    public function createFields()
+    {
+        $MIOLO   = MIOLO::getInstance();
+        $module  = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+
+        $toolBar = new MToolBar('toolBar',$MIOLO->getActionURL($module,'main:register:service'));
+        $toolBar->disableButton('tbBtnDelete');
+        $toolBar->disableButton('tbBtnPrint');
+        $this->defaultButton = false;
+        $fields[]  = $toolBar;
+
+        if ( in_array($function,array('update','delete')) )
+        {
+            $business  = $MIOLO->getBusiness($module,'BusService');
+            $serviceId = MIOLO::_request('serviceId');
+            $data      = $business->getService($serviceId);
+
+            $fields[] = new MTextLabel('serviceId', $data->serviceId, _M('Service id',$module));
+            $fields[]  = new MHiddenField('serviceId', $data->serviceId); 
+
+        }
+        $fields[]  = new MTextField  ('description', $this->getFormValue('description', $data->description), _M('Description', $module),'30');
+        $fields[]  = new MTextField  ('unitaryValue', $this->getFormValue('unitaryValue', $data->unitaryValue), _M('Unitary Value', $module),'14');
+        $fields[]  = new MTextField  ('unit', $this->getFormValue('unit', $data->unit), _M('Unit', $module),'14');
+
+        if ( $function == 'update' )
+        {
+            $fields[] = new MTextLabel('lastModification', '[' . $data->userName . ' - ' . $data->dateTime . ']', _M('Last modification',$module));
+
+        }
+
+        $fields[]  = new Separator();
+        $this->setFields($fields);
+    }
+
+    function getTypesData()
+    {
+        if ($this->serviceId)
+        {
+            $data->serviceId    = $this->serviceId->getValue();
+        }
+        $data->description  = $this->description->getValue();
+        $data->unitaryValue = $this->unitaryValue->getValue();
+        $data->unit         = $this->unit->getValue();
+
+        return $data;
+    }
+
+    function tbBtnSave_click()
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+
+        $data     = $this->getTypesData();
+        $business = $MIOLO->getBusiness($module, 'BusService');
+
+        if ( $function == 'update' )
+        {
+            $ok  = $business->updateService($data);
+            $msg = _M(MSG_RECORD_UPDATED,$module);
+        }
+        else
+        {
+            $data->date = date(MASK_DATE_PHP . ' '. MASK_TIME_PHP);
+            $ok  = $business->insertService($data);
+            $msg = _M(MSG_RECORD_INSERTED,$module);
+        }
+
+        if ( $ok )
+        {
+            $opts = array('serviceIdS' => $data->serviceId);
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action, null, $opts);
+            if ( $function == 'update' )
+            {
+                $caption = _M('Information',$module);
+                $MIOLO->information($msg, $goto);
+            }
+            else
+            {
+                $opts    = array('event'    => 'tbBtnNew_click',
+                                'function'  => 'insert');
+
+                $gotoYes = $MIOLO->getActionURL($module, $action, null, $opts);
+                $caption = _M('Question',$module);
+                $MIOLO->question($msg, $gotoYes, $goto);
+            }
+        }
+        else
+        {
+            $msg  = _M('Error executing requested operation.',$module);
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action, null, $opts);
+            $caption = _M('Error',$module);
+            $MIOLO->error( $msg, $goto, $caption );
+        }
+   } 
+    
+    /**
+     * Event triggered when user chooses Delete from the toolbar
+     **/
+    public function tbBtnDelete_click($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $data   = $this->getTypesData();
+        $opts   = array('event'            => 'tbBtnDelete_confirm',
+                        'function'         => 'delete',
+                        'serviceId'        => MIOLO::_request('serviceId') );
+
+        $gotoYes = $MIOLO->getActionURL( $module, $action, null, $opts );
+        $goto    = SAGU::getStackBackUrl();
+        $gotoNo  = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+        $msg     = _M(MSG_CONFIRM_RECORD_DELETE,$module);
+        $caption = _M('Question',$module);
+        $MIOLO->question($msg, $gotoYes, $gotoNo);
+    }
+
+    /**
+     * Event triggered when user chooses Yes from the Delete prompt dialog
+     **/
+    public function tbBtnDelete_confirm($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $business = $MIOLO->getBusiness($module, 'BusService');
+        $serviceId = MIOLO::_request('serviceId');
+
+        $ok = $business->deleteService($serviceId);
+
+        if ( $ok )
+        {
+            $msg  = _M(MSG_RECORD_DELETED,$module);
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Information',$module);
+            $MIOLO->information($msg, $goto);
+        }
+        else
+        {
+            $msg  = _M('Error executing requested operation.',$module);
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Error',$module);
+            $MIOLO->error( $msg, $goto, $caption );
+        }
+    }
+
+}
+?>

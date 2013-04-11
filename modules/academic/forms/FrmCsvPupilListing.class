@@ -1,0 +1,244 @@
+<?php
+
+/**
+ *
+ * This file handles the connection and actions for csv pupil listing
+ *
+ * @author Armando Taffarel Neto [taffarel@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * Armando Taffarel Neto [taffarel@solis.coop.br]
+ * 
+ * @since
+ * Class created on 04/08/2006
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Form to gather parameters for CSV generation
+ */
+class FrmCsvPupilListing extends MForm
+{
+    private $home;
+    private $module;
+
+    /**
+     * Class constructor
+     */
+    function __construct($data)
+    {
+        $this->module = 'academic';
+        $module = $this->module;
+
+        $this->home   = $data->home;
+
+        parent::__construct(_M('CSV pupil listing',$module));
+
+        // hide the 'Submit' button
+        $this->setShowPostButton(false);
+
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+
+    }
+
+    /**
+     *  Default method to define fields
+     */
+    public function createFields()
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $toolBar = new MToolBar('toolBar',$MIOLO->getActionURL($module,$action));
+        $toolBar->disableButton('tbBtnNew');
+        $toolBar->disableButton('tbBtnSearch');
+        $toolBar->disableButton('tbBtnSave');
+        $toolBar->disableButton('tbBtnDelete');
+        $toolBar->disableButton('tbBtnPrint');
+
+        //favoritos
+        $enabledImage  = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-20x20.png');
+        $disabledImage = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-disabled-20x20.png');
+        $url           = $MIOLO->getActionURL($module, $this->home, null, array('function' => 'search', 'event' => 'bookmark'));
+        $toolBar->addButton('tbBtnBookmark', _M('Add to bookmarks', 'basic'), $url, null, true, $enabledImage, $disabledImage);
+
+        if ( MIOLO::_request('event') == 'bookmark' )
+        {
+            $MIOLO->getClass('basic', 'access');
+            access::insert('CSV Pupil listing', $this->home, 'csvPupilListing-16x16.png', true);
+        }
+        //fim favoritos
+
+        $fields[] = $toolBar;
+
+        $divError = new MDiv('divError', null, null, 'align=center');
+        $fields[] = $divError;
+
+        $statusLabel = new MText('statusLabel', _M('Status', $module) . ':');
+        $statusLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $flds[] = $statusLabel;
+
+        $statusContent = array(
+                                _M('Pupil', $module),
+                                _M('Professor', $module),
+                                _M('Comunity', $module)
+                                );
+
+        $status = new MRadioButtonGroup('status', null, $statusContent, $this->getFormValue('status', $data->status), null, 'horizontal');
+        $status->setAutoSubmit(true);
+        $status->setShowLabel(false);
+        $flds[] = $status;
+        
+        $hctStatus = new MHContainer('hctStatus', $flds);
+        $fields[]  = $hctStatus;
+
+        if ( $this->getFormValue('status') == _M('Pupil', $module) ||
+             $this->getFormValue('status') == _M('Professor', $module) )
+        {
+            $businessPeriod = $MIOLO->getBusiness($module, 'BusPeriod');
+            $periodId       = new MComboBox('periodId', $this->getFormValue('periodId', $data->periodId), _M('Period',$module), $businessPeriod->listPeriod() );
+            $periodId->setAutoSubmit(true);
+            $validators[]   = new MRequiredValidator('periodId');
+            $fields[]       = $periodId;
+
+            if ( $filters->periodId = $this->getFormValue('periodId') )
+            {
+                $business       = $MIOLO->getBusiness($module, 'BusCsvPupilListing');
+                $courseId       = new MComboBox('courseId', $this->getFormValue('courseId', $data->courseId), _M('Course',$module), $business->listCourse($filters));
+                $fields[]       = $courseId;
+                
+                $business = $MIOLO->getBusiness('basic', 'BusUnit');
+                $unitId = new MComboBox('unitId', $this->getFormValue('unitId',$data->unitId), _M('Unit',$module), $business->listUnit());
+                $fields[] = $unitId;
+                
+                $fields[] = new MSeparator('<hr>');
+
+                $personIdHeader = new MText('personIdHeader', _M('If you want to generate a CSV file for specific persons, enter their ids in this box, separated by comma.', $module));
+                $fields[] = $personIdHeader;
+
+                $personId = new MMultiLineField('personId', $this->getFormValue('personId',$data->personId), _M('Person ids',$module), 40, 3, 40);
+                $personId->setJsHint(_M('Comma-separated person ids',$module));
+                $fields[] = $personId;
+
+                $fields[] = new MButton('btnGenerate', _M('Generate', $module));
+            }
+
+            $fields[]       = new MSeparator();
+        }
+        elseif ( $this->getFormValue('status') == _M('Comunity', $module) )
+        {
+            $personId = new MMultiLineField('personId', $this->getFormValue('personId',$data->personId), _M('Person ids',$module), 40, 3, 40, _M('Comma-separated',$module));
+            $personId->setJsHint(_M('Enter the persons ids, separated by comma',$module));
+            $validators[]   = new MRequiredValidator('personId');
+            $fields[] = $personId;
+
+            $fields[] = new MButton('btnGenerate', _M('Generate', $module));
+
+            $fields[]       = new MSeparator();
+        }
+        
+        $this->setFields($fields);
+        $this->setValidators($validators);
+        $this->setShowPostButton(false);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+    }
+
+
+    /**
+     * Event triggered when user chooses Generate from the toolbar
+     **/
+    public function btnGenerate_click($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+        
+        $filters->periodId = $this->getFormValue('periodId');
+        $filters->courseId = $this->getFormValue('courseId');
+        $filters->unitId   = $this->getFormValue('unitId');
+        $filters->status   = $this->getFormValue('status');
+        $filters->personId = $this->getFormValue('personId');
+        
+        $business = $MIOLO->getBusiness($module, 'BusCsvPupilListing');
+
+        if ( $filters->status == _M('Pupil', $module) )
+        {
+            $data = $business->getPupilData($filters);
+        }
+
+        if ( $filters->status == _M('Professor', $module) )
+        {
+            $data = $business->getProfessorData($filters);
+        }
+
+        if ( $filters->status == _M('Comunity', $module) )
+        {
+            $data = $business->getComunityData($filters);
+        }
+        
+        if ( count($data) > 0 )
+        {
+            foreach ( $data as $value )
+            {
+                list ( 
+                        $line->personName,
+                        $line->personId,
+                        $line->dateBirth,
+                        $line->rg,
+                        $line->courseName
+                     ) = $value;
+
+                $line->personName = SAGU::getShortenName($line->personName, 30);
+                
+                //format spaces
+                $line->personIdLeft = str_pad($line->personId, 10, 0, STR_PAD_LEFT);
+                $line->personName   = str_pad($line->personName, 30);
+                $line->personId     = str_pad($line->personId, 10);
+                $line->rg           = str_pad($line->rg, 10);
+                
+                $fileContent[] = $line->personName . ',' . 
+                                 $line->personId . ',' .
+                                 $line->dateBirth . ',' .
+                                 $line->rg . ',' .
+                                 $line->personIdLeft . ',' .
+                                 $line->courseName;
+            }
+
+            $fileContent = implode(chr(hexdec("\X0D\X0A")), $fileContent);
+            $fileContent.= chr(hexdec("\X0D\X0A"));
+
+            // File format based on RFC 4180 (http://www.rfc-editor.org/rfc/rfc4180.txt)
+            SAGU::returnAsFile('csv' . date(dmY) . '.txt', $fileContent, 'text/csv');
+        }
+        else
+        {
+            $this->addInfo(_M('No data found', $module));
+        }
+    }
+}
+
+?>

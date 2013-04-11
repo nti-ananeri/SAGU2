@@ -1,0 +1,15 @@
+INSERT INTO acdformationlevel (username, datetime, ipaddress, formationlevelid, description, shortdescription, academicdegree) VALUES ('admin', date(now()), '127.0.0.1', 1, 'GRADUAÇÃO', 'GRA', '');
+INSERT INTO acdformationlevel (username, datetime, ipaddress, formationlevelid, description, shortdescription, academicdegree) VALUES ('admin', date(now()), '127.0.0.1', 2, 'EXTENSÃO', 'EXT', '');
+INSERT INTO acdformationlevel (username, datetime, ipaddress, formationlevelid, description, shortdescription, academicdegree) VALUES ('admin', date(now()), '127.0.0.1', 3, 'PÓS-GRADUAÇÃO', 'PÓS', '');
+INSERT INTO acdformationlevel (username, datetime, ipaddress, formationlevelid, description, shortdescription, academicdegree) VALUES ('admin', date(now()), '127.0.0.1', 4, 'ESPECIALIZAÇÃO', 'ESP', '');
+INSERT INTO acdformationlevel (username, datetime, ipaddress, formationlevelid, description, shortdescription, academicdegree) VALUES ('admin', date(now()), '127.0.0.1', 5, 'SEQÜENCIAL', 'SEQ', '');
+INSERT INTO acdformationlevel (username, datetime, ipaddress, formationlevelid, description, shortdescription, academicdegree) VALUES ('admin', date(now()), '127.0.0.1', 6, 'ENSINO MÉDIO', 'ENS', '');
+INSERT INTO acdformationlevel (username, datetime, ipaddress, formationlevelid, description, shortdescription, academicdegree) VALUES ('admin', date(now()), '127.0.0.1', 7, 'TÉCNICO', 'TÉC', '');
+INSERT INTO acdformationlevel (username, datetime, ipaddress, formationlevelid, description, shortdescription, academicdegree) VALUES ('admin', date(now()), '127.0.0.1', 8, 'MESTRADO', 'MES', '');
+INSERT INTO acdformationlevel (username, datetime, ipaddress, formationlevelid, description, shortdescription, academicdegree) VALUES ('admin', date(now()), '127.0.0.1', 9, 'FORMAÇÃO PEDAGÓGICA', 'FOR', '');
+INSERT INTO acdformationlevel (username, datetime, ipaddress, formationlevelid, description, shortdescription, academicdegree) VALUES ('admin', date(now()), '127.0.0.1', 10, 'OFICINAS', 'OFI', '');
+INSERT INTO acdformationlevel (username, datetime, ipaddress, formationlevelid, description, shortdescription, academicdegree) VALUES ('admin', date(now()), '127.0.0.1', 11, 'TECNÓLOGO', 'TEC', '');
+INSERT INTO acdformationlevel (username, datetime, ipaddress, formationlevelid, description, shortdescription, academicdegree) VALUES ('admin', date(now()), '127.0.0.1', 12, 'SUPLETIVO', 'SUP', '');
+INSERT INTO acdformationlevel (username, datetime, ipaddress, formationlevelid, description, shortdescription, academicdegree) VALUES ('admin', date(now()), '127.0.0.1', 13, 'MBA', 'MBA', '');
+INSERT INTO acdformationlevel (username, datetime, ipaddress, formationlevelid, description, shortdescription, academicdegree) VALUES ('admin', date(now()), '127.0.0.1', 14, 'CURSOS DIVERSOS', 'CUR', '');
+SELECT setval('seq_formationlevelid',(SELECT max(formationlevelid) FROM acdFormationLevel));

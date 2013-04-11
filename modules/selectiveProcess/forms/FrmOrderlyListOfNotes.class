@@ -1,0 +1,180 @@
+<?php
+
+/**
+ * Other listings form
+ *
+ * @author Rafael Luís Spengler [rafael@solis.coop.br]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ *
+ * @since
+ * Class created on 26/12/2005
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2005 SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+
+/**
+ * Form to manipulate inscription reports
+ **/
+class FrmOrderlyListOfNotes extends MForm
+{
+    private $home;
+    
+    var $business;
+    
+    /**
+     * Class constructor
+     **/
+    function __construct($data)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $this->business = $MIOLO->getBusiness($module, 'BusOrderlyListOfNotes');
+        $this->home   = $data->home;
+
+        parent::__construct(_M('Orderly list of notes', $module));
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+        $this->setAction('main');
+
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $toolBar = new MToolBar('toolBar', $MIOLO->getActionURL($module, $action));
+        $toolBar->disableButton('tbBtnNew');
+        $toolBar->disableButton('tbBtnSave');
+        $toolBar->disableButton('tbBtnDelete');
+        $toolBar->disableButton('tbBtnSearch');
+        $toolBar->disableButton('tbBtnPrint');
+
+        //favoritos
+        $enabledImage  = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-20x20.png');
+        $disabledImage = $MIOLO->getUI()->GetImageTheme($MIOLO->theme->id, 'bookmark-disabled-20x20.png');
+        $url           = $MIOLO->getActionURL($module, $this->home, null, array('function' => 'search', 'event' => 'bookmark'));
+        $toolBar->addButton('tbBtnBookmark', _M('Add to bookmarks', 'basic'), $url, null, true, $enabledImage, $disabledImage);
+
+        if ( MIOLO::_request('event') == 'bookmark' )
+        {
+            $MIOLO->getClass('basic', 'access');
+            access::insert('Orderly list of notes of candidates', $this->home, 'orderlyListOfNotes-16x16.png', true);
+        }
+        //fim favoritos
+
+        $fields[] = $toolBar;
+
+        $flds[] = new Separator('');
+
+        $business           = $MIOLO->getBusiness($module, 'BusSelectiveProcess');
+
+        $selectiveProcessId = new MComboBox('selectiveProcessId', $this->getFormValue('selectiveProcessId', $data->selectiveProcessId), _M('Selective process id',$module), $business->listSelectiveProcess());
+
+        $selectiveProcessId->setJsHint(_M('Enter the selective process code',$module));
+        $selectiveProcessId->setAutoPostBack(true);
+        $validators[]       = new MRequiredValidator('selectiveProcessId'); 
+        $flds[]             = $selectiveProcessId;
+        $flds[] = new Separator('');
+
+
+        //choiceOrder
+        $choiceOrderLabel = new MText('choiceOrderLabel', _M('Alphabetic order',$module) . '?');
+        $choiceOrderLabel->setWidth(FIELD_CONTAINER_SIZE);
+
+
+        $optionsChoice = array( array(_M('Alphabetic', $module), DB_TRUE),
+                                array(_M('Notes', $module), DB_FALSE));
+
+        $choiceOrder = new MRadioButtonGroup('choiceOrder', '', $optionsChoice/*SAGU::ListYesNo(1)*/, $this->GetFormValue('choiceOrder',$choiceOrder) ? $this->GetFormValue('choiceOrder',$choiceOrder) : 'f', null, 'horizontal');
+        $choiceOrder->SetShowLabel(false);
+
+        $hctChoiceOrder = new MHContainer('hctOnlyHighSchool', array($choiceOrderLabel, $choiceOrder));
+        $flds[]  = $hctChoiceOrder;
+
+
+        if ( strlen((string)$selectiveProcessId->value) > 0 )
+        {
+            $toolBar->enableButton('tbBtnPrint');
+
+            $txtMessage = _M('Please, click in the button below to generate the orderly list of notes of candidates report:', $module);
+            $lblAct     = new MText('lblAct', $txtMessage);
+            $flds3[]    = $lblAct;
+
+            $btnAll  = new MButton('btnAll',_M('Print report',$module));
+            $btnAll->attachEventHandler('click', 'listClick');
+            $flds3[] = $btnAll;
+
+            $divAct            = new BaseGroup ('divAct', _M('Print report', $module), $flds3, 'vertical');
+            $divAct->showLabel = true;
+            $divAct->width     = '55%';
+        }
+
+        $bsg1            = new BaseGroup('bsg1', _M('Orderly list of notes of candidates report', $module), $flds, 'vertical');
+        $bsg1->showLabel = true;
+        $bsg1->width     = '35%';
+
+        $hct1            = new MHContainer('hct1',array($bsg1, $divAct));
+        $hct1->showLabel = true;
+        $fields[] = $hct1;
+        $fields[] = new Separator('');
+
+        if (isset($dataGrid))
+        {
+            $fields[] = $dataGrid;
+        }
+
+        $this->page->setAction($MIOLO->getActionURL($module, $action));
+        $this->setFields($fields);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+        $this->setClose($MIOLO->getActionURL($module, substr($action, 0, strrpos($action, ':'))));
+    }
+
+    /**
+     * Event triggered when user chooses Print from the toolbar
+     **/
+    public function tbBtnPrint_click($sender = null)
+    {
+        $this->listClick();
+    }
+
+    public function listClick ($sender=NULL)
+    {
+        $selectiveProcessId = MIOLO::_request('selectiveProcessId');
+
+        if ( strlen((string)$selectiveProcessId) > 0 )
+        {
+            $MIOLO  = MIOLO::getInstance();
+            $module = MIOLO::getCurrentModule();
+
+            $data->selectiveProcessId = $this->selectiveProcessId->value;
+            $data->order              = MIOLO::_request('choiceOrder');
+
+            $MIOLO->getClass($module, 'RptOrderlyListOfNotes');
+            $report = new RptOrderlyListOfNotes($data);
+        }
+    }
+}
+
+?>

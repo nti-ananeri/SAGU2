@@ -1,0 +1,136 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for acdStateContract table
+ *
+ * @author Hélio Henrique Rodrigues Guimarães [helio@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 29/08/2006
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to manipulate the acdMovementContract table
+ **/
+class BusinessAcademicBusCancelledPupils extends Business
+{
+
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module = is_null($module) ? 'academic' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+    /**
+     * List all records from the table handled by the class
+     *
+     * @param: None
+     *
+     * @returns (array): Return an array with the entire table
+     *
+     **/
+    public function getPupilsCancelleds($filters)
+    {
+        $db     = $this->getDatabase();
+
+        $sql = '    SELECT B.stateTime,
+                           D.personId,
+                           D.name as personName,
+                           D.location,
+                           D.number,
+                           D.complement,
+                           D.neighborhood,
+                           E.name as cityName,
+                           E.stateId,
+                           D.zipCode
+                      FROM ( SELECT max(B.stateTime) as stateTime,
+                                    A.contractId
+                               FROM acdContract A
+                         INNER JOIN acdMovementContract B
+                                 ON (A.contractId = B.contractId)
+                         INNER JOIN acdCourse C
+                                 ON ( C.courseId = A.courseId AND
+                                      C.formationLevelId = '.GRADUATION_FORMATION_LEVEL_ID.' )
+                           GROUP BY  A.contractId ) as lastMovementContract
+                INNER JOIN acdMovementContract B
+                        ON ( lastMovementContract.stateTime  = B.stateTime AND
+                             lastMovementContract.contractId = B.contractId )
+                INNER JOIN acdContract C
+                        ON ( C.contractId = B.contractId )
+           INNER JOIN ONLY basPerson D
+                        ON ( D.personId = C.personId )
+                INNER JOIN basCity E
+                        ON ( E.cityId = D.cityId )
+                     WHERE B.learningPeriodId IN ( SELECT learningPeriodId 
+                                                     FROM acdLearningPeriod
+                                                    WHERE periodId ILIKE ?';
+        $args = array($filters->lastPeriodOne);
+
+        if ( strlen((string)$filters->lastPeriodTwo) > 0 )
+        {
+            $sql   .= ' OR periodId ILIKE ?';
+            $args[] = $filters->lastPeriodTwo;
+        }
+
+        if ( strlen((string)$filters->lastPeriodThree) > 0 )
+        {
+            $sql   .= ' OR periodId ILIKE ?';
+            $args[] = $filters->lastPeriodThree;
+        }
+
+        if ( strlen((string)$filters->lastPeriodFour) > 0 )
+        {
+            $sql   .= ' OR periodId ILIKE ?';
+            $args[] = $filters->lastPeriodFour;
+        }
+
+        if ( strlen((string)$filters->lastPeriodFive) > 0 )
+        {
+            $sql   .= ' OR periodId ILIKE ?';
+            $args[] = $filters->lastPeriodFive;
+        }
+
+        $sql .= '       )
+                    AND B.stateContractId = '.STATE_CONTRACT_ID_LOCKED.'
+               ORDER BY B.contractId';
+
+        $result = $db->query(SAGU::prepare($sql, $args));
+
+        return $result;
+    }
+
+}
+
+?>

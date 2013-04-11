@@ -1,0 +1,105 @@
+<?php
+/**
+ *
+ * @author Helio Henrique Rodrigues Guimaraes [helio@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * Armando Taffarel Neto [taffarel@solis.coop.br]
+ * 
+ * @since
+ * Class created on 12/03/2007
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+/**
+ * Class to manipulate the acdgenerateMultipleLearningPeriod table
+ **/
+class BusinessAcademicBusGenerateMultipleClassPupil extends Business
+{
+
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic','sagu');
+        $module = is_null($module) ? 'academic' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+
+    /**
+     * Do a search on the database table handled by the class
+     *
+     * @param $filters (object): Search filters
+     *
+     * @return (array): An array containing the search results
+     **/
+    public function getPupils($filters)
+    {
+        $sql = 'SELECT DISTINCT B.contractId,
+                                B.personId,
+                                C.name as personName
+                               FROM acdContract B
+                    INNER JOIN ONLY basPhysicalPerson C
+                                 ON (C.personId = B.personId)
+                              WHERE B.courseId       = \''.$filters->courseId.'\'
+                                AND B.courseVersion  = \''.$filters->courseVersion.'\'
+                                AND B.turnId         = \''.$filters->turnId.'\'
+                                AND B.unitId         = \''.$filters->unitId.'\'
+                                AND B.conclusionDate IS NULL 
+                                AND B.contractId NOT IN (SELECT AA.contractId
+                                                           FROM acdClassPupil AA
+                                                     INNER JOIN acdClass BB
+                                                             ON ( AA.classId = BB.classId )
+                                                          WHERE BB.initialLearningPeriodId IN ( SELECT learningperiodid from acdlearningperiod where courseId = ? and courseversion = ? and unitid = ? and turnId =?))';
+
+        $db = $this->getDatabase();
+
+        $args = array ($filters->courseId, $filters->courseVersion, $filters->unitId, $filters->turnId);
+        $result = $db->query(SAGU::prepare($sql, $args));
+
+        return $result;
+    }
+
+    public function beginTransaction()
+    {
+
+        $db = $this->getDatabase();
+        $db->execute('BEGIN TRANSACTION');
+
+    }
+
+    public function commit()
+    {
+
+        $db = $this->getDatabase();
+        $db->execute('COMMIT');
+
+    }
+}
+?>

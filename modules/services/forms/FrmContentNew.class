@@ -1,0 +1,172 @@
+<?php
+
+class FrmContentNew extends MForm
+{
+    private $home;
+
+    /**
+     * Class constructor
+     **/
+    function __construct($data)
+    {
+        $this->home = $data->home;
+        parent::__construct(_M('Add content', 'services') . ': ' . $_GET['occurrenceDate']);
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+        $this->eventHandler();
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $action   = MIOLO::getCurrentAction();
+        
+        $groupId            = MIOLO::_REQUEST('groupId');
+        $occurrenceDate     = MIOLO::_REQUEST('occurrenceDate');
+        $turnId             = MIOLO::_REQUEST('turnId');
+        $weekDayId          = MIOLO::_REQUEST('weekDayId');
+
+        $mioloUserName = trim($MIOLO->getLogin()->id);
+        $busPerson     = $MIOLO->getBusiness('basic', 'BusPerson');
+
+        //se for um usuário do sistema logado
+        if ( strlen((string)$mioloUserName) >  0 )
+        {
+            $personData       = $busPerson->getPersonByMioloUserName($mioloUserName);
+        }
+        else //caso for um aluno
+        {
+            $personData->personId = $MIOLO->session->getValue('loginUid');
+        }
+        $bussinessScheduleProfessor = $MIOLO->getBusiness('academic', 'BusScheduleProfessor');
+
+        $data->professorId = $personData->personId;
+        $data->groupId = $groupId;
+        $data->weekDayId = $weekDayId;
+        
+        $dataSchedule = $bussinessScheduleProfessor->listScheduleProfessor($data);
+        reset($dataSchedule);
+        $a = current($dataSchedule);
+        unset ($data);
+        if ( !defined('PROFESSOR_SCHEDULE_CONTENT_GROUPED') || PROFESSOR_SCHEDULE_CONTENT_GROUPED == DB_FALSE )
+        {
+            $selScheduleLabel = new MText('scheduleLabel', 'Horario');
+            $selScheduleLabel->setWidth(FIELD_LABEL_SIZE);
+            $selScheduleLabel->setClass('m-caption m-caption-required');
+            $selScheduleId   = new MSelection('scheduleId', $this->getFormValue('scheduleId', $a[0]) , null, $dataSchedule, true);
+            $selScheduleId->setAutoSubmit(true);
+            $validators[] = new MRequiredValidator('scheduleId',  'Selecione o horario');
+            $fields[] = new MHContainer ( 'hctScheduleId', array ( $selScheduleLabel, $selScheduleId));
+        }
+        else
+        {
+            $scheduleId   = new MHiddenField('scheduleId', $a[0]);
+            $fields[] = $scheduleId;
+            $schedulesLabel = new MText('scheduleLabel', 'Horarios');
+            $schedulesLabel->setWidth(FIELD_LABEL_SIZE);
+            foreach ( $dataSchedule as $item => $valores )
+            {
+                $schedules[] = $valores[1];
+            }
+            $scheduleText   = new MText('scheduleText', implode(', ', $schedules) );
+            $fields[] = new MHContainer ( 'hctScheduleId', array ( $schedulesLabel, $scheduleText));
+        }
+
+        $fields[] = new MHiddenField('occurrenceDate', $occurrenceDate);
+
+        if ( $this->getFormValue('scheduleId', $a[0]) )
+        {
+            foreach($dataSchedule as $item => $value )
+            {
+                if ( $value[0] == $this->getFormValue('scheduleId', $a[0]) )
+                {
+                    $turnId = $value[2];
+                }
+            }
+        }
+        $fields[] = new MHiddenField('turnId', $turnId);
+
+        $businessEnroll = $MIOLO->getBusiness('academic', 'BusFrequenceEnroll');
+        unset($content2);
+        $content2       = $businessEnroll->getFrquenceContent($a[0], $occurrenceDate, $turnId);
+
+        $fields[]     = new MMultiLineField('content', $this->getFormValue('content', $content2->content ), _M('Content', 'services') . ' (' .  $_GET['occurrenceDate'] . ')', 100, 4, 80);
+
+        $fields[]     = new MHiddenField('scheduleContent', $content2->content );
+  
+        $validators[] = new MRequiredValidator('content', _M('Content', 'services'));
+        $content = $businessEnroll->getFrequenceContentCopy($groupId);
+
+        $contentCopy     = new MMultiSelection('contentCopy', array(), _M('Content', 'services'). 's' , $content, 100, "", 8);
+        $contentCopy->addAttribute("onDblClick", "fTrans(this)");
+        //$contentCopy->addAttribute("onMouseOver", "fOver(this)");
+        
+        $fields[] = $contentCopy;
+        $fields[]  = new MSeparator();
+        $fields2[] = new MButton('btnSave', _M('Save', 'services'));
+        $fields2[] = new MButton('btnClose', _M('Back', 'services'), "self.close()");
+        $fields[]  = new MHContainer('hctBtn', $fields2);
+        $fields[]  = new MDiv('divInfo',null);
+
+        if ( isset($validators) )
+        {
+            $this->setValidators($validators);
+        }
+        $this->setFields($fields);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setClose($MIOLO->getActionURL('services', substr($action, 0, strrpos($action, ':'))));
+        $this->setShowPostButton(false);
+        $this->page->onLoad('document.' . $this->name . '.content.focus();');
+        $jsCode .= "
+        var copyContent = new Array(".(count($content)).");";
+        foreach ( $content as $id => $value )
+        {
+            $jsCode .= "copyContent[$id] = '$value[2]';";
+        }
+        $jsCode .= " 
+        function fTrans(obj)
+        {
+            var mline;
+            mline = document.getElementById('content');
+            mline.innerHTML = copyContent[obj.selectedIndex];
+        }
+        ";
+        $this->page->addJSCode($jsCode);
+
+    }
+
+    public function btnSave_click($sender=NULL)
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_REQUEST('function');
+
+        $fields[] = new MHiddenField('scheduleId', $scheduleId);
+        $fields[] = new MHiddenField('occurrenceDate', $occurrenceDate);
+        $fields[] = new MHiddenField('turnId', $turnId);
+
+        $data->content        = $this->content->value;
+        $data->scheduleId     = $this->scheduleId->value;
+        $data->occurrenceDate = $this->occurrenceDate->value;
+        $data->turnId         = $this->turnId->value;
+
+        $businessEnroll = $MIOLO->getBusiness('academic', 'BusFrequenceEnroll');
+        $content2       = $businessEnroll->getFrquenceContent($data->scheduleId, $data->occurrenceDate, $data->turnId);
+
+        if ( strlen((string)$content2->occurrenceDate)>0 )
+        {
+            $businessEnroll->updateFrequenceContent($data);
+        }
+        else
+        {
+            $businessEnroll->insertFrequenceContent($data);
+        }
+
+        //fechar a janela
+        $this->page->addJsCode("this.close();");
+    }
+}
+
+?>

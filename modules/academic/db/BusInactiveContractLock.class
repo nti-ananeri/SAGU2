@@ -1,0 +1,336 @@
+<?php
+/**
+ *
+ * This file handles the connection and actions for inactive contracts
+ *
+ * @author Daniel Afonso Heisler [daniel@solis.coop.br]
+ *
+ * $version: $Id$
+ *
+ * \b Maintainers \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ * 
+ * @since
+ * Class created on 28/01/2007
+ *
+ * \b @organization \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The Sagu2 development team
+ *
+ * \b Copyleft \n
+ * Copyleft (L) 2005 - SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html )
+ *
+ * \b History \n
+ * See history in CVS repository: http://sagu.solis.coop.br   
+ *
+ **/
+
+
+/**
+ * Class to close inactive contracts
+ **/
+class BusinessAcademicBusInactiveContractLock extends Business
+{
+
+    var $db;
+
+    function BusinessAcademicBusInactiveContractLock()
+    {
+        $this->db = $this->getDatabase();
+    }
+
+    /**
+     * Make a connection to the database
+     * 
+     * @param $module (string): The module whose database we should connect. If null, the actual module database is connected.
+     *
+     * @return (object): A MIOLO Database connection
+     **/
+    public function getDatabase($module = null)
+    {
+        $MIOLO = MIOLO::getInstance();
+        $MIOLO->getClass('basic', 'sagu');
+        $module = is_null($module) ? 'academic' : $module;
+
+        return $MIOLO->getDatabase($module);
+    }
+    
+    public function beginTransaction()
+    {
+        return $this->db->execute('BEGIN TRANSACTION');
+    }
+    
+    public function endTransaction()
+    {
+        return $this->db->execute('COMMIT');
+    }   
+
+    public function rollbackTransaction()
+    {
+        return $this->db->execute('ROLLBACK');
+    }
+
+    /**
+     * Search contract with enroll state
+     *
+     * @param $data (object): Data to be filtered
+     *
+     * @return (object): Return an object of the type handled by the class
+     *
+     **/
+    public function inactiveContractLock($data)
+    {
+        $this->beginTransaction();
+
+        // seleciona todos os contratos que nao tenham movimentacoes
+        // no periodo informado e nao tenham fechamento no periodo
+        // anterior ao informado
+        $sql = 'SELECT DISTINCT A.contractId,
+                       B.learningPeriodId,
+                       getPersonName(E.personId)
+                  FROM (SELECT A.contractId,
+                               MAX(A.stateTime) AS lastStateTime
+                          FROM acdMovementContract A
+                      GROUP BY A.contractId) A
+            INNER JOIN acdMovementContract B
+                    ON (B.contractId = A.contractId
+                        AND B.stateTime = A.lastStateTime)
+            INNER JOIN acdStateContract C
+                    ON (C.stateContractId = B.stateContractId)
+            INNER JOIN acdLearningPeriod D
+                    ON (B.learningPeriodId = D.previousLearningPeriodId)
+            INNER JOIN acdContract E
+                    ON (E.contractId = B.contractId)
+                 WHERE C.isCloseContract = FALSE
+                   AND D.periodId = ?
+                   AND NOT EXISTS (SELECT \'X\'
+                                     FROM acdMovementContract X
+                               INNER JOIN acdLearningPeriod Y
+                                       ON (Y.learningPeriodId = X.learningPeriodId)
+                                    WHERE X.contractId = A.contractId
+                                      AND Y.periodId = ?)
+              ORDER BY 3';
+
+        $args     = array ( $data->periodId, $data->periodId );
+
+        $result   = $this->db->query(SAGU::prepare($sql, $args));
+
+        $sql  = 'INSERT INTO acdMovementContract
+                             (contractId,
+                              stateContractId,
+                              reasonId,
+                              stateTime,
+                              learningPeriodId)
+                      VALUES (?, ?, ?,
+                              TO_TIMESTAMP(?, \'' . MASK_TIMESTAMP . '\'),
+                              ?)';
+
+        $ok = true;
+        for ( $i=0; $i<count($result) && $ok; $i++ )
+        {
+            $args = array( $result[$i][0],
+                           STATE_CONTRACT_ID_LOCKED,
+                           $data->reasonId,
+                           date(MASK_TIMESTAMP_PHP),
+                           $result[$i][1] );
+
+            $ok   = $this->db->execute(SAGU::prepare($sql, $args));
+
+            $count[$i][0] = $result[$i][0];
+            $count[$i][1] = $result[$i][2];
+        }
+
+        if ( $ok )
+        {
+            $this->endTransaction();
+        }
+        else
+        {
+            $this->rollbackTransaction();
+        }
+
+        return $count;
+
+    }
+
+    /**
+     * Generate a new contract and close the first contract
+     *
+     * @param $data (object): Data to be filtered
+     *
+     * @return (object): Return an object of the type handled by the class
+     *
+     **/
+    public function courseChange($data)
+    {
+
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+
+        $db       = $MIOLO->getBusiness($module, 'BusContract');
+        $contract = $db->getContract($data->contractId);
+
+        $sql      = 'SELECT getContractActivationStateContract(?),
+                            getContractActivationDate(?)';
+
+        $args     = array($data->contractId, $data->contractId);
+
+        $result   = $this->db->query(SAGU::prepare($sql, $args));
+
+        $db               = $MIOLO->getBusiness($module, 'BusMovementContract');
+        $movementContract = $db->getMovementContract($data->contractId, $result[0][0]);
+
+        $db                    = $MIOLO->getBusiness($module, 'BusMovementContractComplement');
+        $movementContractCompl = $db->searchMovementContractComplement($data);
+
+        $this->beginTransaction();
+
+        //pega a sequencia do novo contrato
+        $sql        = 'SELECT NEXTVAL(\'seq_contractId\')';
+        $db         = $this->getDatabase();
+        $retVal     = $db->query($sql);
+        $contractId = $retVal[0][0];
+
+        //insere o novo contrato
+        $sql  = 'INSERT INTO acdContract
+                             (contractId,
+                              personId,
+                              courseId,
+                              courseVersion,
+                              turnId,
+                              unitId,
+                              formationDate,
+                              formationPeriodId,
+                              conclusionDate,
+                              emendsDate,
+                              diplomaDate,
+                              inscriptionSelectiveProcId,
+                              maturityDay,
+                              isListener,
+                              isRequestAcademicDegree,
+                              globalAverage,
+                              obs,
+                              parcelsNumber)
+                      VALUES (?, ?, ?, ?, ?, ?, 
+                              TO_DATE(?,\'' . MASK_DATE .'\'),
+                              ?,
+                              TO_DATE(?,\'' . MASK_DATE .'\'),
+                              TO_DATE(?,\'' . MASK_DATE .'\'),
+                              TO_DATE(?,\'' . MASK_DATE .'\'),
+                              ?, ?, ?, ?, ?, ?, ? )';
+
+        $args = array( $contractId,
+                       $contract->personId,
+                       $data->courseId,
+                       $data->courseVersion,
+                       $data->turnId,
+                       $data->unitId,
+                       $contract->formationDate,
+                       $contract->formationPeriodId,
+                       $contract->conclusionDate,
+                       $contract->emendsDate,
+                       $contract->diplomaDate,
+                       $contract->inscriptionSelectiveProcId,
+                       $contract->maturityDay,
+                       $contract->isListener,
+                       $contract->isRequestAcademicDegree,
+                       $contract->globalAverage,
+                       $contract->obs,
+                       $contract->parcelsNumber );
+
+        $ok   = $this->db->execute(SAGU::prepare($sql, $args));
+
+        //inserire a movimentacao contratual de entrada na instituicao
+        if ( count($movementContract)>0 )
+        {
+            $sql  = 'INSERT INTO acdMovementContract
+                                 (contractId,
+                                  stateContractId,
+                                  reasonId,
+                                  stateTime,
+                                  learningPeriodId)
+                          VALUES (?, ?, ?,
+                                  TO_TIMESTAMP(?, \'' . MASK_TIMESTAMP . '\'),
+                                  ?)';
+            $args = array( $contractId,
+                           $movementContract->stateContractId,
+                           $movementContract->reasonId,
+                           $movementContract->stateTime,
+                           $movementContract->learningPeriodId );
+
+            $ok   = $this->db->execute(SAGU::prepare($sql, $args));
+        }
+
+        //inserire o complemento da movimentacao contratual de entrada na instituicao
+        if ( count($movementContractCompl)>0 )
+        {
+            $sql = 'INSERT INTO acdMovementContractComplement
+                                (contractId,
+                                 stateContractId,
+                                 stateContractFieldId,
+                                 stateTime,
+                                 value)
+                         VALUES (?, ?, ?, TO_TIMESTAMP(?, \'' . MASK_TIMESTAMP . '\'), ?)';
+
+            foreach ( $movementContractCompl as $row )
+            {
+                $args = array(
+                               $contractId,
+                               $row[3],
+                               $row[5],
+                               $row[7],
+                               $row[8]
+                             );
+                $ok   = $this->db->execute(SAGU::prepare($sql, $args));
+            }
+        }
+
+        //inserire a movimentacao contratual de transferência interna para o novo curso
+        $sql  = 'INSERT INTO acdMovementContract
+                             (contractId,
+                              stateContractId,
+                              stateTime,
+                              learningPeriodId)
+                      VALUES (?, ?,
+                              TO_TIMESTAMP(?, \'' . MASK_TIMESTAMP . '\'),
+                              ?)';
+        $args = array( $contractId,
+                       STATE_CONTRACT_ID_INTERNAL_TRANSFER_FROM,
+                       date(MASK_TIMESTAMP_PHP),
+                       $data->learningPeriodId );
+
+        $ok   = $this->db->execute(SAGU::prepare($sql, $args));
+
+        //insere a movementacao de fechamento do contrato antigo
+        $sql  = 'INSERT INTO acdMovementContract
+                             (contractId,
+                              stateContractId,
+                              reasonId,
+                              stateTime,
+                              learningPeriodId)
+                      VALUES (?, ?, ?,
+                              TO_TIMESTAMP(?, \'' . MASK_TIMESTAMP . '\'),
+                              ?)';
+
+        $args = array( $data->contractId,
+                       STATE_CONTRACT_ID_INTERNAL_TRANSFER_TO,
+                       $data->reasonId,
+                       date(MASK_TIMESTAMP_PHP),
+                       $data->learningPeriodId );
+
+        $ok   = $this->db->execute(SAGU::prepare($sql, $args));
+
+        $this->endTransaction();
+
+        return $ok;
+    }
+
+}
+
+?>

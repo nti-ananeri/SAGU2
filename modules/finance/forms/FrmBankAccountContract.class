@@ -1,0 +1,469 @@
+<?php
+
+/**
+ * Bank account contract form
+ *
+ * @author Daniel Afonso Heisler [daniel.heisler@gmail.com]
+ *
+ * @version $Id$
+ *
+ * \b Maintainers: \n
+ * Alexandre Heitor Schmidt [alexsmith@solis.coop.br]
+ * Daniel Afonso Heisler [daniel@solis.coop.br]
+ * Eduardo Beal Miglioransa [eduardo@solis.coop.br]
+ * Jamiel Spezia [jamiel@solis.coop.br]
+ * William Prigol Lopes [william@solis.coop.br]
+ *
+ * @since
+ * Class created on 22/01/2008
+ *
+ * \b Organization: \n
+ * SOLIS - Cooperativa de Soluções Livres \n
+ * The SAGU2 Development Team
+ *
+ * \b CopyLeft: \n
+ * CopyLeft (L) 2005 SOLIS - Cooperativa de Soluções Livres \n
+ *
+ * \b License: \n
+ * Licensed under GPL (for further details read the COPYING file or http://www.gnu.org/copyleft/gpl.html)
+ *
+ * \b History: \n
+ * See history in CVS repository: http://sagu.solis.coop.br/
+ *
+ **/
+
+/**
+ * Form to manipulate a payment place
+ **/
+class FrmBankAccountContract extends MForm
+{
+
+    /**
+     * Class constructor
+     **/
+    function __construct()
+    {
+
+        $module = MIOLO::getCurrentModule();
+
+        if ( MIOLO::_request('function') == 'insert' )
+        {
+            parent::__construct(_M('Insert', $module));
+        }
+        else
+        {
+            parent::__construct(_M('Update', $module));
+        }
+
+        $this->setHelp(get_class($this), MIOLO::getCurrentModule(), MIOLO::getCurrentAction());
+
+        $this->eventHandler();
+    }
+
+    /**
+     * Default method to define fields
+     **/
+    public function createFields()
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+
+        $toolBar = new MToolBar('toolBar',$MIOLO->getActionURL($module,$action));
+
+        if ( $function == 'insert' )
+        {
+            $toolBar->disableButton('tbBtnDelete');
+            $toolBar->disableButton('tbBtnPrint');
+        }
+        elseif ( $function == 'delete' )
+        {
+            $toolBar->disableButton('tbBtnSave');
+        }
+        $fields[] = $toolBar;
+
+        if ( in_array($function, array('update', 'delete')))
+        {
+
+            $bankContractId = $_GET['bankContractId'] ? $_GET['bankContractId'] : $_POST['bankContractId'];
+            $bankAccountId  = $_GET['bankAccountId'] ? $_GET['bankAccountId'] : $_POST['bankAccountId'];
+
+            $fields[]    = new MHiddenField('bankContractId', $bankContractId);
+            $fields[]    = new MHiddenField('bankAccountId', $bankAccountId);
+
+            $business    = $MIOLO->getBusiness($module, 'BusBankAccountContract');
+            $data        = $business->getBankAccountContract($bankContractId, $bankAccountId);
+
+        }
+        else
+        {
+            // Bank
+            $business    = $MIOLO->getBusiness($module, 'BusBank');
+            $bankIdLabel = new MText('bankIdLabel', _M('Bank',$module).':');
+            $bankIdLabel->setWidth(FIELD_CONTAINER_SIZE);
+            $bankIdLabel->setClass('m-caption m-caption-required');
+
+            $bankId = new MSelection('bankId', $this->getFormValue('bankId',$data->bankId), '', $business->listBank());
+            $bankId->setJsHint(_M('Bank', $module));
+            $bankId->setAutoSubmit(true);
+            $validators[] = new MIntegerValidator('bankId', _M('Bank',$module), 'required');
+
+            $hctBankId = new MHContainer('hctBankId', array($bankIdLabel, $bankId));
+            $hctBankId->setShowLabel(true);
+            $fields[]  = $hctBankId;
+
+            if ( strlen((string)$this->getFormValue('bankId',$data->bankId))>0 )
+            {
+                // Bank Account
+                $business = $MIOLO->getBusiness($module, 'BusBankAccount');
+                $bankAccountLabel = new MText('bankAccountLabel', _M('Bank account',$module).':');
+                $bankAccountLabel->setWidth(FIELD_CONTAINER_SIZE);
+                $bankAccountLabel->setClass('m-caption m-caption-required');
+
+                $filters         = new FinBankAccount();
+                $filters->bankId = $this->getFormValue('bankId',$data->bankId);
+
+                $bankAccountId = new MSelection('bankAccountId', $this->getFormValue('bankAccountId',$data->bankAccountId), '', $business->listBankAccount($filters));
+                $bankAccountId->setJsHint(_M('Bank account id', $module));
+                $validators[]   = new MIntegerValidator('bankAccountId', _M('Bank account',$module), 'required');
+
+                $hctBankAccount = new MHContainer('hctBankAccount', array($bankAccountLabel, $bankAccountId));
+                $hctBankAccount->setShowLabel(true);
+                $fields[]       = $hctBankAccount;
+            }
+        
+            //Bank contract id
+            $bankContractIdLabel = new MText('bankContractIdLabel',_M('Bank contract id',$module).':');
+            $bankContractIdLabel->setWidth(FIELD_LABEL_SIZE);
+            $bankContractIdLabel->setClass('m-caption m-caption-required');
+
+            $bankContractId = new MTextField('bankContractId',$this->getFormValue('bankContractId',$data->bankContractId),'',FIELD_ID_SIZE);
+            $bankContractId->setJsHint(_M('Enter the bank contract id',$module));
+            $validators[] = new MRequiredValidator('bankContractId',_M('Bank contract id',$module));
+            $fields[]     = new MHContainer('hctBankContractId',array($bankContractIdLabel,$bankContractId));
+
+        }
+
+        $fields[] = new MSeparator('<hr/>');
+
+        //Description 
+        $descriptionLabel = new MText('descriptionLabel',_M('Description',$module).':');
+        $descriptionLabel->setWidth(FIELD_LABEL_SIZE);
+        $descriptionLabel->setClass('m-caption m-caption-required');
+        
+        $description = new MTextField('description',$this->getFormValue('description',$data->description),'',FIELD_DESCRIPTION_SIZE);
+        $description->setJsHint(_M('Enter the bank account contract description',$module));
+        $validators[] = new MRequiredValidator('description',_M('Description',$module));
+
+        $fields[] = new MHContainer('hctDescription',array($descriptionLabel,$description));
+
+        // Collection
+        $collectionLabel  = new MText('collectionLabel', _M('Collection', $module).':');
+        $collectionLabel->setWidth(FIELD_LABEL_SIZE);
+        $collectionLabel->setClass('m-caption m-caption-required');
+
+        $collection   = new MTextField('collection', $this->getFormValue('collection',$data->collection), '', FIELD_ID_SIZE);
+        $collection->setJsHint(_M('Enter the collection', $module));
+        $validators[] = new MIntegerValidator('collection', _M('Collection', $module),'required');
+
+        $fields[] = new MHContainer('hctCollection', array($collectionLabel, $collection));
+
+        // Wallet/Variation
+        $walletLabel = new MText('walletLabel', _M('Wallet', $module).':');
+        $walletLabel->setWidth(FIELD_LABEL_SIZE);
+        $walletLabel->setClass('m-caption m-caption-required');
+
+        $wallet       = new MTextField('wallet', $this->getFormValue('wallet',$data->wallet), '', FIELD_ID_SIZE);
+        $wallet->setJsHint(_M('Enter the wallet', $module));
+        $validators[] = new MIntegerValidator('wallet', _M('Wallet', $module), 'required');
+
+        $fields[] = new MHContainer('hctWallet', array($walletLabel, $wallet));
+
+        // Variation
+        $variationLabel = new MText('variationLabel', _M('Variation', $module).':');
+        $variationLabel->setWidth(FIELD_LABEL_SIZE);
+        $variationLabel->setClass('m-caption m-caption-required');
+
+        $variation    = new MTextField('variation', $this->getFormValue('variation',$data->variation), '', FIELD_ID_SIZE);
+        $variation->setJsHint(_M('Enter the variation', $module));
+        $validators[] = new MIntegerValidator('variation', _M('Variation', $module), 'required');
+
+        $fields[] = new MHContainer('hctWallet', array($variationLabel, $variation));
+
+        // Accord
+        $accordLabel = new MText('accordLabel', _M('Accord', $module).':');
+        $accordLabel->setWidth(FIELD_LABEL_SIZE);
+        $accordLabel->setClass('m-caption m-caption-required');
+
+        $accord       = new MTextField('accord', $this->getFormValue('accord',$data->accord), '', FIELD_ID_SIZE);
+        $accord->setJsHint(_M('Enter the accord', $module));
+        $validators[] = new MIntegerValidator('accord', _M('Accord', $module), 'required');
+
+        $fields[] = new MHContainer('hctAccord', array($accordLabel, $accord));
+
+        //Collection type
+        $business = $MIOLO->getBusiness($module, 'BusCollectionType');
+        $collectionTypeIdLabel = new MText('collectionTypeIdLabel', _M('Collection type id',$module).':');
+        $collectionTypeIdLabel->setWidth(FIELD_CONTAINER_SIZE);
+        $collectionTypeIdLabel->setClass('m-caption m-caption-required');
+
+        $collectionTypeId = new MComboBox('collectionTypeId', $this->getFormValue('collectionTypeId',$data->collectionTypeId), '', $business->listCollectionType());
+        $collectionTypeId->setJsHint(_M('Collection type id', $module));
+        $validators[]     = new MIntegerValidator('collectionTypeId', _M('Collection type id',$module), 'required');
+
+        $hctCollectionType = new MHContainer('hctCollectionType', array($collectionTypeIdLabel, $collectionTypeId));
+        $hctCollectionType->setShowLabel(true);
+        $fields[]          = $hctCollectionType;
+
+        // Collection branch
+        $collectionBranchLabel = new MText('collectionBranchLabel', _M('Collection branch', $module).':');
+        $collectionBranchLabel->setWidth(FIELD_LABEL_SIZE);
+        //$collectionBranchLabel->setClass('m-caption m-caption-required');
+
+        $collectionBranch = new MTextField('collectionBranch', $this->getFormValue('collectionBranch',$data->collectionBranch), '', FIELD_ID_SIZE);
+        $collectionBranch->setJsHint(_M('Enter the collection branch', $module));
+        $validators[]     = new MIntegerValidator('collectionBranch', _M('Collection branch', $module), 'optional');
+
+        $collectionBranchHint = new MHint('collectionBranchHint', _M('Used to indicate which agency that can receive the invoice payment. If any one, leave the field blank.', $module));
+
+        $fields[] = new MHContainer('hctCollectionBranch', array($collectionBranchLabel, $collectionBranch, $collectionBranchHint));
+
+        // Remittance sequence
+        $remittanceSequenceLabel = new MText('remittanceSequenceLabel', _M('Remittance sequence', $module).':');
+        $remittanceSequenceLabel->setWidth(FIELD_LABEL_SIZE);
+        $remittanceSequenceLabel->setClass('m-caption m-caption-required');
+
+        $remittanceSequence = new MTextField('remittanceSequence', strlen((string)$this->getFormValue('remittanceSequence',$data->remittanceSequence))>0 ? $this->getFormValue('remittanceSequence',$data->remittanceSequence) : '0', '', FIELD_ID_SIZE);
+        $remittanceSequence->setJsHint(_M('Enter the remittance sequence', $module));
+        $validators[]       = new MIntegerValidator('remittanceSequence', _M('Remittance sequence', $module), 'required');
+
+        $fields[] = new MHContainer('hctRemittanceSequence', array($remittanceSequenceLabel, $remittanceSequence));
+
+        // Remittance sequence reset
+        $remittanceSequenceResetLabel = new MText('remittanceSequenceResetLabel', _M('Remittance sequence reset', $module).':');
+        $remittanceSequenceResetLabel->setWidth(FIELD_LABEL_SIZE);
+        $remittanceSequenceResetLabel->setClass('m-caption m-caption-required');
+
+        $remittanceSequenceReset = new MTextField('remittanceSequenceReset', strlen((string)$this->getFormValue('remittanceSequenceReset', $data->remittanceSequenceReset))>0 ? $this->getFormValue('remittanceSequenceReset', $data->remittanceSequenceReset) : '0', '', FIELD_ID_SIZE);
+        $remittanceSequenceReset->setJsHint(_M('Enter the remittance sequence reset', $module));
+        $validators[]            = new MIntegerValidator('remittanceSequenceReset', _M('Remittance sequence reset', $module), 'required');
+
+        $remittanceSequenceResetHint = new MHint('remittanceSequenceResetHint', _M('How many times has been restarted the sequence of the remittance', $module));
+
+        $fields[] = new MHContainer('hctRemittanceSequenceReset', array($remittanceSequenceResetLabel, $remittanceSequenceReset, $remittanceSequenceResetHint));
+
+        // Return sequence
+        $returnSequenceLabel = new MText('returnSequenceLabel', _M('Return sequence', $module).':');
+        $returnSequenceLabel->setWidth(FIELD_LABEL_SIZE);
+        $returnSequenceLabel->setClass('m-caption m-caption-required');
+
+        $returnSequence = new MTextField('returnSequence', strlen((string)$this->getFormValue('returnSequence',$data->returnSequence))>0 ? $this->getFormValue('returnSequence',$data->returnSequence) : '0', '', FIELD_ID_SIZE);
+        $returnSequence->setJsHint(_M('Enter the return sequence', $module));
+        $validators[]       = new MRequiredValidator('returnSequence', _M('Return sequence', $module));
+
+        $fields[] = new MHContainer('hctReturnSequence', array($returnSequenceLabel, $returnSequence));
+
+        // Return sequence reset
+        $returnSequenceResetLabel = new MText('returnSequenceResetLabel', _M('Return sequence reset', $module).':');
+        $returnSequenceResetLabel->setWidth(FIELD_LABEL_SIZE);
+        $returnSequenceResetLabel->setClass('m-caption m-caption-required');
+
+        $returnSequenceReset = new MTextField('returnSequenceReset', strlen((string)$this->getFormValue('returnSequenceReset', $data->returnSequenceReset))>0 ? $this->getFormValue('returnSequenceReset', $data->returnSequenceReset) : '0', '', FIELD_ID_SIZE);
+        $returnSequenceReset->setJsHint(_M('Enter the return sequence reset', $module));
+        $validators[]        = new MIntegerValidator('returnSequenceReset', _M('Return sequence reset', $module), 'required');
+
+        $returnSequenceResetHint = new MHint('returnSequenceResetHint', _M('How many times has been restarted the sequence of the return', $module));
+
+        $fields[] = new MHContainer('hctReturnSequenceReset', array($returnSequenceResetLabel, $returnSequenceReset, $returnSequenceResetHint));
+
+        // Invoice sequence
+        $invoiceSequenceLabel = new MText('invoiceSequenceLabel', _M('Invoice sequence', $module).':');
+        $invoiceSequenceLabel->setWidth(FIELD_LABEL_SIZE);
+        $invoiceSequenceLabel->setClass('m-caption m-caption-required');
+
+        $invoiceSequence = new MTextField('invoiceSequence', strlen((string)$this->getFormValue('invoiceSequence',$data->invoiceSequence))>0 ? $this->getFormValue('invoiceSequence',$data->invoiceSequence) : '0', '', FIELD_ID_SIZE);
+        $invoiceSequence->setJsHint(_M('Enter the invoice sequence', $module));
+        $validators[]    = new MIntegerValidator('invoiceSequence', _M('Invoice sequence', $module), 'required');
+
+        $fields[] = new MHContainer('hctInvoiceSequence', array($invoiceSequenceLabel, $invoiceSequence));
+
+        // Invoice sequence reset
+        $invoiceSequenceResetLabel = new MText('invoiceSequenceResetLabel', _M('Invoice sequence reset', $module).':');
+        $invoiceSequenceResetLabel->setWidth(FIELD_LABEL_SIZE);
+        $invoiceSequenceResetLabel->setClass('m-caption m-caption-required');
+
+        $invoiceSequenceReset = new MTextField('invoiceSequenceReset', strlen((string)$this->getFormValue('invoiceSequenceReset', $data->invoiceSequenceReset))>0 ? $this->getFormValue('invoiceSequenceReset', $data->invoiceSequenceReset) : '0', '', FIELD_ID_SIZE);
+        $invoiceSequenceReset->setJsHint(_M('Enter the invoice sequence reset', $module));
+        $validators[]         = new MIntegerValidator('invoiceSequenceReset', _M('Invoice sequence reset', $module), 'required');
+
+        $invoiceSequenceResetHint = new MHint('invoiceSequenceResetHint', _M('How many times has been restarted the sequence of the invoice', $module));
+        $fields[] = new MHContainer('hctInvoiceSequenceReset', array($invoiceSequenceResetLabel, $invoiceSequenceReset, $invoiceSequenceResetHint));
+
+	// Invoice seqLimit
+        $invoiceSeqLimitLabel = new MText('invoiceSeqLimitLabel', _M('Invoice Sequence Limit', $module).':');
+        $invoiceSeqLimitLabel->setWidth(FIELD_LABEL_SIZE);
+        $invoiceSeqLimitLabel->setClass('m-caption m-caption-required');
+
+        $seqLimit = new MTextField('seqLimit', strlen((string)$this->getFormValue('seqLimit', $data->seqLimit))>0 ? $this->getFormValue('seqLimit', $data->seqLimit) : '0', '', FIELD_ID_SIZE);
+        $seqLimit->setJsHint(_M('Enter the invoice sequence limit', $module));
+        $validators[]         = new MIntegerValidator('seqLimit', _M('Invoice sequence limit', $module), 'required');
+
+        $invoiceSeqLimitHint = new MHint('invoiceSeqLimitHint', _M('Define the max caracter size accept for invoice before reset', $module));
+
+        $fields[] = new MHContainer('hctInvoiceSeqLimit', array($invoiceSeqLimitLabel, $seqLimit, $invoiceSeqLimitHint));
+
+        if ( $function == 'update' )
+        {
+            $fields[] = new MTextLabel('lastModification', '[' . $data->userName . ' - ' . $data->dateTime . ']', _M('Last modification',$module));
+
+        }
+
+        $fields[] = new Separator('');
+
+        $this->setFields($fields);
+        $this->setValidators($validators);
+        $this->setLabelWidth(FIELD_LABEL_SIZE);
+        $this->setShowPostButton(false);
+        $this->setClose($MIOLO->getActionURL($module,substr($action,0,strrpos($action,':'))));
+        $event =MIOLO::_request('event','GET');
+        if( $event != 'tbBtnSave:click' && $event != 'tbBtnDelete_click' && $event != 'tbBtnDelete_confirm' )
+        {
+            $this->page->onLoad('document.' . $this->name . '.bankId.focus();');
+        }
+
+    }
+
+    /**
+     * Event triggered when user chooses New from the toolbar
+     **/
+    public function tbBtnNew_click($sender = NULL)
+    {
+    }
+
+    /**
+     * Event triggered when user chooses Delete from the toolbar
+     **/
+    public function tbBtnDelete_click($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $data   = $this->getTypesData();
+        $opts   = array('event'          => 'tbBtnDelete_confirm',
+                        'function'       => 'delete',
+                        'bankAccountId'  => MIOLO::_request('bankAccountId'),
+                        'bankContractId' => MIOLO::_request('bankContractId'));
+
+        $gotoYes = $MIOLO->getActionURL( $module, $action, null, $opts );
+        $goto    = SAGU::getStackBackUrl();
+        $gotoNo  = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+        $msg     = MSG_CONFIRM_RECORD_DELETE;
+        $caption = _M('Question',$module);
+        $MIOLO->question($msg, $gotoYes, $gotoNo);
+    }
+
+    /**
+     * Event triggered when user chooses Yes from the Delete prompt dialog
+     **/
+    public function tbBtnDelete_confirm($sender=NULL)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+        $action = MIOLO::getCurrentAction();
+
+        $business = $MIOLO->getBusiness($module, 'BusBankAccountContract');
+        $ok = $business->deleteBankAccountContract($this->bankContractId->value, $this->bankAccountId->value);
+
+        if ( $ok )
+        {
+            $msg  = MSG_RECORD_DELETED;
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Information',$module);
+            $MIOLO->information($msg, $goto);
+        }
+        else
+        {
+            $msg  = _M('Error executing requested bankAccountContract.',$module);
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Error',$module);
+            $MIOLO->error( $msg, $goto, $caption );
+        }
+    }
+
+    /**
+     * Event triggered when user chooses Save from the toolbar
+     **/
+    public function tbBtnSave_click($sender=NULL)
+    {
+        $MIOLO    = MIOLO::getInstance();
+        $module   = MIOLO::getCurrentModule();
+        $action   = MIOLO::getCurrentAction();
+        $function = MIOLO::_request('function');
+
+        $data     = $this->getTypesData();
+        $business = $MIOLO->getBusiness($module, 'BusBankAccountContract');
+
+        if ( $function == 'update' )
+        {
+            $ok  = $business->updateBankAccountContract($data);
+            $msg = MSG_RECORD_UPDATED;
+        }
+        else
+        {
+            $ok  = $business->insertBankAccountContract($data);
+            $msg = MSG_RECORD_INSERTED;
+        }
+
+        if ( $ok )
+        {
+            $opts = array('bankContractIdS' => $data->bankContractId,
+                          'bankAccountIdS'  => $data->bankAccountId);
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL( $module, $action, null, $opts);
+            if ( $function == 'update' )
+            {
+                $MIOLO->information($msg, $goto);
+            }
+            else
+            {
+                $opts    = array('event'=>'tbBtnNew_click',
+                                 'function'=>'insert');
+
+                $gotoYes = $MIOLO->getActionURL($module, $action, null, $opts);
+                $MIOLO->question($msg, $gotoYes, $goto);
+            }
+        }
+        else
+        {
+            $msg  = _M('Error executing requested bankAccountContract.',$module);
+            $goto = SAGU::getStackBackUrl();
+            $goto = strlen((string)$goto)>0 ? $goto : $MIOLO->getActionURL($module, $action);
+            $caption = _M('Error',$module);
+            $MIOLO->error( $msg, $goto, $caption );
+        }
+    }
+
+    /**
+     * Method to gather all information from the form fields
+     * and put them on a database compatible object
+     **/
+    public function getTypesData()
+    {
+        $data = new FinBankAccountContract();
+        $vars = get_object_vars($data);
+        foreach ( $vars as $var => $value )
+        {
+            if ( $this->$var )
+            {
+                eval('$data->' . $var . ' = $this->' . $var . '->value;');
+            }
+        }
+        return $data;
+    }
+}
+
+?>

@@ -1,0 +1,326 @@
+<?php
+
+/**
+ * Default defines 
+ * To report identification
+ */
+$MIOLO  = MIOLO::getInstance();
+$module = MIOLO::getCurrentModule();
+
+define('REPORT_ID', 'SP001'); 
+define('FPDF_FONTPATH', $MIOLO->getModulePath('basic', '/classes/fpdf/font/'));
+
+$MIOLO->Uses('classes/fpdf/fpdf.php', 'basic');
+
+/**
+ * Create header and footer information
+ */
+class PDF extends FPDF
+{
+    var $type = 0;
+    var $rdata = 0;
+
+    /**
+     * Class constructor
+     **/
+    function __construct($rdata1)
+    {
+        parent::__construct();
+        $this->rdata = $rdata1;
+    }
+
+    /**
+     * Defines the footer for this report
+     */
+    public function Footer()
+    {
+        $module = MIOLO::getCurrentModule();
+    }
+
+    /**
+     * Defines the header for this report
+     */
+    public function Header()
+    {
+        $module = MIOLO::getCurrentModule();
+
+
+        $this->setFont(DEFAULT_REPORT_FONT, 'B', 10);
+        $this->ln(6);
+
+        $this->cell(20, 8, _M('ID', $module),   'TBL', 'R','L');
+        $this->cell(50, 8, _M('NAME', $module), 'TB',  'R','L');
+
+        for($titleTableAux = 0; $titleTableAux < count($this->rdata->examOccurrenceIds); $titleTableAux++)
+        {
+            if($this->rdata->examOccurrenceIds[$titleTableAux][2] == $this->rdata->selectiveProcessTypeMain[0]) 
+            {
+                $this->cell(9, 8, $this->rdata->examOccurrenceIds[$titleTableAux][1], 'TB', 'R','L');
+            }
+        }
+
+        $this->cell(16, 8, 'TOTAL', 'TB',  'R','L');
+
+        if ( count($this->rdata->selectivesProcessOccurrences) > 0 )
+        {
+            foreach ($this->rdata->selectivesProcessOccurrences as $key => $selectiveProcessOccurrence)
+            {
+                if ( $selectiveProcessOccurrence[0] != $this->rdata->selectiveProcessTypeMain[0]) //Not is  selectiveProcess main
+                {
+                    if ( count($this->rdata->selectivesProcessOccurrences) == ($key+1))
+                    {
+                        $this->cell(16, 8, substr($selectiveProcessOccurrence[1], 0, 7),  'TBR', 'R','L');
+                    }
+                    else
+                    {
+                        $this->cell(16, 8, substr($selectiveProcessOccurrence[1], 0, 7),  'TB', 'R','L');
+                    }
+                }
+            }
+        }
+
+        $this->ln(8);
+    }
+}
+
+
+/**
+ * PDF extension to generate report
+ */
+class RptListCandidateNotes
+{
+    /**
+     * Method to generate the report
+     */
+    public function RptListCandidateNotes($data = null)
+    {
+        $rdata  = $this->getReportData($data);
+
+        $module = MIOLO::getCurrentModule();
+
+        $this->pdf = new PDF($rdata);
+
+        $this->generateContent($rdata);
+
+        $this->pdf->close();
+        $this->pdf->output();
+    }
+
+    /**
+     * Get report data information
+     */
+    private function getReportData($data)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+
+        // Inscription information
+        $busListCandidateNotes           = $MIOLO->getBusiness($module, 'BusListCandidateNotes');
+
+        $rdata->examOccurrenceIds        = $busListCandidateNotes->examOccurrenceIdNotes($data->selectiveProcessId);
+
+        $rdata->listCandidatesNotes      = $busListCandidateNotes->inscriptionForConferenceList($data->selectiveProcessId);
+
+        $rdata->selectiveProcessTypeMain = $busListCandidateNotes->selectiveProcessMain($data->selectiveProcessId);
+
+        $rdata->selectiveProcessId       = $data->selectiveProcessId;
+
+        $busSelectiveProcessOccurrence = $MIOLO->getBusiness($module, 'BusSelectiveProcessOccurrence');
+        $selectivesProcessOccurrences = $busSelectiveProcessOccurrence->listSelectiveProcessOccurrenceType($data->selectiveProcessId);
+
+
+        $rdata->selectivesProcessOccurrences = $selectivesProcessOccurrences;
+
+
+        $busCompany  = $MIOLO->getBusiness(basic, 'BusCompany');
+        $company = $busCompany->getCompany(DEFAULT_COMPANY_CONF);
+
+        $rdata->file = SAGUFile::getPhotoPath($company->personId);
+
+        return $rdata;
+    }
+
+    private function generateContent($rdata)
+    {
+        $MIOLO  = MIOLO::getInstance();
+        $module = MIOLO::getCurrentModule();
+
+        $busListCandidateNotes           = $MIOLO->getBusiness($module, 'BusListCandidateNotes');
+
+        $this->pdf->addPage('P', 'mm', 'A4');
+
+        $this->pdf->setFont(DEFAULT_REPORT_FONT, 'B', 12);
+        $this->pdf->text(10, 10, _M('NOTES LIST', $module));
+
+        $this->pdf->setFillColor(242);
+
+        $this->pdf->setFont(DEFAULT_REPORT_FONT, '', 10);
+        $isFirstPupilOccurrence = true;
+
+        $x = 1;
+
+        //Laço para a listas dos candidatos X notas, sendo que retorna um registro para cada ocorrência de prova e nota para o aluno, ou seja, retorna mais de um registro por aluno
+        for($xAux = 0; $xAux < count($rdata->listCandidatesNotes); $xAux++)
+        {
+           //IF, para o primeira ocorrência do aluno, ou seja, onde pegamos as informações que devem aparecer uma vez só por aluno
+           if ( $isFirstPupilOccurrence )
+           {
+               //guarda a soma das notas do processo seletivo principal
+               $totalNotelMaisProcess       = 0.000;
+                //guarda as notas de outro processo seletivo, neste caso, está meio hardCode armazenando de um processo apenas.
+               $notesOtherSelectiveProcess  = 0.000;
+               //Guarda o peso das provas de outro processo seletivo.
+               $weightExamOtherSelecProcess = 0.000;
+               //Guarda o peso das provas do processo seletivo principal.
+               $weightPrincSelecProcessTotal= 0.000;
+
+               //if, que determina se a célula será preenchida ou não
+               if ($x == 1)
+               {
+                   $x = 0;
+               }
+               else
+               {
+                   $x = 1;
+               }
+
+               if($xAux != 0)
+               {
+                    $this->pdf->ln(6);
+               }
+
+               $this->pdf->cell(20,     6, $rdata->listCandidatesNotes[$xAux][10] ,                  'TBL', 'C', 'L', $x);  //Código da inscrição do aluno
+               $this->pdf->cell(50 + 1, 6, substr($rdata->listCandidatesNotes[$xAux][1], 0, 20),     'TB',  'C', 'L', $x);  //Nome do aluno
+
+               if($rdata->listCandidatesNotes[$xAux][11] == 'f')
+               {
+                    $this->pdf->text(4, $this->pdf->getY()+4, '2G');
+               }
+
+               $isExistNote            = false;
+               $isFirstPupilOccurrence = false;
+               $morNote                = 0;
+
+                ${'notesSelectiveProcess'.$rdata->listCandidatesNotes[$xAux][10].''.$rdata->listCandidatesNotes[$xAux][7]} = '';
+
+
+                ${'weightSelectiveProcess'.$rdata->listCandidatesNotes[$xAux][10].''.$rdata->listCandidatesNotes[$xAux][7]} = '';
+            }
+
+            //if para continuar na linha do candidato, setando a flag se é o último registro da pessoa, para fazer as totalizações necessárias
+            if($rdata->listCandidatesNotes[$xAux][10] == $rdata->listCandidatesNotes[$xAux +1][10])
+            {
+                $isLastRegisterToPerson = FALSE;
+            }
+            else
+            {
+                $isLastRegisterToPerson = TRUE;
+            }
+
+            //Laço para escrever a nota do aluno, se for processo seletivo principal (nos outros não escreve a nota por prova) e totalizar os pontos.
+
+            for($titleTableAux = 0; $titleTableAux < count($rdata->examOccurrenceIds); $titleTableAux++) //Passa por todas as provas
+            {
+                //If para verificar se a prova da coluna é a mesma do aluno.
+                if($rdata->listCandidatesNotes[$xAux][2] == $rdata->examOccurrenceIds[$titleTableAux][0])
+                {
+                    if ( $rdata->listCandidatesNotes[$xAux][7] == $rdata->selectiveProcessTypeMain[0]) //Is selectiveProcess main
+                    {
+                        $this->pdf->cell(9, 6, $rdata->listCandidatesNotes[$xAux][5], 'TB', 'C', 'L', $x);
+                    }
+
+                    ${'notesSelectiveProcess'.$rdata->listCandidatesNotes[$xAux][10].''.$rdata->listCandidatesNotes[$xAux][7]} += ($rdata->listCandidatesNotes[$xAux][5] * $rdata->listCandidatesNotes[$xAux][12]);
+
+/*
+                    eval('$notesSelectiveProcess'.$rdata->listCandidatesNotes[$xAux][10].''.$rdata->listCandidatesNotes[$xAux][7].'  += ($rdata->listCandidatesNotes[$xAux][5] * $rdata->listCandidatesNotes[$xAux][12]);');*/
+
+                    if ( $rdata->listCandidatesNotes[$xAux][12] > 0 )
+                    {
+                        ${'weightSelectiveProcess'.$rdata->listCandidatesNotes[$xAux][10].''.$rdata->listCandidatesNotes[$xAux][7]} += $rdata->listCandidatesNotes[$xAux][12];
+                    }
+                    else
+                    {
+                        ${'weightSelectiveProcess'.$rdata->listCandidatesNotes[$xAux][10].''.$rdata->listCandidatesNotes[$xAux][7]} += 1;
+                    }
+
+                    $isExistNote = true;
+                }
+            }
+
+            if($isExistNote == false)
+            {
+                $this->pdf->cell(9, 6, ' ', 'TB', 'C', 'L', $x);
+            }
+
+            if ( $isLastRegisterToPerson ) // Totalizações das pessoas
+            {
+
+                foreach ($rdata->selectivesProcessOccurrences as $key => $selectiveProcessOccurrence) //Para setar a maior nota
+                {
+
+                    if ( ${'weightSelectiveProcess'.$rdata->listCandidatesNotes[$xAux][10].''.$selectiveProcessOccurrence[0]} > 0 )
+                    {
+
+                        eval('$aux = $notesSelectiveProcess'.$rdata->listCandidatesNotes[$xAux][10].''.$selectiveProcessOccurrence[0].' / $weightSelectiveProcess'.$rdata->listCandidatesNotes[$xAux][10].''.$selectiveProcessOccurrence[0].';
+
+                        $notesSelectiveProcess'.$rdata->listCandidatesNotes[$xAux][10].''.$selectiveProcessOccurrence[0].' = $aux;
+
+                        ');
+                    }
+//                     else
+//                     {
+//                         eval('$aux = $notesSelectiveProcess'.$rdata->listCandidatesNotes[$xAux][10].''.$selectiveProcessOccurrence[0].';');
+//                     }
+
+                    if ( $aux > $morNote )
+                    {
+                        $morNote = $aux;
+                    }
+                }
+
+                //É a última passagem para um determinado aluno. Temos que totalizar
+                if ( count($rdata->selectivesProcessOccurrences) > 0 )
+                {
+                    foreach ($rdata->selectivesProcessOccurrences as $key => $selectiveProcessOccurrence)
+                    {
+                        eval('$aux = $notesSelectiveProcess'.$rdata->listCandidatesNotes[$xAux][10].''.$selectiveProcessOccurrence[0].';');
+    
+                        if ( $aux >= 0 ) // Tem nota para o processo seletivo atual
+                        {
+                            if ( $selectiveProcessOccurrence[0] === $rdata->selectiveProcessTypeMain[0]) //Is selectiveProcess main
+                            {
+                                //Imprime o total de pontos, independete do tipo de processo seletivo
+                                $this->pdf->cell(16, 6, SAGU::calcNumber($morNote, true, ROUND_VALUE_CLASSIFICATION), 'TB', 'C', 'L', $x);
+                            }
+                            else
+                            {
+                                if ( ($key+1) == count($rdata->selectivesProcessOccurrences) )
+                                {
+                                    $this->pdf->cell(16, 6, $aux, 'TBR', 'C', 'L', $x);
+                                }
+                                else
+                                {
+                                    $this->pdf->cell(16, 6, $aux, 'TB', 'C', 'L', $x);
+                                }
+                            }
+                        }
+                        else //Imprime em branco, se não tem nota para o tipo de processo seletivo referido
+                        {
+                            if ( ($key+1) == count($rdata->selectivesProcessOccurrences) )
+                            {
+                                $this->pdf->cell(16, 6, ' ', 'TBR', 'C', 'L', $x);
+                            }
+                            else
+                            {
+                                $this->pdf->cell(16, 6, ' ', 'TB', 'C', 'L', $x);
+                            }
+                        }
+                    }
+                }
+
+                $isFirstPupilOccurrence = true;
+            }
+        }
+    }
+}
+?>

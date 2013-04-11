@@ -1,0 +1,10 @@
+INSERT INTO acdknowledgearea (username, datetime, ipaddress, knowledgeareaid, name, brief) VALUES ('admin', date(now()), '127.0.0.1', 0, 'NÃO INFORMADO', 'NI');
+INSERT INTO acdknowledgearea (username, datetime, ipaddress, knowledgeareaid, name, brief) VALUES ('admin', date(now()), '127.0.0.1', 1, 'CIÊNCIAS EXATAS E DA TERRA', 'CET');
+INSERT INTO acdknowledgearea (username, datetime, ipaddress, knowledgeareaid, name, brief) VALUES ('admin', date(now()), '127.0.0.1', 2, 'CIÊNCIAS BIOLÓGICAS', 'CIB');
+INSERT INTO acdknowledgearea (username, datetime, ipaddress, knowledgeareaid, name, brief) VALUES ('admin', date(now()), '127.0.0.1', 3, 'ENGENHARIAS', 'ENG');
+INSERT INTO acdknowledgearea (username, datetime, ipaddress, knowledgeareaid, name, brief) VALUES ('admin', date(now()), '127.0.0.1', 4, 'CIÊNCIAS DA SAÚDE', 'CIS');
+INSERT INTO acdknowledgearea (username, datetime, ipaddress, knowledgeareaid, name, brief) VALUES ('admin', date(now()), '127.0.0.1', 5, 'CIÊNCIAS AGRÁRIAS', 'CIA');
+INSERT INTO acdknowledgearea (username, datetime, ipaddress, knowledgeareaid, name, brief) VALUES ('admin', date(now()), '127.0.0.1', 6, 'CIÊNCIAS SOCIAIS APLICADAS', 'CSA');
+INSERT INTO acdknowledgearea (username, datetime, ipaddress, knowledgeareaid, name, brief) VALUES ('admin', date(now()), '127.0.0.1', 7, 'CIÊNCIAS HUMANAS', 'CIH');
+INSERT INTO acdknowledgearea (username, datetime, ipaddress, knowledgeareaid, name, brief) VALUES ('admin', date(now()), '127.0.0.1', 8, 'LINGÜÍSTICA, LETRAS E ARTES', 'LLA');
+SELECT setval('seq_knowledgeareaid',(SELECT max(knowledgeareaid) FROM acdKnowledgeArea));
